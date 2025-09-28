@@ -1,0 +1,21 @@
+{
+  "name": "redis-machine-client",
+  "version": "0.1.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/worker.ts",
+    "start": "node --env-file=.env dist/worker.js",
+    "build": "tsc -p tsconfig.json",
+    "seed": "tsx src/tools/seed_example.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "redis": "^4.7.0",
+    "undici": "^6.19.8",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3"
+  }
+}

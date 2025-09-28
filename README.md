@@ -1,0 +1,10 @@
+# Redis Machine Client (TypeScript)
+
+Per-machine worker that:
+1) Listens on Redis Streams for its **allowed personas**.
+2) Pulls project context from your dashboard.
+3) Calls the **local LM Studio** model (single-loaded identifier).
+4) Emits a result event to Redis and (optionally) updates the dashboard.
+5) (Optional) **Applies file edits** safely and commits to a branch.
+
+See `.env.example` for config.

@@ -1,0 +1,40 @@
+# Node modules
+node_modules/
+
+# Build output
+dist/
+build/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# VSCode settings
+.vscode/
+
+# Coverage directory
+coverage/
+
+# Backup files
+*.bak
+
+# Misc
+*.log
+*.tmp
+
+# Ignore compiled JS in src if present
+src/**/*.js
+src/**/*.js.map
