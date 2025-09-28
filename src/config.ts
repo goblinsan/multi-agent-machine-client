@@ -23,4 +23,14 @@ export const cfg = {
   repoRoot: process.env.REPO_ROOT || "./repo",
   maxFileBytes: Number(process.env.MAX_FILE_BYTES || 524288),
   allowedExts: (process.env.ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.py,.md,.json,.yml,.yaml,.css,.html,.sh,.bat").split(",").map(s=>s.trim()).filter(Boolean),
+
+  // Context scanner feature flags & defaults
+  contextScan: ["1","true","yes","on"].includes((process.env.CONTEXT_SCAN||"").toLowerCase()),
+  scanInclude: (process.env.SCAN_INCLUDE || "src/**,app/**,tests/**").split(",").map(s=>s.trim()).filter(Boolean),
+  scanExclude: (process.env.SCAN_EXCLUDE || "**/node_modules/**,**/.git/**,**/dist/**").split(",").map(s=>s.trim()).filter(Boolean),
+  scanMaxFiles: Number(process.env.SCAN_MAX_FILES || 5000),
+  scanMaxBytes: Number(process.env.SCAN_MAX_BYTES || 100000000),
+  scanMaxDepth: Number(process.env.SCAN_MAX_DEPTH || 12),
+  scanTrackLines: ["1","true","yes","on"].includes((process.env.SCAN_TRACK_LINES||"true").toLowerCase()),
+  scanTrackHash: ["1","true","yes","on"].includes((process.env.SCAN_TRACK_HASH||"true").toLowerCase())
 };

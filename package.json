@@ -1,6 +1,6 @@
 {
   "name": "redis-machine-client",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "tsx src/worker.ts",
@@ -12,7 +12,8 @@
     "dotenv": "^16.4.5",
     "redis": "^4.7.0",
     "undici": "^6.19.8",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "minimatch": "^9.0.5"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
