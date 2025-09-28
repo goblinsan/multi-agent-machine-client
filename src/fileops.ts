@@ -16,9 +16,7 @@ export type ApplyOptions = {
   commitMessage?: string;
 };
 
-function normalizeRoot(p: string) {
-  return path.resolve(p);
-}
+function normalizeRoot(p: string) { return path.resolve(p); }
 
 function insideRepo(repoRoot: string, relPath: string) {
   const full = path.resolve(repoRoot, relPath);

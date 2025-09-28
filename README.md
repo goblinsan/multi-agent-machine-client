@@ -7,5 +7,6 @@ Per-machine worker that:
 4) Emits a result event to Redis and (optionally) updates the dashboard.
 5) (Optional) **Applies file edits** safely and commits to a branch.
 6) (Optional) **Context scanner** writes `.ma/context` artifacts before the model call when persona===context.
+7) **Multi-component scanning**: set SCAN_COMPONENTS or pass payload.components.
 
 See `.env.example` for config.

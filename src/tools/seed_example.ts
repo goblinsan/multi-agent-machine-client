@@ -3,10 +3,16 @@ import { cfg } from "../config.js";
 
 const persona = process.argv[2] || "context";
 const payload = persona === "context"
-  ? { repo_root: process.env.REPO_ROOT || "./repo", include: cfg.scanInclude, exclude: cfg.scanExclude,
+  ? {
+      repo_root: process.env.REPO_ROOT || "./repo",
+      components: [
+        { base: "api", include: ["**/*.py"], exclude: ["**/__pycache__/**","**/.venv/**"] },
+        { base: "web", include: ["src/**"], exclude: ["**/node_modules/**","**/dist/**"] }
+      ],
       max_files: cfg.scanMaxFiles, max_bytes: cfg.scanMaxBytes, max_depth: cfg.scanMaxDepth,
-      track_lines: cfg.scanTrackLines, track_hash: cfg.scanTrackHash }
-  : { repo: "git@github.com:you/markmugs.git" };
+      track_lines: cfg.scanTrackLines, track_hash: cfg.scanTrackHash
+    }
+  : { repo: "git@github.com:you/agent-dashboard.git" };
 
 const msg = {
   workflow_id: "wf_demo_001",
@@ -16,7 +22,7 @@ const msg = {
   intent: persona === "context" ? "hydrate_project_context" : "demo_intent",
   corr_id: "c_demo_01",
   payload: JSON.stringify(payload),
-  deadline_s: "120"
+  deadline_s: "180"
 };
 
 const r = await makeRedis();

@@ -24,13 +24,18 @@ export async function writeArtifacts(options: {
   ];
 
   if (apply) {
-    const editSpec = { ops: files.map(f => ({ action: "upsert", path: f.rel, content: f.content })) };
+    // Commit only snapshot + summary; always write files.ndjson to disk (not committed)
+    const commitOps = [files[0], files[2]];
+    const editSpec = { ops: commitOps.map(f => ({ action: "upsert", path: f.rel, content: f.content })) };
     const res = await applyEditOps(JSON.stringify(editSpec), {
       repoRoot,
       branchName,
       commitMessage
     });
-    return { applied: res, paths: files.map(f => f.rel) };
+    const ndPath = path.resolve(repoRoot, files[1].rel);
+    await fs.mkdir(path.dirname(ndPath), { recursive: true });
+    await fs.writeFile(ndPath, files[1].content, "utf8");
+    return { applied: res, paths: [files[0].rel, files[2].rel, files[1].rel] };
   } else {
     for (const f of files) {
       const full = path.resolve(repoRoot, f.rel);

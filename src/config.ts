@@ -22,7 +22,11 @@ export const cfg = {
   allowedEditPersonas: (process.env.ALLOWED_EDIT_PERSONAS || "lead-engineer,devops,ui-engineer,context").split(",").map(s=>s.trim()).filter(Boolean),
   repoRoot: process.env.REPO_ROOT || "./repo",
   maxFileBytes: Number(process.env.MAX_FILE_BYTES || 524288),
-  allowedExts: (process.env.ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.py,.md,.json,.yml,.yaml,.css,.html,.sh,.bat").split(",").map(s=>s.trim()).filter(Boolean),
+  allowedExts: (process.env.ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.py,.md,.json,.yml,.yaml,.css,.html,.sh,.bat")
+    .split(",")
+    .map(s=>s.trim().toLowerCase())
+    .map(s => s.startsWith(".") ? s : "." + s)
+    .filter(Boolean),
 
   // Context scanner feature flags & defaults
   contextScan: ["1","true","yes","on"].includes((process.env.CONTEXT_SCAN||"").toLowerCase()),
@@ -32,5 +36,11 @@ export const cfg = {
   scanMaxBytes: Number(process.env.SCAN_MAX_BYTES || 100000000),
   scanMaxDepth: Number(process.env.SCAN_MAX_DEPTH || 12),
   scanTrackLines: ["1","true","yes","on"].includes((process.env.SCAN_TRACK_LINES||"true").toLowerCase()),
-  scanTrackHash: ["1","true","yes","on"].includes((process.env.SCAN_TRACK_HASH||"true").toLowerCase())
+  scanTrackHash: ["1","true","yes","on"].includes((process.env.SCAN_TRACK_HASH||"true").toLowerCase()),
+
+  // Multi-component scanning
+  scanComponents: (() => { try { return JSON.parse(process.env.SCAN_COMPONENTS || "null"); } catch { return null; } })(),
+
+  // Summary writing mode after model call
+  summaryMode: (process.env.SUMMARY_MODE || "model").toLowerCase()
 };

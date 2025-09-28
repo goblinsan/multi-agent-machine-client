@@ -9,6 +9,22 @@ import { applyEditOps } from "./fileops.js";
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
 
+function normalizeRepoPath(p: string | undefined, fallback: string) {
+  if (!p || typeof p !== "string") return fallback;
+  const unescaped = p.replace(/\\\\/g, "\\"); // collapse escaped backslashes
+  const m = /^([A-Za-z]):\\(.*)$/.exec(unescaped);
+  if (m) {
+    const drive = m[1].toLowerCase();
+    const rest = m[2].replace(/\\/g, "/");
+    return `/mnt/${drive}/${rest}`;
+  }
+  const m2 = /^([A-Za-z]):\/(.*)$/.exec(p);
+  if (m2) {
+    return `/mnt/${m2[1].toLowerCase()}/${m2[2]}`;
+  }
+  return p.replace(/\\/g, "/");
+}
+
 async function ensureGroups(r: any) {
   for (const p of cfg.allowedPersonas) {
     try { await r.xGroupCreate(cfg.requestStream, groupForPersona(p), "$", { MKSTREAM: true }); } catch {}
@@ -40,6 +56,7 @@ async function main() {
   if (cfg.allowedPersonas.length === 0) { console.error("ALLOWED_PERSONAS is empty; nothing to do."); process.exit(1); }
   const r = await makeRedis(); await ensureGroups(r);
   console.log("[worker] personas:", cfg.allowedPersonas.join(", "));
+  console.log("[cfg] repoRoot:", cfg.repoRoot, "contextScan:", cfg.contextScan, "summaryMode:", cfg.summaryMode);
   while (true) { for (const p of cfg.allowedPersonas) { await readOne(r, p); } }
 }
 
@@ -53,46 +70,91 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   const ctx = await fetchContext(msg.workflow_id);
   const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
 
-  // --- Context scan (pre-model) ---
+  // --- Context scan (pre-model), supports multi-components ---
   let scanSummaryText = "";
+  let scanArtifacts: null | { repoRoot: string; ndjson: string; snapshot: any; summaryMd: string; paths: string[] } = null;
   if (persona === "context" && cfg.contextScan) {
     try {
       const specFromPayload = (() => { try { return msg.payload ? JSON.parse(msg.payload) : {}; } catch { return {}; } })();
-      const repoRoot = (specFromPayload.repo_root as string) || cfg.repoRoot;
-      const include = (specFromPayload.include as string[] | undefined) || cfg.scanInclude;
-      const exclude = (specFromPayload.exclude as string[] | undefined) || cfg.scanExclude;
-      const max_files = typeof specFromPayload.max_files === "number" ? specFromPayload.max_files : cfg.scanMaxFiles;
-      const max_bytes = typeof specFromPayload.max_bytes === "number" ? specFromPayload.max_bytes : cfg.scanMaxBytes;
-      const max_depth = typeof specFromPayload.max_depth === "number" ? specFromPayload.max_depth : cfg.scanMaxDepth;
-      const track_lines = typeof specFromPayload.track_lines === "boolean" ? specFromPayload.track_lines : cfg.scanTrackLines;
-      const track_hash = typeof specFromPayload.track_hash === "boolean" ? specFromPayload.track_hash : cfg.scanTrackHash;
+      const repoRootRaw = (specFromPayload.repo_root as string) || cfg.repoRoot;
+      const repoRoot = normalizeRepoPath(repoRootRaw, cfg.repoRoot);
+      const components = Array.isArray(specFromPayload.components) ? specFromPayload.components
+                        : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
 
       const { scanRepo, summarize } = await import("./scanRepo.js");
-      const files = await scanRepo({ repo_root: repoRoot, include, exclude, max_files, max_bytes, max_depth, track_lines, track_hash });
+      type Comp = { base: string; include: string[]; exclude: string[] };
+      const comps: Comp[] = components && components.length
+        ? components.map((c:any)=>({ base: String(c.base||"").replace(/\\/g,"/"), include: (c.include||cfg.scanInclude), exclude: (c.exclude||cfg.scanExclude) }))
+        : [{ base: "", include: cfg.scanInclude, exclude: cfg.scanExclude }];
 
-      const lines = files.map(f => JSON.stringify(f)).join("\n") + "\n";
-      const sum = summarize(files);
+      let allFiles: any[] = [];
+      const perComp: any[] = [];
+
+      for (const c of comps) {
+        const basePath = (c.base && c.base.length) ? (repoRoot.replace(/\/$/,'') + "/" + c.base.replace(/^\//,'')) : repoRoot;
+        const files = await scanRepo({
+          repo_root: basePath,
+          include: c.include,
+          exclude: c.exclude,
+          max_files: cfg.scanMaxFiles,
+          max_bytes: cfg.scanMaxBytes,
+          max_depth: cfg.scanMaxDepth,
+          track_lines: cfg.scanTrackLines,
+          track_hash: cfg.scanTrackHash
+        });
+        const prefixed = files.map(f => ({ ...f, path: (c.base ? (c.base.replace(/^\/+|\/+$/g,'') + '/' + f.path) : f.path) }));
+        allFiles.push(...prefixed);
+        const sum = summarize(prefixed);
+        perComp.push({ component: c.base || ".", totals: sum.totals, largest: sum.largest.slice(0,10), longest: sum.longest.slice(0,10) });
+      }
+
+      const ndjson = allFiles.map(f => JSON.stringify(f)).join("\n") + "\n";
+      const { summarize: summarize2 } = await import("./scanRepo.js");
+      const global = summarize2(allFiles);
       const snapshot = {
-        repo: repoRoot, generated_at: new Date().toISOString(), totals: sum.totals,
-        hotspots: { largest_files: sum.largest, longest_files: sum.longest }
+        repo: repoRoot,
+        generated_at: new Date().toISOString(),
+        totals: global.totals,
+        components: perComp,
+        hotspots: { largest_files: global.largest, longest_files: global.longest }
       };
-      const summaryMd = [
-        "# Context Snapshot", "", `Repo: ${repoRoot}`, `Generated: ${new Date().toISOString()}`, "",
-        "## Totals", `- Files: ${sum.totals.files}`, `- Bytes: ${sum.totals.bytes}`, `- Lines: ${sum.totals.lines}`, "",
-        "## Largest files (top 20)", ...sum.largest.map(f => `- ${f.path} (${f.bytes} bytes)`), "",
-        "## Longest files (top 20)", ...sum.longest.map(f => `- ${f.path} (${f.lines} lines)`)
+
+      const scanMd = [
+        "# Context Snapshot (Scan)",
+        "",
+        `Repo: ${repoRoot}`,
+        `Generated: ${new Date().toISOString()}`,
+        "",
+        "## Totals",
+        `- Files: ${global.totals.files}`,
+        `- Bytes: ${global.totals.bytes}`,
+        `- Lines: ${global.totals.lines}`,
+        "",
+        "## Components",
+        ...perComp.flatMap((pc:any) => [
+          `### ${pc.component}`,
+          `- Files: ${pc.totals.files}`,
+          `- Bytes: ${pc.totals.bytes}`,
+          `- Lines: ${pc.totals.lines}`,
+          `- Largest (top 10):`,
+          ...pc.largest.map((f:any)=>`  - ${f.path} (${f.bytes} bytes)`),
+          `- Longest (top 10):`,
+          ...pc.longest.map((f:any)=>`  - ${f.path} (${f.lines||0} lines)`),
+          ""
+        ])
       ].join("\n");
 
       const { writeArtifacts } = await import("./artifacts.js");
-      await writeArtifacts({
+      const writeRes = await writeArtifacts({
         repoRoot,
-        artifacts: { snapshot, filesNdjson: lines, summaryMd },
+        artifacts: { snapshot, filesNdjson: ndjson, summaryMd: scanMd },
         apply: cfg.applyEdits && cfg.allowedEditPersonas.includes("context"),
         branchName: `feat/context-${msg.workflow_id}-${(msg.corr_id||"c").slice(0,8)}`,
         commitMessage: `context: snapshot for ${msg.workflow_id}`
       });
 
-      scanSummaryText = `Context scan: files=${sum.totals.files}, bytes=${sum.totals.bytes}, lines=${sum.totals.lines}.`;
+      scanArtifacts = { repoRoot, ndjson, snapshot, summaryMd: scanMd, paths: writeRes.paths };
+      scanSummaryText = `Context scan: files=${global.totals.files}, bytes=${global.totals.bytes}, lines=${global.totals.lines}, components=${perComp.length}.`;
     } catch (e:any) {
       scanSummaryText = `Context scan failed: ${String(e?.message || e)}`;
     }
@@ -110,6 +172,24 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   const started = Date.now();
   const resp = await callLMStudio(model, messages, 0.2);
   const duration = Date.now() - started;
+
+  // After model call: write/replace summary.md per SUMMARY_MODE
+  if (persona === "context" && scanArtifacts) {
+    try {
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      const summaryPath = path.resolve(scanArtifacts.repoRoot, ".ma/context/summary.md");
+      let contentToWrite = resp.content;
+      if (cfg.summaryMode === "scan") contentToWrite = scanArtifacts.summaryMd;
+      if (cfg.summaryMode === "both") {
+        contentToWrite = `# Model Summary\n\n${resp.content}\n\n---\n\n` + scanArtifacts.summaryMd;
+      }
+      await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+      await fs.writeFile(summaryPath, contentToWrite, "utf8");
+    } catch (e:any) {
+      console.warn("[context] failed to write model summary.md:", e?.message);
+    }
+  }
 
   const result = { output: resp.content, model, duration_ms: duration };
   await r.xAdd(cfg.eventStream, "*", {
