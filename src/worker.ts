@@ -70,7 +70,7 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   const ctx = await fetchContext(msg.workflow_id);
   const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
 
-  // --- Context scan (pre-model), supports multi-components ---
+  // --- Context scan (pre-model), supports multi-components & Alembic ---
   let scanSummaryText = "";
   let scanArtifacts: null | { repoRoot: string; ndjson: string; snapshot: any; summaryMd: string; paths: string[] } = null;
   if (persona === "context" && cfg.contextScan) {
@@ -111,6 +111,36 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       const ndjson = allFiles.map(f => JSON.stringify(f)).join("\n") + "\n";
       const { summarize: summarize2 } = await import("./scanRepo.js");
       const global = summarize2(allFiles);
+
+      // Build scanMd with Alembic awareness
+      const scanMd = (() => {
+        const lines: string[] = [];
+        lines.push("# Context Snapshot (Scan)", "", `Repo: ${repoRoot}`, `Generated: ${new Date().toISOString()}`, "", "## Totals");
+        lines.push(`- Files: ${global.totals.files}`, `- Bytes: ${global.totals.bytes}`, `- Lines: ${global.totals.lines}`, "", "## Components");
+        for (const pc of perComp) {
+          lines.push(`### ${pc.component}`, `- Files: ${pc.totals.files}`, `- Bytes: ${pc.totals.bytes}`, `- Lines: ${pc.totals.lines}`);
+          lines.push(`- Largest (top 10):`);
+          for (const f of pc.largest) lines.push(`  - ${f.path} (${f.bytes} bytes)`);
+          lines.push(`- Longest (top 10):`);
+          for (const f of pc.longest) lines.push(`  - ${f.path} (${f.lines || 0} lines)`);
+          lines.push("");
+        }
+        // Alembic detection
+        const alembicFiles = allFiles.filter(f => /(^|\/)alembic(\/|$)/i.test(f.path));
+        if (alembicFiles.length) {
+          const versions = alembicFiles.filter(f => /(^|\/)alembic(\/|$).*\bversions\b(\/|$).+\.py$/i.test(f.path));
+          const latest = [...versions].sort((a,b)=> (b.mtime||0) - (a.mtime||0)).slice(0, 10);
+          lines.push("## Alembic Migrations");
+          lines.push(`- Alembic tree detected (files: ${alembicFiles.length}, versions: ${versions.length})`);
+          lines.push(versions.length ? "- Latest versions (by modified time):" : "- No versioned migrations found under alembic/versions");
+          for (const f of latest) {
+            lines.push(`  - ${f.path}  (mtime=${new Date(f.mtime).toISOString()}, bytes=${f.bytes}${typeof f.lines==='number'?`, lines=${f.lines}`:''})`);
+          }
+          lines.push("");
+        }
+        return lines.join("\n");
+      })();
+
       const snapshot = {
         repo: repoRoot,
         generated_at: new Date().toISOString(),
@@ -118,31 +148,6 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
         components: perComp,
         hotspots: { largest_files: global.largest, longest_files: global.longest }
       };
-
-      const scanMd = [
-        "# Context Snapshot (Scan)",
-        "",
-        `Repo: ${repoRoot}`,
-        `Generated: ${new Date().toISOString()}`,
-        "",
-        "## Totals",
-        `- Files: ${global.totals.files}`,
-        `- Bytes: ${global.totals.bytes}`,
-        `- Lines: ${global.totals.lines}`,
-        "",
-        "## Components",
-        ...perComp.flatMap((pc:any) => [
-          `### ${pc.component}`,
-          `- Files: ${pc.totals.files}`,
-          `- Bytes: ${pc.totals.bytes}`,
-          `- Lines: ${pc.totals.lines}`,
-          `- Largest (top 10):`,
-          ...pc.largest.map((f:any)=>`  - ${f.path} (${f.bytes} bytes)`),
-          `- Longest (top 10):`,
-          ...pc.longest.map((f:any)=>`  - ${f.path} (${f.lines||0} lines)`),
-          ""
-        ])
-      ].join("\n");
 
       const { writeArtifacts } = await import("./artifacts.js");
       const writeRes = await writeArtifacts({

@@ -8,5 +8,6 @@ Per-machine worker that:
 5) (Optional) **Applies file edits** safely and commits to a branch.
 6) (Optional) **Context scanner** writes `.ma/context` artifacts before the model call when persona===context.
 7) **Multi-component scanning**: set SCAN_COMPONENTS or pass payload.components.
+8) **Alembic aware**: if an `alembic/` tree exists, summary includes latest version files.
 
 See `.env.example` for config.

@@ -42,5 +42,5 @@ export const cfg = {
   scanComponents: (() => { try { return JSON.parse(process.env.SCAN_COMPONENTS || "null"); } catch { return null; } })(),
 
   // Summary writing mode after model call
-  summaryMode: (process.env.SUMMARY_MODE || "model").toLowerCase()
+  summaryMode: (process.env.SUMMARY_MODE || "both").toLowerCase()
 };
