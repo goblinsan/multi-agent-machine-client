@@ -31,6 +31,12 @@ function shouldUploadDashboardFlag(value: any): boolean {
   return Boolean(value);
 }
 
+function clipText(text: string, max = 6000) {
+  if (!text) return text;
+  if (text.length <= max) return text;
+  return text.slice(0, max) + `\n... (truncated ${text.length - max} chars)`;
+}
+
 function normalizeRepoPath(p: string | undefined, fallback: string) {
   if (!p || typeof p !== "string") return fallback;
   const unescaped = p.replace(/\\\\/g, "\\"); // collapse escaped backslashes
@@ -242,13 +248,43 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   }
 
   const userPayload = msg.payload ? msg.payload : "{}";
-  const userText = `Intent: ${msg.intent}\nPayload: ${userPayload}\nConstraints/Limits: ${ctx?.limits || ""}\nPersona hints: ${ctx?.personaHints || ""}\nScan: ${scanSummaryText}`;
+  const scanSummaryForPrompt = scanArtifacts
+    ? clipText(scanArtifacts.summaryMd, persona === "context" ? 8000 : 4000)
+    : scanSummaryText;
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "system", content: `Project context (summary):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` },
-    { role: "user", content: userText }
-  ] as any;
+  const userLines = [
+    `Intent: ${msg.intent}`,
+    `Payload: ${userPayload}`,
+    `Constraints/Limits: ${ctx?.limits || ""}`,
+    `Persona hints: ${ctx?.personaHints || ""}`
+  ];
+
+  if (persona === "context") {
+    if (scanArtifacts) {
+      userLines.push("Instruction: Use only the files, directories, and facts present in the scan summary above. If something is missing, explicitly state it was not observed.");
+    } else {
+      userLines.push(`Scan note: ${scanSummaryText}`);
+    }
+  } else {
+    userLines.push(`Scan note: ${scanSummaryText}`);
+  }
+
+  const userText = userLines.join("\n");
+
+  const messages: any[] = [
+    { role: "system", content: systemPrompt }
+  ];
+
+  if (scanSummaryForPrompt && scanSummaryForPrompt.length) {
+    const label = persona === "context" ? "Authoritative file scan summary" : "File scan summary";
+    messages.push({ role: "system", content: `${label}:\n${scanSummaryForPrompt}` });
+  }
+
+  if ((persona !== "context" || !scanArtifacts) && (ctx?.projectTree || ctx?.fileHotspots)) {
+    messages.push({ role: "system", content: `Dashboard context (may be stale):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` });
+  }
+
+  messages.push({ role: "user", content: userText });
 
   const started = Date.now();
   const resp = await callLMStudio(model, messages, 0.2);
