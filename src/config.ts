@@ -41,7 +41,7 @@ const logConsole = bool(process.env.LOG_CONSOLE, true);
 const logFile = (() => {
   const custom = process.env.LOG_FILE;
   if (custom && custom.trim().length) return path.resolve(custom);
-  return path.resolve(projectBase, "..", "machine-client.log");
+  return path.resolve(projectBase, "machine-client.log");
 })();
 
 

@@ -88,7 +88,10 @@ async function main() {
     projectBase: cfg.projectBase,
     defaultRepo: cfg.repoRoot,
     contextScan: cfg.contextScan,
-    summaryMode: cfg.summaryMode
+    summaryMode: cfg.summaryMode,
+    logFile: cfg.log.file,
+    logLevel: cfg.log.level,
+    logConsole: cfg.log.console
   });
   while (true) { for (const p of cfg.allowedPersonas) { await readOne(r, p); } }
 }

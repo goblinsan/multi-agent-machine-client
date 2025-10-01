@@ -42,7 +42,14 @@ export type UploadContextInput = {
   filesNdjson?: string;
 };
 
-export async function uploadContextSnapshot(input: UploadContextInput) {
+export type UploadContextResult = {
+  ok: boolean;
+  status: number;
+  body: any;
+  error?: any;
+};
+
+export async function uploadContextSnapshot(input: UploadContextInput): Promise<UploadContextResult> {
   const body = {
     workflow_id: input.workflowId,
     project_id: input.projectId ?? null,
@@ -56,8 +63,9 @@ export async function uploadContextSnapshot(input: UploadContextInput) {
     uploaded_at: new Date().toISOString()
   };
 
+  const started = Date.now();
   try {
-    await fetch(`${cfg.dashboardBaseUrl}/api/context`, {
+    const res = await fetch(`${cfg.dashboardBaseUrl}/api/context`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${cfg.dashboardApiKey}`,
@@ -65,7 +73,40 @@ export async function uploadContextSnapshot(input: UploadContextInput) {
       },
       body: JSON.stringify(body)
     });
+    const duration = Date.now() - started;
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "<no body>");
+      logger.warn("dashboard context upload failed", {
+        status: res.status,
+        duration_ms: duration,
+        workflowId: input.workflowId,
+        projectId: input.projectId,
+        projectSlug: input.projectSlug,
+        repoRoot: input.repoRoot,
+        branch: input.branch,
+        response: errorText.slice(0, 1000)
+      });
+      return { ok: false, status: res.status, body: errorText };
+    }
+
+    let responseBody: any = null;
+    const text = await res.text();
+    try { responseBody = text ? JSON.parse(text) : null; } catch { responseBody = text; }
+
+    logger.info("dashboard context upload succeeded", {
+      status: res.status,
+      duration_ms: duration,
+      workflowId: input.workflowId,
+      projectId: input.projectId,
+      projectSlug: input.projectSlug,
+      repoRoot: input.repoRoot,
+      branch: input.branch,
+      responseSample: typeof responseBody === "string" ? responseBody.slice(0, 200) : responseBody
+    });
+    return { ok: true, status: res.status, body: responseBody };
   } catch (e) {
-    logger.warn("dashboard context upload failed", { error: e, body });
+    logger.error("dashboard context upload exception", { error: e, workflowId: input.workflowId, projectId: input.projectId, projectSlug: input.projectSlug, repoRoot: input.repoRoot, branch: input.branch });
+    return { ok: false, status: 0, body: null, error: e };
   }
 }

@@ -31,6 +31,7 @@ function ensureStream() {
   } catch {}
   try {
     stream = fs.createWriteStream(logFile, { flags: "a" });
+    stream.write(`# machine-client log (level=${configuredLevel}) started ${new Date().toISOString()}\n`);
   } catch (e) {
     console.error("[logger] failed to create log file stream", e);
     stream = null;
@@ -91,3 +92,10 @@ export const logger = {
   debug(message: string, meta?: any) { write("debug", message, meta); },
   trace(message: string, meta?: any) { write("trace", message, meta); }
 };
+
+if (logFile) {
+  ensureStream();
+  if (consoleEnabled) {
+    console.log(`[logger] writing to ${logFile} at level ${configuredLevel}`);
+  }
+}
