@@ -3,11 +3,32 @@ import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent } from "./dashboard.js";
+import { fetchContext, recordEvent, uploadContextSnapshot } from "./dashboard.js";
 import { resolveRepoFromPayload } from "./gitUtils.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
+
+function firstString(...values: any[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length) return trimmed;
+    }
+  }
+  return null;
+}
+
+function shouldUploadDashboardFlag(value: any): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return !["0", "false", "no", "off"].includes(normalized);
+  }
+  return Boolean(value);
+}
 
 function normalizeRepoPath(p: string | undefined, fallback: string) {
   if (!p || typeof p !== "string") return fallback;
@@ -161,6 +182,26 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       scanArtifacts = { repoRoot, ndjson, snapshot, summaryMd: scanMd, paths: writeRes.paths };
       const branchNote = repoInfo.branch ? `, branch=${repoInfo.branch}` : "";
       scanSummaryText = `Context scan: files=${global.totals.files}, bytes=${global.totals.bytes}, lines=${global.totals.lines}, components=${perComp.length}${branchNote}.`;
+
+      const shouldUpload = shouldUploadDashboardFlag(payloadObj.upload_dashboard);
+      if (shouldUpload) {
+        const projectId = firstString(payloadObj.project_id, payloadObj.projectId);
+        const projectName = firstString(payloadObj.project_name, payloadObj.projectName, payloadObj.project);
+        const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug);
+        if (projectId || projectName || projectSlug) {
+          await uploadContextSnapshot({
+            workflowId: msg.workflow_id,
+            projectId: projectId ?? undefined,
+            projectName: projectName ?? undefined,
+            projectSlug: projectSlug ?? undefined,
+            repoRoot,
+            branch: repoInfo.branch ?? null,
+            summaryMd: scanMd,
+            snapshot,
+            filesNdjson: ndjson
+          });
+        }
+      }
     } catch (e:any) {
       scanSummaryText = `Context scan failed: ${String(e?.message || e)}`;
     }

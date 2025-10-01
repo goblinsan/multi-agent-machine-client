@@ -2,15 +2,20 @@ import { makeRedis } from "../redisClient.js";
 import { cfg } from "../config.js";
 
 const persona = process.argv[2] || "context";
-const repoUrl = process.env.SEED_REPO || process.env.REPO_URL || "https://github.com/you/agent-dashboard.git";
+const repoUrl = process.env.SEED_REPO || process.env.REPO_URL || "https://github.com/goblinsan/multi-agent-machine-client.git";
 const repoBranch = process.env.SEED_BRANCH || undefined;
-const projectSlug = process.env.SEED_PROJECT || "agent-dashboard";
+const projectId = process.env.SEED_PROJECT_ID || "8c02ff6e-1dab-456a-8806-df1bf3520dbe";
+const projectName = process.env.SEED_PROJECT_NAME || "Multi-Agent Machine Client";
+const projectSlug = process.env.SEED_PROJECT_SLUG || "multi-agent-machine-client";
 
 const payload = persona === "context"
   ? {
       repo: repoUrl,
       branch: repoBranch,
+      project_id: projectId,
+      project_name: projectName,
       project_slug: projectSlug,
+      upload_dashboard: true,
       components: [
         { base: "api", include: ["**/*.py"], exclude: ["**/__pycache__/**","**/.venv/**"] },
         { base: "web", include: ["src/**"], exclude: ["**/node_modules/**","**/dist/**"] },
@@ -19,7 +24,14 @@ const payload = persona === "context"
       max_files: cfg.scanMaxFiles, max_bytes: cfg.scanMaxBytes, max_depth: cfg.scanMaxDepth,
       track_lines: cfg.scanTrackLines, track_hash: cfg.scanTrackHash
     }
-  : { repo: repoUrl, branch: repoBranch, project_slug: projectSlug };
+  : {
+      repo: repoUrl,
+      branch: repoBranch,
+      project_id: projectId,
+      project_name: projectName,
+      project_slug: projectSlug,
+      upload_dashboard: true
+    };
 
 const msg = {
   workflow_id: "wf_demo_001",
