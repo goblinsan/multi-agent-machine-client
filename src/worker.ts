@@ -4,7 +4,7 @@ import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot } from "./dashboard.js";
-import { resolveRepoFromPayload } from "./gitUtils.js";
+import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths } from "./gitUtils.js";
 import { logger } from "./logger.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
@@ -121,7 +121,25 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
 
   // --- Context scan (pre-model), supports multi-components & Alembic ---
   let scanSummaryText = "";
-  let scanArtifacts: null | { repoRoot: string; ndjson: string; snapshot: any; summaryMd: string; branch: string | null; paths: string[] } = null;
+  let scanArtifacts: null | {
+    repoRoot: string;
+    ndjson: string;
+    snapshot: any;
+    summaryMd: string;
+    branch: string | null;
+    repoSlug: string | null;
+    remoteUrl: string | null;
+    snapshotPath: string;
+    summaryPath: string;
+    filesNdjsonPath: string;
+    snapshotRel: string;
+    summaryRel: string;
+    filesNdjsonRel: string;
+    totals: { files: number; bytes: number; lines: number };
+    components: any;
+    hotspots: any;
+    paths: string[];
+  } = null;
   let repoInfo: Awaited<ReturnType<typeof resolveRepoFromPayload>> | null = null;
   let dashboardUploadEnabled = false;
   const dashboardProject: { id?: string; name?: string; slug?: string } = {};
@@ -206,6 +224,12 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
         return lines.join("\n");
       })();
 
+      const repoMeta = await getRepoMetadata(repoRoot);
+      const branchUsed = repoInfo.branch ?? repoMeta.currentBranch ?? null;
+      repoInfo.branch = branchUsed;
+      repoInfo.remote = repoInfo.remote || repoMeta.remoteUrl || undefined;
+      const repoSlug = repoMeta.remoteSlug || null;
+
       const snapshot = {
         repo: repoRoot,
         generated_at: new Date().toISOString(),
@@ -223,13 +247,39 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
         commitMessage: `context: snapshot for ${msg.workflow_id}`
       });
 
-      scanArtifacts = { repoRoot, ndjson, snapshot, summaryMd: scanMd, branch: repoInfo.branch ?? null, paths: writeRes.paths };
-      const branchNote = repoInfo.branch ? `, branch=${repoInfo.branch}` : "";
+      const pathMod = await import("path");
+      const contextFolder = ".ma/context";
+      const snapshotRel = `${contextFolder}/snapshot.json`;
+      const summaryRel = `${contextFolder}/summary.md`;
+      const filesNdjsonRel = `${contextFolder}/files.ndjson`;
+
+      scanArtifacts = {
+        repoRoot,
+        ndjson,
+        snapshot,
+        summaryMd: scanMd,
+        branch: branchUsed,
+        repoSlug,
+        remoteUrl: repoInfo.remote || null,
+        snapshotPath: pathMod.resolve(repoRoot, snapshotRel),
+        summaryPath: pathMod.resolve(repoRoot, summaryRel),
+        filesNdjsonPath: pathMod.resolve(repoRoot, filesNdjsonRel),
+        snapshotRel,
+        summaryRel,
+        filesNdjsonRel,
+        totals: global.totals,
+        components: perComp,
+        hotspots: snapshot.hotspots,
+        paths: writeRes.paths
+      };
+      const branchNote = branchUsed ? `, branch=${branchUsed}` : "";
       scanSummaryText = `Context scan: files=${global.totals.files}, bytes=${global.totals.bytes}, lines=${global.totals.lines}, components=${perComp.length}${branchNote}.`;
 
       logger.info("context scan completed", {
         repoRoot,
-        branch: repoInfo.branch ?? null,
+        branch: branchUsed,
+        remote: repoInfo.remote || null,
+        repoSlug,
         totals: global.totals,
         components: localSummaries
       });
@@ -297,35 +347,72 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   if (persona === "context" && scanArtifacts) {
     try {
       const fs = await import("fs/promises");
-      const path = await import("path");
-      const summaryPath = path.resolve(scanArtifacts.repoRoot, ".ma/context/summary.md");
+      const pathMod = await import("path");
+      const summaryPath = scanArtifacts.summaryPath || pathMod.resolve(scanArtifacts.repoRoot, ".ma/context/summary.md");
       let contentToWrite = resp.content;
       if (cfg.summaryMode === "scan") contentToWrite = scanArtifacts.summaryMd;
       if (cfg.summaryMode === "both") {
         contentToWrite = `# Model Summary\n\n${resp.content}\n\n---\n\n` + scanArtifacts.summaryMd;
       }
-      await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+      await fs.mkdir(pathMod.dirname(summaryPath), { recursive: true });
       await fs.writeFile(summaryPath, contentToWrite, "utf8");
 
+      // ensure the stored summaryPath reflects latest location
+      scanArtifacts.summaryPath = summaryPath;
+
+      const commitPaths = Array.from(new Set([
+        scanArtifacts.snapshotRel,
+        scanArtifacts.summaryRel,
+        scanArtifacts.filesNdjsonRel
+      ].filter(Boolean)));
+
+      try {
+        const commitRes = await commitAndPushPaths({
+          repoRoot: scanArtifacts.repoRoot,
+          branch: scanArtifacts.branch,
+          message: `context: snapshot for ${msg.workflow_id}`,
+          paths: commitPaths
+        });
+        logger.info("context artifacts push result", { workflowId: msg.workflow_id, result: commitRes });
+      } catch (commitErr: any) {
+        logger.error("context artifacts push failed", { error: commitErr, workflowId: msg.workflow_id });
+      }
+
       if (dashboardUploadEnabled) {
-        const summaryForDashboard = contentToWrite;
+        const repoId = scanArtifacts.repoSlug
+          || dashboardProject.id
+          || dashboardProject.slug
+          || payloadObj.repo
+          || scanArtifacts.repoRoot;
+
         logger.info("uploading context snapshot", {
           workflowId: msg.workflow_id,
           project: dashboardProject,
           repo: scanArtifacts.repoRoot,
-          branch: scanArtifacts.branch
+          repoId,
+          branch: scanArtifacts.branch,
+          summaryPath: scanArtifacts.summaryRel,
+          snapshotPath: scanArtifacts.snapshotRel,
+          filesNdjsonPath: scanArtifacts.filesNdjsonRel
         });
-        await uploadContextSnapshot({
+        const uploadRes = await uploadContextSnapshot({
           workflowId: msg.workflow_id,
+          repoId,
           projectId: dashboardProject.id,
           projectName: dashboardProject.name,
           projectSlug: dashboardProject.slug,
           repoRoot: scanArtifacts.repoRoot,
           branch: scanArtifacts.branch,
-          summaryMd: summaryForDashboard,
-          snapshot: scanArtifacts.snapshot,
-          filesNdjson: scanArtifacts.ndjson
+          snapshotPath: scanArtifacts.snapshotRel,
+          summaryPath: scanArtifacts.summaryRel,
+          filesNdjsonPath: scanArtifacts.filesNdjsonRel,
+          totals: scanArtifacts.totals,
+          components: scanArtifacts.components,
+          hotspots: scanArtifacts.hotspots
         });
+        if (!uploadRes.ok) {
+          logger.warn("dashboard upload reported failure", { status: uploadRes.status, workflowId: msg.workflow_id });
+        }
       }
     } catch (e:any) {
       logger.warn("context summary write failed", { error: e });

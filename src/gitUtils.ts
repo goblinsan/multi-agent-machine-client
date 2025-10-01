@@ -216,6 +216,17 @@ function repoUrlFromPayload(payload: any): string | null {
   return null;
 }
 
+function remoteSlug(remote: string | null | undefined) {
+  if (!remote) return null;
+  try {
+    const parsed = parseRemote(remote);
+    const rel = parsed.path.replace(/\.git$/i, "");
+    return `${parsed.host}/${rel}`;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveRepoFromPayload(payload: any): Promise<RepoResolution> {
   if (payload && typeof payload.repo_root === "string" && payload.repo_root.trim().length) {
     return {
@@ -231,8 +242,8 @@ export async function resolveRepoFromPayload(payload: any): Promise<RepoResoluti
   if (remote) {
     const branch = branchFromPayload(payload);
     const projectHint = projectHintFromPayload(payload);
-    const repoRoot = await ensureRepo(remote, branch, projectHint);
-    return { repoRoot, branch, remote, source: "payload_repo" };
+    const ensured = await ensureRepo(remote, branch, projectHint);
+    return { repoRoot: ensured.repoRoot, branch, remote: ensured.remote, source: "payload_repo" };
   }
 
   await ensureProjectBase();
@@ -310,5 +321,83 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
     }
   }
 
-  return repoRoot;
+  return { repoRoot, remote: remoteInfo.sanitized };
+}
+
+export async function getRepoMetadata(repoRoot: string) {
+  let remoteUrl: string | null = null;
+  let remoteSlugValue: string | null = null;
+  let currentBranch: string | null = null;
+
+  try {
+    const remoteRes = await runGit(["remote", "get-url", "origin"], { cwd: repoRoot });
+    const remote = remoteRes.stdout.trim();
+    if (remote.length) {
+      remoteUrl = remote;
+      remoteSlugValue = remoteSlug(remote);
+    }
+  } catch {}
+
+  try {
+    const branchRes = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot });
+    const branch = branchRes.stdout.trim();
+    if (branch && branch !== "HEAD") currentBranch = branch;
+  } catch {}
+
+  return { remoteUrl, remoteSlug: remoteSlugValue, currentBranch };
+}
+
+export async function commitAndPushPaths(options: { repoRoot: string; branch?: string | null; message: string; paths: string[] }) {
+  const { repoRoot, message, paths } = options;
+  if (!paths || paths.length === 0) {
+    return { committed: false, pushed: false, reason: "no_paths" };
+  }
+
+  const meta = await getRepoMetadata(repoRoot);
+  const targetBranch = options.branch || meta.currentBranch || cfg.git.defaultBranch;
+  if (!targetBranch) {
+    logger.warn("commit skipped: unable to determine branch", { repoRoot });
+    return { committed: false, pushed: false, reason: "no_branch" };
+  }
+
+  try {
+    await runGit(["checkout", targetBranch], { cwd: repoRoot });
+  } catch (e) {
+    logger.warn("commit checkout failed", { repoRoot, branch: targetBranch, error: e });
+  }
+
+  await runGit(["add", ...paths], { cwd: repoRoot });
+
+  let hasChanges = false;
+  try {
+    await runGit(["diff", "--cached", "--quiet"], { cwd: repoRoot });
+  } catch (e: any) {
+    if (typeof e?.code === "number") {
+      if (e.code === 1) {
+        hasChanges = true;
+      } else {
+        throw e;
+      }
+    } else {
+      throw e;
+    }
+  }
+
+  if (!hasChanges) {
+    await runGit(["reset", "HEAD"], { cwd: repoRoot });
+    logger.info("commit skipped: no changes", { repoRoot, branch: targetBranch, paths });
+    return { committed: false, pushed: false, branch: targetBranch, reason: "no_changes" };
+  }
+
+  await runGit(["commit", "-m", message], { cwd: repoRoot });
+
+  try {
+    await runGit(["push", "-u", "origin", targetBranch], { cwd: repoRoot });
+  } catch (e) {
+    logger.warn("git push failed", { repoRoot, branch: targetBranch, error: e });
+    return { committed: true, pushed: false, branch: targetBranch, reason: "push_failed" };
+  }
+
+  logger.info("context artifacts committed", { repoRoot, branch: targetBranch, paths });
+  return { committed: true, pushed: true, branch: targetBranch };
 }

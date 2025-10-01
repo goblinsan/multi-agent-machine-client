@@ -32,14 +32,18 @@ export async function recordEvent(ev: any) {
 
 export type UploadContextInput = {
   workflowId: string;
+  repoId?: string;
   projectId?: string;
   projectName?: string;
   projectSlug?: string;
   repoRoot: string;
   branch?: string | null;
-  summaryMd: string;
-  snapshot: any;
-  filesNdjson?: string;
+  snapshotPath: string;
+  summaryPath: string;
+  filesNdjsonPath: string;
+  totals: { files: number; bytes: number; lines: number };
+  components?: any;
+  hotspots?: any;
 };
 
 export type UploadContextResult = {
@@ -51,21 +55,22 @@ export type UploadContextResult = {
 
 export async function uploadContextSnapshot(input: UploadContextInput): Promise<UploadContextResult> {
   const body = {
-    workflow_id: input.workflowId,
-    project_id: input.projectId ?? null,
-    project_name: input.projectName ?? null,
-    project_slug: input.projectSlug ?? null,
-    repo_root: input.repoRoot,
+    repo_id: input.repoId ?? input.projectId ?? input.projectSlug ?? input.repoRoot,
     branch: input.branch ?? null,
-    summary_md: input.summaryMd,
-    snapshot: input.snapshot,
-    files_ndjson: input.filesNdjson ?? null,
-    uploaded_at: new Date().toISOString()
+    workflow_id: input.workflowId,
+    snapshot_path: input.snapshotPath,
+    summary_path: input.summaryPath,
+    files_ndjson_path: input.filesNdjsonPath,
+    totals_files: input.totals.files ?? 0,
+    totals_bytes: input.totals.bytes ?? 0,
+    totals_lines: input.totals.lines ?? 0,
+    components_json: input.components ?? {},
+    hotspots_json: input.hotspots ?? {}
   };
 
   const started = Date.now();
   try {
-    const res = await fetch(`${cfg.dashboardBaseUrl}/api/context`, {
+    const res = await fetch(`${cfg.dashboardBaseUrl}/v1/context/snapshots`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${cfg.dashboardApiKey}`,
@@ -84,6 +89,7 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
         projectId: input.projectId,
         projectSlug: input.projectSlug,
         repoRoot: input.repoRoot,
+        repoId: body.repo_id,
         branch: input.branch,
         response: errorText.slice(0, 1000)
       });
@@ -101,6 +107,7 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
       projectId: input.projectId,
       projectSlug: input.projectSlug,
       repoRoot: input.repoRoot,
+      repoId: body.repo_id,
       branch: input.branch,
       responseSample: typeof responseBody === "string" ? responseBody.slice(0, 200) : responseBody
     });
