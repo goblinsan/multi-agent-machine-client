@@ -1,9 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
-
-const sh = promisify(execFile);
+import { runGit } from "./gitUtils.js";
 
 export type UpsertOp = { action: "upsert"; path: string; content: string };
 export type EditSpec = { ops: UpsertOp[] };
@@ -51,7 +48,7 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
   const branch = opts.branchName || "feat/agent-edit";
   const commitMsg = opts.commitMessage || "agent: apply edits";
 
-  await sh("git", ["-C", repoRoot, "checkout", "-B", branch]);
+  await runGit(["checkout", "-B", branch], { cwd: repoRoot });
 
   const changed: string[] = [];
   for (const op of spec.ops) {
@@ -64,9 +61,9 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
   }
 
   if (changed.length) {
-    await sh("git", ["-C", repoRoot, "add", ...changed]);
-    await sh("git", ["-C", repoRoot, "commit", "-m", commitMsg]);
-    const sha = (await sh("git", ["-C", repoRoot, "rev-parse", "HEAD"])).stdout.trim();
+    await runGit(["add", ...changed], { cwd: repoRoot });
+    await runGit(["commit", "-m", commitMsg], { cwd: repoRoot });
+    const sha = (await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })).stdout.trim();
     return { changed, branch, sha };
   }
   return { changed: [], branch, sha: "" };

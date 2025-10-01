@@ -2,9 +2,15 @@ import { makeRedis } from "../redisClient.js";
 import { cfg } from "../config.js";
 
 const persona = process.argv[2] || "context";
+const repoUrl = process.env.SEED_REPO || process.env.REPO_URL || "https://github.com/you/agent-dashboard.git";
+const repoBranch = process.env.SEED_BRANCH || undefined;
+const projectSlug = process.env.SEED_PROJECT || "agent-dashboard";
+
 const payload = persona === "context"
   ? {
-      repo_root: process.env.REPO_ROOT || "./repo",
+      repo: repoUrl,
+      branch: repoBranch,
+      project_slug: projectSlug,
       components: [
         { base: "api", include: ["**/*.py"], exclude: ["**/__pycache__/**","**/.venv/**"] },
         { base: "web", include: ["src/**"], exclude: ["**/node_modules/**","**/dist/**"] },
@@ -13,7 +19,7 @@ const payload = persona === "context"
       max_files: cfg.scanMaxFiles, max_bytes: cfg.scanMaxBytes, max_depth: cfg.scanMaxDepth,
       track_lines: cfg.scanTrackLines, track_hash: cfg.scanTrackHash
     }
-  : { repo: "git@github.com:you/agent-dashboard.git" };
+  : { repo: repoUrl, branch: repoBranch, project_slug: projectSlug };
 
 const msg = {
   workflow_id: "wf_demo_001",

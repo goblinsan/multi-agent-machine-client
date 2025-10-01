@@ -4,7 +4,7 @@ import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent } from "./dashboard.js";
-import { applyEditOps } from "./fileops.js";
+import { resolveRepoFromPayload } from "./gitUtils.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
@@ -56,7 +56,7 @@ async function main() {
   if (cfg.allowedPersonas.length === 0) { console.error("ALLOWED_PERSONAS is empty; nothing to do."); process.exit(1); }
   const r = await makeRedis(); await ensureGroups(r);
   console.log("[worker] personas:", cfg.allowedPersonas.join(", "));
-  console.log("[cfg] repoRoot:", cfg.repoRoot, "contextScan:", cfg.contextScan, "summaryMode:", cfg.summaryMode);
+  console.log("[cfg] projectBase:", cfg.projectBase, "defaultRepo:", cfg.repoRoot, "contextScan:", cfg.contextScan, "summaryMode:", cfg.summaryMode);
   while (true) { for (const p of cfg.allowedPersonas) { await readOne(r, p); } }
 }
 
@@ -67,18 +67,18 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   if (msg.to_persona !== persona) { await r.xAck(cfg.requestStream, groupForPersona(persona), entryId); return; }
 
   const model = cfg.personaModels[persona]; if (!model) throw new Error(`No model mapping for '${persona}'`);
-  const ctx = await fetchContext(msg.workflow_id);
+  const ctx: any = await fetchContext(msg.workflow_id);
   const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
+  const payloadObj = (() => { try { return msg.payload ? JSON.parse(msg.payload) : {}; } catch { return {}; } })();
 
   // --- Context scan (pre-model), supports multi-components & Alembic ---
   let scanSummaryText = "";
   let scanArtifacts: null | { repoRoot: string; ndjson: string; snapshot: any; summaryMd: string; paths: string[] } = null;
   if (persona === "context" && cfg.contextScan) {
     try {
-      const specFromPayload = (() => { try { return msg.payload ? JSON.parse(msg.payload) : {}; } catch { return {}; } })();
-      const repoRootRaw = (specFromPayload.repo_root as string) || cfg.repoRoot;
-      const repoRoot = normalizeRepoPath(repoRootRaw, cfg.repoRoot);
-      const components = Array.isArray(specFromPayload.components) ? specFromPayload.components
+      const repoInfo = await resolveRepoFromPayload(payloadObj);
+      const repoRoot = normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot);
+      const components = Array.isArray(payloadObj.components) ? payloadObj.components
                         : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
 
       const { scanRepo, summarize } = await import("./scanRepo.js");
@@ -159,7 +159,8 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       });
 
       scanArtifacts = { repoRoot, ndjson, snapshot, summaryMd: scanMd, paths: writeRes.paths };
-      scanSummaryText = `Context scan: files=${global.totals.files}, bytes=${global.totals.bytes}, lines=${global.totals.lines}, components=${perComp.length}.`;
+      const branchNote = repoInfo.branch ? `, branch=${repoInfo.branch}` : "";
+      scanSummaryText = `Context scan: files=${global.totals.files}, bytes=${global.totals.bytes}, lines=${global.totals.lines}, components=${perComp.length}${branchNote}.`;
     } catch (e:any) {
       scanSummaryText = `Context scan failed: ${String(e?.message || e)}`;
     }

@@ -13,7 +13,7 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
     const text = await res.text();
     throw new Error(`LM Studio error ${res.status}: ${text}`);
   }
-  const data = await res.json();
+  const data: any = await res.json();
   const content = data?.choices?.[0]?.message?.content ?? "";
   return { content, raw: data };
 }
