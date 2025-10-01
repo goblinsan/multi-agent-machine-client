@@ -111,8 +111,20 @@ function repoDirectoryFor(remote: string, projectHint?: string | null) {
 }
 
 function remoteWithCredentials(remote: string): RemoteInfo {
-  const sanitized = maskRemote(remote);
   const secret = cfg.git.token || cfg.git.password;
+  const hasSshKey = Boolean(cfg.git.sshKeyPath && cfg.git.sshKeyPath.length);
+
+  if (hasSshKey) {
+    try {
+      const parsed = parseRemote(remote);
+      const sshRemote = `git@${parsed.host}:${parsed.path}`;
+      return { remote: sshRemote, sanitized: sshRemote };
+    } catch {
+      // fall through and let HTTPS handling take over
+    }
+  }
+
+  const sanitized = maskRemote(remote);
   if (!secret) {
     return { remote, sanitized };
   }
