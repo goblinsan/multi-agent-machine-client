@@ -117,7 +117,8 @@ function remoteWithCredentials(remote: string): RemoteInfo {
   if (hasSshKey) {
     try {
       const parsed = parseRemote(remote);
-      const sshRemote = `git@${parsed.host}:${parsed.path}`;
+      const host = parsed.host.replace(/^https?:/i, "");
+      const sshRemote = `git@${host}:${parsed.path}`;
       return { remote: sshRemote, sanitized: sshRemote };
     } catch {
       // fall through and let HTTPS handling take over
