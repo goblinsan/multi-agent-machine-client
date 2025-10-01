@@ -48,12 +48,14 @@ function parseRemote(remote: string): ParsedRemote {
   const trimmed = remote.trim();
   if (!trimmed) throw new Error("Remote URL is empty");
 
-  const sshMatch = /^(?:[^@]+@)?([^:]+):(.+)$/.exec(trimmed);
-  if (sshMatch) {
-    return {
-      host: sshMatch[1],
-      path: sshMatch[2].replace(/^\/+/, "")
-    };
+  if (!trimmed.includes("://")) {
+    const sshMatch = /^(?:[^@]+@)?([^:]+):(.+)$/.exec(trimmed);
+    if (sshMatch) {
+      return {
+        host: sshMatch[1],
+        path: sshMatch[2].replace(/^\/+/, "")
+      };
+    }
   }
 
   try {
