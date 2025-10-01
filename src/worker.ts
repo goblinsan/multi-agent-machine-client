@@ -5,6 +5,7 @@ import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot } from "./dashboard.js";
 import { resolveRepoFromPayload } from "./gitUtils.js";
+import { logger } from "./logger.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
@@ -61,7 +62,7 @@ async function readOne(r: any, persona: string) {
       const id = msg.id;
       const fields = msg.message as Record<string, string>;
       await processOne(r, persona, id, fields).catch(async (e: any) => {
-        console.error(`[worker][${persona}] error`, e?.message);
+        logger.error(`worker error`, { persona, error: e, entryId: id });
         await r.xAdd(cfg.eventStream, "*", {
           workflow_id: fields?.workflow_id ?? "", step: fields?.step ?? "",
           from_persona: persona, status: "error", corr_id: fields?.corr_id ?? "",
@@ -74,10 +75,15 @@ async function readOne(r: any, persona: string) {
 }
 
 async function main() {
-  if (cfg.allowedPersonas.length === 0) { console.error("ALLOWED_PERSONAS is empty; nothing to do."); process.exit(1); }
+  if (cfg.allowedPersonas.length === 0) { logger.error("ALLOWED_PERSONAS is empty; nothing to do."); process.exit(1); }
   const r = await makeRedis(); await ensureGroups(r);
-  console.log("[worker] personas:", cfg.allowedPersonas.join(", "));
-  console.log("[cfg] projectBase:", cfg.projectBase, "defaultRepo:", cfg.repoRoot, "contextScan:", cfg.contextScan, "summaryMode:", cfg.summaryMode);
+  logger.info("worker ready", {
+    personas: cfg.allowedPersonas,
+    projectBase: cfg.projectBase,
+    defaultRepo: cfg.repoRoot,
+    contextScan: cfg.contextScan,
+    summaryMode: cfg.summaryMode
+  });
   while (true) { for (const p of cfg.allowedPersonas) { await readOne(r, p); } }
 }
 
@@ -91,6 +97,18 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   const ctx: any = await fetchContext(msg.workflow_id);
   const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
   const payloadObj = (() => { try { return msg.payload ? JSON.parse(msg.payload) : {}; } catch { return {}; } })();
+  if (msg.repo && !payloadObj.repo) payloadObj.repo = msg.repo;
+  if (msg.branch && !payloadObj.branch) payloadObj.branch = msg.branch;
+  if (msg.project_id && !payloadObj.project_id) payloadObj.project_id = msg.project_id;
+
+  logger.info("processing request", {
+    persona,
+    workflowId: msg.workflow_id,
+    intent: msg.intent,
+    repo: payloadObj.repo,
+    branch: payloadObj.branch,
+    projectId: payloadObj.project_id
+  });
 
   // --- Context scan (pre-model), supports multi-components & Alembic ---
   let scanSummaryText = "";
@@ -105,6 +123,17 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       const components = Array.isArray(payloadObj.components) ? payloadObj.components
                         : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
 
+      logger.info("context scan starting", {
+        repoRoot,
+        branch: repoInfo.branch ?? null,
+        components: components?.map((c:any) => ({ base: c.base || "", include: c.include, exclude: c.exclude })),
+        include: cfg.scanInclude,
+        exclude: cfg.scanExclude,
+        maxFiles: cfg.scanMaxFiles,
+        maxBytes: cfg.scanMaxBytes,
+        maxDepth: cfg.scanMaxDepth
+      });
+
       const { scanRepo, summarize } = await import("./scanRepo.js");
       type Comp = { base: string; include: string[]; exclude: string[] };
       const comps: Comp[] = components && components.length
@@ -113,6 +142,7 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
 
       let allFiles: any[] = [];
       const perComp: any[] = [];
+      const localSummaries: { component: string; totals: any; largest: any[]; longest: any[] }[] = [];
 
       for (const c of comps) {
         const basePath = (c.base && c.base.length) ? (repoRoot.replace(/\/$/,'') + "/" + c.base.replace(/^\//,'')) : repoRoot;
@@ -129,7 +159,9 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
         const prefixed = files.map(f => ({ ...f, path: (c.base ? (c.base.replace(/^\/+|\/+$/g,'') + '/' + f.path) : f.path) }));
         allFiles.push(...prefixed);
         const sum = summarize(prefixed);
-        perComp.push({ component: c.base || ".", totals: sum.totals, largest: sum.largest.slice(0,10), longest: sum.longest.slice(0,10) });
+        const compName = c.base || ".";
+        perComp.push({ component: compName, totals: sum.totals, largest: sum.largest.slice(0,10), longest: sum.longest.slice(0,10) });
+        localSummaries.push({ component: compName, totals: sum.totals, largest: sum.largest.slice(0,5), longest: sum.longest.slice(0,5) });
       }
 
       const ndjson = allFiles.map(f => JSON.stringify(f)).join("\n") + "\n";
@@ -186,10 +218,17 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       const branchNote = repoInfo.branch ? `, branch=${repoInfo.branch}` : "";
       scanSummaryText = `Context scan: files=${global.totals.files}, bytes=${global.totals.bytes}, lines=${global.totals.lines}, components=${perComp.length}${branchNote}.`;
 
+      logger.info("context scan completed", {
+        repoRoot,
+        branch: repoInfo.branch ?? null,
+        totals: global.totals,
+        components: localSummaries
+      });
+
       const shouldUpload = shouldUploadDashboardFlag(payloadObj.upload_dashboard);
       if (shouldUpload) {
         dashboardUploadEnabled = true;
-        const projectId = firstString(payloadObj.project_id, payloadObj.projectId);
+        const projectId = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id);
         const projectName = firstString(payloadObj.project_name, payloadObj.projectName, payloadObj.project);
         const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug);
         if (projectId) dashboardProject.id = projectId;
@@ -198,6 +237,7 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       }
     } catch (e:any) {
       scanSummaryText = `Context scan failed: ${String(e?.message || e)}`;
+      logger.error("context scan failed", { error: e, repo: payloadObj.repo, branch: payloadObj.branch });
     }
   }
 
@@ -230,6 +270,12 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
 
       if (dashboardUploadEnabled) {
         const summaryForDashboard = contentToWrite;
+        logger.info("uploading context snapshot", {
+          workflowId: msg.workflow_id,
+          project: dashboardProject,
+          repo: scanArtifacts.repoRoot,
+          branch: scanArtifacts.branch
+        });
         await uploadContextSnapshot({
           workflowId: msg.workflow_id,
           projectId: dashboardProject.id,
@@ -243,11 +289,12 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
         });
       }
     } catch (e:any) {
-      console.warn("[context] failed to write model summary.md:", e?.message);
+      logger.warn("context summary write failed", { error: e });
     }
   }
 
   const result = { output: resp.content, model, duration_ms: duration };
+  logger.info("persona completed", { persona, workflowId: msg.workflow_id, duration_ms: duration });
   await r.xAdd(cfg.eventStream, "*", {
     workflow_id: msg.workflow_id, step: msg.step || "", from_persona: persona,
     status: "done", result: JSON.stringify(result), corr_id: msg.corr_id || "", ts: new Date().toISOString()
@@ -256,4 +303,4 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
 }
 
-main().catch(e => { console.error("[worker] fatal", e); process.exit(1); });
+main().catch(e => { logger.error("worker fatal", { error: e }); process.exit(1); });

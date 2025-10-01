@@ -3,6 +3,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { cfg } from "./config.js";
+import { logger } from "./logger.js";
 
 const execGit = promisify(execFile);
 
@@ -146,14 +147,14 @@ async function configureCredentialStore(repoRoot: string, credentialUrl?: URL) {
   try {
     await fs.writeFile(credentialsPath, `${entry}\n`, { mode: 0o600 });
   } catch (e) {
-    console.warn(`[git] failed to write credentials store: ${(e as Error).message}`);
+    logger.warn("git credential store write failed", { error: e, path: credentialsPath });
     return;
   }
 
   try {
     await runGit(["config", "credential.helper", `store --file=${credentialsPath}`], { cwd: repoRoot });
   } catch (e) {
-    console.warn(`[git] failed to configure credential helper: ${(e as Error).message}`);
+    logger.warn("git credential helper config failed", { error: e, repoRoot, credentialsPath });
   }
 }
 
@@ -254,12 +255,12 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
 
   if (!repoExists) {
     await fs.mkdir(path.dirname(repoRoot), { recursive: true });
-    console.log(`[git] cloning ${displayRemote} -> ${repoRoot}`);
+    logger.info("git clone", { remote: displayRemote, repoRoot });
     await runGit(["clone", remoteInfo.remote, repoRoot]);
   } else if (!gitDirExists) {
     throw new Error(`Cannot reuse ${repoRoot}: path exists but is not a git repo`);
   } else {
-    console.log(`[git] updating ${displayRemote} in ${repoRoot}`);
+    logger.info("git fetch", { remote: displayRemote, repoRoot });
     try {
       await runGit(["remote", "set-url", "origin", remoteInfo.sanitized], { cwd: repoRoot });
     } catch {}
@@ -270,7 +271,7 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
     try {
       await runGit(["remote", "set-url", "origin", remoteInfo.sanitized], { cwd: repoRoot });
     } catch (e) {
-      console.warn(`[git] failed to reset origin url: ${(e as Error).message}`);
+      logger.warn("git set-url origin failed", { error: e, repoRoot, url: remoteInfo.sanitized });
     }
   }
 
@@ -283,13 +284,13 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
       try {
         await runGit(["checkout", "-B", branch, `origin/${branch}`], { cwd: repoRoot });
       } catch (e) {
-        console.warn(`[git] failed to checkout branch ${branch}: ${(e as Error).message}`);
+        logger.warn("git checkout branch failed", { error: e, repoRoot, branch });
       }
     }
     try {
       await runGit(["pull", "--ff-only", "origin", branch], { cwd: repoRoot });
     } catch (e) {
-      console.warn(`[git] pull skipped for ${branch}: ${(e as Error).message}`);
+      logger.warn("git pull failed", { error: e, repoRoot, branch });
     }
   } else {
     let current = "";
@@ -303,7 +304,7 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
         try {
           await runGit(["checkout", fallback], { cwd: repoRoot });
         } catch (e) {
-          console.warn(`[git] default branch checkout failed (${fallback}): ${(e as Error).message}`);
+          logger.warn("git default branch checkout failed", { error: e, repoRoot, fallback });
         }
       }
     }

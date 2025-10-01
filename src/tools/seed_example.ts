@@ -33,7 +33,7 @@ const payload = persona === "context"
       upload_dashboard: true
     };
 
-const msg = {
+const msg: Record<string, string> = {
   workflow_id: "wf_demo_001",
   step: "01",
   from: "user",
@@ -43,6 +43,10 @@ const msg = {
   payload: JSON.stringify(payload),
   deadline_s: "180"
 };
+
+if (repoUrl) msg.repo = repoUrl;
+if (repoBranch) msg.branch = repoBranch;
+if (projectId) msg.project_id = projectId;
 
 const r = await makeRedis();
 const id = await r.xAdd(cfg.requestStream, "*", msg);

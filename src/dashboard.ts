@@ -1,5 +1,6 @@
 import { cfg } from "./config.js";
 import { fetch } from "undici";
+import { logger } from "./logger.js";
 
 export async function fetchContext(workflowId: string) {
   try {
@@ -25,7 +26,7 @@ export async function recordEvent(ev: any) {
       body: JSON.stringify(ev)
     });
   } catch (e) {
-    console.warn("[dashboard] recordEvent failed:", (e as Error).message);
+    logger.warn("dashboard event post failed", { error: e, event: ev });
   }
 }
 
@@ -65,6 +66,6 @@ export async function uploadContextSnapshot(input: UploadContextInput) {
       body: JSON.stringify(body)
     });
   } catch (e) {
-    console.warn("[dashboard] uploadContextSnapshot failed:", (e as Error).message);
+    logger.warn("dashboard context upload failed", { error: e, body });
   }
 }

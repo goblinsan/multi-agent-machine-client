@@ -8,7 +8,10 @@ export const RequestSchema = z.object({
   intent: z.string(),
   payload: z.string().optional(),
   corr_id: z.string().optional(),
-  deadline_s: z.coerce.number().optional()
+  deadline_s: z.coerce.number().optional(),
+  repo: z.string().optional(),
+  branch: z.string().optional(),
+  project_id: z.string().optional()
 });
 export type RequestMsg = z.infer<typeof RequestSchema>;
 

@@ -36,6 +36,14 @@ const gitCredentialsPath = (() => {
   return "";
 })();
 
+const logLevelRaw = (process.env.LOG_LEVEL || "info").toLowerCase();
+const logConsole = bool(process.env.LOG_CONSOLE, true);
+const logFile = (() => {
+  const custom = process.env.LOG_FILE;
+  if (custom && custom.trim().length) return path.resolve(custom);
+  return path.resolve(projectBase, "..", "machine-client.log");
+})();
+
 
 export const cfg = {
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
@@ -81,5 +89,11 @@ export const cfg = {
     password: gitPassword,
     token: gitToken,
     credentialsPath: gitCredentialsPath
+  },
+
+  log: {
+    level: logLevelRaw,
+    file: logFile,
+    console: logConsole
   }
 };
