@@ -94,7 +94,7 @@ export const cfg = {
 
   git: {
     defaultBranch: (process.env.GIT_DEFAULT_BRANCH || "main").trim() || "main",
-    sshKeyPath: process.env.GIT_SSH_KEY_PATH ? path.resolve(process.env.GIT_SSH_KEY_PATH) : "",
+    sshKeyPath: process.env.GIT_SSH_KEY_PATH ? path.resolve(process.env.GIT_SSH_KEY_PATH.replace(/^~(?=$|\/|\\)/, process.env.HOME || process.env.USERPROFILE || "~")) : "",
     username: process.env.GIT_AUTH_USERNAME || "",
     password: gitPassword,
     token: gitToken,
