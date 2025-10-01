@@ -94,10 +94,13 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
 
   // --- Context scan (pre-model), supports multi-components & Alembic ---
   let scanSummaryText = "";
-  let scanArtifacts: null | { repoRoot: string; ndjson: string; snapshot: any; summaryMd: string; paths: string[] } = null;
+  let scanArtifacts: null | { repoRoot: string; ndjson: string; snapshot: any; summaryMd: string; branch: string | null; paths: string[] } = null;
+  let repoInfo: Awaited<ReturnType<typeof resolveRepoFromPayload>> | null = null;
+  let dashboardUploadEnabled = false;
+  const dashboardProject: { id?: string; name?: string; slug?: string } = {};
   if (persona === "context" && cfg.contextScan) {
     try {
-      const repoInfo = await resolveRepoFromPayload(payloadObj);
+      repoInfo = await resolveRepoFromPayload(payloadObj);
       const repoRoot = normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot);
       const components = Array.isArray(payloadObj.components) ? payloadObj.components
                         : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
@@ -179,28 +182,19 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
         commitMessage: `context: snapshot for ${msg.workflow_id}`
       });
 
-      scanArtifacts = { repoRoot, ndjson, snapshot, summaryMd: scanMd, paths: writeRes.paths };
+      scanArtifacts = { repoRoot, ndjson, snapshot, summaryMd: scanMd, branch: repoInfo.branch ?? null, paths: writeRes.paths };
       const branchNote = repoInfo.branch ? `, branch=${repoInfo.branch}` : "";
       scanSummaryText = `Context scan: files=${global.totals.files}, bytes=${global.totals.bytes}, lines=${global.totals.lines}, components=${perComp.length}${branchNote}.`;
 
       const shouldUpload = shouldUploadDashboardFlag(payloadObj.upload_dashboard);
       if (shouldUpload) {
+        dashboardUploadEnabled = true;
         const projectId = firstString(payloadObj.project_id, payloadObj.projectId);
         const projectName = firstString(payloadObj.project_name, payloadObj.projectName, payloadObj.project);
         const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug);
-        if (projectId || projectName || projectSlug) {
-          await uploadContextSnapshot({
-            workflowId: msg.workflow_id,
-            projectId: projectId ?? undefined,
-            projectName: projectName ?? undefined,
-            projectSlug: projectSlug ?? undefined,
-            repoRoot,
-            branch: repoInfo.branch ?? null,
-            summaryMd: scanMd,
-            snapshot,
-            filesNdjson: ndjson
-          });
-        }
+        if (projectId) dashboardProject.id = projectId;
+        if (projectName) dashboardProject.name = projectName;
+        if (projectSlug) dashboardProject.slug = projectSlug;
       }
     } catch (e:any) {
       scanSummaryText = `Context scan failed: ${String(e?.message || e)}`;
@@ -233,6 +227,21 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       }
       await fs.mkdir(path.dirname(summaryPath), { recursive: true });
       await fs.writeFile(summaryPath, contentToWrite, "utf8");
+
+      if (dashboardUploadEnabled) {
+        const summaryForDashboard = contentToWrite;
+        await uploadContextSnapshot({
+          workflowId: msg.workflow_id,
+          projectId: dashboardProject.id,
+          projectName: dashboardProject.name,
+          projectSlug: dashboardProject.slug,
+          repoRoot: scanArtifacts.repoRoot,
+          branch: scanArtifacts.branch,
+          summaryMd: summaryForDashboard,
+          snapshot: scanArtifacts.snapshot,
+          filesNdjson: scanArtifacts.ndjson
+        });
+      }
     } catch (e:any) {
       console.warn("[context] failed to write model summary.md:", e?.message);
     }

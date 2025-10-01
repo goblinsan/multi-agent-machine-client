@@ -17,9 +17,9 @@ const payload = persona === "context"
       project_slug: projectSlug,
       upload_dashboard: true,
       components: [
-        { base: "api", include: ["**/*.py"], exclude: ["**/__pycache__/**","**/.venv/**"] },
-        { base: "web", include: ["src/**"], exclude: ["**/node_modules/**","**/dist/**"] },
-        { base: "alembic", include: ["**/*.py"], exclude: ["**/__pycache__/**"] }
+        // { base: "api", include: ["**/*.py"], exclude: ["**/__pycache__/**","**/.venv/**"] },
+        { base: "/", include: ["src/**"], exclude: ["**/node_modules/**","**/dist/**"] }
+        // { base: "alembic", include: ["**/*.py"], exclude: ["**/__pycache__/**"] }
       ],
       max_files: cfg.scanMaxFiles, max_bytes: cfg.scanMaxBytes, max_depth: cfg.scanMaxDepth,
       track_lines: cfg.scanTrackLines, track_hash: cfg.scanTrackHash
