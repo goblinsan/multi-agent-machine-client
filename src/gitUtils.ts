@@ -361,6 +361,13 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
   }
 
   try {
+    await runGit(["config", "user.name", cfg.git.userName || "machine-client"], { cwd: repoRoot });
+    await runGit(["config", "user.email", cfg.git.userEmail || "machine-client@example.com"], { cwd: repoRoot });
+  } catch (configErr) {
+    logger.warn("git identity setup failed", { repoRoot, error: configErr });
+  }
+
+  try {
     await runGit(["checkout", targetBranch], { cwd: repoRoot });
   } catch (e) {
     logger.warn("commit checkout failed", { repoRoot, branch: targetBranch, error: e });

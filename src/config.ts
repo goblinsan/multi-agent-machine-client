@@ -44,6 +44,15 @@ const logFile = (() => {
   return path.resolve(projectBase, "machine-client.log");
 })();
 
+const dashboardContextEndpoint = (() => {
+  const raw = process.env.DASHBOARD_CONTEXT_ENDPOINT;
+  if (raw && raw.trim().length) return raw.trim();
+  return "/v1/context/upsert";
+})();
+
+const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();
+const gitUserEmail = (process.env.GIT_USER_EMAIL || "machine-client@example.com").trim();
+
 
 export const cfg = {
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
@@ -57,6 +66,7 @@ export const cfg = {
   personaModels: jsonOr(process.env.PERSONA_MODELS_JSON, {} as Record<string,string>),
   dashboardBaseUrl: process.env.DASHBOARD_BASE_URL || "http://localhost:8787",
   dashboardApiKey: process.env.DASHBOARD_API_KEY || "dev",
+  dashboardContextEndpoint,
 
   applyEdits: bool(process.env.APPLY_EDITS, false),
   allowedEditPersonas: splitCsv(process.env.ALLOWED_EDIT_PERSONAS || "lead-engineer,devops,ui-engineer,context", []),
@@ -88,7 +98,9 @@ export const cfg = {
     username: process.env.GIT_AUTH_USERNAME || "",
     password: gitPassword,
     token: gitToken,
-    credentialsPath: gitCredentialsPath
+    credentialsPath: gitCredentialsPath,
+    userName: gitUserName,
+    userEmail: gitUserEmail
   },
 
   log: {

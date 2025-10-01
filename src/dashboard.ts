@@ -70,7 +70,10 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
 
   const started = Date.now();
   try {
-    const res = await fetch(`${cfg.dashboardBaseUrl}/v1/context/snapshots`, {
+    const endpoint = cfg.dashboardContextEndpoint.startsWith("http")
+      ? cfg.dashboardContextEndpoint
+      : `${cfg.dashboardBaseUrl.replace(/\/$/, "")}${cfg.dashboardContextEndpoint.startsWith("/") ? "" : "/"}${cfg.dashboardContextEndpoint}`;
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${cfg.dashboardApiKey}`,
@@ -91,6 +94,7 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
         repoRoot: input.repoRoot,
         repoId: body.repo_id,
         branch: input.branch,
+        url: endpoint,
         response: errorText.slice(0, 1000)
       });
       return { ok: false, status: res.status, body: errorText };
@@ -109,11 +113,12 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
       repoRoot: input.repoRoot,
       repoId: body.repo_id,
       branch: input.branch,
+      url: endpoint,
       responseSample: typeof responseBody === "string" ? responseBody.slice(0, 200) : responseBody
     });
     return { ok: true, status: res.status, body: responseBody };
   } catch (e) {
-    logger.error("dashboard context upload exception", { error: e, workflowId: input.workflowId, projectId: input.projectId, projectSlug: input.projectSlug, repoRoot: input.repoRoot, branch: input.branch });
+    logger.error("dashboard context upload exception", { error: e, workflowId: input.workflowId, projectId: input.projectId, projectSlug: input.projectSlug, repoRoot: input.repoRoot, branch: input.branch, url: cfg.dashboardContextEndpoint });
     return { ok: false, status: 0, body: null, error: e };
   }
 }
