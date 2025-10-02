@@ -362,6 +362,17 @@ export async function getRepoMetadata(repoRoot: string) {
   return { remoteUrl, remoteSlug: remoteSlugValue, currentBranch };
 }
 
+export async function checkoutBranchFromBase(repoRoot: string, baseBranch: string, newBranch: string) {
+  try {
+    await runGit(["fetch", "origin", baseBranch], { cwd: repoRoot });
+  } catch (e) {
+    logger.warn("git fetch base branch failed", { repoRoot, baseBranch, error: e });
+  }
+
+  await runGit(["checkout", baseBranch], { cwd: repoRoot });
+  await runGit(["checkout", "-B", newBranch, baseBranch], { cwd: repoRoot });
+}
+
 export async function commitAndPushPaths(options: { repoRoot: string; branch?: string | null; message: string; paths: string[] }) {
   const { repoRoot, message, paths } = options;
   if (!paths || paths.length === 0) {

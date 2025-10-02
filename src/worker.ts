@@ -1,10 +1,11 @@
+import { randomUUID } from "crypto";
 import { cfg } from "./config.js";
 import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent, uploadContextSnapshot } from "./dashboard.js";
-import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths } from "./gitUtils.js";
+import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus } from "./dashboard.js";
+import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase } from "./gitUtils.js";
 import { logger } from "./logger.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
@@ -29,6 +30,102 @@ function shouldUploadDashboardFlag(value: any): boolean {
     return !["0", "false", "no", "off"].includes(normalized);
   }
   return Boolean(value);
+}
+
+const PERSONA_WAIT_TIMEOUT_MS = Number(process.env.COORDINATOR_WAIT_TIMEOUT_MS || 600000);
+
+function slugify(value: string) {
+  return (value || "").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-") || "milestone";
+}
+
+type PersonaEvent = { id: string; fields: Record<string, string> };
+
+async function waitForPersonaCompletion(
+  r: any,
+  persona: string,
+  workflowId: string,
+  corrId: string,
+  timeoutMs = PERSONA_WAIT_TIMEOUT_MS
+): Promise<PersonaEvent> {
+  const started = Date.now();
+  let lastId = "$";
+
+  while (Date.now() - started < timeoutMs) {
+    const remaining = timeoutMs - (Date.now() - started);
+    const blockMs = Math.max(1000, Math.min(remaining, 5000));
+    const streams = await r.xRead([{ key: cfg.eventStream, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
+    if (!streams) continue;
+
+    for (const stream of streams) {
+      for (const message of stream.messages) {
+        lastId = message.id;
+        const rawFields = message.message as Record<string, string>;
+        const fields: Record<string, string> = {};
+        for (const [k, v] of Object.entries(rawFields)) fields[k] = typeof v === "string" ? v : String(v);
+        if (
+          fields.workflow_id === workflowId &&
+          fields.from_persona === persona &&
+          fields.status === "done" &&
+          (!corrId || fields.corr_id === corrId)
+        ) {
+          return { id: message.id, fields };
+        }
+      }
+      const messages = stream.messages;
+      if (messages.length) lastId = messages[messages.length - 1].id;
+    }
+  }
+
+  throw new Error(`Timed out waiting for ${persona} completion (workflow ${workflowId}, corr ${corrId})`);
+}
+
+function parseEventResult(result: string | undefined) {
+  if (!result) return null;
+  try {
+    return JSON.parse(result);
+  } catch {
+    return { raw: result };
+  }
+}
+
+async function sendPersonaRequest(r: any, opts: {
+  workflowId: string;
+  toPersona: string;
+  step?: string;
+  intent?: string;
+  fromPersona?: string;
+  payload?: any;
+  corrId?: string;
+  deadlineSeconds?: number;
+  repo?: string;
+  branch?: string;
+  projectId?: string;
+}): Promise<string> {
+  const corrId = opts.corrId || randomUUID();
+  const entry: Record<string, string> = {
+    workflow_id: opts.workflowId,
+    step: opts.step || "",
+    from: opts.fromPersona || "coordination",
+    to_persona: opts.toPersona,
+    intent: opts.intent || "",
+    payload: JSON.stringify(opts.payload ?? {}),
+    corr_id: corrId,
+    deadline_s: String(opts.deadlineSeconds ?? 600)
+  };
+  if (opts.repo) entry.repo = opts.repo;
+  if (opts.branch) entry.branch = opts.branch;
+  if (opts.projectId) entry.project_id = opts.projectId;
+
+  await r.xAdd(cfg.requestStream, "*", entry);
+  logger.info("coordinator dispatched request", {
+    workflowId: opts.workflowId,
+    targetPersona: opts.toPersona,
+    corrId,
+    step: entry.step,
+    branch: opts.branch,
+    projectId: opts.projectId
+  });
+  return corrId;
 }
 
 function clipText(text: string, max = 6000) {
@@ -58,6 +155,139 @@ async function ensureGroups(r: any) {
     try { await r.xGroupCreate(cfg.requestStream, groupForPersona(p), "$", { MKSTREAM: true }); } catch {}
   }
   try { await r.xGroupCreate(cfg.eventStream, `${cfg.groupPrefix}:coordinator`, "$", { MKSTREAM: true }); } catch {}
+}
+
+async function handleCoordinator(r: any, msg: any, payloadObj: any) {
+  const workflowId = msg.workflow_id;
+  const projectId = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id);
+  if (!projectId) throw new Error("Coordinator requires project_id in payload or message");
+
+  const repoResolution = await resolveRepoFromPayload(payloadObj);
+  const repoRoot = normalizeRepoPath(repoResolution.repoRoot, cfg.repoRoot);
+  const repoMeta = await getRepoMetadata(repoRoot);
+
+  const baseBranch = firstString(
+    payloadObj.base_branch,
+    payloadObj.branch,
+    repoResolution.branch,
+    repoMeta.currentBranch,
+    cfg.git.defaultBranch
+  ) || cfg.git.defaultBranch;
+
+  const projectStatus: any = await fetchProjectStatus(projectId);
+  const milestones = Array.isArray(projectStatus?.milestones) ? projectStatus.milestones : [];
+  const nextMilestone = milestones.find((m: any) => (m?.status || "").toLowerCase() === "unstarted") || milestones[0] || null;
+  const milestoneName = nextMilestone?.name || nextMilestone?.title || nextMilestone?.goal || "next milestone";
+  const milestoneSlug = slugify(nextMilestone?.slug || milestoneName || "milestone");
+  const branchName = payloadObj.branch_name || `milestone/${milestoneSlug}`;
+
+  const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectStatus?.slug, projectStatus?.id);
+
+  await checkoutBranchFromBase(repoRoot, baseBranch, branchName);
+  logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
+
+  const repoSlug = repoMeta.remoteSlug;
+  const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payloadObj.repo || repoMeta.remoteUrl || repoResolution.remote || "");
+  if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
+
+  const milestoneDescriptor = nextMilestone
+    ? {
+        id: nextMilestone.id ?? milestoneSlug,
+        name: milestoneName,
+        slug: milestoneSlug,
+        status: nextMilestone.status,
+        goal: nextMilestone.goal,
+        due: nextMilestone.due
+      }
+    : null;
+
+  const contextCorrId = randomUUID();
+  await sendPersonaRequest(r, {
+    workflowId,
+    toPersona: "context",
+    step: "1-context",
+    intent: "hydrate_project_context",
+    payload: {
+      repo: repoRemote,
+      branch: branchName,
+      project_id: projectId,
+      project_slug: projectSlug,
+      milestone: milestoneDescriptor,
+      upload_dashboard: true
+    },
+    corrId: contextCorrId,
+    repo: repoRemote,
+    branch: branchName,
+    projectId
+  });
+
+  const contextEvent = await waitForPersonaCompletion(r, "context", workflowId, contextCorrId);
+  const contextResult = parseEventResult(contextEvent.fields.result);
+  logger.info("coordinator received context completion", { workflowId, corrId: contextCorrId, eventId: contextEvent.id });
+
+  const leadCorrId = randomUUID();
+  await sendPersonaRequest(r, {
+    workflowId,
+    toPersona: "lead-engineer",
+    step: "2-implementation",
+    intent: "implement_milestone",
+    payload: {
+      repo: repoRemote,
+      branch: branchName,
+      project_id: projectId,
+      project_slug: projectSlug,
+      milestone: milestoneDescriptor,
+      goal: projectStatus?.goal || projectStatus?.direction || milestoneDescriptor?.goal,
+      base_branch: baseBranch
+    },
+    corrId: leadCorrId,
+    repo: repoRemote,
+    branch: branchName,
+    projectId
+  });
+
+  const leadEvent = await waitForPersonaCompletion(r, "lead-engineer", workflowId, leadCorrId);
+  const leadResult = parseEventResult(leadEvent.fields.result);
+  logger.info("coordinator received lead engineer completion", { workflowId, corrId: leadCorrId, eventId: leadEvent.id });
+
+  const summaryCorrId = randomUUID();
+  await sendPersonaRequest(r, {
+    workflowId,
+    toPersona: "summarization",
+    step: "3-summary",
+    intent: "summarize_milestone",
+    payload: {
+      repo: repoRemote,
+      branch: branchName,
+      project_id: projectId,
+      project_slug: projectSlug,
+      milestone: milestoneDescriptor,
+      lead_engineer_result: leadResult
+    },
+    corrId: summaryCorrId,
+    repo: repoRemote,
+    branch: branchName,
+    projectId,
+    deadlineSeconds: 300
+  });
+
+  const summaryEvent = await waitForPersonaCompletion(r, "summarization", workflowId, summaryCorrId);
+  const summaryResult = parseEventResult(summaryEvent.fields.result);
+  logger.info("coordinator received summarization completion", { workflowId, corrId: summaryCorrId, eventId: summaryEvent.id });
+
+  const lines = [
+    `Workflow orchestrated for project ${projectId}.`,
+    `Milestone: ${milestoneName} (branch ${branchName}).`,
+    `Context completed (corr ${contextCorrId}).`,
+    `Lead engineer completed (corr ${leadCorrId}).`,
+    `Summarization completed (corr ${summaryCorrId}).`
+  ];
+
+  if (summaryResult?.output) {
+    lines.push("Summary:", summaryResult.output);
+  }
+
+  return lines.join("\n");
 }
 
 async function readOne(r: any, persona: string) {
@@ -118,6 +348,33 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     branch: payloadObj.branch,
     projectId: payloadObj.project_id
   });
+
+  if (persona === "coordination") {
+    const started = Date.now();
+    const output = await handleCoordinator(r, msg, payloadObj);
+    const duration = Date.now() - started;
+    const result = { output, model: "orchestrator", duration_ms: duration };
+    await r.xAdd(cfg.eventStream, "*", {
+      workflow_id: msg.workflow_id,
+      step: msg.step || "",
+      from_persona: persona,
+      status: "done",
+      result: JSON.stringify(result),
+      corr_id: msg.corr_id || "",
+      ts: new Date().toISOString()
+    });
+    await recordEvent({
+      workflow_id: msg.workflow_id,
+      step: msg.step,
+      persona,
+      model: "orchestrator",
+      duration_ms: duration,
+      corr_id: msg.corr_id,
+      content: output
+    }).catch(() => {});
+    await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
+    return;
+  }
 
   // --- Context scan (pre-model), supports multi-components & Alembic ---
   let scanSummaryText = "";

@@ -15,6 +15,20 @@ export async function fetchContext(workflowId: string) {
   }
 }
 
+export async function fetchProjectStatus(projectId: string | null | undefined) {
+  if (!projectId) return null;
+  try {
+    const res = await fetch(`${cfg.dashboardBaseUrl.replace(/\/$/, "")}/v1/projects/${encodeURIComponent(projectId)}`, {
+      headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+    });
+    if (!res.ok) throw new Error(`dashboard ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    logger.warn("fetch project status failed", { projectId, error: (e as Error).message });
+    return null;
+  }
+}
+
 export async function recordEvent(ev: any) {
   try {
     await fetch(`${cfg.dashboardBaseUrl}/api/events`, {

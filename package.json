@@ -6,7 +6,8 @@
     "dev": "tsx src/worker.ts",
     "start": "node --env-file=.env dist/worker.js",
     "build": "tsc -p tsconfig.json",
-    "seed": "tsx src/tools/seed_example.ts"
+    "seed": "tsx src/tools/seed_example.ts",
+    "coordinator": "tsx src/tools/run_coordinator.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
