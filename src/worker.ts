@@ -166,6 +166,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   const projectRepo = firstString(
     payloadObj.repo,
     payloadObj.repository,
+    typeof projectStatus?.repository === "string" ? projectStatus.repository : null,
     projectStatus?.repository?.url,
     projectStatus?.repository?.remote,
     projectStatus?.repo?.url,
