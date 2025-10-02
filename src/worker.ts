@@ -162,6 +162,25 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   const projectId = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id);
   if (!projectId) throw new Error("Coordinator requires project_id in payload or message");
 
+  const projectStatus: any = await fetchProjectStatus(projectId);
+  const projectRepo = firstString(
+    payloadObj.repo,
+    payloadObj.repository,
+    projectStatus?.repository?.url,
+    projectStatus?.repository?.remote,
+    projectStatus?.repo?.url,
+    projectStatus?.repo_url,
+    projectStatus?.git_url,
+    Array.isArray(projectStatus?.repositories) ? projectStatus.repositories[0]?.url : null
+  );
+
+  if (!projectRepo) {
+    logger.error("coordinator abort: project repository missing", { workflowId, projectId });
+    throw new Error(`Project ${projectId} has no repository associated`);
+  }
+
+  if (!payloadObj.repo) payloadObj.repo = projectRepo;
+
   const repoResolution = await resolveRepoFromPayload(payloadObj);
   const repoRoot = normalizeRepoPath(repoResolution.repoRoot, cfg.repoRoot);
   const repoMeta = await getRepoMetadata(repoRoot);
@@ -174,7 +193,6 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     cfg.git.defaultBranch
   ) || cfg.git.defaultBranch;
 
-  const projectStatus: any = await fetchProjectStatus(projectId);
   const milestones = Array.isArray(projectStatus?.milestones) ? projectStatus.milestones : [];
   const nextMilestone = milestones.find((m: any) => (m?.status || "").toLowerCase() === "unstarted") || milestones[0] || null;
   const milestoneName = nextMilestone?.name || nextMilestone?.title || nextMilestone?.goal || "next milestone";
@@ -187,7 +205,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
 
   const repoSlug = repoMeta.remoteSlug;
-  const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payloadObj.repo || repoMeta.remoteUrl || repoResolution.remote || "");
+  const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payloadObj.repo || projectRepo || repoMeta.remoteUrl || repoResolution.remote || "");
   if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
 
   const milestoneDescriptor = nextMilestone
@@ -351,27 +369,51 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
 
   if (persona === "coordination") {
     const started = Date.now();
-    const output = await handleCoordinator(r, msg, payloadObj);
-    const duration = Date.now() - started;
-    const result = { output, model: "orchestrator", duration_ms: duration };
-    await r.xAdd(cfg.eventStream, "*", {
-      workflow_id: msg.workflow_id,
-      step: msg.step || "",
-      from_persona: persona,
-      status: "done",
-      result: JSON.stringify(result),
-      corr_id: msg.corr_id || "",
-      ts: new Date().toISOString()
-    });
-    await recordEvent({
-      workflow_id: msg.workflow_id,
-      step: msg.step,
-      persona,
-      model: "orchestrator",
-      duration_ms: duration,
-      corr_id: msg.corr_id,
-      content: output
-    }).catch(() => {});
+    try {
+      const output = await handleCoordinator(r, msg, payloadObj);
+      const duration = Date.now() - started;
+      const result = { output, model: "orchestrator", duration_ms: duration };
+      await r.xAdd(cfg.eventStream, "*", {
+        workflow_id: msg.workflow_id,
+        step: msg.step || "",
+        from_persona: persona,
+        status: "done",
+        result: JSON.stringify(result),
+        corr_id: msg.corr_id || "",
+        ts: new Date().toISOString()
+      });
+      await recordEvent({
+        workflow_id: msg.workflow_id,
+        step: msg.step,
+        persona,
+        model: "orchestrator",
+        duration_ms: duration,
+        corr_id: msg.corr_id,
+        content: output
+      }).catch(() => {});
+    } catch (e: any) {
+      const duration = Date.now() - started;
+      const errorMsg = String(e?.message || e);
+      logger.error("coordinator failed", { workflowId: msg.workflow_id, error: errorMsg });
+      await r.xAdd(cfg.eventStream, "*", {
+        workflow_id: msg.workflow_id,
+        step: msg.step || "",
+        from_persona: persona,
+        status: "error",
+        error: errorMsg,
+        corr_id: msg.corr_id || "",
+        ts: new Date().toISOString()
+      });
+      await recordEvent({
+        workflow_id: msg.workflow_id,
+        step: msg.step,
+        persona,
+        model: "orchestrator",
+        duration_ms: duration,
+        corr_id: msg.corr_id,
+        error: errorMsg
+      }).catch(() => {});
+    }
     await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
     return;
   }
