@@ -362,15 +362,110 @@ export async function getRepoMetadata(repoRoot: string) {
   return { remoteUrl, remoteSlug: remoteSlugValue, currentBranch };
 }
 
-export async function checkoutBranchFromBase(repoRoot: string, baseBranch: string, newBranch: string) {
+
+async function branchExists(repoRoot: string, branch: string) {
+  if (!branch) return false;
   try {
-    await runGit(["fetch", "origin", baseBranch], { cwd: repoRoot });
-  } catch (e) {
-    logger.warn("git fetch base branch failed", { repoRoot, baseBranch, error: e });
+    await runGit(["rev-parse", "--verify", branch], { cwd: repoRoot });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function remoteBranchExists(repoRoot: string, branch: string) {
+  if (!branch) return false;
+  try {
+    await runGit(["rev-parse", "--verify", `origin/${branch}`], { cwd: repoRoot });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function hasLocalChanges(repoRoot: string) {
+  const status = await runGit(["status", "--porcelain"], { cwd: repoRoot });
+  const stdout = status.stdout?.toString?.() ?? "";
+  return stdout.trim().length > 0;
+}
+
+async function handleCheckoutError(repoRoot: string, branch: string, error: any): Promise<never> {
+  if (await hasLocalChanges(repoRoot)) {
+    const message = `Cannot checkout ${branch}: uncommitted changes detected in local repository at ${repoRoot}. Commit, stash, or discard the changes and try again.`;
+    throw new Error(message, { cause: error });
+  }
+  throw error;
+}
+
+export async function checkoutBranchFromBase(repoRoot: string, baseBranch: string, newBranch: string) {
+  const fetchBranch = async (branch: string, warnOnError: boolean) => {
+    if (!branch) return;
+    try {
+      await runGit(["fetch", "origin", branch], { cwd: repoRoot });
+    } catch (error) {
+      const meta = { repoRoot, branch, error };
+      if (warnOnError) {
+        logger.warn("git fetch branch failed", meta);
+      } else {
+        logger.debug("git fetch branch failed", meta);
+      }
+    }
+  };
+
+  await fetchBranch(baseBranch, true);
+  await fetchBranch(newBranch, false);
+
+  if (await branchExists(repoRoot, newBranch)) {
+    try {
+      await runGit(["checkout", newBranch], { cwd: repoRoot });
+    } catch (error) {
+      await handleCheckoutError(repoRoot, newBranch, error);
+    }
+
+    try {
+      await runGit(["pull", "--ff-only", "origin", newBranch], { cwd: repoRoot });
+    } catch (error) {
+      logger.warn("git pull branch failed", { repoRoot, branch: newBranch, error });
+    }
+    return;
   }
 
-  await runGit(["checkout", baseBranch], { cwd: repoRoot });
-  await runGit(["checkout", "-B", newBranch, baseBranch], { cwd: repoRoot });
+  if (await remoteBranchExists(repoRoot, newBranch)) {
+    try {
+      await runGit(["checkout", "-B", newBranch, `origin/${newBranch}`], { cwd: repoRoot });
+    } catch (error) {
+      await handleCheckoutError(repoRoot, newBranch, error);
+    }
+    return;
+  }
+
+  if (await branchExists(repoRoot, baseBranch)) {
+    try {
+      await runGit(["checkout", baseBranch], { cwd: repoRoot });
+    } catch (error) {
+      await handleCheckoutError(repoRoot, baseBranch, error);
+    }
+  } else if (await remoteBranchExists(repoRoot, baseBranch)) {
+    try {
+      await runGit(["checkout", "-B", baseBranch, `origin/${baseBranch}`], { cwd: repoRoot });
+    } catch (error) {
+      await handleCheckoutError(repoRoot, baseBranch, error);
+    }
+  } else {
+    throw new Error(`Base branch ${baseBranch} not found in repository ${repoRoot}`);
+  }
+
+  try {
+    await runGit(["pull", "--ff-only", "origin", baseBranch], { cwd: repoRoot });
+  } catch (error) {
+    logger.warn("git pull branch failed", { repoRoot, branch: baseBranch, error });
+  }
+
+  try {
+    await runGit(["checkout", "-B", newBranch, baseBranch], { cwd: repoRoot });
+  } catch (error) {
+    await handleCheckoutError(repoRoot, newBranch, error);
+  }
 }
 
 export async function ensureBranchPublished(repoRoot: string, branch: string) {
