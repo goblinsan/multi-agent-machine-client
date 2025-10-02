@@ -373,6 +373,22 @@ export async function checkoutBranchFromBase(repoRoot: string, baseBranch: strin
   await runGit(["checkout", "-B", newBranch, baseBranch], { cwd: repoRoot });
 }
 
+export async function ensureBranchPublished(repoRoot: string, branch: string) {
+  if (!branch) return;
+  try {
+    await runGit(["push", "-u", "origin", branch], { cwd: repoRoot });
+  } catch (e: any) {
+    const stderr = e?.stderr as string | undefined;
+    if (stderr && /set-upstream/.test(stderr)) {
+      logger.warn("git push upstream hint", { repoRoot, branch, error: e });
+    } else if (stderr && /already exists/.test(stderr)) {
+      logger.info("branch already published", { repoRoot, branch });
+    } else {
+      logger.warn("ensure branch publish failed", { repoRoot, branch, error: e });
+    }
+  }
+}
+
 export async function commitAndPushPaths(options: { repoRoot: string; branch?: string | null; message: string; paths: string[] }) {
   const { repoRoot, message, paths } = options;
   if (!paths || paths.length === 0) {

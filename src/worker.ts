@@ -5,7 +5,7 @@ import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus } from "./dashboard.js";
-import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase } from "./gitUtils.js";
+import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished } from "./gitUtils.js";
 import { logger } from "./logger.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
@@ -163,6 +163,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   if (!projectId) throw new Error("Coordinator requires project_id in payload or message");
 
   const projectStatus: any = await fetchProjectStatus(projectId);
+  const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectStatus?.slug, projectStatus?.id);
   const projectRepo = firstString(
     payloadObj.repo,
     payloadObj.repository,
@@ -181,6 +182,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   }
 
   if (!payloadObj.repo) payloadObj.repo = projectRepo;
+  if (!payloadObj.project_slug && projectSlug) payloadObj.project_slug = projectSlug;
+  if (!payloadObj.project_name && projectStatus?.name) payloadObj.project_name = projectStatus.name;
 
   const repoResolution = await resolveRepoFromPayload(payloadObj);
   const repoRoot = normalizeRepoPath(repoResolution.repoRoot, cfg.repoRoot);
@@ -200,10 +203,10 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   const milestoneSlug = slugify(nextMilestone?.slug || milestoneName || "milestone");
   const branchName = payloadObj.branch_name || `milestone/${milestoneSlug}`;
 
-  const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectStatus?.slug, projectStatus?.id);
-
   await checkoutBranchFromBase(repoRoot, baseBranch, branchName);
   logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
+
+  await ensureBranchPublished(repoRoot, branchName);
 
   const repoSlug = repoMeta.remoteSlug;
   const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payloadObj.repo || projectRepo || repoMeta.remoteUrl || repoResolution.remote || "");
