@@ -1,4 +1,3 @@
-
 import "dotenv/config";
 import path from "path";
 
@@ -21,6 +20,29 @@ function splitCsv(value: string | undefined, fallback: string[]): string[] {
 function jsonOr<T>(value: string | undefined, fallback: T): T {
   if (!value) return fallback;
   try { return JSON.parse(value) as T; } catch { return fallback; }
+}
+
+function parseDurationMs(value: string | undefined, fallbackMs: number) {
+  if (!value) return fallbackMs;
+  const trimmed = value.trim();
+  if (!trimmed.length) return fallbackMs;
+  const num = Number(trimmed);
+  if (!Number.isFinite(num) || num <= 0) return fallbackMs;
+  if (num > 1000) return Math.floor(num);
+  return Math.floor(num * 1000);
+}
+
+function parsePersonaTimeouts(raw: Record<string, unknown>) {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (!key || typeof key !== "string") continue;
+    const normalizedKey = key.trim().toLowerCase();
+    if (!normalizedKey.length) continue;
+    const num = typeof value === "string" ? Number(value) : typeof value === "number" ? value : undefined;
+    if (num === undefined || !Number.isFinite(num) || num <= 0) continue;
+    out[normalizedKey] = num > 1000 ? Math.floor(num) : Math.floor(num * 1000);
+  }
+  return out;
 }
 
 const projectBaseRaw = process.env.PROJECT_BASE || process.env.REPO_ROOT || "./repo";
@@ -61,6 +83,12 @@ const dashboardContextEndpoint = (() => {
 const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();
 const gitUserEmail = (process.env.GIT_USER_EMAIL || "machine-client@example.com").trim();
 
+const personaTimeouts = parsePersonaTimeouts(jsonOr(process.env.PERSONA_TIMEOUTS_JSON, {} as Record<string, unknown>));
+const personaDefaultTimeoutMs = parseDurationMs(process.env.PERSONA_DEFAULT_TIMEOUT_MS || process.env.COORDINATOR_WAIT_TIMEOUT_MS, 600000);
+const personaCodingTimeoutMs = parseDurationMs(process.env.PERSONA_CODING_TIMEOUT_MS, 180000);
+const personaCodingPersonas = splitCsv(process.env.PERSONA_CODING_PERSONAS || "lead-engineer,devops,ui-engineer,qa-engineer,ml-engineer", []);
+
+
 
 export const cfg = {
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
@@ -99,6 +127,11 @@ export const cfg = {
 
   // Summary writing mode after model call
   summaryMode: (process.env.SUMMARY_MODE || "both").toLowerCase(),
+
+  personaTimeouts,
+  personaDefaultTimeoutMs,
+  personaCodingTimeoutMs,
+  personaCodingPersonas,
 
   git: {
     defaultBranch: (process.env.GIT_DEFAULT_BRANCH || "main").trim() || "main",

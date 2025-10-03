@@ -32,10 +32,26 @@ function shouldUploadDashboardFlag(value: any): boolean {
   return Boolean(value);
 }
 
-const PERSONA_WAIT_TIMEOUT_MS = Number(process.env.COORDINATOR_WAIT_TIMEOUT_MS || 600000);
+const PERSONA_WAIT_TIMEOUT_MS = cfg.personaDefaultTimeoutMs;
 
 function slugify(value: string) {
   return (value || "").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-") || "milestone";
+}
+
+
+const PERSONA_TIMEOUT_OVERRIDES = cfg.personaTimeouts || {};
+const CODING_TIMEOUT_MS = cfg.personaCodingTimeoutMs || 180000;
+const DEFAULT_PERSONA_TIMEOUT_MS = cfg.personaDefaultTimeoutMs || PERSONA_WAIT_TIMEOUT_MS;
+const CODING_PERSONA_SET = new Set((cfg.personaCodingPersonas && cfg.personaCodingPersonas.length
+  ? cfg.personaCodingPersonas
+  : ["lead-engineer", "devops", "ui-engineer", "qa-engineer", "ml-engineer"]
+).map(p => p.trim().toLowerCase()).filter(Boolean));
+
+function personaTimeoutMs(persona: string) {
+  const key = (persona || "").toLowerCase();
+  if (key && PERSONA_TIMEOUT_OVERRIDES[key] !== undefined) return PERSONA_TIMEOUT_OVERRIDES[key];
+  if (CODING_PERSONA_SET.has(key)) return CODING_TIMEOUT_MS;
+  return DEFAULT_PERSONA_TIMEOUT_MS;
 }
 
 
@@ -207,6 +223,149 @@ function selectNextMilestone(status: any): any | null {
   return scored[0]?.item ?? null;
 }
 
+
+const TASK_STATUS_PRIORITY: Record<string, number> = {
+  in_progress: 0,
+  active: 0,
+  doing: 0,
+  working: 0,
+  review: 1,
+  ready: 1,
+  planned: 2,
+  backlog: 2,
+  todo: 2,
+  not_started: 2,
+  blocked: 3,
+  waiting: 3,
+  pending: 3,
+  qa: 3,
+  testing: 3,
+  done: 5,
+  completed: 5,
+  complete: 5,
+  shipped: 5,
+  delivered: 5,
+  closed: 6,
+  cancelled: 6,
+  canceled: 6,
+  archived: 7
+};
+
+function normalizeTaskStatus(value: any) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function taskStatusPriority(status: string) {
+  if (!status) return 2;
+  if (status in TASK_STATUS_PRIORITY) return TASK_STATUS_PRIORITY[status];
+  if (status.includes("progress") || status.includes("doing") || status.includes("work")) return 0;
+  if (status.includes("block")) return 3;
+  if (status.includes("review") || status.includes("qa")) return 1;
+  if (status.includes("done") || status.includes("complete") || status.includes("closed")) return 5;
+  if (status.includes("cancel")) return 6;
+  return 2;
+}
+
+function taskDue(value: any): number {
+  return Math.min(
+    parseMilestoneDate(value?.due),
+    parseMilestoneDate(value?.due_at),
+    parseMilestoneDate(value?.dueAt),
+    parseMilestoneDate(value?.due_date),
+    parseMilestoneDate(value?.target_date),
+    parseMilestoneDate(value?.targetDate),
+    parseMilestoneDate(value?.deadline),
+    parseMilestoneDate(value?.eta)
+  );
+}
+
+function taskOrder(value: any): number {
+  return Math.min(
+    numericHint(value?.order),
+    numericHint(value?.position),
+    numericHint(value?.sequence),
+    numericHint(value?.rank),
+    numericHint(value?.priority),
+    numericHint(value?.sort),
+    numericHint(value?.sort_order),
+    numericHint(value?.sortOrder),
+    numericHint(value?.index)
+  );
+}
+
+function taskCandidates(source: any): any[] {
+  if (!source || typeof source !== "object") return [];
+  const seen = new Set<string>();
+  const results: any[] = [];
+  const pushAll = (value: any) => {
+    for (const item of toArray(value)) {
+      if (!item || typeof item !== "object") continue;
+      const keyParts = [
+        typeof item.id === "string" ? item.id : undefined,
+        typeof item.key === "string" ? item.key : undefined,
+        typeof item.slug === "string" ? item.slug : undefined,
+        typeof item.name === "string" ? item.name : undefined,
+        typeof item.title === "string" ? item.title : undefined
+      ].filter(Boolean) as string[];
+      const key = keyParts.join("|") || `task-${results.length}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(item);
+    }
+  };
+
+  const container = source as any;
+  pushAll(container?.next_task);
+  pushAll(container?.nextTask);
+  pushAll(container?.active_task);
+  pushAll(container?.activeTask);
+  pushAll(container?.current_task);
+  pushAll(container?.currentTask);
+  pushAll(container?.tasks);
+  pushAll(container?.items);
+  pushAll(container?.issues);
+  pushAll(container?.tickets);
+  pushAll(container?.stories);
+  pushAll(container?.work_items);
+  pushAll(container?.workItems);
+  pushAll(container?.backlog);
+  pushAll(container?.in_progress);
+  pushAll(container?.inProgress);
+
+  return results;
+}
+
+function selectNextTask(...sources: any[]): any | null {
+  const candidates: { task: any; priority: number; due: number; order: number; index: number }[] = [];
+  let index = 0;
+  for (const source of sources) {
+    for (const task of taskCandidates(source)) {
+      const status = normalizeTaskStatus(task?.status ?? task?.state ?? task?.phase ?? task?.stage ?? task?.progress);
+      const priority = taskStatusPriority(status);
+      if (priority >= 5) continue; // skip completed/cancelled tasks
+      candidates.push({
+        task,
+        priority,
+        due: taskDue(task),
+        order: taskOrder(task),
+        index: index++
+      });
+    }
+  }
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    if (a.due !== b.due) return a.due - b.due;
+    if (a.order !== b.order) return a.order - b.order;
+    return a.index - b.index;
+  });
+
+  return candidates[0]?.task ?? null;
+}
+
 type PersonaEvent = { id: string; fields: Record<string, string> };
 
 async function waitForPersonaCompletion(
@@ -214,14 +373,18 @@ async function waitForPersonaCompletion(
   persona: string,
   workflowId: string,
   corrId: string,
-  timeoutMs = PERSONA_WAIT_TIMEOUT_MS
+  timeoutMs?: number
 ): Promise<PersonaEvent> {
+  const effectiveTimeout = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : personaTimeoutMs(persona);
   const started = Date.now();
   let lastId = "$";
 
-  while (Date.now() - started < timeoutMs) {
-    const remaining = timeoutMs - (Date.now() - started);
-    const blockMs = Math.max(1000, Math.min(remaining, 5000));
+  while (Date.now() - started < effectiveTimeout) {
+    const elapsed = Date.now() - started;
+    const remaining = Math.max(0, effectiveTimeout - elapsed);
+    const blockMs = Math.max(1000, Math.min(remaining || effectiveTimeout, 5000));
     const streams = await r.xRead([{ key: cfg.eventStream, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
     if (!streams) continue;
 
@@ -245,7 +408,8 @@ async function waitForPersonaCompletion(
     }
   }
 
-  throw new Error(`Timed out waiting for ${persona} completion (workflow ${workflowId}, corr ${corrId})`);
+  const timeoutSec = Math.round(effectiveTimeout / 100) / 10;
+  throw new Error(`Timed out waiting for ${persona} completion (workflow ${workflowId}, corr ${corrId}, timeout ${timeoutSec}s)`);
 }
 
 function parseEventResult(result: string | undefined) {
@@ -407,6 +571,71 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     )!
   );
 
+  const selectedTask = selectNextTask(selectedMilestone, milestoneSource, projectStatus, projectInfo, payloadObj);
+
+  const taskName = firstString(
+    payloadObj.task_name,
+    selectedTask?.name,
+    selectedTask?.title,
+    selectedTask?.summary,
+    selectedTask?.label,
+    selectedTask?.key,
+    selectedTask?.id
+  ) || null;
+
+  if (taskName && !payloadObj.task_name) payloadObj.task_name = taskName;
+
+  const rawTaskSlug = firstString(
+    payloadObj.task_slug,
+    selectedTask?.slug,
+    selectedTask?.key,
+    taskName,
+    selectedTask?.id,
+    "task"
+  );
+  const taskSlug = rawTaskSlug ? slugify(rawTaskSlug) : null;
+
+  const taskDueText = firstString(
+    selectedTask?.due,
+    selectedTask?.due_at,
+    selectedTask?.dueAt,
+    selectedTask?.due_date,
+    selectedTask?.target_date,
+    selectedTask?.targetDate,
+    selectedTask?.deadline,
+    selectedTask?.eta
+  );
+
+  const selectedTaskStatus = normalizeTaskStatus(
+    selectedTask?.status ??
+    selectedTask?.state ??
+    selectedTask?.phase ??
+    selectedTask?.stage ??
+    selectedTask?.progress
+  );
+
+  const taskDescriptor = selectedTask
+    ? {
+        id: firstString(selectedTask.id, selectedTask.key, taskSlug, taskName) || null,
+        name: taskName,
+        slug: taskSlug,
+        status: selectedTask?.status ?? selectedTask?.state ?? selectedTask?.progress ?? null,
+        normalized_status: selectedTaskStatus || null,
+        due: taskDueText || null,
+        assignee: firstString(
+          selectedTask?.assignee,
+          selectedTask?.assignee_name,
+          selectedTask?.assigneeName,
+          selectedTask?.owner,
+          selectedTask?.owner_name,
+          selectedTask?.assigned_to,
+          selectedTask?.assignedTo
+        ) || null,
+        branch: firstString(selectedTask?.branch, selectedTask?.branch_name, selectedTask?.branchName) || null,
+        summary: firstString(selectedTask?.summary, selectedTask?.description) || null
+      }
+    : null;
+
   const branchName = payloadObj.branch_name
     || firstString(
       selectedMilestone?.branch,
@@ -443,9 +672,10 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         status: selectedMilestone.status,
         goal: selectedMilestone.goal,
         due: milestoneDue || null,
-        branch: firstString(selectedMilestone.branch, selectedMilestone.branch_name, selectedMilestone.branchName) || branchName
+        branch: firstString(selectedMilestone.branch, selectedMilestone.branch_name, selectedMilestone.branchName) || branchName,
+        task: taskDescriptor
       }
-    : null;
+    : (taskDescriptor ? { task: taskDescriptor } : null);
   const contextCorrId = randomUUID();
   await sendPersonaRequest(r, {
     workflowId,
@@ -460,6 +690,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       project_name: payloadObj.project_name || projectInfo?.name || "",
       milestone: milestoneDescriptor,
       milestone_name: milestoneName,
+      task: taskDescriptor,
+      task_name: taskName || (taskDescriptor?.name ?? ""),
       upload_dashboard: true
     },
     corrId: contextCorrId,
@@ -486,6 +718,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       project_name: payloadObj.project_name || projectInfo?.name || "",
       milestone: milestoneDescriptor,
       milestone_name: milestoneName,
+      task: taskDescriptor,
+      task_name: taskName || (taskDescriptor?.name ?? ""),
       goal: projectInfo?.goal || projectInfo?.direction || milestoneDescriptor?.goal,
       base_branch: baseBranch
     },
@@ -510,7 +744,10 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       branch: branchName,
       project_id: projectId,
       project_slug: projectSlug,
+      project_name: payloadObj.project_name || projectInfo?.name || "",
       milestone: milestoneDescriptor,
+      task: taskDescriptor,
+      task_name: taskName || (taskDescriptor?.name ?? ""),
       lead_engineer_result: leadResult
     },
     corrId: summaryCorrId,
@@ -531,6 +768,11 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     `Lead engineer completed (corr ${leadCorrId}).`,
     `Summarization completed (corr ${summaryCorrId}).`
   ];
+
+  if (taskName) {
+    const statusText = taskDescriptor?.status ? ` [${taskDescriptor.status}]` : "";
+    lines.splice(2, 0, `Task: ${taskName}${statusText}.`);
+  }
 
   if (summaryResult?.output) {
     lines.push("Summary:", summaryResult.output);
