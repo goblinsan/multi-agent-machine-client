@@ -788,7 +788,7 @@ async function readOne(r: any, persona: string) {
     for (const msg of stream.messages) {
       const id = msg.id;
       const fields = msg.message as Record<string, string>;
-      await processOne(r, persona, id, fields).catch(async (e: any) => {
+      processOne(r, persona, id, fields).catch(async (e: any) => {
         logger.error(`worker error`, { persona, error: e, entryId: id });
         await r.xAdd(cfg.eventStream, "*", {
           workflow_id: fields?.workflow_id ?? "", step: fields?.step ?? "",
