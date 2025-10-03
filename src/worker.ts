@@ -491,14 +491,37 @@ function normalizeRepoPath(p: string | undefined, fallback: string) {
 
 function extractDiffBlocks(text: string): string[] {
   if (!text) return [];
-  const blocks: string[] = [];
-  const regex = /```(?:diff|patch)\s*\n([\s\S]*?)```/gi;
+  const seen = new Set<string>();
+  const fenceRegex = /```(\w+)?\s*\n([\s\S]*?)```/gi;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(text))) {
-    const diff = match[1]?.trim();
-    if (diff) blocks.push(diff);
+
+  while ((match = fenceRegex.exec(text))) {
+    const lang = (match[1] || "").toLowerCase();
+    const body = match[2] || "";
+    const trimmed = body.trim();
+    if (!trimmed.length) continue;
+    const looksLikeDiff = trimmed.startsWith("diff --git")
+      || trimmed.startsWith("Index:")
+      || trimmed.startsWith("--- ")
+      || trimmed.includes("\n@@");
+    if (lang && !["diff", "patch"].includes(lang) && !looksLikeDiff) continue;
+    if (!lang && !looksLikeDiff) continue;
+    seen.add(trimmed);
   }
-  return blocks;
+
+  const gitRegex = /(^diff --git[\s\S]*?)(?=\r?\n(?:diff --git|Index:|---\s|\+\+\+\s|```|$))/gmi;
+  while ((match = gitRegex.exec(text))) {
+    const trimmed = (match[1] || "").trim();
+    if (trimmed.length) seen.add(trimmed);
+  }
+
+  const unifiedRegex = /(^---\s.+?\r?\n\+\+\+\s.+?\r?\n@@[\s\S]*?)(?=\r?\n(?:---\s|\+\+\+\s|diff --git|Index:|```|$))/gm;
+  while ((match = unifiedRegex.exec(text))) {
+    const trimmed = (match[1] || "").trim();
+    if (trimmed.length) seen.add(trimmed);
+  }
+
+  return Array.from(seen);
 }
 
 function extractPathsFromDiff(diff: string): string[] {
@@ -910,7 +933,11 @@ async function applyModelGeneratedChanges(options: {
 
   if (!diffs.length) {
     outcome.reason = "no_diff_blocks";
-    logger.info("persona apply: no diff blocks detected", { persona, workflowId });
+    logger.info("persona apply: no diff blocks detected", {
+      persona,
+      workflowId,
+      preview: responseText ? responseText.slice(0, 500) : undefined
+    });
     return outcome;
   }
 
@@ -1285,6 +1312,10 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   const started = Date.now();
   const resp = await callLMStudio(model, messages, 0.2);
   const duration = Date.now() - started;
+  const responsePreview = resp.content && resp.content.length > 4000
+    ? resp.content.slice(0, 4000) + "... (truncated)"
+    : resp.content;
+  logger.info("persona response", { persona, workflowId: msg.workflow_id, corrId: msg.corr_id || "", preview: responsePreview });
 
   // After model call: write/replace summary.md per SUMMARY_MODE
   if (persona === "context" && scanArtifacts) {
