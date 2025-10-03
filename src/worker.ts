@@ -4,7 +4,7 @@ import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus } from "./dashboard.js";
+import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished } from "./gitUtils.js";
 import { logger } from "./logger.js";
 
@@ -331,18 +331,19 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   const projectId = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id);
   if (!projectId) throw new Error("Coordinator requires project_id in payload or message");
 
-  const projectStatus: any = await fetchProjectStatus(projectId);
-  const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectStatus?.slug, projectStatus?.id);
+  const projectInfo: any = await fetchProjectStatus(projectId);
+  const projectStatus: any = await fetchProjectStatusDetails(projectId);
+  const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectInfo?.slug, projectInfo?.id);
   const projectRepo = firstString(
     payloadObj.repo,
     payloadObj.repository,
-    typeof projectStatus?.repository === "string" ? projectStatus.repository : null,
-    projectStatus?.repository?.url,
-    projectStatus?.repository?.remote,
-    projectStatus?.repo?.url,
-    projectStatus?.repo_url,
-    projectStatus?.git_url,
-    Array.isArray(projectStatus?.repositories) ? projectStatus.repositories[0]?.url : null
+    typeof projectInfo?.repository === "string" ? projectInfo.repository : null,
+    projectInfo?.repository?.url,
+    projectInfo?.repository?.remote,
+    projectInfo?.repo?.url,
+    projectInfo?.repo_url,
+    projectInfo?.git_url,
+    Array.isArray(projectInfo?.repositories) ? projectInfo.repositories[0]?.url : null
   );
 
   if (!projectRepo) {
@@ -352,7 +353,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
 
   if (!payloadObj.repo) payloadObj.repo = projectRepo;
   if (!payloadObj.project_slug && projectSlug) payloadObj.project_slug = projectSlug;
-  if (!payloadObj.project_name && projectStatus?.name) payloadObj.project_name = projectStatus.name;
+  if (!payloadObj.project_name && projectInfo?.name) payloadObj.project_name = projectInfo.name;
 
   const repoResolution = await resolveRepoFromPayload(payloadObj);
   const repoRoot = normalizeRepoPath(repoResolution.repoRoot, cfg.repoRoot);
@@ -368,15 +369,32 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
 
 
 
-  const selectedMilestone = (payloadObj.milestone && typeof payloadObj.milestone === "object")
+  const milestoneSource = projectStatus ?? projectInfo;
+  let selectedMilestone = (payloadObj.milestone && typeof payloadObj.milestone === "object")
     ? payloadObj.milestone
-    : selectNextMilestone(projectStatus);
+    : selectNextMilestone(milestoneSource);
+
+  if (!selectedMilestone && projectInfo && projectInfo !== milestoneSource) {
+    selectedMilestone = selectNextMilestone(projectInfo) || selectedMilestone;
+  }
+
+  if (!selectedMilestone && milestoneSource && typeof milestoneSource === "object") {
+    const explicit = (milestoneSource as any).next_milestone ?? (milestoneSource as any).nextMilestone;
+    if (explicit && typeof explicit === "object") selectedMilestone = explicit;
+  }
+
+  if (!selectedMilestone) {
+    logger.warn("coordinator milestone fallback", { workflowId, projectId });
+  }
 
   const milestoneName = firstString(
     payloadObj.milestone_name,
     selectedMilestone?.name,
     selectedMilestone?.title,
     selectedMilestone?.goal,
+    (milestoneSource as any)?.next_milestone?.name,
+    (milestoneSource as any)?.nextMilestone?.name,
+    projectInfo?.next_milestone?.name,
     "next milestone"
   )!;
 
@@ -439,7 +457,9 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       branch: branchName,
       project_id: projectId,
       project_slug: projectSlug,
+      project_name: payloadObj.project_name || projectInfo?.name || "",
       milestone: milestoneDescriptor,
+      milestone_name: milestoneName,
       upload_dashboard: true
     },
     corrId: contextCorrId,
@@ -463,8 +483,10 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       branch: branchName,
       project_id: projectId,
       project_slug: projectSlug,
+      project_name: payloadObj.project_name || projectInfo?.name || "",
       milestone: milestoneDescriptor,
-      goal: projectStatus?.goal || projectStatus?.direction || milestoneDescriptor?.goal,
+      milestone_name: milestoneName,
+      goal: projectInfo?.goal || projectInfo?.direction || milestoneDescriptor?.goal,
       base_branch: baseBranch
     },
     corrId: leadCorrId,

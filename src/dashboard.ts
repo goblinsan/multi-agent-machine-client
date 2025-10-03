@@ -29,6 +29,21 @@ export async function fetchProjectStatus(projectId: string | null | undefined) {
   }
 }
 
+export async function fetchProjectStatusDetails(projectId: string | null | undefined) {
+  if (!projectId) return null;
+  try {
+    const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
+    const res = await fetch(`${base}/v1/projects/${encodeURIComponent(projectId)}/status`, {
+      headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+    });
+    if (!res.ok) throw new Error(`dashboard ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    logger.warn("fetch project status details failed", { projectId, error: (e as Error).message });
+    return null;
+  }
+}
+
 export async function recordEvent(ev: any) {
   try {
     await fetch(`${cfg.dashboardBaseUrl}/api/events`, {
