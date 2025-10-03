@@ -5,7 +5,7 @@ import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails } from "./dashboard.js";
-import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished } from "./gitUtils.js";
+import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
@@ -488,6 +488,72 @@ function normalizeRepoPath(p: string | undefined, fallback: string) {
   return p.replace(/\\/g, "/");
 }
 
+
+function extractDiffBlocks(text: string): string[] {
+  if (!text) return [];
+  const blocks: string[] = [];
+  const regex = /```(?:diff|patch)\s*\n([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text))) {
+    const diff = match[1]?.trim();
+    if (diff) blocks.push(diff);
+  }
+  return blocks;
+}
+
+function extractPathsFromDiff(diff: string): string[] {
+  const paths = new Set<string>();
+  const diffGitRegex = /^diff --git a\/([^\s]+) b\/([^\s]+)/gm;
+  let match: RegExpExecArray | null;
+  while ((match = diffGitRegex.exec(diff))) {
+    const left = match[1]?.trim();
+    const right = match[2]?.trim();
+    if (left && left !== 'dev/null') paths.add(left);
+    if (right && right !== 'dev/null') paths.add(right);
+  }
+  const fileRegex = /^(?:---|\+\+\+)\s+(?:a\/|b\/)([^\r\n]+)/gm;
+  while ((match = fileRegex.exec(diff))) {
+    const p = match[1]?.trim();
+    if (p && p !== 'dev/null') paths.add(p);
+  }
+  return Array.from(paths);
+}
+
+function extractListedPaths(text: string): string[] {
+  if (!text) return [];
+  const found = new Set<string>();
+  const sectionRegex = /(Changed Files?|Files Affected|Touched Files):([\s\S]*?)(?:\n\s*\n|\n[A-Z][^:\n]*:|$)/gi;
+  let section: RegExpExecArray | null;
+  while ((section = sectionRegex.exec(text))) {
+    const body = section[2];
+    if (!body) continue;
+    for (const line of body.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const normalized = trimmed.replace(/^[*\-]\s*/, '').trim();
+      if (!normalized) continue;
+      const candidate = normalized.split(/[\s`]/)[0];
+      if (candidate && candidate !== '/') found.add(candidate);
+    }
+  }
+  return Array.from(found);
+}
+
+function extractCommitMessage(text: string): string | null {
+  if (!text) return null;
+  const patterns = [
+    /Commit Message:\s*["']?([^"'\n]+)/i,
+    /Proposed Commit Message:\s*["']?([^"'\n]+)/i,
+    /Commit:\s*["']?([^"'\n]+)/i,
+    /Message:\s*["']?([^"'\n]+)/i
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match && match[1]) return match[1].trim();
+  }
+  return null;
+}
+
 async function ensureGroups(r: any) {
   for (const p of cfg.allowedPersonas) {
     try { await r.xGroupCreate(cfg.requestStream, groupForPersona(p), "$", { MKSTREAM: true }); } catch {}
@@ -822,6 +888,106 @@ async function main() {
   while (true) { for (const p of cfg.allowedPersonas) { await readOne(r, p); } }
 }
 
+type ApplyEditsOutcome = {
+  attempted: boolean;
+  applied: boolean;
+  paths?: string[];
+  commit?: Awaited<ReturnType<typeof commitAndPushPaths>>;
+  reason?: string;
+  error?: string;
+};
+
+async function applyModelGeneratedChanges(options: {
+  persona: string;
+  workflowId: string;
+  repoRoot: string;
+  branchHint?: string | null;
+  responseText: string;
+}): Promise<ApplyEditsOutcome> {
+  const { persona, workflowId, repoRoot, branchHint, responseText } = options;
+  const outcome: ApplyEditsOutcome = { attempted: true, applied: false };
+  const diffs = extractDiffBlocks(responseText);
+
+  if (!diffs.length) {
+    outcome.reason = "no_diff_blocks";
+    logger.info("persona apply: no diff blocks detected", { persona, workflowId });
+    return outcome;
+  }
+
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const pathMod = await import("path");
+  const tmpDir = await fs.mkdtemp(pathMod.join(os.tmpdir(), "ma-patch-"));
+  const appliedPaths = new Set<string>();
+
+  try {
+    for (let i = 0; i < diffs.length; i += 1) {
+      const diff = diffs[i];
+      const patchPath = pathMod.join(tmpDir, `patch-${i}.diff`);
+      await fs.writeFile(patchPath, diff, "utf8");
+      try {
+        await runGit(["apply", "--whitespace=nowarn", patchPath], { cwd: repoRoot });
+        for (const p of extractPathsFromDiff(diff)) appliedPaths.add(p);
+      } catch (error: any) {
+        outcome.reason = "apply_failed";
+        outcome.error = error?.message || String(error);
+        logger.error("persona apply diff failed", { persona, workflowId, patchIndex: i, error });
+        throw error;
+      } finally {
+        await fs.unlink(patchPath).catch(() => {});
+      }
+    }
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+
+  let paths = Array.from(appliedPaths);
+  if (!paths.length) paths = extractListedPaths(responseText);
+
+  if (!paths.length) {
+    try {
+      const status = await runGit(["status", "--porcelain"], { cwd: repoRoot });
+      const lines = status.stdout.toString().split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        const file = line.slice(3).trim();
+        if (file) paths.push(file);
+      }
+      paths = Array.from(new Set(paths));
+    } catch (error) {
+      logger.warn("persona apply: unable to gather git status for paths", { persona, workflowId, error });
+    }
+  }
+
+  if (!paths.length) {
+    outcome.reason = "no_paths";
+    logger.warn("persona apply: no paths determined after applying diffs", { persona, workflowId });
+    return outcome;
+  }
+
+  const commitMessage = extractCommitMessage(responseText)
+    || `${persona}: updates${branchHint ? " on " + branchHint : ""}`;
+
+  try {
+    const commitRes = await commitAndPushPaths({
+      repoRoot,
+      branch: branchHint || null,
+      message: commitMessage,
+      paths
+    });
+    outcome.commit = commitRes;
+    outcome.paths = paths;
+    outcome.applied = Boolean(commitRes?.committed);
+    if (!outcome.applied) {
+      outcome.reason = commitRes?.reason || "no_changes";
+    }
+  } catch (error: any) {
+    outcome.reason = "commit_failed";
+    outcome.error = error?.message || String(error);
+    logger.error("persona apply: commit failed", { persona, workflowId, error });
+  }
+
+  return outcome;
+}
 async function processOne(r: any, persona: string, entryId: string, fields: Record<string,string>) {
   const parsed = RequestSchema.safeParse(fields);
   if (!parsed.success) { await r.xAck(cfg.requestStream, groupForPersona(persona), entryId); return; }
@@ -1196,7 +1362,40 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     }
   }
 
-  const result = { output: resp.content, model, duration_ms: duration };
+  let editOutcome: ApplyEditsOutcome | null = null;
+  if (cfg.applyEdits && cfg.allowedEditPersonas.includes(persona)) {
+    try {
+      if (!repoInfo) {
+        repoInfo = await resolveRepoFromPayload(payloadObj);
+      }
+      if (repoInfo) {
+        const repoRootForEdits = normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot);
+        const branchHint = firstString(
+          payloadObj.branch,
+          payloadObj.branch_name,
+          payloadObj.base_branch,
+          payloadObj.default_branch,
+          repoInfo.branch
+        );
+        editOutcome = await applyModelGeneratedChanges({
+          persona,
+          workflowId: msg.workflow_id,
+          repoRoot: repoRootForEdits,
+          branchHint,
+          responseText: resp.content
+        });
+        if (branchHint && repoInfo) repoInfo.branch = branchHint;
+      } else {
+        editOutcome = { attempted: false, applied: false, reason: "repo_unresolved" };
+      }
+    } catch (error: any) {
+      logger.error("persona apply edits failed", { persona, workflowId: msg.workflow_id, error });
+      editOutcome = { attempted: true, applied: false, reason: "apply_failed", error: error?.message || String(error) };
+    }
+  }
+
+  const result: any = { output: resp.content, model, duration_ms: duration };
+  if (editOutcome) result.applied_edits = editOutcome;
   logger.info("persona completed", { persona, workflowId: msg.workflow_id, duration_ms: duration });
   await r.xAdd(cfg.eventStream, "*", {
     workflow_id: msg.workflow_id, step: msg.step || "", from_persona: persona,
@@ -1207,3 +1406,5 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
 }
 
 main().catch(e => { logger.error("worker fatal", { error: e }); process.exit(1); });
+
+
