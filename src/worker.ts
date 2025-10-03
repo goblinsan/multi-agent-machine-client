@@ -1307,6 +1307,22 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     messages.push({ role: "system", content: `Dashboard context (may be stale):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` });
   }
 
+
+
+  if (CODING_PERSONA_SET.has(persona.toLowerCase())) {
+    const repoHint = firstString(
+      payloadObj.repo,
+      payloadObj.repository,
+      payloadObj.remote,
+      payloadObj.repo_url,
+      payloadObj.repository_url,
+      msg.repo
+    ) || "the existing repository";
+    messages.push({
+      role: "system",
+      content: `You are working inside ${repoHint}. The repository already exists; modify only the necessary files. Do not generate a brand-new project scaffold. Provide concrete code edits as unified diffs that apply cleanly with \`git apply\`. Wrap each patch in \`\`\`diff\`\`\` fences. If you add or delete files, include the appropriate diff headers. Always reference existing files by their actual paths.`
+    });
+  }
   messages.push({ role: "user", content: userText });
 
   const started = Date.now();
