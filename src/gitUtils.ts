@@ -211,7 +211,17 @@ function branchFromPayload(payload: any): string | null {
 
 function projectHintFromPayload(payload: any): string | null {
   if (!payload || typeof payload !== "object") return null;
-  const candidates = [payload.project_slug, payload.project_name, payload.project, payload.projectId, payload.project_id];
+  const candidates = [
+    payload.project_name,
+    payload.projectName,
+    payload.project_title,
+    payload.projectTitle,
+    payload.project_slug,
+    payload.projectSlug,
+    payload.project,
+    payload.projectId,
+    payload.project_id
+  ];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length) {
       return candidate.trim();

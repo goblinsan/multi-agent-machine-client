@@ -38,6 +38,175 @@ function slugify(value: string) {
   return (value || "").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-") || "milestone";
 }
 
+
+const MILESTONE_STATUS_PRIORITY: Record<string, number> = {
+  unstarted: 0,
+  not_started: 0,
+  notstarted: 0,
+  todo: 0,
+  backlog: 0,
+  planned: 0,
+  pending: 1,
+  ready: 1,
+  in_progress: 1,
+  active: 1,
+  started: 1,
+  blocked: 2,
+  review: 2,
+  qa: 2,
+  testing: 2,
+  done: 5,
+  completed: 5,
+  complete: 5,
+  shipped: 5,
+  delivered: 5,
+  closed: 6,
+  cancelled: 6,
+  canceled: 6,
+  archived: 7
+};
+
+function normalizeMilestoneStatus(value: any) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function parseMilestoneDate(value: any): number {
+  if (!value) return Number.POSITIVE_INFINITY;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function numericHint(value: any): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const num = Number(value);
+    if (!Number.isNaN(num)) return num;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function milestonePriority(m: any): number {
+  const status = normalizeMilestoneStatus(m?.status ?? m?.state ?? m?.phase ?? m?.stage ?? m?.progress);
+  if (status in MILESTONE_STATUS_PRIORITY) return MILESTONE_STATUS_PRIORITY[status];
+  if (!status) return 2;
+  if (status.includes("complete") || status.includes("done") || status.includes("finished")) return 5;
+  return 3;
+}
+
+function milestoneDue(m: any): number {
+  return Math.min(
+    parseMilestoneDate(m?.due),
+    parseMilestoneDate(m?.due_at),
+    parseMilestoneDate(m?.dueAt),
+    parseMilestoneDate(m?.due_date),
+    parseMilestoneDate(m?.target_date),
+    parseMilestoneDate(m?.targetDate),
+    parseMilestoneDate(m?.deadline),
+    parseMilestoneDate(m?.eta)
+  );
+}
+
+function milestoneOrder(m: any): number {
+  return Math.min(
+    numericHint(m?.order),
+    numericHint(m?.position),
+    numericHint(m?.sequence),
+    numericHint(m?.rank),
+    numericHint(m?.priority),
+    numericHint(m?.sort),
+    numericHint(m?.sort_order),
+    numericHint(m?.sortOrder),
+    numericHint(m?.index)
+  );
+}
+
+function toArray(value: any): any[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") {
+    const edges = (value as any).edges;
+    if (Array.isArray(edges)) {
+      return edges.map((edge: any) => edge?.node ?? edge).filter(Boolean);
+    }
+    const candidates = ["items", "data", "nodes", "list", "values", "results"];
+    for (const key of candidates) {
+      const nested = (value as any)[key];
+      if (Array.isArray(nested)) return nested;
+    }
+    return [value];
+  }
+  return [];
+}
+
+function milestoneCandidates(status: any): any[] {
+  if (!status || typeof status !== "object") return [];
+  const seen = new Set<string>();
+  const results: any[] = [];
+  const pushAll = (value: any) => {
+    for (const item of toArray(value)) {
+      if (!item || typeof item !== "object") continue;
+      const keyParts = [
+        typeof item.id === "string" ? item.id : undefined,
+        typeof item.slug === "string" ? item.slug : undefined,
+        typeof item.name === "string" ? item.name : undefined,
+        typeof item.title === "string" ? item.title : undefined
+      ].filter(Boolean) as string[];
+      const key = keyParts.join("|") || `obj-${results.length}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(item);
+    }
+  };
+
+  pushAll((status as any).next_milestone);
+  pushAll((status as any).nextMilestone);
+  pushAll((status as any).current_milestone);
+  pushAll((status as any).currentMilestone);
+  pushAll((status as any).upcoming_milestones);
+  pushAll((status as any).upcomingMilestones);
+  pushAll((status as any).milestones);
+  pushAll((status as any).project?.milestones);
+  pushAll((status as any).milestone_list);
+  pushAll((status as any).milestoneList);
+
+  return results;
+}
+
+function selectNextMilestone(status: any): any | null {
+  if (!status || typeof status !== "object") return null;
+  const explicit = (status as any).next_milestone ?? (status as any).nextMilestone;
+  const explicitName = explicit && typeof explicit === "object"
+    ? firstString(explicit.name, explicit.title, explicit.goal)
+    : null;
+  if (explicit && explicitName) return explicit;
+
+  const candidates = milestoneCandidates(status);
+  if (!candidates.length) return null;
+
+  const scored = candidates.map((item, index) => ({
+    item,
+    priority: milestonePriority(item),
+    due: milestoneDue(item),
+    order: milestoneOrder(item),
+    index
+  }));
+
+  scored.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    if (a.due !== b.due) return a.due - b.due;
+    if (a.order !== b.order) return a.order - b.order;
+    return a.index - b.index;
+  });
+
+  return scored[0]?.item ?? null;
+}
+
 type PersonaEvent = { id: string; fields: Record<string, string> };
 
 async function waitForPersonaCompletion(
@@ -197,11 +366,36 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     cfg.git.defaultBranch
   ) || cfg.git.defaultBranch;
 
-  const milestones = Array.isArray(projectStatus?.milestones) ? projectStatus.milestones : [];
-  const nextMilestone = milestones.find((m: any) => (m?.status || "").toLowerCase() === "unstarted") || milestones[0] || null;
-  const milestoneName = nextMilestone?.name || nextMilestone?.title || nextMilestone?.goal || "next milestone";
-  const milestoneSlug = slugify(nextMilestone?.slug || milestoneName || "milestone");
-  const branchName = payloadObj.branch_name || `milestone/${milestoneSlug}`;
+
+
+  const selectedMilestone = (payloadObj.milestone && typeof payloadObj.milestone === "object")
+    ? payloadObj.milestone
+    : selectNextMilestone(projectStatus);
+
+  const milestoneName = firstString(
+    payloadObj.milestone_name,
+    selectedMilestone?.name,
+    selectedMilestone?.title,
+    selectedMilestone?.goal,
+    "next milestone"
+  )!;
+
+  const milestoneSlug = slugify(
+    firstString(
+      payloadObj.milestone_slug,
+      selectedMilestone?.slug,
+      milestoneName,
+      "milestone"
+    )!
+  );
+
+  const branchName = payloadObj.branch_name
+    || firstString(
+      selectedMilestone?.branch,
+      selectedMilestone?.branch_name,
+      selectedMilestone?.branchName
+    )
+    || `milestone/${milestoneSlug}`;
 
   await checkoutBranchFromBase(repoRoot, baseBranch, branchName);
   logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
@@ -212,17 +406,28 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payloadObj.repo || projectRepo || repoMeta.remoteUrl || repoResolution.remote || "");
   if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
 
-  const milestoneDescriptor = nextMilestone
+  const milestoneDue = firstString(
+    selectedMilestone?.due,
+    selectedMilestone?.due_at,
+    selectedMilestone?.dueAt,
+    selectedMilestone?.due_date,
+    selectedMilestone?.target_date,
+    selectedMilestone?.targetDate,
+    selectedMilestone?.deadline,
+    selectedMilestone?.eta
+  );
+
+  const milestoneDescriptor = selectedMilestone
     ? {
-        id: nextMilestone.id ?? milestoneSlug,
+        id: selectedMilestone.id ?? milestoneSlug,
         name: milestoneName,
         slug: milestoneSlug,
-        status: nextMilestone.status,
-        goal: nextMilestone.goal,
-        due: nextMilestone.due
+        status: selectedMilestone.status,
+        goal: selectedMilestone.goal,
+        due: milestoneDue || null,
+        branch: firstString(selectedMilestone.branch, selectedMilestone.branch_name, selectedMilestone.branchName) || branchName
       }
     : null;
-
   const contextCorrId = randomUUID();
   await sendPersonaRequest(r, {
     workflowId,
