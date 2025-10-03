@@ -380,32 +380,37 @@ async function waitForPersonaCompletion(
     : personaTimeoutMs(persona);
   const started = Date.now();
   let lastId = "$";
+  const eventRedis = await makeRedis();
 
-  while (Date.now() - started < effectiveTimeout) {
-    const elapsed = Date.now() - started;
-    const remaining = Math.max(0, effectiveTimeout - elapsed);
-    const blockMs = Math.max(1000, Math.min(remaining || effectiveTimeout, 5000));
-    const streams = await r.xRead([{ key: cfg.eventStream, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
-    if (!streams) continue;
+  try {
+    while (Date.now() - started < effectiveTimeout) {
+      const elapsed = Date.now() - started;
+      const remaining = Math.max(0, effectiveTimeout - elapsed);
+      const blockMs = Math.max(1000, Math.min(remaining || effectiveTimeout, 5000));
+      const streams = await eventRedis.xRead([{ key: cfg.eventStream, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
+      if (!streams) continue;
 
-    for (const stream of streams) {
-      for (const message of stream.messages) {
-        lastId = message.id;
-        const rawFields = message.message as Record<string, string>;
-        const fields: Record<string, string> = {};
-        for (const [k, v] of Object.entries(rawFields)) fields[k] = typeof v === "string" ? v : String(v);
-        if (
-          fields.workflow_id === workflowId &&
-          fields.from_persona === persona &&
-          fields.status === "done" &&
-          (!corrId || fields.corr_id === corrId)
-        ) {
-          return { id: message.id, fields };
+      for (const stream of streams) {
+        for (const message of stream.messages) {
+          lastId = message.id;
+          const rawFields = message.message as Record<string, string>;
+          const fields: Record<string, string> = {};
+          for (const [k, v] of Object.entries(rawFields)) fields[k] = typeof v === "string" ? v : String(v);
+          if (
+            fields.workflow_id === workflowId &&
+            fields.from_persona === persona &&
+            fields.status === "done" &&
+            (!corrId || fields.corr_id === corrId)
+          ) {
+            return { id: message.id, fields };
+          }
         }
+        const messages = stream.messages;
+        if (messages.length) lastId = messages[messages.length - 1].id;
       }
-      const messages = stream.messages;
-      if (messages.length) lastId = messages[messages.length - 1].id;
     }
+  } finally {
+    try { await eventRedis.quit(); } catch {}
   }
 
   const timeoutSec = Math.round(effectiveTimeout / 100) / 10;
