@@ -125,6 +125,7 @@ export const cfg = {
   dashboardBaseUrl: process.env.DASHBOARD_BASE_URL || "http://localhost:8787",
   dashboardApiKey: process.env.DASHBOARD_API_KEY || "dev",
   dashboardContextEndpoint,
+  dashboardCreateMilestoneIfMissing: bool(process.env.DASHBOARD_CREATE_MILESTONE_IF_MISSING, true),
 
   applyEdits: bool(process.env.APPLY_EDITS, false),
   allowedEditPersonas: splitCsv(process.env.ALLOWED_EDIT_PERSONAS || "lead-engineer,devops,ui-engineer,context", []),
@@ -177,4 +178,7 @@ export const cfg = {
     file: logFile,
     console: logConsole
   }
+  ,
+  // Max bytes for attachments the worker will send to the dashboard (base64-encoded size before transport)
+  dashboardMaxAttachmentBytes: Number(process.env.DASHBOARD_MAX_ATTACHMENT_BYTES || 200000)
 };

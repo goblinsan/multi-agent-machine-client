@@ -169,6 +169,7 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
 
 export type CreateTaskInput = {
   projectId?: string;
+  projectSlug?: string;
   milestoneId?: string;
   milestoneSlug?: string;
   parentTaskId?: string;
@@ -177,6 +178,9 @@ export type CreateTaskInput = {
   effortEstimate?: number;
   priorityScore?: number;
   assigneePersona?: string;
+  externalId?: string;
+  attachments?: { name: string; content_base64: string }[];
+  options?: Record<string, any> | null;
 };
 
 export type CreateTaskResult = {
@@ -197,12 +201,16 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
     description: input.description
   };
   if (input.projectId) body.project_id = input.projectId;
+  if (input.projectSlug) body.project_slug = input.projectSlug;
   if (input.milestoneId) body.milestone_id = input.milestoneId;
   else if (input.milestoneSlug) body.milestone_slug = input.milestoneSlug;
   if (input.parentTaskId) body.parent_task_id = input.parentTaskId;
   if (typeof input.effortEstimate === "number") body.effort_estimate = input.effortEstimate;
   if (typeof input.priorityScore === "number") body.priority_score = input.priorityScore;
   if (input.assigneePersona) body.assignee_persona = input.assigneePersona;
+  if (input.externalId) body.external_id = input.externalId;
+  if (input.attachments && Array.isArray(input.attachments)) body.attachments = input.attachments;
+  if (input.options) body.options = input.options;
 
   try {
     const res = await fetch(endpoint, {

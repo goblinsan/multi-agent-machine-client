@@ -2033,6 +2033,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     defaultPriority?: number;
     assigneePersona?: string;
     schedule?: string;
+    diagnostics?: QaDiagnostics | string | null;
   };
 
   function diagnosticsToMarkdown(diagnostics: any): string {
@@ -2173,8 +2174,35 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         }
       }
 
+      // derive project_slug if available (use provided projectName or fallback to known project slug)
+      const derivedProjectSlug = options.projectName || undefined; // prefer projectName for slug
+      const externalId = `auto-${options.stage}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+
+      // if QA diagnostics exist on the task, prepare attachments (base64) clipped to configured max size
+      let attachments: { name: string; content_base64: string }[] | undefined = undefined;
+      try {
+  const diag: any = (task.diagnostics || null);
+        if (diag && typeof diag === "object") {
+          const text = typeof diag.text === "string" ? diag.text : (typeof diag === "string" ? diag : JSON.stringify(diag));
+          if (text && text.length) {
+            const maxBytes = cfg.dashboardMaxAttachmentBytes || 200000;
+            // clip to maxBytes when UTF-8 encoded conservatively: assume 1 char = 1 byte for ASCII; further clipping is acceptable
+            let clipped = text;
+            if (Buffer.byteLength(clipped, "utf8") > maxBytes) {
+              clipped = clipped.slice(0, Math.floor(maxBytes * 0.9));
+            }
+            const b64 = Buffer.from(clipped, "utf8").toString("base64");
+            attachments = [{ name: `qa-diagnostics-${Date.now()}.txt`, content_base64: b64 }];
+          }
+        }
+      } catch (err) {
+        // ignore attachment build errors
+        attachments = undefined;
+      }
+
       const body = await createDashboardTask({
         projectId: options.projectId || undefined,
+        projectSlug: derivedProjectSlug || undefined,
         milestoneId: resolvedMilestoneId || undefined,
         milestoneSlug: resolvedMilestoneSlug || undefined,
         parentTaskId: targetParentTaskId,
@@ -2182,7 +2210,10 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         description,
         effortEstimate: 3,
         priorityScore: task.defaultPriority ?? 5,
-        assigneePersona: task.assigneePersona
+        assigneePersona: task.assigneePersona,
+        externalId,
+        attachments,
+        options: { create_milestone_if_missing: cfg.dashboardCreateMilestoneIfMissing }
       });
 
       if (body?.ok) {
