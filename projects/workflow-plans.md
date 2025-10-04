@@ -1,10 +1,10 @@
-# Next workflow refinement steps
+# workflow planning steps
 
 ## Engineering implementation planning and approval flow
 update to the lead-engineer and ui-engineer exection workflow to add a confirmation loop with the coordinator.
 Example flow:
-- coordinator provides context to engineer agent with the taks of planning the execution
-- engineer responds with a plan of execution asking for confirmation from coordiator
+- coordinator provides context to implementation-planner agent with the taks of planning the execution
+- implementation-planner responds with a plan of execution asking for confirmation from coordiator
 - if the plan aligns with the coordinators expectation then the coordinator approves for the engineer to proceed
 - if not the coordinator revises the plan, prompt, or ensures missing files are added into the contex and asks the engineer to update the plan
 - this confirmation loop continues until approval or for an max set of attempts configurable by MAX_APPROVAL_RETRIES
@@ -25,7 +25,7 @@ for QA, Code-Review, Security agent, devOps agent responses the coordinator foll
         "effort_estimate": 3,
         "priority_score": 5
     }'
-- assigns the first sub-task accornding (example: assigns tasks to fix linting in app.txs to lead-engineer)
+- assigns the first sub-task accornding (example: assigns tasks to fix linting in app.txs to implementation-planner to create a plan of exectuion for the lead-engineer)
 
 
 ### Code-Review and Security agent coordinator process

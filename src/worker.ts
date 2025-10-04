@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { cfg } from "./config.js";
+import path from "path";
 import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
@@ -7,6 +8,7 @@ import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, createDashboardTask } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
+import fs from "fs/promises";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
@@ -1309,6 +1311,7 @@ type QaDiagnostics = {
     stdout: string;
     stderr: string;
     error?: string;
+    logs?: Array<{ path: string; content: string }>;
   }>;
 };
 
@@ -1341,12 +1344,86 @@ async function gatherQaDiagnostics(commandsInput: any, repoRoot: string): Promis
       durationMs: result.durationMs,
       stdout: clipText((result.stdout || "").trim(), 2000) || "(no stdout)",
       stderr: clipText((result.stderr || "").trim(), 2000) || "(no stderr)",
-      error: result.error
+      error: result.error,
+      logs: [] as Array<{ path: string; content: string }>
     };
 
     entries.push(entry);
 
     if (result.exitCode !== 0) {
+      // On failure, look for common log files produced by test/lint tools and attach their contents.
+      try {
+        const candidates = [
+          "npm-debug.log",
+          "npm-debug.log.*",
+          "test-results.log",
+          "test-output.log",
+          "jest-results.json",
+          "lint-report.txt",
+          "eslint-report.txt",
+          "coverage/lcov.info",
+          "coverage/coverage-final.json",
+          "reports/test-results.xml"
+        ];
+        for (const pattern of candidates) {
+          const globPath = path.join(repoRoot, pattern);
+          try {
+            // simple existence check for exact files, and for patterns try a wildcard glob via readdir when necessary
+            if (!pattern.includes("*")) {
+              const stat = await fs.stat(globPath).catch(() => null);
+              if (stat) {
+                const raw = await fs.readFile(globPath, "utf8").catch(() => "");
+                if (raw && raw.trim().length) {
+                  entry.logs!.push({ path: path.relative(repoRoot, globPath), content: clipText(raw, 10000) });
+                }
+              }
+            } else {
+              // pattern contains wildcard - list directory and match
+              const dir = path.dirname(globPath);
+              const basePattern = path.basename(pattern).replace(/\*/g, "");
+              const files = await fs.readdir(dir).catch(() => [] as string[]);
+              for (const f of files) {
+                if (basePattern && !f.includes(basePattern)) continue;
+                const full = path.join(dir, f);
+                const stat = await fs.stat(full).catch(() => null);
+                if (!stat || !stat.isFile()) continue;
+                const raw = await fs.readFile(full, "utf8").catch(() => "");
+                if (raw && raw.trim().length) entry.logs!.push({ path: path.relative(repoRoot, full), content: clipText(raw, 10000) });
+              }
+            }
+          } catch (err) {
+            // ignore individual file read errors
+          }
+        }
+        // Also look for absolute paths mentioned in stdout/stderr (e.g. npm debug log path) and attach them
+        try {
+          const combined = `${result.stdout || ""}\n${result.stderr || ""}`;
+          const npmMatch = /A complete log of this run can be found in:\s*(\S+)/i.exec(combined);
+          const pathsFound = new Set<string>();
+          if (npmMatch && npmMatch[1]) pathsFound.add(npmMatch[1]);
+          // generic absolute path matches (Unix)
+          const absPathRegex = /(?<!\S)(\/[^\s:]+)/g;
+          let m: RegExpExecArray | null;
+          while ((m = absPathRegex.exec(combined))) {
+            const candidate = m[1];
+            if (candidate.includes("/.npm/_logs/") || candidate.startsWith(repoRoot) || candidate.startsWith(process.env.HOME || "")) {
+              pathsFound.add(candidate);
+            }
+          }
+          for (const p of Array.from(pathsFound)) {
+            try {
+              const raw = await fs.readFile(p, "utf8").catch(() => "");
+              if (raw && raw.trim().length) entry.logs!.push({ path: path.relative(repoRoot, p), content: clipText(raw, 10000) });
+            } catch (err) {
+              // ignore
+            }
+          }
+        } catch (err) {
+          // ignore
+        }
+      } catch (err) {
+        // ignore overall diagnostics attach failures
+      }
       break;
     }
   }
@@ -1363,6 +1440,11 @@ async function gatherQaDiagnostics(commandsInput: any, repoRoot: string): Promis
     }
     if (entry.stderr && entry.stderr !== "(no stderr)") {
       lines.push(`STDERR:\n${entry.stderr}`);
+    }
+    if (entry.logs && entry.logs.length) {
+      for (const l of entry.logs) {
+        lines.push(`LOG ${l.path}:\n${l.content}`);
+      }
     }
     return lines.join("\n");
   });
@@ -2039,7 +2121,14 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     scheduleHint?: string;
   }): Promise<string[]> {
     if (!tasks.length) return [];
-    const milestoneId = options.milestoneDescriptor?.id || null;
+    const rawMilestone = options.milestoneDescriptor?.id ?? options.milestoneDescriptor?.slug ?? null;
+    let milestoneId: string | null = null;
+    let milestoneSlug: string | null = null;
+    if (typeof rawMilestone === "string") {
+      const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      if (uuidRegex.test(rawMilestone)) milestoneId = rawMilestone;
+      else milestoneSlug = String(rawMilestone);
+    }
     const parentTaskId = options.parentTaskDescriptor?.id || null;
     const summaries: string[] = [];
 
@@ -2060,9 +2149,34 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       }
       const descriptionBase = task.description || `Follow-up required for ${options.stage}`;
       const description = scheduleNote ? `${descriptionBase}\n\nSchedule: ${scheduleNote}` : descriptionBase;
+      // If we have a milestone slug but not an ID, attempt to resolve it via the dashboard project status
+      let resolvedMilestoneId = milestoneId;
+      let resolvedMilestoneSlug = milestoneSlug;
+      if (!resolvedMilestoneId && resolvedMilestoneSlug && options.projectId) {
+        try {
+          const proj = await fetchProjectStatus(options.projectId);
+          const p = proj as any;
+          const candidates = p?.milestones || p?.milestones_list || (p?.milestones?.items) || [];
+          if (Array.isArray(candidates)) {
+            const match = candidates.find((m: any) => {
+              if (!m) return false;
+              const s = (m.slug || m.name || m.title || "").toString().toLowerCase();
+              return s === String(resolvedMilestoneSlug).toLowerCase();
+            });
+            if (match && match.id) {
+              resolvedMilestoneId = match.id;
+              resolvedMilestoneSlug = null;
+            }
+          }
+        } catch (err) {
+          // ignore resolution errors
+        }
+      }
+
       const body = await createDashboardTask({
         projectId: options.projectId || undefined,
-        milestoneId: milestoneId || undefined,
+        milestoneId: resolvedMilestoneId || undefined,
+        milestoneSlug: resolvedMilestoneSlug || undefined,
         parentTaskId: targetParentTaskId,
         title,
         description,
@@ -2140,7 +2254,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   async function runLeadCycle(feedbackNotes: string[], attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<LeadCycleOutcome> {
     const feedback = feedbackNotes.filter(Boolean).join("\n\n");
     const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
-    const engineerBasePayload = {
+      const engineerBasePayload = {
       repo: repoRemote,
       branch: branchName,
       project_id: projectId,
@@ -2151,7 +2265,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       milestone_slug: currentMilestoneDescriptorValue?.slug || milestoneSlug,
       task: currentTaskDescriptorValue,
       task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
-      goal: projectInfo?.goal || projectInfo?.direction || currentMilestoneDescriptorValue?.goal,
+      // If there is coordinator feedback (e.g., QA failure details), use that as the immediate goal so the implementation planner focuses on fixing it
+      goal: feedback || projectInfo?.goal || projectInfo?.direction || currentMilestoneDescriptorValue?.goal,
       base_branch: baseBranch,
       feedback: feedback || undefined,
       revision: attempt

@@ -170,6 +170,7 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
 export type CreateTaskInput = {
   projectId?: string;
   milestoneId?: string;
+  milestoneSlug?: string;
   parentTaskId?: string;
   title: string;
   description: string;
@@ -197,6 +198,7 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
   };
   if (input.projectId) body.project_id = input.projectId;
   if (input.milestoneId) body.milestone_id = input.milestoneId;
+  else if (input.milestoneSlug) body.milestone_slug = input.milestoneSlug;
   if (input.parentTaskId) body.parent_task_id = input.parentTaskId;
   if (typeof input.effortEstimate === "number") body.effort_estimate = input.effortEstimate;
   if (typeof input.priorityScore === "number") body.priority_score = input.priorityScore;
@@ -225,7 +227,7 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
       return { ok: false, status, body: responseBody };
     }
 
-    logger.info("dashboard task created", { title: input.title, status, milestoneId: input.milestoneId, parentTaskId: input.parentTaskId });
+    logger.info("dashboard task created", { title: input.title, status, milestoneId: input.milestoneId || null, milestoneSlug: input.milestoneSlug || null, parentTaskId: input.parentTaskId });
     return { ok: true, status, body: responseBody };
   } catch (error) {
     logger.warn("dashboard task creation exception", { error, title: input.title });
