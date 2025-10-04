@@ -59,6 +59,50 @@ export async function fetchProjectNextAction(projectId: string | null | undefine
   }
 }
 
+// Try to fetch a concise project status summary. Falls back to next-action suggestions or project read data.
+export async function fetchProjectStatusSummary(projectId: string | null | undefined) {
+  if (!projectId) return null;
+  try {
+    const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
+    // preferred endpoint
+    const res = await fetch(`${base}/v1/projects/${encodeURIComponent(projectId)}/status/summary`, {
+      headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+    });
+    if (res.ok) {
+      const data: any = await res.json().catch(() => null);
+      // ProjectStatusSummary has 'summary' field
+      if (data && typeof data.summary === 'string') return data.summary;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // fallback: try next-action suggestions
+  try {
+    const nextAction: any = await fetchProjectNextAction(projectId);
+    if (nextAction && Array.isArray(nextAction.suggestions) && nextAction.suggestions.length) {
+      const top: any = nextAction.suggestions[0];
+      const reason = top.reason || top.title || '';
+      return `Next suggested action: ${top.title || '(no title)'} — ${reason}`;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // last resort: fetch project basic info
+  try {
+    const p: any = await fetchProjectStatus(projectId);
+    if (p) {
+      const goal = p.goal || p.direction || "";
+      return `Project goal: ${goal}`;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
+}
+
 export async function recordEvent(ev: any) {
   try {
     await fetch(`${cfg.dashboardBaseUrl}/api/events`, {
@@ -211,6 +255,10 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
   if (input.externalId) body.external_id = input.externalId;
   if (input.attachments && Array.isArray(input.attachments)) body.attachments = input.attachments;
   if (input.options) body.options = input.options;
+  // Allow the caller to request an initial status for newly created tasks (some dashboards accept this)
+  if (input.options && typeof input.options.initial_status === 'string' && input.options.initial_status.trim().length) {
+    body.initial_status = input.options.initial_status.trim();
+  }
 
   try {
     const res = await fetch(endpoint, {
@@ -240,5 +288,68 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
   } catch (error) {
     logger.warn("dashboard task creation exception", { error, title: input.title });
     return { ok: false, status: 0, body: null, error };
+  }
+}
+
+export async function fetchTask(taskId: string): Promise<any | null> {
+  if (!cfg.dashboardBaseUrl) return null;
+  try {
+    const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
+    const res = await fetch(`${base}/v1/tasks/${encodeURIComponent(taskId)}`, {
+      headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+    });
+    if (!res.ok) {
+      logger.warn("fetchTask non-ok", { taskId, status: res.status });
+      return null;
+    }
+    return await res.json();
+  } catch (e) {
+    logger.warn("fetchTask exception", { taskId, error: (e as Error).message });
+    return null;
+  }
+}
+
+// Update the task status using the task's lock/version to prevent races.
+export async function updateTaskStatus(taskId: string, status: string, lockVersion?: number): Promise<CreateTaskResult> {
+  if (!cfg.dashboardBaseUrl) {
+    logger.warn("dashboard update skipped: base URL not configured");
+    return { ok: false, status: 0, body: null };
+  }
+  const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
+
+  try {
+    let lv = lockVersion;
+    if (lv === undefined || lv === null) {
+      const current = await fetchTask(taskId);
+      lv = current && (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) ? Number(current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
+    }
+
+    const endpoint = `${base}/v1/tasks/${encodeURIComponent(taskId)}`;
+    const body: any = { status };
+    if (lv !== undefined) body.lock_version = lv;
+
+    const res = await fetch(endpoint, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${cfg.dashboardApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    const statusCode = res.status;
+    let responseBody: any = null;
+    try { const text = await res.text(); responseBody = text ? JSON.parse(text) : null; } catch { responseBody = null; }
+
+    if (!res.ok) {
+      logger.warn("dashboard task update failed", { taskId, status, statusCode, responseBody });
+      return { ok: false, status: statusCode, body: responseBody };
+    }
+
+    logger.info("dashboard task updated", { taskId, status, statusCode });
+    return { ok: true, status: statusCode, body: responseBody };
+  } catch (e) {
+    logger.warn("dashboard task update exception", { taskId, status, error: (e as Error).message });
+    return { ok: false, status: 0, body: null, error: e };
   }
 }

@@ -181,4 +181,8 @@ export const cfg = {
   ,
   // Max bytes for attachments the worker will send to the dashboard (base64-encoded size before transport)
   dashboardMaxAttachmentBytes: Number(process.env.DASHBOARD_MAX_ATTACHMENT_BYTES || 200000)
+  ,
+  // Whether the worker should inject dashboard context (project tree, hotspots) into model prompts
+  // Set to false to ensure each LM call is self-contained and no external dashboard context is added.
+  injectDashboardContext: bool(process.env.INJECT_DASHBOARD_CONTEXT, true)
 };

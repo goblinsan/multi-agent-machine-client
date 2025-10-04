@@ -5,7 +5,7 @@ import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, createDashboardTask } from "./dashboard.js";
+import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
 import fs from "fs/promises";
@@ -1990,8 +1990,10 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
 
       const planEvent = await waitForPersonaCompletion(r, planner, workflowId, planCorrId);
       const planResultObj = parseEventResult(planEvent.fields.result);
+        logger.debug("plan persona result raw", { planner, workflowId, planCorrId, planResultObjPreview: String(planResultObj?.output || '').slice(0,200) });
       const planOutput = planResultObj?.output || "";
       const planJson = extractJsonPayloadFromText(planOutput) || planResultObj?.payload || null;
+        logger.debug("plan persona parsed json", { planner, workflowId, planCorrId, hasPlanJson: !!planJson, planJsonPreview: planJson ? JSON.stringify(planJson).slice(0,400) : null });
       const planSteps = extractPlanSteps(planJson);
 
       planHistory.push({ attempt: planAttempt + 1, content: planOutput, payload: planJson });
@@ -2004,6 +2006,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
           planAttempt: planAttempt + 1,
           steps: planSteps.length
         });
+        logger.debug("plan approved payload preview", { workflowId, planner, planAttempt: planAttempt + 1, planStepsPreview: JSON.stringify(planSteps).slice(0,400) });
         return { planText: planOutput, planPayload: planJson, planSteps, history: planHistory.slice() };
       }
 
@@ -2217,6 +2220,11 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       });
 
       if (body?.ok) {
+        // store external -> task id mapping if server returned an id
+        try {
+          const createdId = body?.body && (body.body.id || body.body.task_id || (body.body.task && body.body.task.id));
+          if (createdId && externalId) externalToTaskId.set(String(externalId), String(createdId));
+        } catch {}
         const summaryParts = [title];
         if (schedule) summaryParts.push(`schedule: ${schedule}`);
         summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
@@ -2333,6 +2341,34 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       projectId: projectId!
     });
 
+    // Attempt to mark a corresponding dashboard task as in_progress (best-effort).
+    // Prefer updating by external_id mapping when available, otherwise fall back to title search.
+    try {
+      let didUpdate = false;
+      const candidateExternalId = currentTaskDescriptorValue?.id || null;
+      if (candidateExternalId && externalToTaskId.has(String(candidateExternalId))) {
+        const mapped = externalToTaskId.get(String(candidateExternalId));
+        if (mapped) {
+          await updateTaskStatus(mapped, "in_progress").catch(() => {});
+          didUpdate = true;
+        }
+      }
+
+      if (!didUpdate && projectId && currentTaskNameValue) {
+        const proj = await fetchProjectStatus(projectId) as any;
+        const candidates = Array.isArray(proj?.tasks) ? proj.tasks : (Array.isArray(proj?.task_list) ? proj.task_list : (Array.isArray(proj?.tasks_list) ? proj.tasks_list : []));
+        if (Array.isArray(candidates) && candidates.length) {
+          const match = candidates.find((t: any) => (t.title || t.name || t.summary || "").toString().toLowerCase() === (currentTaskNameValue || "").toLowerCase());
+          if (match && match.id) {
+            await updateTaskStatus(match.id, "in_progress").catch(() => {});
+            didUpdate = true;
+          }
+        }
+      }
+    } catch (err) {
+      logger.debug("attempt to set task in_progress failed", { workflowId, error: err });
+    }
+
     const leadEvent = await waitForPersonaCompletion(r, "lead-engineer", workflowId, leadCorrId);
     const leadResultObj = parseEventResult(leadEvent.fields.result);
     logger.info("coordinator received lead engineer completion", { workflowId, corrId: leadCorrId, eventId: leadEvent.id });
@@ -2438,11 +2474,77 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         }
       }
 
-      const qaTasks = extractStageTasks("qa", qaDetails, qaPayload).map(task => ({
+      let qaTasks = extractStageTasks("qa", qaDetails, qaPayload).map(task => ({
         ...task,
         schedule: task.schedule || "urgent",
         assigneePersona: task.assigneePersona || "lead-engineer"
       }));
+
+      // If QA failed because there is no test or lint script in package.json, create an implementation-planner follow-up
+      try {
+        const hasPackageJson = await (async () => {
+          try {
+            const fs = await import("fs/promises");
+            const pathMod = await import("path");
+            // Fallback to process.cwd() when repo root isn't available in this context
+            const pkgPath = pathMod.resolve(process.cwd(), "package.json");
+            const content = await fs.readFile(pkgPath, "utf8").catch(() => "");
+            if (!content) return { exists: false, hasTest: false, hasLint: false };
+            const parsed = JSON.parse(content || "{}");
+            return { exists: true, hasTest: !!(parsed.scripts && parsed.scripts.test), hasLint: !!(parsed.scripts && (parsed.scripts.lint || parsed.scripts['eslint'])) };
+          } catch {
+            return { exists: false, hasTest: false, hasLint: false };
+          }
+        })();
+
+        if (hasPackageJson.exists && (!hasPackageJson.hasTest || !hasPackageJson.hasLint)) {
+          const missingParts: string[] = [];
+          if (!hasPackageJson.hasTest) missingParts.push("test script");
+          if (!hasPackageJson.hasLint) missingParts.push("lint script");
+          const title = `Add missing ${missingParts.join(' and ')}`;
+          const description = `QA found that package.json is missing the following scripts: ${missingParts.join(', ')}. Add scripts and basic tests/lint configuration so QA can validate changes.\n\nQA details:\n${qaDetails}`;
+          // Route to implementation-planner first so a plan is made
+          await sendPersonaRequest(r, {
+            workflowId,
+            toPersona: "implementation-planner",
+            step: "followup-create-plan",
+            intent: "plan_execution",
+            payload: { goal: title, details: description, suggested_files: ["package.json"], priority: "high" },
+            repo: repoRemote,
+            branch: branchName,
+            projectId: projectId || undefined
+          });
+        }
+      } catch (err) {
+        logger.debug("qa followup package.json check failed", { workflowId, error: err });
+      }
+
+      // Let project-manager decide priority and routing before task creation
+      try {
+        const routed = await runPersonaWithStatus(
+          "project-manager",
+          "pm-task-routing",
+          "schedule_followup_tasks",
+          {
+            stage: "qa",
+            tasks: qaTasks.map(task => ({ id: task.id, title: task.title, description: task.description, default_priority: task.defaultPriority ?? 5 }))
+          }
+        );
+        const pmPayload = routed.status.payload || extractJsonPayloadFromText(routed.result?.output) || null;
+        if (pmPayload && typeof pmPayload === "object" && Array.isArray(pmPayload.tasks)) {
+          // apply scheduling/assignee/priority back to qaTasks
+          const scheduleMap = new Map<string, any>();
+          for (const entry of pmPayload.tasks) { if (entry && typeof entry === 'object' && entry.id) scheduleMap.set(entry.id, entry); }
+          qaTasks = qaTasks.map(task => {
+            const mapped = scheduleMap.get(task.id);
+            if (!mapped) return task;
+            return { ...task, schedule: typeof mapped.schedule === 'string' ? mapped.schedule : task.schedule, assigneePersona: typeof mapped.assignee === 'string' ? mapped.assignee : task.assigneePersona, defaultPriority: typeof mapped.priority_score === 'number' ? mapped.priority_score : task.defaultPriority };
+          });
+        }
+      } catch (err) {
+        logger.warn("project-manager routing failed for QA tasks, continuing with defaults", { workflowId, error: err });
+      }
+
       const createdTasks = await createDashboardTaskEntries(qaTasks, {
         stage: "qa",
         milestoneDescriptor: currentMilestoneDescriptorValue,
@@ -2715,6 +2817,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   }
 
   const completedTaskSummaries: string[] = [];
+  // map external_id -> dashboard task id for precise updates (in-memory)
+  const externalToTaskId = new Map<string,string>();
   let currentTaskObject = selectedTask;
   let currentTaskDescriptorValue = taskDescriptor;
   let currentTaskNameValue = taskName;
@@ -3495,8 +3599,19 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     messages.push({ role: "system", content: `${label}:\n${scanSummaryForPrompt}` });
   }
 
-  if ((persona !== "context" || !scanArtifacts) && (ctx?.projectTree || ctx?.fileHotspots)) {
+  if (cfg.injectDashboardContext && (persona !== "context" || !scanArtifacts) && (ctx?.projectTree || ctx?.fileHotspots)) {
     messages.push({ role: "system", content: `Dashboard context (may be stale):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` });
+  }
+
+  // Coordinator-managed short summary insertion: fetch a concise project summary (if available)
+  try {
+    const projectIdForSummary = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id, dashboardProject.id) || null;
+    const projSummary = await fetchProjectStatusSummary(projectIdForSummary);
+    if (projSummary && typeof projSummary === 'string' && projSummary.trim().length) {
+      messages.push({ role: 'system', content: `Previous step summary (from dashboard):\n${projSummary.trim()}` });
+    }
+  } catch (err) {
+    // ignore summary fetch failures
   }
 
   if (promptFileSnippets.length) {
@@ -3535,8 +3650,13 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   }
   messages.push({ role: "user", content: userText });
 
+  // Ensure we don't accidentally pass prior assistant messages as history; use only system+user messages
+  const freshMessages = messages.filter(m => m && (m.role === 'system' || m.role === 'user')) as any[];
   const started = Date.now();
-  const resp = await callLMStudio(model, messages, 0.2);
+  // Use persona-specific timeout for LM calls so long-running personas can be configured via env
+  const lmTimeoutMs = personaTimeoutMs(persona);
+  logger.debug("calling LM model", { persona, model, timeoutMs: lmTimeoutMs });
+  const resp = await callLMStudio(model, freshMessages, 0.2, { timeoutMs: lmTimeoutMs });
   const duration = Date.now() - started;
   const responsePreview = resp.content && resp.content.length > 4000
     ? resp.content.slice(0, 4000) + "... (truncated)"
