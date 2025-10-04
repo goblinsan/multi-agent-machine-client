@@ -797,28 +797,37 @@ async function applyDiffTextually(options: {
   pathMod: PathModule;
 }): Promise<string[] | null> {
   const { diff, repoRoot, fs, pathMod } = options;
-  if (/^---\s+\/dev\/null/m.test(diff)) return null;
+  const isNewFile = /^---\s+\/dev\/null/m.test(diff);
   const parsed = parseUnifiedDiff(diff);
   if (!parsed) {
     logger.info("textual diff fallback skipped", { repoRoot, reason: "parse_failed" });
     return null;
   }
   const targetPath = pathMod.resolve(repoRoot, parsed.path);
-  let content: string;
-  try {
-    content = await fs.readFile(targetPath, "utf8");
-  } catch {
-    logger.info("textual diff fallback skipped", { repoRoot, path: parsed.path, reason: "file_missing" });
-    return null;
+  let content = "";
+  let hasTrailingNewline = true;
+  let eol = "\n";
+  let lines: string[] = [];
+
+  if (!isNewFile) {
+    try {
+      content = await fs.readFile(targetPath, "utf8");
+    } catch {
+      logger.info("textual diff fallback skipped", { repoRoot, path: parsed.path, reason: "file_missing" });
+      return null;
+    }
+    hasTrailingNewline = content.endsWith("\n");
+    eol = content.includes("\r\n") ? "\r\n" : "\n";
+    lines = content.split(/\r?\n/);
+  } else {
+    hasTrailingNewline = true;
+    eol = "\n";
+    lines = [];
   }
 
-  const hasTrailingNewline = content.endsWith("\n");
-  const eol = content.includes("\r\n") ? "\r\n" : "\n";
-  let lines = content.split(/\r?\n/);
-
   const isFullRewrite = parsed.hunks.length === 1
-    && parsed.hunks[0].oldStart === 1
-    && parsed.hunks[0].newStart === 1;
+    && parsed.hunks[0].newStart === 1
+    && (parsed.hunks[0].oldStart === 1 || isNewFile);
 
   if (isFullRewrite) {
     const hunk = parsed.hunks[0];
@@ -834,10 +843,11 @@ async function applyDiffTextually(options: {
         sawNonContext = true;
       }
     }
-    if (sawNonContext) {
+    if (sawNonContext || isNewFile) {
       let newContent = newLines.join(eol);
       if (hasTrailingNewline && !newContent.endsWith(eol)) newContent += eol;
       if (!hasTrailingNewline && newContent.endsWith(eol)) newContent = newContent.slice(0, -eol.length);
+      await fs.mkdir(pathMod.dirname(targetPath), { recursive: true });
       await fs.writeFile(targetPath, newContent, "utf8");
       return [parsed.path];
     }
