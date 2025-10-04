@@ -4,7 +4,7 @@ import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails } from "./dashboard.js";
+import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
 
@@ -477,6 +477,26 @@ function deriveMilestoneContext(milestone: any, nameFallback: string, branchFall
     : (taskDescriptor ? { task: taskDescriptor } : null);
 
   return { name: milestoneName, slug: milestoneSlug, branch: milestoneBranch, descriptor };
+}
+
+function suggestionToTask(suggestion: any) {
+  if (!suggestion || typeof suggestion !== "object") return null;
+  const title = firstString(suggestion.title, suggestion.name, suggestion.summary, suggestion.id) || "suggested task";
+  return {
+    id: suggestion.task_id || suggestion.id || title,
+    name: title,
+    title,
+    summary: suggestion.reason || suggestion.summary || null,
+    status: suggestion.status || "not_started",
+    priority: suggestion.priority_score,
+    persona: suggestion.persona_required || null
+  };
+}
+
+function pickSuggestion(suggestions: any[] | undefined | null) {
+  if (!Array.isArray(suggestions) || suggestions.length === 0) return null;
+  const preferred = suggestions.find(s => !s?.persona_required || s.persona_required === "lead-engineer");
+  return suggestionToTask(preferred || suggestions[0]);
 }
 
 type PersonaEvent = { id: string; fields: Record<string, string> };
@@ -1222,6 +1242,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
 
   let projectInfo: any = await fetchProjectStatus(projectId);
   let projectStatus: any = await fetchProjectStatusDetails(projectId);
+  let nextActionData: any = await fetchProjectNextAction(projectId);
   const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectInfo?.slug, projectInfo?.id);
   const projectRepo = firstString(
     payloadObj.repo,
@@ -1296,7 +1317,14 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     )!
   );
 
-  const selectedTask = selectNextTask(selectedMilestone, milestoneSource, projectStatus, projectInfo, payloadObj);
+  let selectedTask = selectNextTask(selectedMilestone, milestoneSource, projectStatus, projectInfo, payloadObj);
+  if (!selectedTask) {
+    const suggested = pickSuggestion(nextActionData?.suggestions);
+    if (suggested) {
+      selectedTask = suggested;
+      logger.info("coordinator selected suggestion task", { workflowId, task: suggested.name, reason: suggested.summary });
+    }
+  }
 
   const taskName = firstString(
     payloadObj.task_name,
@@ -1475,6 +1503,12 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     const feedback = feedbackNotes.filter(Boolean).join("\n\n");
     const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
     const leadCorrId = randomUUID();
+    logger.info("coordinator dispatch lead", {
+      workflowId,
+      attempt,
+      taskName: currentTaskNameValue,
+      milestoneName: milestoneNameForPayload
+    });
     await sendPersonaRequest(r, {
       workflowId,
       toPersona: "lead-engineer",
@@ -1754,6 +1788,17 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   let currentTaskObject = selectedTask;
   let currentTaskDescriptorValue = taskDescriptor;
   let currentTaskNameValue = taskName;
+  if (!currentTaskObject && nextActionData?.suggestions?.length) {
+    const suggested = pickSuggestion(nextActionData.suggestions);
+    if (suggested) {
+      currentTaskObject = suggested;
+      const taskCtx = deriveTaskContext(currentTaskObject);
+      currentTaskDescriptorValue = taskCtx.descriptor;
+      currentTaskNameValue = taskCtx.name;
+      payloadObj.task = currentTaskDescriptorValue;
+      payloadObj.task_name = currentTaskNameValue || "";
+    }
+  }
   let currentMilestoneObject = selectedMilestone;
   let currentMilestoneDescriptorValue = milestoneDescriptor;
   let currentMilestoneNameValue = milestoneName;
@@ -1765,13 +1810,25 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   if (currentMilestoneDescriptorValue) payloadObj.milestone = currentMilestoneDescriptorValue;
   payloadObj.milestone_name = currentMilestoneNameValue;
 
-  while (currentTaskDescriptorValue && iterationCount < 20) {
+  while ((currentTaskDescriptorValue || iterationCount === 0) && iterationCount < 20) {
     iterationCount += 1;
+    logger.info("coordinator task cycle begin", {
+      workflowId,
+      iteration: iterationCount,
+      taskName: currentTaskNameValue,
+      milestoneName: currentMilestoneNameValue
+    });
     const summary = await executeTaskLifecycle(currentTaskNameValue, currentTaskDescriptorValue, currentMilestoneDescriptorValue);
     completedTaskSummaries.push(summary);
+    logger.info("coordinator task cycle complete", {
+      workflowId,
+      iteration: iterationCount,
+      summary
+    });
 
     projectInfo = await fetchProjectStatus(projectId);
     projectStatus = await fetchProjectStatusDetails(projectId);
+    nextActionData = await fetchProjectNextAction(projectId);
 
     const milestoneSourceNext = projectStatus ?? projectInfo;
     let nextSelectedMilestone = (payloadObj.milestone && typeof payloadObj.milestone === "object") ? payloadObj.milestone : selectNextMilestone(milestoneSourceNext);
@@ -1793,7 +1850,14 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       payloadObj.milestone_name = currentMilestoneNameValue;
     }
 
-    const nextTask = selectNextTask(currentMilestoneObject, milestoneSourceNext, projectStatus, projectInfo, payloadObj);
+    let nextTask = selectNextTask(currentMilestoneObject, milestoneSourceNext, projectStatus, projectInfo, payloadObj);
+    if (!nextTask && nextActionData?.suggestions?.length) {
+      const suggested = pickSuggestion(nextActionData.suggestions);
+      if (suggested) {
+        nextTask = suggested;
+        logger.info("coordinator selected suggestion task", { workflowId, task: suggested.name, reason: suggested.summary });
+      }
+    }
     if (!nextTask) break;
 
     currentTaskObject = nextTask;
@@ -1909,6 +1973,20 @@ async function applyModelGeneratedChanges(options: {
       let applied = false;
       let diffUsed = originalDiff;
       let lastError: any = null;
+
+      const newFileDiff = /^---\s+\/dev\/null/m.test(originalDiff);
+      if (newFileDiff) {
+        const parsed = parseUnifiedDiff(originalDiff);
+        if (parsed) {
+          const targetPath = pathMod.resolve(repoRoot, parsed.path);
+          try {
+            await fs.access(targetPath);
+            logger.warn("persona apply diff duplicate new-file", { persona, workflowId, patchIndex: i, path: parsed.path });
+            for (const p of extractPathsFromDiff(originalDiff)) appliedPaths.add(p);
+            continue;
+          } catch {}
+        }
+      }
 
       try {
         for (let attemptIndex = 0; attemptIndex < diffAttempts.length; attemptIndex += 1) {
