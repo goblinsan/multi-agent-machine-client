@@ -1,0 +1,2111 @@
+openapi: 3.1.0
+info:
+  title: MADB API
+  version: 0.1.0
+paths:
+  /v1/.well-known/schemas:
+    get:
+      tags:
+      - discovery
+      summary: List Schemas
+      operationId: list_schemas_v1__well_known_schemas_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  additionalProperties: true
+                  type: object
+                type: object
+                title: Response List Schemas V1  Well Known Schemas Get
+  /v1/.well-known/openapi:
+    get:
+      tags:
+      - discovery
+      summary: Discover Openapi
+      operationId: discover_openapi_v1__well_known_openapi_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Discover Openapi V1  Well Known Openapi Get
+  /v1/projects:
+    post:
+      tags:
+      - projects
+      summary: Create Project
+      operationId: create_project_v1_projects_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - projects
+      summary: List Projects
+      operationId: list_projects_v1_projects_get
+      parameters:
+      - name: parent_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectRead'
+                title: Response List Projects V1 Projects Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}:
+    get:
+      tags:
+      - projects
+      summary: Get Project
+      operationId: get_project_v1_projects__project_id__get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - projects
+      summary: Update Project
+      operationId: update_project_v1_projects__project_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}/status:
+    get:
+      tags:
+      - projects
+      summary: Get Project Status
+      operationId: get_project_status_v1_projects__project_id__status_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectStatusRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}/next-action:
+    get:
+      tags:
+      - projects
+      summary: Get Project Next Actions
+      operationId: get_project_next_actions_v1_projects__project_id__next_action_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectNextActions'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}/status/summary:
+    get:
+      tags:
+      - projects
+      summary: Get Project Status Summary
+      operationId: get_project_status_summary_v1_projects__project_id__status_summary_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectStatusSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}/milestones:
+    get:
+      tags:
+      - projects
+      summary: Find Milestones By Slug Or Name
+      description: 'Resolve milestones for a project by slug or name.
+
+
+        Returns JSON: {"ok": true, "milestones": [ {id, slug, name, start_date, due_date,
+        url}, ... ]}'
+      operationId: find_milestones_by_slug_or_name_v1_projects__project_id__milestones_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: slug
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Slug
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 10
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Find Milestones By Slug Or Name V1 Projects  Project
+                  Id  Milestones Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/milestones:
+    post:
+      tags:
+      - milestones
+      summary: Create Milestone
+      operationId: create_milestone_v1_milestones_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MilestoneCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestoneRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - milestones
+      summary: List Milestones
+      operationId: list_milestones_v1_milestones_get
+      parameters:
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MilestoneRead'
+                title: Response List Milestones V1 Milestones Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/milestones/{milestone_id}:
+    get:
+      tags:
+      - milestones
+      summary: Get Milestone
+      operationId: get_milestone_v1_milestones__milestone_id__get
+      parameters:
+      - name: milestone_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Milestone Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestoneRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - milestones
+      summary: Update Milestone
+      operationId: update_milestone_v1_milestones__milestone_id__patch
+      parameters:
+      - name: milestone_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Milestone Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MilestoneUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestoneRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/tasks:
+    post:
+      tags:
+      - tasks
+      summary: Create Task
+      operationId: create_task_v1_tasks_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - tasks
+      summary: List Tasks
+      operationId: list_tasks_v1_tasks_get
+      parameters:
+      - name: external_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: External Id
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Project Id
+      - name: project_slug
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Slug
+      - name: milestone_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Milestone Id
+      - name: created_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created After
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskRead'
+                title: Response List Tasks V1 Tasks Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/tasks/{task_id}:
+    get:
+      tags:
+      - tasks
+      summary: Get Task
+      operationId: get_task_v1_tasks__task_id__get
+      parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Task Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - tasks
+      summary: Update Task
+      operationId: update_task_v1_tasks__task_id__patch
+      parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Task Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskPatch'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/events:
+    get:
+      tags:
+      - events
+      summary: List Events
+      operationId: list_events_v1_events_get
+      parameters:
+      - name: project_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: milestone_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Milestone Id
+      - name: task_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Task Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventLogRead'
+                title: Response List Events V1 Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - events
+      summary: Create Event
+      operationId: create_event_v1_events_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventLogCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventLogRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/bugs:
+    get:
+      tags:
+      - bugs
+      summary: List Bugs
+      operationId: list_bugs_v1_bugs_get
+      parameters:
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Project Id
+      - name: task_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Task Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BugRead'
+                title: Response List Bugs V1 Bugs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - bugs
+      summary: Create Bug
+      operationId: create_bug_v1_bugs_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BugCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BugRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/bugs/{bug_id}:
+    patch:
+      tags:
+      - bugs
+      summary: Update Bug
+      operationId: update_bug_v1_bugs__bug_id__patch
+      parameters:
+      - name: bug_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Bug Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BugUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BugRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - bugs
+      summary: Delete Bug
+      operationId: delete_bug_v1_bugs__bug_id__delete
+      parameters:
+      - name: bug_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Bug Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/personas:
+    get:
+      tags:
+      - personas
+      summary: List Personas
+      operationId: list_personas_v1_personas_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PersonaRead'
+                type: array
+                title: Response List Personas V1 Personas Get
+  /v1/personas/projects/{project_id}:
+    get:
+      tags:
+      - personas
+      summary: List Project Personas
+      operationId: list_project_personas_v1_personas_projects__project_id__get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectPersonaRead'
+                title: Response List Project Personas V1 Personas Projects  Project
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - personas
+      summary: Upsert Project Personas
+      operationId: upsert_project_personas_v1_personas_projects__project_id__put
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectPersonaUpdatePayload'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectPersonaRead'
+                title: Response Upsert Project Personas V1 Personas Projects  Project
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /context/upsert:
+    post:
+      tags:
+      - context
+      summary: Upsert Context
+      operationId: upsert_context_context_upsert_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContextSnapshotCreate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: integer
+                title: Response Upsert Context Context Upsert Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /context/latest:
+    get:
+      tags:
+      - context
+      summary: Get Latest Context
+      operationId: get_latest_context_context_latest_get
+      parameters:
+      - name: repo_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Repo Id
+      - name: branch
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Branch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/ContextSnapshotRead'
+                - type: 'null'
+                title: Response Get Latest Context Context Latest Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /context/list:
+    get:
+      tags:
+      - context
+      summary: List Context Snapshots
+      operationId: list_context_snapshots_context_list_get
+      parameters:
+      - name: repo_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Repo Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContextSnapshotRead'
+                title: Response List Context Snapshots Context List Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /context/repos:
+    get:
+      tags:
+      - context
+      summary: List Repo Ids
+      operationId: list_repo_ids_context_repos_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                type: array
+                title: Response List Repo Ids Context Repos Get
+components:
+  schemas:
+    AttachmentCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        content_base64:
+          type: string
+          title: Content Base64
+      type: object
+      required:
+      - name
+      - content_base64
+      title: AttachmentCreate
+    AttachmentRead:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        task_id:
+          type: string
+          format: uuid
+          title: Task Id
+        name:
+          type: string
+          title: Name
+        path:
+          type: string
+          title: Path
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - task_id
+      - name
+      - path
+      - created_at
+      title: AttachmentRead
+    BugCreate:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Task Id
+        title:
+          type: string
+          title: Title
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        severity:
+          type: string
+          title: Severity
+          default: S3
+        status:
+          type: string
+          title: Status
+          default: open
+      type: object
+      required:
+      - project_id
+      - title
+      title: BugCreate
+    BugRead:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Task Id
+        title:
+          type: string
+          title: Title
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        severity:
+          type: string
+          title: Severity
+          default: S3
+        status:
+          type: string
+          title: Status
+          default: open
+        id:
+          type: string
+          format: uuid
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - project_id
+      - title
+      - id
+      - created_at
+      - updated_at
+      title: BugRead
+    BugUpdate:
+      properties:
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Title
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        severity:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Severity
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Task Id
+      type: object
+      title: BugUpdate
+    ContextSnapshotCreate:
+      properties:
+        repo_id:
+          type: string
+          title: Repo Id
+        branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Branch
+        workflow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workflow Id
+        snapshot_path:
+          type: string
+          title: Snapshot Path
+        summary_path:
+          type: string
+          title: Summary Path
+        files_ndjson_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Files Ndjson Path
+        totals_files:
+          type: integer
+          title: Totals Files
+        totals_bytes:
+          type: integer
+          title: Totals Bytes
+        totals_lines:
+          type: integer
+          title: Totals Lines
+        components_json:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Components Json
+        hotspots_json:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Hotspots Json
+      type: object
+      required:
+      - repo_id
+      - snapshot_path
+      - summary_path
+      - totals_files
+      - totals_bytes
+      - totals_lines
+      title: ContextSnapshotCreate
+    ContextSnapshotRead:
+      properties:
+        repo_id:
+          type: string
+          title: Repo Id
+        branch:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Branch
+        workflow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workflow Id
+        snapshot_path:
+          type: string
+          title: Snapshot Path
+        summary_path:
+          type: string
+          title: Summary Path
+        files_ndjson_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Files Ndjson Path
+        totals_files:
+          type: integer
+          title: Totals Files
+        totals_bytes:
+          type: integer
+          title: Totals Bytes
+        totals_lines:
+          type: integer
+          title: Totals Lines
+        components_json:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Components Json
+        hotspots_json:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Hotspots Json
+        id:
+          type: integer
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - repo_id
+      - snapshot_path
+      - summary_path
+      - totals_files
+      - totals_bytes
+      - totals_lines
+      - id
+      - created_at
+      title: ContextSnapshotRead
+    EventLogCreate:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        milestone_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Milestone Id
+        task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Task Id
+        category:
+          type: string
+          title: Category
+          default: note
+        summary:
+          type: string
+          title: Summary
+        details:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Details
+      type: object
+      required:
+      - project_id
+      - summary
+      title: EventLogCreate
+    EventLogRead:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        milestone_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Milestone Id
+        task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Task Id
+        category:
+          type: string
+          title: Category
+          default: note
+        summary:
+          type: string
+          title: Summary
+        details:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Details
+        id:
+          type: string
+          format: uuid
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - project_id
+      - summary
+      - id
+      - created_at
+      title: EventLogRead
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    MilestoneCreate:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Slug
+        start_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+        due_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Due Date
+        status:
+          type: string
+          title: Status
+          default: not_started
+      type: object
+      required:
+      - project_id
+      - name
+      title: MilestoneCreate
+    MilestoneRead:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Slug
+        start_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+        due_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Due Date
+        status:
+          type: string
+          title: Status
+          default: not_started
+        id:
+          type: string
+          format: uuid
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - project_id
+      - name
+      - id
+      - created_at
+      - updated_at
+      title: MilestoneRead
+    MilestoneUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        start_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+        due_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Due Date
+      type: object
+      title: MilestoneUpdate
+    NextActionSuggestion:
+      properties:
+        task_id:
+          type: string
+          format: uuid
+          title: Task Id
+        title:
+          type: string
+          title: Title
+        status:
+          type: string
+          title: Status
+        persona_required:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Persona Required
+        priority_score:
+          type: number
+          title: Priority Score
+        reason:
+          type: string
+          title: Reason
+      type: object
+      required:
+      - task_id
+      - title
+      - status
+      - priority_score
+      - reason
+      title: NextActionSuggestion
+    PersonaBase:
+      properties:
+        key:
+          type: string
+          title: Key
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        maximum_active_tasks:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Maximum Active Tasks
+      type: object
+      required:
+      - key
+      - name
+      title: PersonaBase
+    PersonaRead:
+      properties:
+        key:
+          type: string
+          title: Key
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        maximum_active_tasks:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Maximum Active Tasks
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - key
+      - name
+      - created_at
+      - updated_at
+      title: PersonaRead
+    ProjectCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        goal:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Goal
+        direction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Direction
+        parent_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parent Id
+          description: Parent project id if nested
+        repository:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Repository
+          description: Remote git repository URL for the project
+      type: object
+      required:
+      - name
+      title: ProjectCreate
+    ProjectNextActions:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        suggestions:
+          items:
+            $ref: '#/components/schemas/NextActionSuggestion'
+          type: array
+          title: Suggestions
+      type: object
+      required:
+      - project_id
+      - suggestions
+      title: ProjectNextActions
+    ProjectPersonaAssignment:
+      properties:
+        persona_key:
+          type: string
+          title: Persona Key
+        limit_per_agent:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit Per Agent
+      type: object
+      required:
+      - persona_key
+      title: ProjectPersonaAssignment
+    ProjectPersonaRead:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        persona_key:
+          type: string
+          title: Persona Key
+        limit_per_agent:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit Per Agent
+        persona:
+          $ref: '#/components/schemas/PersonaBase'
+      type: object
+      required:
+      - project_id
+      - persona_key
+      - persona
+      title: ProjectPersonaRead
+    ProjectPersonaUpdatePayload:
+      properties:
+        personas:
+          items:
+            $ref: '#/components/schemas/ProjectPersonaAssignment'
+          type: array
+          title: Personas
+      type: object
+      required:
+      - personas
+      title: ProjectPersonaUpdatePayload
+    ProjectRead:
+      properties:
+        name:
+          type: string
+          title: Name
+        goal:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Goal
+        direction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Direction
+        parent_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parent Id
+          description: Parent project id if nested
+        repository:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Repository
+          description: Remote git repository URL for the project
+        id:
+          type: string
+          format: uuid
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - name
+      - id
+      - created_at
+      - updated_at
+      title: ProjectRead
+    ProjectStatusMilestone:
+      properties:
+        milestone_id:
+          type: string
+          format: uuid
+          title: Milestone Id
+        name:
+          type: string
+          title: Name
+        total_estimate:
+          type: number
+          title: Total Estimate
+        remaining_effort:
+          type: number
+          title: Remaining Effort
+        percent_complete:
+          type: number
+          title: Percent Complete
+      type: object
+      required:
+      - milestone_id
+      - name
+      - total_estimate
+      - remaining_effort
+      - percent_complete
+      title: ProjectStatusMilestone
+    ProjectStatusRead:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        total_estimate:
+          type: number
+          title: Total Estimate
+        remaining_effort:
+          type: number
+          title: Remaining Effort
+        percent_complete:
+          type: number
+          title: Percent Complete
+        status_breakdown:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Status Breakdown
+        milestones:
+          items:
+            $ref: '#/components/schemas/ProjectStatusMilestone'
+          type: array
+          title: Milestones
+      type: object
+      required:
+      - project_id
+      - total_estimate
+      - remaining_effort
+      - percent_complete
+      - status_breakdown
+      - milestones
+      title: ProjectStatusRead
+    ProjectStatusSummary:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        summary:
+          type: string
+          title: Summary
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+      type: object
+      required:
+      - project_id
+      - summary
+      - generated_at
+      title: ProjectStatusSummary
+    ProjectUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        goal:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Goal
+        direction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Direction
+        parent_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parent Id
+        repository:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Repository
+      type: object
+      title: ProjectUpdate
+    TaskCreate:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        milestone_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Milestone Id
+        phase_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Phase Id
+        parent_task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parent Task Id
+        title:
+          type: string
+          title: Title
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        owner:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner
+        persona_required:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Persona Required
+        acceptance_criteria:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Acceptance Criteria
+        effort_estimate:
+          type: number
+          title: Effort Estimate
+          default: 0
+        effort_spent:
+          type: number
+          title: Effort Spent
+          default: 0
+        priority_score:
+          type: number
+          title: Priority Score
+          default: 0
+        risk_level:
+          type: string
+          title: Risk Level
+          default: low
+        severity:
+          type: string
+          title: Severity
+          default: minor
+        status:
+          type: string
+          title: Status
+          default: not_started
+        external_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: External Id
+        project_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Slug
+        milestone_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Milestone Slug
+        parent_task_external_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Task External Id
+        attachments:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/AttachmentCreate'
+            type: array
+          - type: 'null'
+          title: Attachments
+        options:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Options
+      type: object
+      required:
+      - project_id
+      - title
+      title: TaskCreate
+    TaskPatch:
+      properties:
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Title
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        owner:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner
+        persona_required:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Persona Required
+        acceptance_criteria:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Acceptance Criteria
+        effort_estimate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Effort Estimate
+        effort_spent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Effort Spent
+        priority_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Priority Score
+        risk_level:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Risk Level
+        severity:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Severity
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        phase_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Phase Id
+        parent_task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parent Task Id
+        lock_version:
+          type: integer
+          title: Lock Version
+          description: Current lock version for optimistic concurrency
+      type: object
+      required:
+      - lock_version
+      title: TaskPatch
+    TaskRead:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        milestone_id:
+          type: string
+          format: uuid
+          title: Milestone Id
+        phase_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Phase Id
+        parent_task_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parent Task Id
+        title:
+          type: string
+          title: Title
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        owner:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner
+        persona_required:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Persona Required
+        acceptance_criteria:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Acceptance Criteria
+        effort_estimate:
+          type: number
+          title: Effort Estimate
+          default: 0
+        effort_spent:
+          type: number
+          title: Effort Spent
+          default: 0
+        priority_score:
+          type: number
+          title: Priority Score
+          default: 0
+        risk_level:
+          type: string
+          title: Risk Level
+          default: low
+        severity:
+          type: string
+          title: Severity
+          default: minor
+        status:
+          type: string
+          title: Status
+          default: not_started
+        external_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: External Id
+        id:
+          type: string
+          format: uuid
+          title: Id
+        lock_version:
+          type: integer
+          title: Lock Version
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        attachments:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/AttachmentRead'
+            type: array
+          - type: 'null'
+          title: Attachments
+        milestone_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Milestone Slug
+      type: object
+      required:
+      - project_id
+      - milestone_id
+      - title
+      - id
+      - lock_version
+      - created_at
+      - updated_at
+      title: TaskRead
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

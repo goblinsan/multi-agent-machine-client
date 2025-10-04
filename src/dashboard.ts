@@ -251,6 +251,7 @@ export type CreateTaskResult = {
   status: number;
   body: any;
   error?: any;
+  createdId?: string | null;
 };
 
 export async function createDashboardTask(input: CreateTaskInput): Promise<CreateTaskResult | null> {
@@ -330,11 +331,28 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
 
     if (!res.ok) {
       logger.warn("dashboard task creation failed", { status, body: body.title, response: responseBody });
-      return { ok: false, status, body: responseBody };
+      return { ok: false, status, body: responseBody, createdId: null };
     }
 
-    logger.info("dashboard task created", { title: input.title, status, milestoneId: input.milestoneId || null, milestoneSlug: input.milestoneSlug || null, parentTaskId: input.parentTaskId });
-    return { ok: true, status, body: responseBody };
+    // Determine created id: prefer explicit id fields in body, else Location header
+    let createdId: string | null = null;
+    try {
+      if (responseBody && (responseBody.id || responseBody.task_id || (responseBody.task && responseBody.task.id))) {
+        createdId = String(responseBody.id || responseBody.task_id || responseBody.task.id);
+      } else {
+        const loc = res.headers.get("location") || res.headers.get("Location");
+        if (loc && typeof loc === 'string') {
+          const parts = loc.split('/').filter(Boolean);
+          const last = parts[parts.length - 1];
+          if (last && last.length) createdId = last;
+        }
+      }
+    } catch (e) {
+      createdId = null;
+    }
+
+    logger.info("dashboard task created", { title: input.title, status, milestoneId: input.milestoneId || null, milestoneSlug: input.milestoneSlug || null, parentTaskId: input.parentTaskId, createdId });
+    return { ok: true, status, body: responseBody, createdId };
   } catch (error) {
     logger.warn("dashboard task creation exception", { error, title: input.title });
     return { ok: false, status: 0, body: null, error };
@@ -378,26 +396,55 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
     const body: any = { status };
     if (lv !== undefined) body.lock_version = lv;
 
-    const res = await fetch(endpoint, {
-      method: "PATCH",
-      headers: {
-        "Authorization": `Bearer ${cfg.dashboardApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    });
+    const doPatch = async (lv: number | undefined) => {
+      const payload: any = { status };
+      if (lv !== undefined && lv !== null) payload.lock_version = lv;
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: {
+          "Authorization": `Bearer ${cfg.dashboardApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      const statusCode = res.status;
+      let responseBody: any = null;
+      try { const text = await res.text(); responseBody = text ? JSON.parse(text) : null; } catch { responseBody = null; }
+      return { res, statusCode, responseBody } as { res: any; statusCode: number; responseBody: any };
+    };
 
-    const statusCode = res.status;
-    let responseBody: any = null;
-    try { const text = await res.text(); responseBody = text ? JSON.parse(text) : null; } catch { responseBody = null; }
-
-    if (!res.ok) {
-      logger.warn("dashboard task update failed", { taskId, status, statusCode, responseBody });
-      return { ok: false, status: statusCode, body: responseBody };
+    // First attempt
+    const first = await doPatch(lv);
+    if (first.res && first.statusCode >= 200 && first.statusCode < 300) {
+      logger.info("dashboard task updated", { taskId, status, statusCode: first.statusCode });
+      return { ok: true, status: first.statusCode, body: first.responseBody };
     }
 
-    logger.info("dashboard task updated", { taskId, status, statusCode });
-    return { ok: true, status: statusCode, body: responseBody };
+    // If server complains about missing lock_version (422) or similar, try to fetch current task and retry once
+    try {
+      const textBody = String(first.responseBody || JSON.stringify(first.responseBody || '')).toLowerCase();
+      if (first.statusCode === 422 || textBody.includes('lock_version') || textBody.includes('lockversion') || textBody.includes('missing')) {
+        logger.debug("dashboard task update received 422 or missing lock_version; attempting to fetch current task and retry", { taskId, status, statusCode: first.statusCode, responseBody: first.responseBody });
+        const current = await fetchTask(taskId);
+        const fetchedLv = current && (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) ? Number(current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
+        if (fetchedLv !== undefined) {
+          const second = await doPatch(fetchedLv);
+          if (second.res && second.statusCode >= 200 && second.statusCode < 300) {
+            logger.info("dashboard task updated (retry with lock_version)", { taskId, status, statusCode: second.statusCode, usedLockVersion: fetchedLv });
+            return { ok: true, status: second.statusCode, body: second.responseBody };
+          }
+          logger.warn("dashboard task update retry failed", { taskId, status, statusCode: second.statusCode, responseBody: second.responseBody, usedLockVersion: fetchedLv });
+          return { ok: false, status: second.statusCode, body: second.responseBody };
+        } else {
+          logger.warn("dashboard task update retry skipped: could not determine lock_version from fetch", { taskId, status, fetchResult: current });
+        }
+      }
+    } catch (err) {
+      logger.warn("dashboard task update retry attempt failed", { taskId, status, error: err });
+    }
+
+    logger.warn("dashboard task update failed", { taskId, status, statusCode: first.statusCode, responseBody: first.responseBody });
+    return { ok: false, status: first.statusCode, body: first.responseBody };
   } catch (e) {
     logger.warn("dashboard task update exception", { taskId, status, error: (e as Error).message });
     return { ok: false, status: 0, body: null, error: e };
