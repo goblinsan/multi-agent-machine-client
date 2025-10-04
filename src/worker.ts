@@ -1196,6 +1196,142 @@ async function applyDiffUsingPatchTool(patchPath: string, repoRoot: string): Pro
   }
 }
 
+type CommandRunResult = {
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  signal: NodeJS.Signals | null;
+  durationMs: number;
+  error?: string;
+};
+
+async function runShellCommand(command: string, cwd: string, timeoutMs = 300000): Promise<CommandRunResult> {
+  const childProcess = await import("child_process");
+  const started = Date.now();
+  return await new Promise((resolve) => {
+    let resolved = false;
+    try {
+      const child = childProcess.exec(command, { cwd, timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string, stderr: string) => {
+        if (resolved) return;
+        resolved = true;
+        const durationMs = Date.now() - started;
+        if (error) {
+          resolve({
+            command,
+            stdout: stdout ?? "",
+            stderr: stderr ?? "",
+            exitCode: typeof error.code === "number" ? error.code : 1,
+            signal: error.signal ?? null,
+            durationMs,
+            error: typeof error.message === "string" ? error.message : undefined
+          });
+        } else {
+          resolve({ command, stdout: stdout ?? "", stderr: stderr ?? "", exitCode: 0, signal: null, durationMs });
+        }
+      });
+      child.on("error", (error: any) => {
+        if (resolved) return;
+        resolved = true;
+        const durationMs = Date.now() - started;
+        resolve({
+          command,
+          stdout: "",
+          stderr: "",
+          exitCode: typeof error?.code === "number" ? error.code : 1,
+          signal: null,
+          durationMs,
+          error: String(error?.message || error)
+        });
+      });
+    } catch (error: any) {
+      if (resolved) return;
+      resolved = true;
+      const durationMs = Date.now() - started;
+      resolve({
+        command,
+        stdout: "",
+        stderr: "",
+        exitCode: typeof error?.code === "number" ? error.code : 1,
+        signal: null,
+        durationMs,
+        error: String(error?.message || error)
+      });
+    }
+  });
+}
+
+type QaDiagnostics = {
+  text: string;
+  entries: Array<{
+    command: string;
+    exitCode: number;
+    signal: NodeJS.Signals | null;
+    durationMs: number;
+    stdout: string;
+    stderr: string;
+    error?: string;
+  }>;
+};
+
+async function gatherQaDiagnostics(commandsInput: any, repoRoot: string): Promise<QaDiagnostics | null> {
+  const commands = Array.isArray(commandsInput)
+    ? (commandsInput as any[]).map((cmd: any) => (typeof cmd === "string" ? cmd.trim() : "")).filter((value: string): value is string => value.length > 0)
+    : [];
+
+  if (!commands.length) return null;
+
+  const entries: QaDiagnostics["entries"] = [];
+
+  for (const command of commands) {
+    const result = await runShellCommand(command, repoRoot).catch((error: any) => {
+      return {
+        command,
+        stdout: "",
+        stderr: "",
+        exitCode: 1,
+        signal: null,
+        durationMs: 0,
+        error: String(error?.message || error)
+      } as CommandRunResult;
+    });
+
+    const entry = {
+      command: result.command,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      durationMs: result.durationMs,
+      stdout: clipText((result.stdout || "").trim(), 2000) || "(no stdout)",
+      stderr: clipText((result.stderr || "").trim(), 2000) || "(no stderr)",
+      error: result.error
+    };
+
+    entries.push(entry);
+
+    if (result.exitCode !== 0) {
+      break;
+    }
+  }
+
+  if (!entries.length) return null;
+
+  const textParts = entries.map(entry => {
+    const lines: string[] = [];
+    lines.push(`Command: ${entry.command}`);
+    lines.push(`Exit code: ${entry.exitCode}` + (entry.signal ? ` (signal: ${entry.signal})` : ""));
+    if (entry.error) lines.push(`Error: ${entry.error}`);
+    if (entry.stdout && entry.stdout !== "(no stdout)") {
+      lines.push(`STDOUT:\n${entry.stdout}`);
+    }
+    if (entry.stderr && entry.stderr !== "(no stderr)") {
+      lines.push(`STDERR:\n${entry.stderr}`);
+    }
+    return lines.join("\n");
+  });
+
+  return { text: textParts.join("\n\n"), entries };
+}
+
 function extractPathsFromDiff(diff: string): string[] {
   const paths = new Set<string>();
   const diffGitRegex = /^diff --git a\/([^\s]+) b\/([^\s]+)/gm;
@@ -1752,10 +1888,57 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         revision: attempt
       }
     );
+    const qaStatus = qaResponse.status;
+    let qaDetails = qaStatus.details;
+    let qaPayload = qaStatus.payload;
+
+    if (!qaDetails && qaResponse.result?.output) qaDetails = qaResponse.result.output;
+
+    if (qaStatus.status === "fail") {
+      const payloadObj = (qaPayload && typeof qaPayload === "object") ? { ...qaPayload } : {};
+      let commands: string[] = [];
+      if (Array.isArray((payloadObj as any).commands)) {
+        const commandValues = (payloadObj as any).commands as unknown as any[];
+        commands = commandValues
+          .map((cmd: any) => (typeof cmd === "string" ? cmd.trim() : ""))
+          .filter((value: string): value is string => value.length > 0);
+      }
+      if (!commands.length && typeof qaDetails === "string") {
+        const lowerDetails = qaDetails.toLowerCase();
+        if (lowerDetails.includes("lint")) commands.push("npm run lint");
+        if (lowerDetails.includes("test")) commands.push("npm test");
+      }
+
+      commands = Array.from(new Set(commands));
+
+      if (commands.length) {
+        try {
+          const diagnostics = await gatherQaDiagnostics(commands, repoRoot);
+          if (diagnostics) {
+            const diagnosticsSection = `Diagnostics:\n${diagnostics.text}`;
+            qaDetails = qaDetails ? `${qaDetails}\n\n${diagnosticsSection}` : diagnosticsSection;
+            payloadObj.diagnostics = diagnostics.entries;
+            if (!payloadObj.commands) payloadObj.commands = commands;
+            qaPayload = payloadObj;
+            logger.info("qa diagnostics executed", {
+              workflowId,
+              commands: diagnostics.entries.map(entry => ({
+                command: entry.command,
+                exitCode: entry.exitCode,
+                durationMs: entry.durationMs
+              }))
+            });
+          }
+        } catch (error: any) {
+          logger.warn("qa diagnostics execution failed", { workflowId, error });
+        }
+      }
+    }
+
     return {
-      pass: qaResponse.status.status === "pass",
-      details: qaResponse.status.details,
-      payload: qaResponse.status.payload,
+      pass: qaStatus.status === "pass",
+      details: qaDetails,
+      payload: qaPayload,
       rawOutput: qaResponse.result?.output || ""
     };
   }
