@@ -47,6 +47,22 @@ const CODING_PERSONA_SET = new Set((cfg.personaCodingPersonas && cfg.personaCodi
   : ["lead-engineer", "devops", "ui-engineer", "qa-engineer", "ml-engineer"]
 ).map(p => p.trim().toLowerCase()).filter(Boolean));
 
+const PROMPT_FILE_MAX_TOTAL_CHARS = Math.max(2000, Math.floor(cfg.promptFileMaxChars || 48000));
+const PROMPT_FILE_MAX_PER_FILE_CHARS = Math.max(500, Math.floor(cfg.promptFileMaxPerFileChars || 12000));
+const PROMPT_FILE_MAX_FILES = Math.max(1, Math.floor(cfg.promptFileMaxFiles || 8));
+const PROMPT_FILE_ALLOWED_EXTS = new Set(
+  (cfg.promptFileAllowedExts && cfg.promptFileAllowedExts.length ? cfg.promptFileAllowedExts : [
+    ".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".md", ".html", ".yml", ".yaml"
+  ]).map(ext => ext.toLowerCase())
+);
+const PROMPT_FILE_ALWAYS_INCLUDE = new Set([
+  "package.json",
+  "tsconfig.json",
+  "vite.config.ts",
+  "project.json",
+  "README.md"
+].map(path => path.toLowerCase()));
+
 function personaTimeoutMs(persona: string) {
   const key = (persona || "").toLowerCase();
   if (key && PERSONA_TIMEOUT_OVERRIDES[key] !== undefined) return PERSONA_TIMEOUT_OVERRIDES[key];
@@ -521,7 +537,377 @@ function extractDiffBlocks(text: string): string[] {
     if (trimmed.length) seen.add(trimmed);
   }
 
-  return Array.from(seen);
+  const blocks = Array.from(seen);
+  return blocks.filter(block => {
+    if (!block) return false;
+    if (/(^|\n)(---|\+\+\+|@@|\*\*\*)\s/.test(block)) return true;
+    if (/(^|\n)Index:/i.test(block) && /(^|\n)(---|\+\+\+)/.test(block)) return true;
+    return false;
+  });
+}
+
+function normalizeRepoRelativePath(value: string): string {
+  return value
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "")
+    .replace(/\\/g, "/")
+    .replace(/\.\/+/g, "")
+    .trim();
+}
+
+function extractMentionedPaths(text: string | null | undefined): string[] {
+  if (!text) return [];
+  const found = new Set<string>();
+  const quotedRegex = /[`'\"]([^`'"\n]+\.(?:ts|tsx|js|jsx|json|css|md|html|yml|yaml))[`'\"]/gi;
+  let match: RegExpExecArray | null;
+  while ((match = quotedRegex.exec(text))) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+    const normalized = normalizeRepoRelativePath(raw);
+    if (!normalized.length || normalized.includes("..") || normalized.startsWith(".ma/")) continue;
+    found.add(normalized);
+  }
+  const slashRegex = /(^|[^A-Za-z0-9._/-])((?:src|app|lib|components|tests|public)\/[A-Za-z0-9._/-]+\.(?:ts|tsx|js|jsx|json|css|md|html|yml|yaml))/gi;
+  while ((match = slashRegex.exec(text))) {
+    const raw = match[2]?.trim();
+    if (!raw) continue;
+    const normalized = normalizeRepoRelativePath(raw);
+    if (!normalized.length || normalized.includes("..") || normalized.startsWith(".ma/")) continue;
+    found.add(normalized);
+  }
+  return Array.from(found).slice(0, 50);
+}
+
+type PromptFileSnippet = {
+  path: string;
+  content: string;
+  truncated: boolean;
+};
+
+async function gatherPromptFileSnippets(repoRoot: string, preferredPaths: string[]): Promise<PromptFileSnippet[]> {
+  const fs = await import("fs/promises");
+  const pathMod = await import("path");
+  const ndjsonPath = pathMod.resolve(repoRoot, ".ma/context/files.ndjson");
+  let lines: string[] = [];
+  try {
+    const raw = await fs.readFile(ndjsonPath, "utf8");
+    lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+
+  type Entry = { path: string; bytes: number };
+  const entryMap = new Map<string, Entry>();
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      const value = typeof parsed.path === "string" ? parsed.path : "";
+      const normalized = normalizeRepoRelativePath(value);
+      if (!normalized || normalized.includes("..")) continue;
+      if (normalized.startsWith(".ma/") || normalized.startsWith("node_modules/") || normalized.startsWith("dist/")) continue;
+      entryMap.set(normalized, {
+        path: normalized,
+        bytes: Number(parsed.bytes) || 0
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  if (!entryMap.size) return [];
+
+  const preferredSet = new Set(preferredPaths.map(normalizeRepoRelativePath));
+  const seen = new Set<string>();
+  const ordered: Entry[] = [];
+
+  function scoreFor(pathValue: string): number {
+    const lower = pathValue.toLowerCase();
+    let score = 0;
+    if (preferredSet.has(pathValue)) score += 1000;
+    if (PROMPT_FILE_ALWAYS_INCLUDE.has(lower)) score += 600;
+    if (pathValue.startsWith("src/")) score += 400;
+    if (/\.(tsx?|jsx?)$/i.test(pathValue)) score += 200;
+    if (/\.(css|json)$/i.test(pathValue)) score += 120;
+    if (/\.(md|html|yml|yaml)$/i.test(pathValue)) score += 80;
+    return score;
+  }
+
+  function take(pathValue: string) {
+    const normalized = normalizeRepoRelativePath(pathValue);
+    const entry = entryMap.get(normalized);
+    if (!entry) return;
+    if (seen.has(entry.path)) return;
+    seen.add(entry.path);
+    ordered.push(entry);
+  }
+
+  for (const p of preferredSet) take(p);
+
+  const remaining = Array.from(entryMap.values()).filter(entry => !seen.has(entry.path));
+  remaining.sort((a, b) => {
+    const scoreDiff = scoreFor(b.path) - scoreFor(a.path);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (a.bytes || 0) - (b.bytes || 0);
+  });
+  for (const entry of remaining) take(entry.path);
+
+  const snippets: PromptFileSnippet[] = [];
+  let totalChars = 0;
+
+  for (const entry of ordered) {
+    if (snippets.length >= PROMPT_FILE_MAX_FILES) break;
+    const normalizedPath = entry.path;
+    const lower = normalizedPath.toLowerCase();
+    const ext = pathMod.extname(lower);
+    const include = PROMPT_FILE_ALLOWED_EXTS.has(ext) || PROMPT_FILE_ALWAYS_INCLUDE.has(lower);
+    if (!include) continue;
+
+    const absolute = pathMod.resolve(repoRoot, normalizedPath);
+    try {
+      const stat = await fs.stat(absolute);
+      if (!stat.isFile()) continue;
+      let content = await fs.readFile(absolute, "utf8");
+      let truncated = false;
+      if (content.length > PROMPT_FILE_MAX_PER_FILE_CHARS) {
+        content = content.slice(0, PROMPT_FILE_MAX_PER_FILE_CHARS) + "\n... (truncated for prompt)\n";
+        truncated = true;
+      }
+      if (totalChars + content.length > PROMPT_FILE_MAX_TOTAL_CHARS) {
+        if (totalChars === 0) {
+          content = content.slice(0, PROMPT_FILE_MAX_TOTAL_CHARS) + "\n... (truncated for prompt)\n";
+          truncated = true;
+          snippets.push({ path: normalizedPath, content, truncated });
+        }
+        break;
+      }
+      snippets.push({ path: normalizedPath, content, truncated });
+      totalChars += content.length;
+    } catch {
+      continue;
+    }
+  }
+
+  return snippets;
+}
+
+function normalizeDiffHunkCounts(diff: string): string {
+  if (!diff.includes("@@")) return diff;
+  const lines = diff.split(/\r?\n/);
+  let changed = false;
+
+  const hunkRegex = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const match = hunkRegex.exec(line);
+    if (!match) continue;
+
+    const oldStart = match[1];
+    const newStart = match[3];
+
+    let oldCount = 0;
+    let newCount = 0;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const hunkLine = lines[j];
+      if (hunkLine.startsWith("@@ ")) break;
+      if (hunkLine.startsWith("diff --git ")) break;
+      if (hunkLine.startsWith("--- ") || hunkLine.startsWith("+++ ")) break;
+      if (hunkLine.startsWith("\\ No newline")) continue;
+      if (hunkLine.length === 0) {
+        oldCount += 1;
+        newCount += 1;
+        continue;
+      }
+      const first = hunkLine[0];
+      if (first === '+') {
+        newCount += 1;
+      } else if (first === '-') {
+        oldCount += 1;
+      } else {
+        oldCount += 1;
+        newCount += 1;
+      }
+    }
+
+    const oldCountProvided = match[2] ? Number(match[2]) : null;
+    const newCountProvided = match[4] ? Number(match[4]) : null;
+
+    if (oldCountProvided !== oldCount || newCountProvided !== newCount) {
+      lines[i] = `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`;
+      changed = true;
+    }
+  }
+
+  return changed ? lines.join("\n") : diff;
+}
+
+type ParsedUnifiedDiff = {
+  path: string;
+  hunks: Array<{
+    oldStart: number;
+    newStart: number;
+    lines: string[];
+  }>;
+};
+
+function parseUnifiedDiff(diff: string): ParsedUnifiedDiff | null {
+  const lines = diff.split(/\r?\n/);
+  let filePath: string | null = null;
+  const hunks: ParsedUnifiedDiff["hunks"] = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.startsWith("+++ ")) {
+      const plusPath = line.slice(4).trim();
+      if (plusPath && !plusPath.startsWith("/dev/null")) {
+        filePath = plusPath.startsWith("b/") ? plusPath.slice(2) : plusPath;
+      }
+      continue;
+    }
+    if (!filePath) continue;
+    if (line.startsWith("@@ ")) {
+      const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+      if (!match) continue;
+      const oldStart = Number(match[1]) || 1;
+      const newStart = Number(match[3]) || 1;
+      const hunk = { oldStart, newStart, lines: [] as string[] };
+      hunks.push(hunk);
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const nextLine = lines[j];
+        if (nextLine.startsWith("@@ ") || nextLine.startsWith("diff --git ") || nextLine.startsWith("+++ ") || nextLine.startsWith("--- ")) {
+          i = j - 1;
+          break;
+        }
+        hunk.lines.push(nextLine);
+        if (j === lines.length - 1) {
+          i = j;
+        }
+      }
+    }
+  }
+
+  if (!filePath || hunks.length === 0) return null;
+  return { path: filePath, hunks };
+}
+
+async function applyDiffTextually(options: {
+  diff: string;
+  repoRoot: string;
+  fs: FsPromisesModule;
+  pathMod: PathModule;
+}): Promise<string[] | null> {
+  const { diff, repoRoot, fs, pathMod } = options;
+  if (/^---\s+\/dev\/null/m.test(diff)) return null;
+  const parsed = parseUnifiedDiff(diff);
+  if (!parsed) {
+    logger.info("textual diff fallback skipped", { repoRoot, reason: "parse_failed" });
+    return null;
+  }
+  const targetPath = pathMod.resolve(repoRoot, parsed.path);
+  let content: string;
+  try {
+    content = await fs.readFile(targetPath, "utf8");
+  } catch {
+    logger.info("textual diff fallback skipped", { repoRoot, path: parsed.path, reason: "file_missing" });
+    return null;
+  }
+
+  const hasTrailingNewline = content.endsWith("\n");
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  let lines = content.split(/\r?\n/);
+
+  const isFullRewrite = parsed.hunks.length === 1
+    && parsed.hunks[0].oldStart === 1
+    && parsed.hunks[0].newStart === 1;
+
+  if (isFullRewrite) {
+    const hunk = parsed.hunks[0];
+    const newLines: string[] = [];
+    let sawNonContext = false;
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) {
+        newLines.push(line.slice(1));
+        sawNonContext = true;
+      } else if (line.startsWith(" ")) {
+        newLines.push(line.slice(1));
+      } else if (line.startsWith("-")) {
+        sawNonContext = true;
+      }
+    }
+    if (sawNonContext) {
+      let newContent = newLines.join(eol);
+      if (hasTrailingNewline && !newContent.endsWith(eol)) newContent += eol;
+      if (!hasTrailingNewline && newContent.endsWith(eol)) newContent = newContent.slice(0, -eol.length);
+      await fs.writeFile(targetPath, newContent, "utf8");
+      return [parsed.path];
+    }
+  }
+
+  const findSequence = (sequence: string[], guess: number) => {
+    if (sequence.length === 0) return Math.max(0, Math.min(guess, lines.length));
+    const maxOffset = Math.max(20, sequence.length * 2);
+    const start = Math.max(0, guess - maxOffset);
+    const end = Math.max(0, Math.min(lines.length - sequence.length, guess + maxOffset));
+    const candidateRanges = [] as number[];
+    for (let idx = start; idx <= end; idx += 1) candidateRanges.push(idx);
+    if (!candidateRanges.length) {
+      for (let idx = 0; idx <= lines.length - sequence.length; idx += 1) candidateRanges.push(idx);
+    }
+    for (const idx of candidateRanges) {
+      let matched = true;
+      for (let j = 0; j < sequence.length; j += 1) {
+        if (lines[idx + j] !== sequence[j]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) return idx;
+    }
+    return -1;
+  };
+
+  let offset = 0;
+  for (const hunk of parsed.hunks) {
+    const oldLines: string[] = [];
+    const newLines: string[] = [];
+    for (const line of hunk.lines) {
+      if (line.startsWith("-")) {
+        oldLines.push(line.slice(1));
+      } else if (line.startsWith("+")) {
+        newLines.push(line.slice(1));
+      } else if (line.startsWith(" ")) {
+        const value = line.slice(1);
+        oldLines.push(value);
+        newLines.push(value);
+      } else if (line.startsWith("\\ No newline")) {
+        // ignore directive, no change needed
+        continue;
+      } else {
+        oldLines.push(line);
+        newLines.push(line);
+      }
+    }
+
+    const guess = Math.max(0, Math.min(lines.length, (hunk.oldStart - 1) + offset));
+    let index = findSequence(oldLines, guess);
+    if (index === -1) index = findSequence(oldLines, 0);
+    if (index === -1) {
+      logger.info("textual diff fallback skipped", { repoRoot, path: parsed.path, reason: "context_not_found", guess });
+      return null;
+    }
+
+    lines.splice(index, oldLines.length, ...newLines);
+    offset = offset + (newLines.length - oldLines.length);
+  }
+
+  let newContent = lines.join(eol);
+  if (hasTrailingNewline && !newContent.endsWith(eol)) newContent += eol;
+  if (!hasTrailingNewline && newContent.endsWith(eol)) {
+    newContent = newContent.slice(0, -eol.length);
+  }
+
+  await fs.writeFile(targetPath, newContent, "utf8");
+  return [parsed.path];
 }
 
 function extractPathsFromDiff(diff: string): string[] {
@@ -540,6 +926,95 @@ function extractPathsFromDiff(diff: string): string[] {
     if (p && p !== 'dev/null') paths.add(p);
   }
   return Array.from(paths);
+}
+
+type FsPromisesModule = typeof import("fs/promises");
+type PathModule = typeof import("path");
+
+type ParsedNewFileDiff = {
+  path: string;
+  content: string;
+};
+
+function parseNewFileDiff(diff: string): ParsedNewFileDiff | null {
+  if (!diff) return null;
+  if (!/---\s+\/dev\/null/.test(diff)) return null;
+
+  const plusMatch = /(?:^|\n)\+\+\+\s+b\/([^\n]+)/.exec(diff);
+  if (!plusMatch) return null;
+
+  const rawPath = plusMatch[1]?.trim();
+  if (!rawPath || rawPath.toLowerCase() === 'dev/null') return null;
+
+  const normalizedPath = rawPath.replace(/^b\//, "").replace(/^\.\//, "");
+  if (!normalizedPath || normalizedPath === '.' || normalizedPath === '..') return null;
+
+  const lines = diff.split(/\r?\n/);
+  const contentLines: string[] = [];
+  let inHunk = false;
+  let keepTrailingNewline = true;
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git ") && inHunk) break;
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk) continue;
+
+    if (line.startsWith("\\ No newline at end of file")) {
+      keepTrailingNewline = false;
+      continue;
+    }
+
+    if (line.startsWith("+")) {
+      contentLines.push(line.slice(1));
+    }
+  }
+
+  if (!inHunk) return null;
+
+  let content = contentLines.join("\n");
+  if (keepTrailingNewline && contentLines.length > 0) {
+    content += "\n";
+  }
+
+  return {
+    path: normalizedPath,
+    content
+  };
+}
+
+async function overwriteExistingFileFromNewDiff(options: {
+  diff: string;
+  repoRoot: string;
+  fs: FsPromisesModule;
+  pathMod: PathModule;
+}): Promise<string | null> {
+  const { diff, repoRoot, fs, pathMod } = options;
+  const parsed = parseNewFileDiff(diff);
+  if (!parsed) return null;
+
+  const sanitized = parsed.path.replace(/\\/g, "/");
+  if (!sanitized) {
+    return null;
+  }
+
+  const normalized = pathMod.normalize(sanitized);
+  const targetPath = pathMod.resolve(repoRoot, normalized);
+  const repoResolved = pathMod.resolve(repoRoot);
+
+  if (!targetPath.startsWith(repoResolved)) {
+    return null;
+  }
+
+  try {
+    await fs.mkdir(pathMod.dirname(targetPath), { recursive: true });
+    await fs.writeFile(targetPath, parsed.content, "utf8");
+    return pathMod.relative(repoRoot, targetPath) || normalized;
+  } catch {
+    return null;
+  }
 }
 
 function extractListedPaths(text: string): string[] {
@@ -949,17 +1424,105 @@ async function applyModelGeneratedChanges(options: {
 
   try {
     for (let i = 0; i < diffs.length; i += 1) {
-      const diff = diffs[i];
+      const originalDiff = diffs[i];
       const patchPath = pathMod.join(tmpDir, `patch-${i}.diff`);
-      await fs.writeFile(patchPath, diff, "utf8");
+      const normalizedDiff = normalizeDiffHunkCounts(originalDiff);
+      const diffAttempts = normalizedDiff !== originalDiff
+        ? [originalDiff, normalizedDiff]
+        : [originalDiff];
+
+      let applied = false;
+      let diffUsed = originalDiff;
+      let lastError: any = null;
+
       try {
-        await runGit(["apply", "--whitespace=nowarn", patchPath], { cwd: repoRoot });
-        for (const p of extractPathsFromDiff(diff)) appliedPaths.add(p);
-      } catch (error: any) {
+        for (let attemptIndex = 0; attemptIndex < diffAttempts.length; attemptIndex += 1) {
+          const attempt = diffAttempts[attemptIndex];
+          diffUsed = attempt;
+          await fs.writeFile(patchPath, attempt, "utf8");
+          try {
+            await runGit(["apply", "--whitespace=nowarn", patchPath], { cwd: repoRoot });
+            for (const p of extractPathsFromDiff(attempt)) appliedPaths.add(p);
+            applied = true;
+            break;
+          } catch (error: any) {
+            lastError = error;
+            if (attemptIndex === diffAttempts.length - 1) break;
+          }
+        }
+
+        if (!applied) {
+          try {
+            await runGit(["apply", "--whitespace=nowarn", "--3way", patchPath], { cwd: repoRoot });
+            for (const p of extractPathsFromDiff(diffUsed)) appliedPaths.add(p);
+            applied = true;
+          } catch (error: any) {
+            lastError = error;
+          }
+        }
+
+        if (applied) continue;
+
+        const errorText = [lastError?.stderr, lastError?.stdout, lastError?.message]
+          .filter(Boolean)
+          .map((val: any) => String(val).toLowerCase())
+          .join(" ");
+
+        const textPaths = await applyDiffTextually({
+          diff: diffUsed,
+          repoRoot,
+          fs,
+          pathMod
+        }).catch(() => null);
+        if (textPaths && textPaths.length) {
+          logger.warn("persona apply diff fallback text", {
+            persona,
+            workflowId,
+            patchIndex: i,
+            paths: textPaths
+          });
+          for (const p of textPaths) appliedPaths.add(p);
+          for (const p of extractPathsFromDiff(originalDiff)) appliedPaths.add(p);
+          continue;
+        }
+
+        const shouldAttemptFallback = /already exists/.test(errorText)
+          || /dev\/null/.test(errorText)
+          || /new file mode/.test(originalDiff);
+
+        if (shouldAttemptFallback) {
+          const overwritten = await overwriteExistingFileFromNewDiff({
+            diff: originalDiff,
+            repoRoot,
+            fs,
+            pathMod
+          });
+
+          if (overwritten) {
+            logger.warn("persona apply diff fallback overwrite", {
+              persona,
+              workflowId,
+              patchIndex: i,
+              path: overwritten,
+              error: lastError
+            });
+            appliedPaths.add(overwritten);
+            for (const p of extractPathsFromDiff(originalDiff)) appliedPaths.add(p);
+            continue;
+          }
+        }
+
+        const finalError = lastError || new Error("git apply failed");
         outcome.reason = "apply_failed";
-        outcome.error = error?.message || String(error);
-        logger.error("persona apply diff failed", { persona, workflowId, patchIndex: i, error });
-        throw error;
+        outcome.error = finalError?.message || String(finalError);
+        logger.error("persona apply diff failed", {
+          persona,
+          workflowId,
+          patchIndex: i,
+          error: finalError,
+          diffPreview: originalDiff.slice(0, 800)
+        });
+        throw finalError;
       } finally {
         await fs.unlink(patchPath).catch(() => {});
       }
@@ -1111,12 +1674,19 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     paths: string[];
   } = null;
   let repoInfo: Awaited<ReturnType<typeof resolveRepoFromPayload>> | null = null;
-  let dashboardUploadEnabled = false;
-  const dashboardProject: { id?: string; name?: string; slug?: string } = {};
-  if (persona === "context" && cfg.contextScan) {
+  if (persona !== "coordination") {
     try {
       repoInfo = await resolveRepoFromPayload(payloadObj);
-      const repoRoot = normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot);
+    } catch (e:any) {
+      logger.warn("resolve repo from payload failed", { persona, workflowId: msg.workflow_id, error: e?.message || String(e) });
+    }
+  }
+  let repoRootNormalized = repoInfo ? normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot) : null;
+  let dashboardUploadEnabled = false;
+  const dashboardProject: { id?: string; name?: string; slug?: string } = {};
+  if (persona === "context" && cfg.contextScan && repoInfo && repoRootNormalized) {
+    try {
+      const repoRoot = repoRootNormalized;
       const components = Array.isArray(payloadObj.components) ? payloadObj.components
                         : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
 
@@ -1270,10 +1840,41 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     }
   }
 
+  if (persona === "context" && cfg.contextScan && !repoInfo) {
+    scanSummaryText = scanSummaryText || "Context scan unavailable: repository could not be resolved.";
+    logger.warn("context scan skipped: repo unresolved", { workflowId: msg.workflow_id, repo: payloadObj.repo, branch: payloadObj.branch });
+  }
+
   const userPayload = msg.payload ? msg.payload : "{}";
+  let externalSummary: string | null = null;
+  let preferredPaths: string[] = [];
+  if (persona !== "context" && repoInfo && repoRootNormalized) {
+    try {
+      const fs = await import("fs/promises");
+      const pathMod = await import("path");
+      const repoRoot = repoRootNormalized;
+      const summaryPath = pathMod.resolve(repoRoot, ".ma/context/summary.md");
+      const content = await fs.readFile(summaryPath, "utf8");
+      externalSummary = content;
+      if (!scanSummaryText) scanSummaryText = `Context summary loaded from ${pathMod.relative(repoRoot, summaryPath)}`;
+      preferredPaths = extractMentionedPaths(content);
+    } catch (e:any) {
+      logger.debug("persona prompt: context summary unavailable", { persona, workflowId: msg.workflow_id, error: e?.message || String(e) });
+    }
+  }
+
+  if (!scanSummaryText && persona !== "context" && persona !== "coordination") {
+    scanSummaryText = "Context summary not available.";
+  }
+
   const scanSummaryForPrompt = scanArtifacts
     ? clipText(scanArtifacts.summaryMd, persona === "context" ? 8000 : 4000)
-    : scanSummaryText;
+    : (externalSummary ? clipText(externalSummary, 4000) : scanSummaryText);
+
+  let promptFileSnippets: PromptFileSnippet[] = [];
+  if (persona !== "context" && repoRootNormalized) {
+    promptFileSnippets = await gatherPromptFileSnippets(repoRootNormalized, preferredPaths);
+  }
 
   const userLines = [
     `Intent: ${msg.intent}`,
@@ -1307,6 +1908,16 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     messages.push({ role: "system", content: `Dashboard context (may be stale):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` });
   }
 
+  if (promptFileSnippets.length) {
+    const snippetParts: string[] = ["Existing project files for reference (read-only):"];
+    for (const snippet of promptFileSnippets) {
+      snippetParts.push(`File: ${snippet.path}`);
+      snippetParts.push("```");
+      snippetParts.push(snippet.content);
+      snippetParts.push("```");
+    }
+    messages.push({ role: "system", content: snippetParts.join("\n") });
+  }
 
 
   if (CODING_PERSONA_SET.has(persona.toLowerCase())) {
@@ -1414,9 +2025,10 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     try {
       if (!repoInfo) {
         repoInfo = await resolveRepoFromPayload(payloadObj);
+        repoRootNormalized = repoInfo ? normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot) : repoRootNormalized;
       }
       if (repoInfo) {
-        const repoRootForEdits = normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot);
+        const repoRootForEdits = repoRootNormalized || normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot);
         const branchHint = firstString(
           payloadObj.branch,
           payloadObj.branch_name,
@@ -1453,5 +2065,3 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
 }
 
 main().catch(e => { logger.error("worker fatal", { error: e }); process.exit(1); });
-
-

@@ -57,6 +57,14 @@ const allowedExts = splitCsv(process.env.ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.py,
   .map(s => s.startsWith(".") ? s : "." + s)
   .filter(Boolean);
 
+const promptFileAllowedExts = splitCsv(process.env.PROMPT_FILE_ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.json,.css,.md,.html,.yml,.yaml", [])
+  .map(s => s.toLowerCase())
+  .map(s => s.startsWith(".") ? s : "." + s)
+  .filter(Boolean);
+const promptFileMaxChars = Number(process.env.PROMPT_FILE_MAX_CHARS || 48000);
+const promptFileMaxPerFileChars = Number(process.env.PROMPT_FILE_MAX_PER_FILE_CHARS || 12000);
+const promptFileMaxFiles = Number(process.env.PROMPT_FILE_MAX_FILES || 8);
+
 const gitToken = process.env.GIT_AUTH_TOKEN || "";
 const gitPassword = process.env.GIT_AUTH_PASSWORD || "";
 const gitCredentialsPath = (() => {
@@ -111,6 +119,10 @@ export const cfg = {
   repoRoot,
   maxFileBytes,
   allowedExts,
+  promptFileAllowedExts,
+  promptFileMaxChars,
+  promptFileMaxPerFileChars,
+  promptFileMaxFiles,
 
   // Context scanner feature flags & defaults
   contextScan: bool(process.env.CONTEXT_SCAN, false),
