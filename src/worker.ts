@@ -1829,10 +1829,17 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     return { event, result: resultObj, status: statusInfo };
   }
 
+  type PlanHistoryEntry = {
+    attempt: number;
+    content: string;
+    payload: any;
+  };
+
   type PlanApprovalOutcome = {
     planText: string;
     planPayload: any;
     planSteps: any[];
+    history: PlanHistoryEntry[];
   };
 
   function extractPlanSteps(planPayload: any): any[] {
@@ -1849,6 +1856,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     const effectiveMax = Number.isFinite(MAX_APPROVAL_RETRIES) ? MAX_APPROVAL_RETRIES : 10;
     const baseFeedbackText = feedback && feedback.trim().length ? feedback.trim() : "";
     let planFeedbackNotes: string[] = [];
+    const planHistory: PlanHistoryEntry[] = [];
 
     for (let planAttempt = 0; planAttempt < effectiveMax; planAttempt += 1) {
       const feedbackTextParts = [] as string[];
@@ -1864,7 +1872,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
           attempt: planAttempt + 1,
           requires_approval: true,
           revision: attempt
-        }
+        },
+        plan_history: planHistory.length ? planHistory.slice() : undefined
       };
 
       const planCorrId = randomUUID();
@@ -1893,6 +1902,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       const planJson = extractJsonPayloadFromText(planOutput) || planResultObj?.payload || null;
       const planSteps = extractPlanSteps(planJson);
 
+      planHistory.push({ attempt: planAttempt + 1, content: planOutput, payload: planJson });
+
       if (planSteps.length) {
         logger.info("plan approved", {
           workflowId,
@@ -1901,7 +1912,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
           planAttempt: planAttempt + 1,
           steps: planSteps.length
         });
-        return { planText: planOutput, planPayload: planJson, planSteps };
+        return { planText: planOutput, planPayload: planJson, planSteps, history: planHistory.slice() };
       }
 
       const issue = planJson && typeof planJson === "object"
@@ -2149,7 +2160,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       ...engineerBasePayload,
       approved_plan: planOutcome?.planPayload ?? null,
       approved_plan_steps: planOutcome?.planSteps ?? null,
-      plan_text: planOutcome?.planText ?? null
+      plan_text: planOutcome?.planText ?? null,
+      plan_history: planOutcome?.history ?? null
     };
 
     await sendPersonaRequest(r, {
@@ -2492,7 +2504,12 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       attempt += 1;
       const leadOutcome = await runLeadCycle(feedbackNotes, attempt, currentMilestoneDescriptorValue, currentTaskDescriptorValue, currentTaskNameValue);
       if (!leadOutcome.success) {
-        feedbackNotes = [`Lead engineer attempt ${attempt} failed: ${leadOutcome.details}`];
+        const notes: string[] = [`Lead engineer attempt ${attempt} failed: ${leadOutcome.details}`];
+        if (leadOutcome.plan?.history?.length) {
+          const historyText = leadOutcome.plan.history.map(entry => `Attempt ${entry.attempt} plan:\n${entry.content.trim()}`).join("\n\n");
+          notes.push(`Plan history:\n${historyText}`);
+        }
+        feedbackNotes = notes;
         continue;
       }
       feedbackNotes = [];
