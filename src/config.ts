@@ -64,6 +64,7 @@ const promptFileAllowedExts = splitCsv(process.env.PROMPT_FILE_ALLOWED_EXTS || "
 const promptFileMaxChars = Number(process.env.PROMPT_FILE_MAX_CHARS || 48000);
 const promptFileMaxPerFileChars = Number(process.env.PROMPT_FILE_MAX_PER_FILE_CHARS || 12000);
 const promptFileMaxFiles = Number(process.env.PROMPT_FILE_MAX_FILES || 8);
+const coordinatorMaxRevisionAttempts = Number(process.env.COORDINATOR_MAX_REVISION_ATTEMPTS || 5);
 
 const gitToken = process.env.GIT_AUTH_TOKEN || "";
 const gitPassword = process.env.GIT_AUTH_PASSWORD || "";
@@ -123,6 +124,7 @@ export const cfg = {
   promptFileMaxChars,
   promptFileMaxPerFileChars,
   promptFileMaxFiles,
+  coordinatorMaxRevisionAttempts,
 
   // Context scanner feature flags & defaults
   contextScan: bool(process.env.CONTEXT_SCAN, false),

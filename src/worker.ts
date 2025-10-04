@@ -63,6 +63,8 @@ const PROMPT_FILE_ALWAYS_INCLUDE = new Set([
   "README.md"
 ].map(path => path.toLowerCase()));
 
+const MAX_REVISION_ATTEMPTS = Math.max(1, Math.floor(cfg.coordinatorMaxRevisionAttempts || 5));
+
 function personaTimeoutMs(persona: string) {
   const key = (persona || "").toLowerCase();
   if (key && PERSONA_TIMEOUT_OVERRIDES[key] !== undefined) return PERSONA_TIMEOUT_OVERRIDES[key];
@@ -380,6 +382,101 @@ function selectNextTask(...sources: any[]): any | null {
   });
 
   return candidates[0]?.task ?? null;
+}
+
+function deriveTaskContext(task: any) {
+  if (!task || typeof task !== "object") {
+    return { name: null as string | null, slug: null as string | null, descriptor: null as any };
+  }
+  const name = firstString(
+    task?.name,
+    task?.title,
+    task?.summary,
+    task?.label,
+    task?.key,
+    task?.id
+  ) || null;
+
+  const taskSlugRaw = firstString(task?.slug, task?.key, name, task?.id, "task");
+  const slug = taskSlugRaw ? slugify(taskSlugRaw) : null;
+
+  const dueText = firstString(
+    task?.due,
+    task?.due_at,
+    task?.dueAt,
+    task?.due_date,
+    task?.target_date,
+    task?.targetDate,
+    task?.deadline,
+    task?.eta
+  );
+
+  const descriptor = {
+    id: firstString(task?.id, task?.key, slug, name) || null,
+    name,
+    slug,
+    status: task?.status ?? task?.state ?? task?.progress ?? null,
+    normalized_status: normalizeTaskStatus(task?.status ?? task?.state ?? task?.phase ?? task?.stage ?? task?.progress),
+    due: dueText || null,
+    assignee: firstString(
+      task?.assignee,
+      task?.assignee_name,
+      task?.assigneeName,
+      task?.owner,
+      task?.owner_name,
+      task?.assigned_to,
+      task?.assignedTo
+    ) || null,
+    branch: firstString(task?.branch, task?.branch_name, task?.branchName) || null,
+    summary: firstString(task?.summary, task?.description) || null
+  };
+
+  return { name, slug, descriptor };
+}
+
+function deriveMilestoneContext(milestone: any, nameFallback: string, branchFallback: string, taskDescriptor: any) {
+  const milestoneName = firstString(
+    milestone?.name,
+    milestone?.title,
+    milestone?.goal,
+    nameFallback,
+    "next milestone"
+  ) || nameFallback || "next milestone";
+
+  const milestoneSlugRaw = firstString(milestone?.slug, milestoneName, "milestone");
+  const milestoneSlug = slugify(milestoneSlugRaw || milestoneName);
+
+  const milestoneDue = firstString(
+    milestone?.due,
+    milestone?.due_at,
+    milestone?.dueAt,
+    milestone?.due_date,
+    milestone?.target_date,
+    milestone?.targetDate,
+    milestone?.deadline,
+    milestone?.eta
+  );
+
+  const milestoneBranch = firstString(
+    milestone?.branch,
+    milestone?.branch_name,
+    milestone?.branchName
+  ) || branchFallback;
+
+  const descriptor = milestone
+    ? {
+        id: milestone.id ?? milestoneSlug,
+        name: milestoneName,
+        slug: milestoneSlug,
+        status: milestone.status,
+        goal: milestone.goal,
+        due: milestoneDue || null,
+        branch: milestoneBranch,
+        task: taskDescriptor
+      }
+    : (taskDescriptor ? { task: taskDescriptor } : null);
+
+  return { name: milestoneName, slug: milestoneSlug, branch: milestoneBranch, descriptor };
 }
 
 type PersonaEvent = { id: string; fields: Record<string, string> };
@@ -1062,6 +1159,55 @@ function extractCommitMessage(text: string): string | null {
   return null;
 }
 
+const PASS_STATUS_KEYWORDS = new Set(["pass", "passed", "success", "succeeded", "approved", "ok", "green", "lgtm"]);
+const FAIL_STATUS_KEYWORDS = new Set(["fail", "failed", "block", "blocked", "reject", "rejected", "error", "not pass", "red"]);
+
+function extractJsonPayloadFromText(text: string | undefined): any | null {
+  if (!text) return null;
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = fenceRegex.exec(text))) {
+    const snippet = match[1];
+    try { return JSON.parse(snippet); } catch {}
+  }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = text.slice(firstBrace, lastBrace + 1);
+    try { return JSON.parse(candidate); } catch {}
+  }
+  return null;
+}
+
+type PersonaStatusInfo = {
+  status: "pass" | "fail" | "unknown";
+  details: string;
+  raw: string;
+  payload?: any;
+};
+
+function interpretPersonaStatus(output: string | undefined): PersonaStatusInfo {
+  const raw = (output || "").trim();
+  const json = extractJsonPayloadFromText(raw);
+  if (json && typeof json.status === "string") {
+    const statusLower = json.status.trim().toLowerCase();
+    let normalized: "pass" | "fail" | "unknown" = "unknown";
+    if (PASS_STATUS_KEYWORDS.has(statusLower)) normalized = "pass";
+    else if (FAIL_STATUS_KEYWORDS.has(statusLower)) normalized = "fail";
+    const details = typeof json.details === "string" ? json.details : raw || JSON.stringify(json);
+    return { status: normalized, details, raw, payload: json };
+  }
+  if (!raw.length) return { status: "unknown", details: raw, raw };
+  const lower = raw.toLowerCase();
+  for (const key of FAIL_STATUS_KEYWORDS) {
+    if (lower.includes(key)) return { status: "fail", details: raw, raw };
+  }
+  for (const key of PASS_STATUS_KEYWORDS) {
+    if (lower.includes(key)) return { status: "pass", details: raw, raw };
+  }
+  return { status: "unknown", details: raw, raw, payload: json };
+}
+
 async function ensureGroups(r: any) {
   for (const p of cfg.allowedPersonas) {
     try { await r.xGroupCreate(cfg.requestStream, groupForPersona(p), "$", { MKSTREAM: true }); } catch {}
@@ -1074,8 +1220,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   const projectId = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id);
   if (!projectId) throw new Error("Coordinator requires project_id in payload or message");
 
-  const projectInfo: any = await fetchProjectStatus(projectId);
-  const projectStatus: any = await fetchProjectStatusDetails(projectId);
+  let projectInfo: any = await fetchProjectStatus(projectId);
+  let projectStatus: any = await fetchProjectStatusDetails(projectId);
   const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectInfo?.slug, projectInfo?.id);
   const projectRepo = firstString(
     payloadObj.repo,
@@ -1215,7 +1361,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       }
     : null;
 
-  const branchName = payloadObj.branch_name
+  let branchName = payloadObj.branch_name
     || firstString(
       selectedMilestone?.branch,
       selectedMilestone?.branch_name,
@@ -1265,7 +1411,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       repo: repoRemote,
       branch: branchName,
       project_id: projectId,
-      project_slug: projectSlug,
+      project_slug: projectSlug || undefined,
       project_name: payloadObj.project_name || projectInfo?.name || "",
       milestone: milestoneDescriptor,
       milestone_name: milestoneName,
@@ -1283,81 +1429,400 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   const contextResult = parseEventResult(contextEvent.fields.result);
   logger.info("coordinator received context completion", { workflowId, corrId: contextCorrId, eventId: contextEvent.id });
 
-  const leadCorrId = randomUUID();
-  await sendPersonaRequest(r, {
-    workflowId,
-    toPersona: "lead-engineer",
-    step: "2-implementation",
-    intent: "implement_milestone",
-    payload: {
+  type PersonaStageResponse = {
+    event: PersonaEvent;
+    result: any;
+    status: PersonaStatusInfo;
+  };
+
+  type StageOutcome = {
+    pass: boolean;
+    details: string;
+    payload?: any;
+    rawOutput: string;
+  };
+
+  type LeadCycleOutcome = {
+    success: boolean;
+    details: string;
+    output: string;
+    commit: any | null;
+    paths: string[];
+    appliedEdits?: any;
+    result?: any;
+    noChanges?: boolean;
+  };
+
+  async function runPersonaWithStatus(toPersona: string, step: string, intent: string, payload: any, options?: { timeoutMs?: number }): Promise<PersonaStageResponse> {
+    const corrId = await sendPersonaRequest(r, {
+      workflowId,
+      toPersona,
+      step,
+      intent,
+      payload,
       repo: repoRemote,
       branch: branchName,
-      project_id: projectId,
-      project_slug: projectSlug,
-      project_name: payloadObj.project_name || projectInfo?.name || "",
-      milestone: milestoneDescriptor,
-      milestone_name: milestoneName,
-      task: taskDescriptor,
-      task_name: taskName || (taskDescriptor?.name ?? ""),
-      goal: projectInfo?.goal || projectInfo?.direction || milestoneDescriptor?.goal,
-      base_branch: baseBranch
-    },
-    corrId: leadCorrId,
-    repo: repoRemote,
-    branch: branchName,
-    projectId
-  });
+      projectId: projectId!,
+      deadlineSeconds: options?.timeoutMs ? Math.ceil(options.timeoutMs / 1000) : undefined
+    });
+    const event = await waitForPersonaCompletion(r, toPersona, workflowId, corrId, options?.timeoutMs);
+    const resultObj = parseEventResult(event.fields.result);
+    const statusInfo = interpretPersonaStatus(resultObj?.output);
+    return { event, result: resultObj, status: statusInfo };
+  }
 
-  const leadEvent = await waitForPersonaCompletion(r, "lead-engineer", workflowId, leadCorrId);
-  const leadResult = parseEventResult(leadEvent.fields.result);
-  logger.info("coordinator received lead engineer completion", { workflowId, corrId: leadCorrId, eventId: leadEvent.id });
-
-  const summaryCorrId = randomUUID();
-  await sendPersonaRequest(r, {
-    workflowId,
-    toPersona: "summarization",
-    step: "3-summary",
-    intent: "summarize_milestone",
-    payload: {
+  async function runLeadCycle(feedbackNotes: string[], attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<LeadCycleOutcome> {
+    const feedback = feedbackNotes.filter(Boolean).join("\n\n");
+    const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
+    const leadCorrId = randomUUID();
+    await sendPersonaRequest(r, {
+      workflowId,
+      toPersona: "lead-engineer",
+      step: "2-implementation",
+      intent: "implement_milestone",
+      payload: {
+        repo: repoRemote,
+        branch: branchName,
+        project_id: projectId,
+        project_slug: projectSlug || undefined,
+        project_name: payloadObj.project_name || projectInfo?.name || "",
+        milestone: currentMilestoneDescriptorValue,
+        milestone_name: milestoneNameForPayload,
+        task: currentTaskDescriptorValue,
+        task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
+        goal: projectInfo?.goal || projectInfo?.direction || currentMilestoneDescriptorValue?.goal,
+        base_branch: baseBranch,
+        feedback: feedback || undefined,
+        revision: attempt
+      },
+      corrId: leadCorrId,
       repo: repoRemote,
       branch: branchName,
-      project_id: projectId,
-      project_slug: projectSlug,
-      project_name: payloadObj.project_name || projectInfo?.name || "",
-      milestone: milestoneDescriptor,
-      task: taskDescriptor,
-      task_name: taskName || (taskDescriptor?.name ?? ""),
-      lead_engineer_result: leadResult
-    },
-    corrId: summaryCorrId,
-    repo: repoRemote,
-    branch: branchName,
-    projectId,
-    deadlineSeconds: 300
-  });
+      projectId: projectId!
+    });
 
-  const summaryEvent = await waitForPersonaCompletion(r, "summarization", workflowId, summaryCorrId);
-  const summaryResult = parseEventResult(summaryEvent.fields.result);
-  logger.info("coordinator received summarization completion", { workflowId, corrId: summaryCorrId, eventId: summaryEvent.id });
+    const leadEvent = await waitForPersonaCompletion(r, "lead-engineer", workflowId, leadCorrId);
+    const leadResultObj = parseEventResult(leadEvent.fields.result);
+    logger.info("coordinator received lead engineer completion", { workflowId, corrId: leadCorrId, eventId: leadEvent.id });
 
-  const lines = [
+    const appliedEdits = leadResultObj?.applied_edits;
+    if (!appliedEdits || appliedEdits.attempted === false) {
+      return { success: false, details: "Lead engineer did not apply edits.", output: leadResultObj?.output || "", commit: null, paths: [], appliedEdits: appliedEdits, result: leadResultObj };
+    }
+
+    const noChanges = !appliedEdits.applied && appliedEdits.reason === "no_changes";
+    if (!appliedEdits.applied && !noChanges) {
+      const reason = appliedEdits.reason || appliedEdits.error || "unknown";
+      return { success: false, details: `Lead edits were not applied (${reason}).`, output: leadResultObj?.output || "", commit: appliedEdits.commit || null, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj };
+    }
+
+    const commitInfo = appliedEdits.commit || null;
+    if (commitInfo && commitInfo.committed === false) {
+      const reason = commitInfo.reason || "commit_failed";
+      return { success: false, details: `Commit failed (${reason}).`, output: leadResultObj?.output || "", commit: commitInfo, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj };
+    }
+    if (commitInfo && commitInfo.pushed === false && commitInfo.reason) {
+      return { success: false, details: `Push failed (${commitInfo.reason}).`, output: leadResultObj?.output || "", commit: commitInfo, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj };
+    }
+
+    return {
+      success: true,
+      details: leadResultObj?.output || "",
+      output: leadResultObj?.output || "",
+      commit: commitInfo,
+      paths: appliedEdits.paths || [],
+      appliedEdits,
+      result: leadResultObj,
+      noChanges
+    };
+  }
+
+  async function runQaStage(leadOutcome: LeadCycleOutcome, attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<StageOutcome> {
+    const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
+    const qaResponse = await runPersonaWithStatus(
+      "tester-qa",
+      "4-qa-verification",
+      "verify_build_and_tests",
+      {
+        repo: repoRemote,
+        branch: branchName,
+        project_id: projectId,
+        project_slug: projectSlug || undefined,
+        project_name: payloadObj.project_name || projectInfo?.name || "",
+        milestone: currentMilestoneDescriptorValue,
+        milestone_name: milestoneNameForPayload,
+        task: currentTaskDescriptorValue,
+        task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
+        commit: leadOutcome.commit,
+        changed_files: leadOutcome.paths,
+        lead_output: leadOutcome.output,
+        revision: attempt
+      }
+    );
+    return {
+      pass: qaResponse.status.status === "pass",
+      details: qaResponse.status.details,
+      payload: qaResponse.status.payload,
+      rawOutput: qaResponse.result?.output || ""
+    };
+  }
+
+  async function runCodeReviewStage(leadOutcome: LeadCycleOutcome, qaOutcome: StageOutcome, attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<StageOutcome> {
+    const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
+    const reviewResponse = await runPersonaWithStatus(
+      "code-reviewer",
+      "5-code-review",
+      "review_changes",
+      {
+        repo: repoRemote,
+        branch: branchName,
+        project_id: projectId,
+        project_slug: projectSlug || undefined,
+        project_name: payloadObj.project_name || projectInfo?.name || "",
+        milestone: currentMilestoneDescriptorValue,
+        milestone_name: milestoneNameForPayload,
+        task: currentTaskDescriptorValue,
+        task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
+        commit: leadOutcome.commit,
+        qa_report: qaOutcome.details,
+        qa_payload: qaOutcome.payload,
+        lead_output: leadOutcome.output,
+        revision: attempt
+      }
+    );
+    return {
+      pass: reviewResponse.status.status === "pass",
+      details: reviewResponse.status.details,
+      payload: reviewResponse.status.payload,
+      rawOutput: reviewResponse.result?.output || ""
+    };
+  }
+
+  async function runSecurityReviewStage(leadOutcome: LeadCycleOutcome, qaOutcome: StageOutcome, codeOutcome: StageOutcome, attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<StageOutcome> {
+    const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
+    const securityResponse = await runPersonaWithStatus(
+      "security-review",
+      "6-security-review",
+      "assess_security",
+      {
+        repo: repoRemote,
+        branch: branchName,
+        project_id: projectId,
+        project_slug: projectSlug || undefined,
+        project_name: payloadObj.project_name || projectInfo?.name || "",
+        milestone: currentMilestoneDescriptorValue,
+        milestone_name: milestoneNameForPayload,
+        task: currentTaskDescriptorValue,
+        task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
+        commit: leadOutcome.commit,
+        qa_report: qaOutcome.details,
+        code_review_report: codeOutcome.details,
+        revision: attempt
+      }
+    );
+    return {
+      pass: securityResponse.status.status === "pass",
+      details: securityResponse.status.details,
+      payload: securityResponse.status.payload,
+      rawOutput: securityResponse.result?.output || ""
+    };
+  }
+
+  async function runDevOpsStage(leadOutcome: LeadCycleOutcome, qaOutcome: StageOutcome, codeOutcome: StageOutcome, securityOutcome: StageOutcome, attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<StageOutcome> {
+    const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
+    const devopsResponse = await runPersonaWithStatus(
+      "devops",
+      "7-devops-ci",
+      "run_ci_pipeline",
+      {
+        repo: repoRemote,
+        branch: branchName,
+        project_id: projectId,
+        project_slug: projectSlug || undefined,
+        project_name: payloadObj.project_name || projectInfo?.name || "",
+        milestone: currentMilestoneDescriptorValue,
+        milestone_name: milestoneNameForPayload,
+        task: currentTaskDescriptorValue,
+        task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
+        commit: leadOutcome.commit,
+        qa_report: qaOutcome.details,
+        code_review_report: codeOutcome.details,
+        security_report: securityOutcome.details,
+        revision: attempt
+      }
+    );
+    return {
+      pass: devopsResponse.status.status === "pass",
+      details: devopsResponse.status.details,
+      payload: devopsResponse.status.payload,
+      rawOutput: devopsResponse.result?.output || ""
+    };
+  }
+
+  async function runProjectManagerStage(leadOutcome: LeadCycleOutcome, qaOutcome: StageOutcome, codeOutcome: StageOutcome, securityOutcome: StageOutcome, devopsOutcome: StageOutcome, attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<StageOutcome> {
+    const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
+    const pmResponse = await runPersonaWithStatus(
+      "project-manager",
+      "8-project-update",
+      "update_project_dashboard",
+      {
+        repo: repoRemote,
+        branch: branchName,
+        project_id: projectId,
+        project_slug: projectSlug || undefined,
+        project_name: payloadObj.project_name || projectInfo?.name || "",
+        milestone: currentMilestoneDescriptorValue,
+        milestone_name: milestoneNameForPayload,
+        task: currentTaskDescriptorValue,
+        task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
+        commit: leadOutcome.commit,
+        qa_report: qaOutcome.details,
+        code_review_report: codeOutcome.details,
+        security_report: securityOutcome.details,
+        devops_report: devopsOutcome.details,
+        revision: attempt
+      }
+    );
+    const pass = pmResponse.status.status !== "fail";
+    if (!pass) {
+      throw new Error(`Project manager reported failure: ${pmResponse.status.details}`);
+    }
+    return {
+      pass: true,
+      details: pmResponse.status.details,
+      payload: pmResponse.status.payload,
+      rawOutput: pmResponse.result?.output || ""
+    };
+  }
+
+  async function executeTaskLifecycle(currentTaskNameValue: string | null, currentTaskDescriptorValue: any, currentMilestoneDescriptorValue: any): Promise<string> {
+    let feedbackNotes: string[] = [];
+    let attempt = 0;
+    while (attempt < MAX_REVISION_ATTEMPTS) {
+      attempt += 1;
+      const leadOutcome = await runLeadCycle(feedbackNotes, attempt, currentMilestoneDescriptorValue, currentTaskDescriptorValue, currentTaskNameValue);
+      if (!leadOutcome.success) {
+        feedbackNotes = [`Lead engineer attempt ${attempt} failed: ${leadOutcome.details}`];
+        continue;
+      }
+      feedbackNotes = [];
+
+      const qaOutcome = await runQaStage(leadOutcome, attempt, currentMilestoneDescriptorValue, currentTaskDescriptorValue, currentTaskNameValue);
+      if (!qaOutcome.pass) {
+        feedbackNotes = [`QA feedback: ${qaOutcome.details}`];
+        continue;
+      }
+
+      const codeOutcome = await runCodeReviewStage(leadOutcome, qaOutcome, attempt, currentMilestoneDescriptorValue, currentTaskDescriptorValue, currentTaskNameValue);
+      if (!codeOutcome.pass) {
+        feedbackNotes = [`Code review feedback: ${codeOutcome.details}`];
+        continue;
+      }
+
+      const securityOutcome = await runSecurityReviewStage(leadOutcome, qaOutcome, codeOutcome, attempt, currentMilestoneDescriptorValue, currentTaskDescriptorValue, currentTaskNameValue);
+      if (!securityOutcome.pass) {
+        feedbackNotes = [`Security review feedback: ${securityOutcome.details}`];
+        continue;
+      }
+
+      const devopsOutcome = await runDevOpsStage(leadOutcome, qaOutcome, codeOutcome, securityOutcome, attempt, currentMilestoneDescriptorValue, currentTaskDescriptorValue, currentTaskNameValue);
+      if (!devopsOutcome.pass) {
+        feedbackNotes = [`DevOps feedback: ${devopsOutcome.details}`];
+        continue;
+      }
+
+      await runProjectManagerStage(leadOutcome, qaOutcome, codeOutcome, securityOutcome, devopsOutcome, attempt, currentMilestoneDescriptorValue, currentTaskDescriptorValue, currentTaskNameValue);
+
+      const commitSummary = leadOutcome.commit?.message
+        ? `Commit: ${leadOutcome.commit.message}`
+        : (leadOutcome.noChanges ? "No new commits were necessary." : "Commit information unavailable.");
+      const summaryParts = [
+        currentTaskNameValue ? `Task ${currentTaskNameValue} completed.` : "Task cycle completed.",
+        commitSummary,
+        `QA: ${qaOutcome.details || qaOutcome.rawOutput || 'n/a'}`,
+        `Code Review: ${codeOutcome.details || codeOutcome.rawOutput || 'n/a'}`,
+        `Security: ${securityOutcome.details || securityOutcome.rawOutput || 'n/a'}`,
+        `DevOps: ${devopsOutcome.details || devopsOutcome.rawOutput || 'n/a'}`
+      ];
+      return summaryParts.join(' ');
+    }
+
+    throw new Error(`Exceeded ${MAX_REVISION_ATTEMPTS} revision attempts for task ${currentTaskNameValue || '(unnamed)'}`);
+  }
+
+  const completedTaskSummaries: string[] = [];
+  let currentTaskObject = selectedTask;
+  let currentTaskDescriptorValue = taskDescriptor;
+  let currentTaskNameValue = taskName;
+  let currentMilestoneObject = selectedMilestone;
+  let currentMilestoneDescriptorValue = milestoneDescriptor;
+  let currentMilestoneNameValue = milestoneName;
+  let currentMilestoneSlugValue = milestoneSlug;
+  let iterationCount = 0;
+
+  if (currentTaskDescriptorValue) payloadObj.task = currentTaskDescriptorValue;
+  if (currentTaskNameValue) payloadObj.task_name = currentTaskNameValue;
+  if (currentMilestoneDescriptorValue) payloadObj.milestone = currentMilestoneDescriptorValue;
+  payloadObj.milestone_name = currentMilestoneNameValue;
+
+  while (currentTaskDescriptorValue && iterationCount < 20) {
+    iterationCount += 1;
+    const summary = await executeTaskLifecycle(currentTaskNameValue, currentTaskDescriptorValue, currentMilestoneDescriptorValue);
+    completedTaskSummaries.push(summary);
+
+    projectInfo = await fetchProjectStatus(projectId);
+    projectStatus = await fetchProjectStatusDetails(projectId);
+
+    const milestoneSourceNext = projectStatus ?? projectInfo;
+    let nextSelectedMilestone = (payloadObj.milestone && typeof payloadObj.milestone === "object") ? payloadObj.milestone : selectNextMilestone(milestoneSourceNext);
+    if (!nextSelectedMilestone && projectInfo && projectInfo !== milestoneSourceNext) {
+      nextSelectedMilestone = selectNextMilestone(projectInfo) || nextSelectedMilestone;
+    }
+    if (!nextSelectedMilestone && milestoneSourceNext && typeof milestoneSourceNext === "object") {
+      const explicit = (milestoneSourceNext as any).next_milestone ?? (milestoneSourceNext as any).nextMilestone;
+      if (explicit && typeof explicit === "object") nextSelectedMilestone = explicit;
+    }
+    if (nextSelectedMilestone) {
+      currentMilestoneObject = nextSelectedMilestone;
+      const milestoneCtx = deriveMilestoneContext(currentMilestoneObject, currentMilestoneNameValue, branchName, currentTaskDescriptorValue);
+      currentMilestoneDescriptorValue = milestoneCtx.descriptor;
+      currentMilestoneNameValue = milestoneCtx.name;
+      currentMilestoneSlugValue = milestoneCtx.slug || currentMilestoneSlugValue;
+      if (milestoneCtx.branch) branchName = milestoneCtx.branch;
+      payloadObj.milestone = currentMilestoneDescriptorValue;
+      payloadObj.milestone_name = currentMilestoneNameValue;
+    }
+
+    const nextTask = selectNextTask(currentMilestoneObject, milestoneSourceNext, projectStatus, projectInfo, payloadObj);
+    if (!nextTask) break;
+
+    currentTaskObject = nextTask;
+    const taskCtx = deriveTaskContext(currentTaskObject);
+    currentTaskDescriptorValue = taskCtx.descriptor;
+    currentTaskNameValue = taskCtx.name;
+    if (currentTaskDescriptorValue) payloadObj.task = currentTaskDescriptorValue;
+    payloadObj.task_name = currentTaskNameValue || "";
+    if (currentMilestoneDescriptorValue && currentMilestoneDescriptorValue.task !== currentTaskDescriptorValue) {
+      currentMilestoneDescriptorValue.task = currentTaskDescriptorValue;
+      payloadObj.milestone = currentMilestoneDescriptorValue;
+    }
+  }
+
+  if (iterationCount >= 20) {
+    throw new Error(`Coordinator exceeded task iteration limit for project ${projectId}`);
+  }
+
+  const summaryLines = [
     `Workflow orchestrated for project ${projectId}.`,
-    `Milestone: ${milestoneName} (branch ${branchName}).`,
-    `Context completed (corr ${contextCorrId}).`,
-    `Lead engineer completed (corr ${leadCorrId}).`,
-    `Summarization completed (corr ${summaryCorrId}).`
+    `Milestone: ${currentMilestoneNameValue} (branch ${branchName}).`
   ];
-
-  if (taskName) {
-    const statusText = taskDescriptor?.status ? ` [${taskDescriptor.status}]` : "";
-    lines.splice(2, 0, `Task: ${taskName}${statusText}.`);
+  if (completedTaskSummaries.length) {
+    completedTaskSummaries.forEach((line, index) => summaryLines.push(`Cycle ${index + 1}: ${line}`));
+  } else {
+    summaryLines.push("No active tasks to process.");
   }
 
-  if (summaryResult?.output) {
-    lines.push("Summary:", summaryResult.output);
-  }
-
-  return lines.join("\n");
+  return summaryLines.join("\n");
 }
 
 async function readOne(r: any, persona: string) {
