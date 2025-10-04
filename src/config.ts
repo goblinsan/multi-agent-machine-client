@@ -19,14 +19,38 @@ function splitCsv(value: string | undefined, fallback: string[]): string[] {
 
 function jsonOr<T>(value: string | undefined, fallback: T): T {
   if (!value) return fallback;
-  try { return JSON.parse(value) as T; } catch { return fallback; }
+  // Trim and strip surrounding single or double quotes to be tolerant of .env quoting
+  let v = value.trim();
+  if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+    v = v.slice(1, -1);
+  }
+  try { return JSON.parse(v) as T; } catch { return fallback; }
 }
 
 function parseDurationMs(value: string | undefined, fallbackMs: number) {
   if (!value) return fallbackMs;
-  const trimmed = value.trim();
-  if (!trimmed.length) return fallbackMs;
-  const num = Number(trimmed);
+  let s = value.toString().trim();
+  if (!s.length) return fallbackMs;
+  // strip surrounding quotes if present
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) s = s.slice(1, -1).trim();
+
+  // Accept human-friendly units: ms, s, m, h (e.g. "120s", "2m", "1500ms")
+  const m = s.match(/^([0-9]+(?:\.[0-9]+)?)\s*(ms|s|m|min|h)?$/i);
+  if (m) {
+    const num = Number(m[1]);
+    if (!Number.isFinite(num) || num <= 0) return fallbackMs;
+    const unit = (m[2] || "").toLowerCase();
+    if (unit === "ms") return Math.floor(num);
+    if (unit === "s") return Math.floor(num * 1000);
+    if (unit === "m" || unit === "min") return Math.floor(num * 60 * 1000);
+    if (unit === "h") return Math.floor(num * 60 * 60 * 1000);
+    // no unit -> interpret number > 1000 as milliseconds, otherwise seconds
+    if (num > 1000) return Math.floor(num);
+    return Math.floor(num * 1000);
+  }
+
+  // fallback: try numeric parsing
+  const num = Number(s);
   if (!Number.isFinite(num) || num <= 0) return fallbackMs;
   if (num > 1000) return Math.floor(num);
   return Math.floor(num * 1000);
@@ -38,9 +62,15 @@ function parsePersonaTimeouts(raw: Record<string, unknown>) {
     if (!key || typeof key !== "string") continue;
     const normalizedKey = key.trim().toLowerCase();
     if (!normalizedKey.length) continue;
-    const num = typeof value === "string" ? Number(value) : typeof value === "number" ? value : undefined;
-    if (num === undefined || !Number.isFinite(num) || num <= 0) continue;
-    out[normalizedKey] = num > 1000 ? Math.floor(num) : Math.floor(num * 1000);
+    let ms: number | undefined;
+    if (typeof value === "number") ms = value;
+    else if (typeof value === "string") {
+      // allow values like "120s", "2m", "120000" or quoted strings
+      const parsed = parseDurationMs(value, -1);
+      if (parsed > 0) ms = parsed;
+    }
+    if (ms === undefined || !Number.isFinite(ms) || ms <= 0) continue;
+    out[normalizedKey] = Math.floor(ms);
   }
   return out;
 }
@@ -125,7 +155,8 @@ export const cfg = {
   dashboardBaseUrl: process.env.DASHBOARD_BASE_URL || "http://localhost:8787",
   dashboardApiKey: process.env.DASHBOARD_API_KEY || "dev",
   dashboardContextEndpoint,
-  dashboardCreateMilestoneIfMissing: bool(process.env.DASHBOARD_CREATE_MILESTONE_IF_MISSING, true),
+  // Be conservative: do not auto-create milestones by default to avoid accidental duplicates.
+  dashboardCreateMilestoneIfMissing: bool(process.env.DASHBOARD_CREATE_MILESTONE_IF_MISSING, false),
 
   applyEdits: bool(process.env.APPLY_EDITS, false),
   allowedEditPersonas: splitCsv(process.env.ALLOWED_EDIT_PERSONAS || "lead-engineer,devops,ui-engineer,context", []),
@@ -184,5 +215,7 @@ export const cfg = {
   ,
   // Whether the worker should inject dashboard context (project tree, hotspots) into model prompts
   // Set to false to ensure each LM call is self-contained and no external dashboard context is added.
-  injectDashboardContext: bool(process.env.INJECT_DASHBOARD_CONTEXT, true)
+  injectDashboardContext: bool(process.env.INJECT_DASHBOARD_CONTEXT, true),
+  // When true, auto-creating milestones is only permitted for the 'Future Enhancements' milestone
+  dashboardAutoCreateFutureEnhancementsOnly: bool(process.env.DASHBOARD_AUTO_CREATE_FUTURE_ENHANCEMENTS_ONLY, true),
 };

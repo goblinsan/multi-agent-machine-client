@@ -2116,6 +2116,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     return tasks;
   }
 
+  type CreatedTaskInfo = { summary: string; title: string; externalId?: string; createdId?: string };
+
   async function createDashboardTaskEntries(tasks: StageTaskDefinition[], options: {
     stage: "qa" | "devops" | "code-review" | "security";
     milestoneDescriptor: any;
@@ -2123,7 +2125,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     projectId: string | null;
     projectName: string | null;
     scheduleHint?: string;
-  }): Promise<string[]> {
+  }): Promise<CreatedTaskInfo[]> {
     if (!tasks.length) return [];
     const rawMilestone = options.milestoneDescriptor?.id ?? options.milestoneDescriptor?.slug ?? null;
     let milestoneId: string | null = null;
@@ -2134,7 +2136,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       else milestoneSlug = String(rawMilestone);
     }
     const parentTaskId = options.parentTaskDescriptor?.id || null;
-    const summaries: string[] = [];
+  const summaries: CreatedTaskInfo[] = [];
 
     for (const task of tasks) {
       const title = task.title || `${options.stage.toUpperCase()} follow-up`;
@@ -2203,6 +2205,10 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         attachments = undefined;
       }
 
+      // If creating QA follow-ups, request initial_status=in_progress so they're visible immediately
+      const createOptions: Record<string, any> = { create_milestone_if_missing: cfg.dashboardCreateMilestoneIfMissing };
+      if (options.stage === 'qa') createOptions.initial_status = 'in_progress';
+
       const body = await createDashboardTask({
         projectId: options.projectId || undefined,
         projectSlug: derivedProjectSlug || undefined,
@@ -2216,7 +2222,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         assigneePersona: task.assigneePersona,
         externalId,
         attachments,
-        options: { create_milestone_if_missing: cfg.dashboardCreateMilestoneIfMissing }
+        options: createOptions
       });
 
       if (body?.ok) {
@@ -2224,11 +2230,16 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         try {
           const createdId = body?.body && (body.body.id || body.body.task_id || (body.body.task && body.body.task.id));
           if (createdId && externalId) externalToTaskId.set(String(externalId), String(createdId));
+          const summaryParts = [title];
+          if (schedule) summaryParts.push(`schedule: ${schedule}`);
+          summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
+          summaries.push({ summary: summaryParts.join(" | "), title, externalId, createdId: String(createdId) });
+          continue;
         } catch {}
         const summaryParts = [title];
         if (schedule) summaryParts.push(`schedule: ${schedule}`);
         summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
-        summaries.push(summaryParts.join(" | "));
+        summaries.push({ summary: summaryParts.join(" | "), title, externalId });
       } else {
         logger.warn("dashboard task creation failed", {
           stage: options.stage,
@@ -2545,15 +2556,44 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         logger.warn("project-manager routing failed for QA tasks, continuing with defaults", { workflowId, error: err });
       }
 
-      const createdTasks = await createDashboardTaskEntries(qaTasks, {
+      const createdTaskInfos = await createDashboardTaskEntries(qaTasks, {
         stage: "qa",
         milestoneDescriptor: currentMilestoneDescriptorValue,
         parentTaskDescriptor: currentTaskDescriptorValue,
         projectId,
         projectName: projectInfo?.name || null
       });
-      if (createdTasks.length) {
-        const summary = createdTasks.map(item => `- ${item}`).join("\n");
+      if (createdTaskInfos.length) {
+        // Best-effort: mark original task as on_hold and ensure QA-created tasks are in_progress
+        try {
+          const originalExternal = currentTaskDescriptorValue?.id || null;
+          let originalId: string | null = null;
+          if (originalExternal && externalToTaskId.has(String(originalExternal))) originalId = externalToTaskId.get(String(originalExternal)) || null;
+          if (!originalId && projectId && currentTaskNameValue) {
+            const proj = await fetchProjectStatus(projectId) as any;
+            const candidates = Array.isArray(proj?.tasks) ? proj.tasks : (Array.isArray(proj?.task_list) ? proj.task_list : (Array.isArray(proj?.tasks_list) ? proj.tasks_list : []));
+            if (Array.isArray(candidates) && candidates.length) {
+              const match = candidates.find((t: any) => (t.title || t.name || t.summary || "").toString().toLowerCase() === (currentTaskNameValue || "").toLowerCase());
+              if (match && match.id) originalId = match.id;
+            }
+          }
+          if (originalId) await updateTaskStatus(originalId, 'on_hold').catch(() => {});
+        } catch (err) {
+          logger.debug('failed to set original task on_hold', { workflowId, error: err });
+        }
+
+        // Ensure created QA tasks are in_progress (they should already be created with that status when possible)
+        try {
+          for (const info of createdTaskInfos) {
+            if (info.createdId) {
+              await updateTaskStatus(info.createdId, 'in_progress').catch(() => {});
+            }
+          }
+        } catch (err) {
+          logger.debug('failed to set created QA tasks in_progress', { workflowId, error: err });
+        }
+
+        const summary = createdTaskInfos.map(item => `- ${item.summary}`).join("\n");
         qaDetails = `${qaDetails}\n\nDashboard Tasks Created:\n${summary}`;
       }
     }
@@ -2595,7 +2635,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     if (reviewResponse.status.status !== "pass") {
       let tasks = extractStageTasks("code-review", reviewDetails, reviewPayload);
       tasks = await routeTasksThroughProjectManager(tasks, "code-review");
-      const created = await createDashboardTaskEntries(tasks, {
+      const createdInfos = await createDashboardTaskEntries(tasks, {
         stage: "code-review",
         milestoneDescriptor: currentMilestoneDescriptorValue,
         parentTaskDescriptor: currentTaskDescriptorValue,
@@ -2603,8 +2643,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         projectName: projectInfo?.name || null,
         scheduleHint: "urgent"
       });
-      if (created.length) {
-        const summary = created.map(item => `- ${item}`).join("\n");
+      if (createdInfos.length) {
+        const summary = createdInfos.map(item => `- ${item.summary}`).join("\n");
         reviewDetails = `${reviewDetails}\n\nDashboard Tasks Created:\n${summary}`;
       }
     }
@@ -2645,7 +2685,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     if (securityResponse.status.status !== "pass") {
       let tasks = extractStageTasks("security", securityDetails, securityPayload);
       tasks = await routeTasksThroughProjectManager(tasks, "security");
-      const created = await createDashboardTaskEntries(tasks, {
+      const createdInfos = await createDashboardTaskEntries(tasks, {
         stage: "security",
         milestoneDescriptor: currentMilestoneDescriptorValue,
         parentTaskDescriptor: currentTaskDescriptorValue,
@@ -2653,8 +2693,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         projectName: projectInfo?.name || null,
         scheduleHint: "urgent"
       });
-      if (created.length) {
-        const summary = created.map(item => `- ${item}`).join("\n");
+      if (createdInfos.length) {
+        const summary = createdInfos.map(item => `- ${item.summary}`).join("\n");
         securityDetails = `${securityDetails}\n\nDashboard Tasks Created:\n${summary}`;
       }
     }
@@ -2699,15 +2739,15 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         schedule: task.schedule || "urgent",
         assigneePersona: task.assigneePersona || "devops"
       }));
-      const created = await createDashboardTaskEntries(tasks, {
+      const createdInfos = await createDashboardTaskEntries(tasks, {
         stage: "devops",
         milestoneDescriptor: currentMilestoneDescriptorValue,
         parentTaskDescriptor: currentTaskDescriptorValue,
         projectId,
         projectName: projectInfo?.name || null
       });
-      if (created.length) {
-        const summary = created.map(item => `- ${item}`).join("\n");
+      if (createdInfos.length) {
+        const summary = createdInfos.map(item => `- ${item.summary}`).join("\n");
         devopsDetails = `${devopsDetails}\n\nDashboard Tasks Created:\n${summary}`;
       }
     }
@@ -2956,6 +2996,14 @@ async function main() {
     logLevel: cfg.log.level,
     logConsole: cfg.log.console
   });
+  // Also surface persona timeout configuration to make it visible on startup
+  try {
+    logger.info("persona timeouts", {
+      personaTimeoutOverrides: cfg.personaTimeouts || {},
+      personaDefaultTimeoutMs: cfg.personaDefaultTimeoutMs,
+      personaCodingTimeoutMs: cfg.personaCodingTimeoutMs
+    });
+  } catch (e) { /* ignore logging errors */ }
   while (true) { for (const p of cfg.allowedPersonas) { await readOne(r, p); } }
 }
 

@@ -29,6 +29,25 @@ export async function fetchProjectStatus(projectId: string | null | undefined) {
   }
 }
 
+export async function fetchProjectMilestones(projectId: string | null | undefined) {
+  if (!projectId) return null;
+  try {
+    const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
+    const res = await fetch(`${base}/v1/milestones?project_id=${encodeURIComponent(projectId)}`, {
+      headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+    });
+    if (!res.ok) {
+      logger.debug('fetchProjectMilestones non-ok', { projectId, status: res.status });
+      return null;
+    }
+    const body = await res.json();
+    return body;
+  } catch (e) {
+    logger.warn('fetchProjectMilestones failed', { projectId, error: (e as Error).message });
+    return null;
+  }
+}
+
 export async function fetchProjectStatusDetails(projectId: string | null | undefined) {
   if (!projectId) return null;
   try {
@@ -246,8 +265,39 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
   };
   if (input.projectId) body.project_id = input.projectId;
   if (input.projectSlug) body.project_slug = input.projectSlug;
-  if (input.milestoneId) body.milestone_id = input.milestoneId;
-  else if (input.milestoneSlug) body.milestone_slug = input.milestoneSlug;
+  // If caller provided a milestone slug but not an id, try to resolve it to the canonical milestone id
+  let resolvedMilestoneId = input.milestoneId ?? null;
+  if (!resolvedMilestoneId && input.milestoneSlug && input.projectId) {
+    try {
+      const milestones: any = await fetchProjectMilestones(input.projectId);
+      if (Array.isArray(milestones)) {
+        const slug = (input.milestoneSlug || '').toString().toLowerCase();
+        const match = milestones.find((m: any) => {
+          if (!m) return false;
+          const mslug = (m.slug || (m.name || '')).toString().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          if (mslug === slug) return true;
+          const name = (m.name || '').toString().toLowerCase();
+          if (name === (input.milestoneSlug || '').toString().toLowerCase()) return true;
+          return false;
+        });
+        if (match && match.id) resolvedMilestoneId = match.id;
+      }
+    } catch (e) {
+      // ignore resolution failures and fall back to sending slug
+      logger.debug('milestone slug resolution failed', { projectId: input.projectId, milestoneSlug: input.milestoneSlug, error: (e as Error).message });
+    }
+  }
+  if (resolvedMilestoneId) body.milestone_id = resolvedMilestoneId;
+  else if (input.milestoneSlug && input.options && input.options.create_milestone_if_missing) {
+    // Only allow auto-creating the 'Future Enhancements' milestone to avoid accidental duplicates
+    const norm = (input.milestoneSlug || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const allowOnlyFuture = (typeof cfg.dashboardAutoCreateFutureEnhancementsOnly === 'boolean') ? cfg.dashboardAutoCreateFutureEnhancementsOnly : true;
+    if (!allowOnlyFuture || norm === 'future-enhancements' || norm === 'future-enhancement' || norm === 'future_enhancements' || norm === 'future') {
+      body.milestone_slug = input.milestoneSlug;
+    } else {
+      logger.info('milestone auto-create blocked (only allowed for Future Enhancements)', { requested: input.milestoneSlug, projectId: input.projectId });
+    }
+  }
   if (input.parentTaskId) body.parent_task_id = input.parentTaskId;
   if (typeof input.effortEstimate === "number") body.effort_estimate = input.effortEstimate;
   if (typeof input.priorityScore === "number") body.priority_score = input.priorityScore;
