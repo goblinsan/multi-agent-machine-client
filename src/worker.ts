@@ -4,7 +4,7 @@ import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction } from "./dashboard.js";
+import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, createDashboardTask } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
 
@@ -66,6 +66,11 @@ const PROMPT_FILE_ALWAYS_INCLUDE = new Set([
 const MAX_REVISION_ATTEMPTS = cfg.coordinatorMaxRevisionAttempts === null
   ? Number.POSITIVE_INFINITY
   : Math.max(1, Math.floor(cfg.coordinatorMaxRevisionAttempts));
+const MAX_APPROVAL_RETRIES = cfg.coordinatorMaxApprovalRetries === null
+  ? Number.POSITIVE_INFINITY
+  : Math.max(1, Math.floor(cfg.coordinatorMaxApprovalRetries));
+
+const ENGINEER_PERSONAS_REQUIRING_PLAN = new Set(["lead-engineer", "ui-engineer"]);
 
 function personaTimeoutMs(persona: string) {
   const key = (persona || "").toLowerCase();
@@ -514,20 +519,50 @@ async function waitForPersonaCompletion(
     ? timeoutMs
     : personaTimeoutMs(persona);
   const started = Date.now();
-  let lastId = "$";
   const eventRedis = await makeRedis();
 
   try {
+    const streamKey = cfg.eventStream;
+
+    const recentMatch = await (async () => {
+      try {
+        const entries = await eventRedis.xRevRange(streamKey, "+", "-", { COUNT: 200 });
+        if (!entries) return null;
+        for (const entry of entries) {
+          const id = Array.isArray(entry) ? String(entry[0]) : "";
+          const rawCandidate = Array.isArray(entry) ? entry[1] : entry;
+          if (!id || !rawCandidate || typeof rawCandidate !== "object") continue;
+          const raw = rawCandidate as Record<string, any>;
+          const fields: Record<string, string> = {};
+          for (const [k, v] of Object.entries(raw)) fields[k] = typeof v === "string" ? v : String(v);
+          if (
+            fields.workflow_id === workflowId &&
+            fields.from_persona === persona &&
+            fields.status === "done" &&
+            (!corrId || fields.corr_id === corrId)
+          ) {
+            return { id, fields };
+          }
+        }
+      } catch (error) {
+        logger.debug("waitForPersonaCompletion scan failed", { persona, workflowId, corrId, error });
+      }
+      return null;
+    })();
+
+    if (recentMatch) return recentMatch;
+
+    let lastId = "$";
     while (Date.now() - started < effectiveTimeout) {
       const elapsed = Date.now() - started;
       const remaining = Math.max(0, effectiveTimeout - elapsed);
       const blockMs = Math.max(1000, Math.min(remaining || effectiveTimeout, 5000));
-      const streams = await eventRedis.xRead([{ key: cfg.eventStream, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
+      const streams = await eventRedis.xRead([{ key: streamKey, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
       if (!streams) continue;
 
       for (const stream of streams) {
-        for (const message of stream.messages) {
-          lastId = message.id;
+        const messages = stream.messages || [];
+        for (const message of messages) {
           const rawFields = message.message as Record<string, string>;
           const fields: Record<string, string> = {};
           for (const [k, v] of Object.entries(rawFields)) fields[k] = typeof v === "string" ? v : String(v);
@@ -540,7 +575,6 @@ async function waitForPersonaCompletion(
             return { id: message.id, fields };
           }
         }
-        const messages = stream.messages;
         if (messages.length) lastId = messages[messages.length - 1].id;
       }
     }
@@ -1774,6 +1808,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     appliedEdits?: any;
     result?: any;
     noChanges?: boolean;
+    plan?: PlanApprovalOutcome | null;
   };
 
   async function runPersonaWithStatus(toPersona: string, step: string, intent: string, payload: any, options?: { timeoutMs?: number }): Promise<PersonaStageResponse> {
@@ -1794,9 +1829,315 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     return { event, result: resultObj, status: statusInfo };
   }
 
+  type PlanApprovalOutcome = {
+    planText: string;
+    planPayload: any;
+    planSteps: any[];
+  };
+
+  function extractPlanSteps(planPayload: any): any[] {
+    if (!planPayload || typeof planPayload !== "object") return [];
+    if (Array.isArray(planPayload.plan)) return planPayload.plan;
+    if (Array.isArray(planPayload.steps)) return planPayload.steps;
+    if (Array.isArray(planPayload.items)) return planPayload.items;
+    return [];
+  }
+
+  async function runEngineerPlanApproval(persona: string, basePayload: Record<string, any>, attempt: number, feedback: string | null): Promise<PlanApprovalOutcome | null> {
+    if (!ENGINEER_PERSONAS_REQUIRING_PLAN.has(persona.toLowerCase())) return null;
+
+    const effectiveMax = Number.isFinite(MAX_APPROVAL_RETRIES) ? MAX_APPROVAL_RETRIES : 10;
+    const baseFeedbackText = feedback && feedback.trim().length ? feedback.trim() : "";
+    let planFeedbackNotes: string[] = [];
+
+    for (let planAttempt = 0; planAttempt < effectiveMax; planAttempt += 1) {
+      const feedbackTextParts = [] as string[];
+      if (baseFeedbackText.length) feedbackTextParts.push(baseFeedbackText);
+      if (planFeedbackNotes.length) feedbackTextParts.push(...planFeedbackNotes);
+      const planFeedbackText = feedbackTextParts.length ? feedbackTextParts.join("\n\n") : undefined;
+
+      const planPayload = {
+        ...basePayload,
+        feedback: baseFeedbackText || undefined,
+        plan_feedback: planFeedbackText,
+        plan_request: {
+          attempt: planAttempt + 1,
+          requires_approval: true,
+          revision: attempt
+        }
+      };
+
+      const planCorrId = randomUUID();
+      logger.info("coordinator dispatch plan", {
+        workflowId,
+        targetPersona: persona,
+        attempt,
+        planAttempt: planAttempt + 1
+      });
+
+      await sendPersonaRequest(r, {
+        workflowId,
+        toPersona: persona,
+        step: "2-plan",
+        intent: "plan_execution",
+        payload: planPayload,
+        corrId: planCorrId,
+        repo: repoRemote,
+        branch: branchName,
+        projectId: projectId!
+      });
+
+      const planEvent = await waitForPersonaCompletion(r, persona, workflowId, planCorrId);
+      const planResultObj = parseEventResult(planEvent.fields.result);
+      const planOutput = planResultObj?.output || "";
+      const planJson = extractJsonPayloadFromText(planOutput) || planResultObj?.payload || null;
+      const planSteps = extractPlanSteps(planJson);
+
+      if (planSteps.length) {
+        logger.info("plan approved", {
+          workflowId,
+          persona,
+          attempt,
+          planAttempt: planAttempt + 1,
+          steps: planSteps.length
+        });
+        return { planText: planOutput, planPayload: planJson, planSteps };
+      }
+
+      const issue = planJson && typeof planJson === "object"
+        ? "Plan response did not include a non-empty 'plan' array."
+        : "Plan response must include JSON with a 'plan' array describing the execution steps.";
+
+      planFeedbackNotes = [
+        `${issue} Please respond with JSON containing a 'plan' array (each item should summarize a step and include owners or dependencies) and confirm readiness for approval.`
+      ];
+      logger.warn("plan approval feedback", {
+        workflowId,
+        persona,
+        attempt,
+        planAttempt: planAttempt + 1,
+        issue
+      });
+    }
+
+    throw new Error(`Exceeded plan approval attempts for ${persona} on revision ${attempt}`);
+  }
+
+  type StageTaskDefinition = {
+    id: string;
+    title: string;
+    description: string;
+    defaultPriority?: number;
+    assigneePersona?: string;
+    schedule?: string;
+  };
+
+  function diagnosticsToMarkdown(diagnostics: any): string {
+    if (!diagnostics) return "";
+    if (typeof diagnostics === "string") return diagnostics;
+    if (Array.isArray(diagnostics)) {
+      return diagnostics.map((entry: any) => {
+        if (!entry || typeof entry !== "object") return "";
+        const command = typeof entry.command === "string" ? entry.command : "(unknown command)";
+        const exitCode = typeof entry.exitCode === "number" ? entry.exitCode : "unknown";
+        const stderr = typeof entry.stderr === "string" ? entry.stderr : "";
+        const stdout = typeof entry.stdout === "string" ? entry.stdout : "";
+        const parts = [`Command: ${command}`, `Exit code: ${exitCode}`];
+        if (stdout.trim().length) parts.push(`STDOUT:\n${stdout.trim()}`);
+        if (stderr.trim().length) parts.push(`STDERR:\n${stderr.trim()}`);
+        return parts.join("\n");
+      }).filter(Boolean).join("\n\n");
+    }
+    if (typeof diagnostics === "object") {
+      const entries = Array.isArray((diagnostics as any).entries) ? (diagnostics as any).entries : [diagnostics];
+      return diagnosticsToMarkdown(entries);
+    }
+    return String(diagnostics);
+  }
+
+  function extractStageTasks(stage: "qa" | "devops" | "code-review" | "security", details: string, payload: any): StageTaskDefinition[] {
+    const tasks: StageTaskDefinition[] = [];
+    const baseDescription = details || "Follow-up required";
+    const diagnostics = diagnosticsToMarkdown(payload?.diagnostics ?? payload?.logs ?? payload?.evidence);
+
+    const pushTask = (title: string, description: string, priority = 5, assignee?: string) => {
+      const merged = diagnostics.trim().length ? `${description}\n\nDiagnostics:\n${diagnostics}` : description;
+      tasks.push({
+        id: `${stage}-${tasks.length + 1}`,
+        title,
+        description: merged,
+        defaultPriority: priority,
+        assigneePersona: assignee
+      });
+    };
+
+    const issues = Array.isArray(payload?.issues) ? payload.issues : [];
+    if (issues.length) {
+      for (const [idx, issue] of issues.entries()) {
+        if (!issue || typeof issue !== "object") continue;
+        const title = typeof issue.title === "string" && issue.title.trim().length
+          ? issue.title.trim()
+          : `${stage.toUpperCase()} follow-up ${idx + 1}`;
+        const note = typeof issue.note === "string" && issue.note.trim().length ? issue.note.trim() : baseDescription;
+        const fileInfo = typeof issue.file === "string" && issue.file.trim().length ? `File: ${issue.file.trim()}` : "";
+        const descriptionParts = [note];
+        if (fileInfo) descriptionParts.push(fileInfo);
+        if (issue.remediation) descriptionParts.push(String(issue.remediation));
+        pushTask(title, descriptionParts.join("\n"), issue.priority_score ?? 5, issue.assignee_persona);
+      }
+    } else if (typeof payload === "object" && Array.isArray(payload?.actions)) {
+      for (const [idx, action] of payload.actions.entries()) {
+        if (!action || typeof action !== "object") continue;
+        const title = typeof action.title === "string" && action.title.trim().length
+          ? action.title.trim()
+          : `${stage.toUpperCase()} action ${idx + 1}`;
+        const description = typeof action.description === "string" && action.description.trim().length
+          ? action.description.trim()
+          : baseDescription;
+        pushTask(title, description, action.priority_score ?? 5, action.assignee_persona);
+      }
+    } else {
+      const titleMap: Record<typeof stage, string> = {
+        qa: "QA follow-up",
+        devops: "DevOps follow-up",
+        "code-review": "Code review follow-up",
+        security: "Security follow-up"
+      };
+      pushTask(titleMap[stage], baseDescription, 5, stage === "devops" ? "devops" : "lead-engineer");
+    }
+
+    return tasks;
+  }
+
+  async function createDashboardTaskEntries(tasks: StageTaskDefinition[], options: {
+    stage: "qa" | "devops" | "code-review" | "security";
+    milestoneDescriptor: any;
+    parentTaskDescriptor: any;
+    projectId: string | null;
+    projectName: string | null;
+    scheduleHint?: string;
+  }): Promise<string[]> {
+    if (!tasks.length) return [];
+    const milestoneId = options.milestoneDescriptor?.id || null;
+    const parentTaskId = options.parentTaskDescriptor?.id || null;
+    const summaries: string[] = [];
+
+    for (const task of tasks) {
+      const title = task.title || `${options.stage.toUpperCase()} follow-up`;
+      const schedule = (task.schedule || options.scheduleHint || "").toLowerCase();
+      let scheduleNote = "";
+      let targetParentTaskId = undefined as string | undefined;
+      if (schedule === "urgent") {
+        targetParentTaskId = parentTaskId || undefined;
+        scheduleNote = "Scheduled as urgent child task for current work item.";
+      } else if (schedule === "high") {
+        scheduleNote = "Complete within the current milestone.";
+      } else if (schedule === "medium") {
+        scheduleNote = "Plan for an upcoming milestone.";
+      } else if (schedule === "low") {
+        scheduleNote = "Track under Future Enhancements.";
+      }
+      const descriptionBase = task.description || `Follow-up required for ${options.stage}`;
+      const description = scheduleNote ? `${descriptionBase}\n\nSchedule: ${scheduleNote}` : descriptionBase;
+      const body = await createDashboardTask({
+        projectId: options.projectId || undefined,
+        milestoneId: milestoneId || undefined,
+        parentTaskId: targetParentTaskId,
+        title,
+        description,
+        effortEstimate: 3,
+        priorityScore: task.defaultPriority ?? 5,
+        assigneePersona: task.assigneePersona
+      });
+
+      if (body?.ok) {
+        const summaryParts = [title];
+        if (schedule) summaryParts.push(`schedule: ${schedule}`);
+        summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
+        summaries.push(summaryParts.join(" | "));
+      } else {
+        logger.warn("dashboard task creation failed", {
+          stage: options.stage,
+          title,
+          milestoneId,
+          parentTaskId,
+          projectId: options.projectId,
+          error: body?.error || body?.body || "unknown"
+        });
+      }
+    }
+
+    return summaries;
+  }
+
+  async function routeTasksThroughProjectManager(tasks: StageTaskDefinition[], stage: "code-review" | "security"): Promise<StageTaskDefinition[]> {
+    if (!tasks.length) return tasks;
+
+    const payload = {
+      stage,
+      tasks: tasks.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        default_priority: task.defaultPriority ?? 5
+      }))
+    };
+
+    try {
+      const response = await runPersonaWithStatus(
+        "project-manager",
+        "pm-task-routing",
+        "schedule_followup_tasks",
+        payload
+      );
+
+      const pmPayload = response.status.payload || extractJsonPayloadFromText(response.result?.output) || null;
+      if (!pmPayload || typeof pmPayload !== "object" || !Array.isArray(pmPayload.tasks)) return tasks;
+
+      const scheduleMap = new Map<string, any>();
+      for (const entry of pmPayload.tasks) {
+        if (!entry || typeof entry !== "object") continue;
+        const id = typeof entry.id === "string" ? entry.id : null;
+        if (!id) continue;
+        scheduleMap.set(id, entry);
+      }
+
+      return tasks.map(task => {
+        const mapped = scheduleMap.get(task.id);
+        if (!mapped) return task;
+        const schedule = typeof mapped.schedule === "string" ? mapped.schedule.toLowerCase() : undefined;
+        const assignee = typeof mapped.assignee === "string" ? mapped.assignee : task.assigneePersona;
+        const priority = typeof mapped.priority_score === "number" ? mapped.priority_score : task.defaultPriority;
+        return { ...task, schedule, assigneePersona: assignee, defaultPriority: priority };
+      });
+    } catch (error) {
+      logger.warn("project-manager scheduling failed", { stage, error });
+      return tasks;
+    }
+  }
+
   async function runLeadCycle(feedbackNotes: string[], attempt: number, currentMilestoneDescriptorValue: any, currentTaskDescriptorValue: any, currentTaskNameValue: string | null): Promise<LeadCycleOutcome> {
     const feedback = feedbackNotes.filter(Boolean).join("\n\n");
     const milestoneNameForPayload = currentMilestoneDescriptorValue?.name || milestoneName;
+    const engineerBasePayload = {
+      repo: repoRemote,
+      branch: branchName,
+      project_id: projectId,
+      project_slug: projectSlug || undefined,
+      project_name: payloadObj.project_name || projectInfo?.name || "",
+      milestone: currentMilestoneDescriptorValue,
+      milestone_name: milestoneNameForPayload,
+      milestone_slug: currentMilestoneDescriptorValue?.slug || milestoneSlug,
+      task: currentTaskDescriptorValue,
+      task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
+      goal: projectInfo?.goal || projectInfo?.direction || currentMilestoneDescriptorValue?.goal,
+      base_branch: baseBranch,
+      feedback: feedback || undefined,
+      revision: attempt
+    };
+
+    const planOutcome = await runEngineerPlanApproval("lead-engineer", engineerBasePayload, attempt, feedback || null);
+
     const leadCorrId = randomUUID();
     logger.info("coordinator dispatch lead", {
       workflowId,
@@ -1804,26 +2145,19 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       taskName: currentTaskNameValue,
       milestoneName: milestoneNameForPayload
     });
+    const implementationPayload = {
+      ...engineerBasePayload,
+      approved_plan: planOutcome?.planPayload ?? null,
+      approved_plan_steps: planOutcome?.planSteps ?? null,
+      plan_text: planOutcome?.planText ?? null
+    };
+
     await sendPersonaRequest(r, {
       workflowId,
       toPersona: "lead-engineer",
       step: "2-implementation",
       intent: "implement_milestone",
-      payload: {
-        repo: repoRemote,
-        branch: branchName,
-        project_id: projectId,
-        project_slug: projectSlug || undefined,
-        project_name: payloadObj.project_name || projectInfo?.name || "",
-        milestone: currentMilestoneDescriptorValue,
-        milestone_name: milestoneNameForPayload,
-        task: currentTaskDescriptorValue,
-        task_name: currentTaskNameValue || (currentTaskDescriptorValue?.name ?? ""),
-        goal: projectInfo?.goal || projectInfo?.direction || currentMilestoneDescriptorValue?.goal,
-        base_branch: baseBranch,
-        feedback: feedback || undefined,
-        revision: attempt
-      },
+      payload: implementationPayload,
       corrId: leadCorrId,
       repo: repoRemote,
       branch: branchName,
@@ -1836,22 +2170,22 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
 
     const appliedEdits = leadResultObj?.applied_edits;
     if (!appliedEdits || appliedEdits.attempted === false) {
-      return { success: false, details: "Lead engineer did not apply edits.", output: leadResultObj?.output || "", commit: null, paths: [], appliedEdits: appliedEdits, result: leadResultObj };
+      return { success: false, details: "Lead engineer did not apply edits.", output: leadResultObj?.output || "", commit: null, paths: [], appliedEdits: appliedEdits, result: leadResultObj, plan: planOutcome || undefined };
     }
 
     const noChanges = !appliedEdits.applied && appliedEdits.reason === "no_changes";
     if (!appliedEdits.applied && !noChanges) {
       const reason = appliedEdits.reason || appliedEdits.error || "unknown";
-      return { success: false, details: `Lead edits were not applied (${reason}).`, output: leadResultObj?.output || "", commit: appliedEdits.commit || null, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj };
+      return { success: false, details: `Lead edits were not applied (${reason}).`, output: leadResultObj?.output || "", commit: appliedEdits.commit || null, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj, plan: planOutcome || undefined };
     }
 
     const commitInfo = appliedEdits.commit || null;
     if (commitInfo && commitInfo.committed === false) {
       const reason = commitInfo.reason || "commit_failed";
-      return { success: false, details: `Commit failed (${reason}).`, output: leadResultObj?.output || "", commit: commitInfo, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj };
+      return { success: false, details: `Commit failed (${reason}).`, output: leadResultObj?.output || "", commit: commitInfo, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj, plan: planOutcome || undefined };
     }
     if (commitInfo && commitInfo.pushed === false && commitInfo.reason) {
-      return { success: false, details: `Push failed (${commitInfo.reason}).`, output: leadResultObj?.output || "", commit: commitInfo, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj };
+      return { success: false, details: `Push failed (${commitInfo.reason}).`, output: leadResultObj?.output || "", commit: commitInfo, paths: appliedEdits.paths || [], appliedEdits, result: leadResultObj, plan: planOutcome || undefined };
     }
 
     return {
@@ -1862,7 +2196,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       paths: appliedEdits.paths || [],
       appliedEdits,
       result: leadResultObj,
-      noChanges
+      noChanges,
+      plan: planOutcome || undefined
     };
   }
 
@@ -1933,6 +2268,23 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
           logger.warn("qa diagnostics execution failed", { workflowId, error });
         }
       }
+
+      const qaTasks = extractStageTasks("qa", qaDetails, qaPayload).map(task => ({
+        ...task,
+        schedule: task.schedule || "urgent",
+        assigneePersona: task.assigneePersona || "lead-engineer"
+      }));
+      const createdTasks = await createDashboardTaskEntries(qaTasks, {
+        stage: "qa",
+        milestoneDescriptor: currentMilestoneDescriptorValue,
+        parentTaskDescriptor: currentTaskDescriptorValue,
+        projectId,
+        projectName: projectInfo?.name || null
+      });
+      if (createdTasks.length) {
+        const summary = createdTasks.map(item => `- ${item}`).join("\n");
+        qaDetails = `${qaDetails}\n\nDashboard Tasks Created:\n${summary}`;
+      }
     }
 
     return {
@@ -1966,10 +2318,30 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         revision: attempt
       }
     );
+    let reviewDetails = reviewResponse.status.details;
+    let reviewPayload = reviewResponse.status.payload;
+
+    if (reviewResponse.status.status !== "pass") {
+      let tasks = extractStageTasks("code-review", reviewDetails, reviewPayload);
+      tasks = await routeTasksThroughProjectManager(tasks, "code-review");
+      const created = await createDashboardTaskEntries(tasks, {
+        stage: "code-review",
+        milestoneDescriptor: currentMilestoneDescriptorValue,
+        parentTaskDescriptor: currentTaskDescriptorValue,
+        projectId,
+        projectName: projectInfo?.name || null,
+        scheduleHint: "urgent"
+      });
+      if (created.length) {
+        const summary = created.map(item => `- ${item}`).join("\n");
+        reviewDetails = `${reviewDetails}\n\nDashboard Tasks Created:\n${summary}`;
+      }
+    }
+
     return {
       pass: reviewResponse.status.status === "pass",
-      details: reviewResponse.status.details,
-      payload: reviewResponse.status.payload,
+      details: reviewDetails,
+      payload: reviewPayload,
       rawOutput: reviewResponse.result?.output || ""
     };
   }
@@ -1996,10 +2368,30 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         revision: attempt
       }
     );
+    let securityDetails = securityResponse.status.details;
+    let securityPayload = securityResponse.status.payload;
+
+    if (securityResponse.status.status !== "pass") {
+      let tasks = extractStageTasks("security", securityDetails, securityPayload);
+      tasks = await routeTasksThroughProjectManager(tasks, "security");
+      const created = await createDashboardTaskEntries(tasks, {
+        stage: "security",
+        milestoneDescriptor: currentMilestoneDescriptorValue,
+        parentTaskDescriptor: currentTaskDescriptorValue,
+        projectId,
+        projectName: projectInfo?.name || null,
+        scheduleHint: "urgent"
+      });
+      if (created.length) {
+        const summary = created.map(item => `- ${item}`).join("\n");
+        securityDetails = `${securityDetails}\n\nDashboard Tasks Created:\n${summary}`;
+      }
+    }
+
     return {
       pass: securityResponse.status.status === "pass",
-      details: securityResponse.status.details,
-      payload: securityResponse.status.payload,
+      details: securityDetails,
+      payload: securityPayload,
       rawOutput: securityResponse.result?.output || ""
     };
   }
@@ -2027,10 +2419,32 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         revision: attempt
       }
     );
+    let devopsDetails = devopsResponse.status.details;
+    let devopsPayload = devopsResponse.status.payload;
+
+    if (devopsResponse.status.status === "fail") {
+      const tasks = extractStageTasks("devops", devopsDetails, devopsPayload).map(task => ({
+        ...task,
+        schedule: task.schedule || "urgent",
+        assigneePersona: task.assigneePersona || "devops"
+      }));
+      const created = await createDashboardTaskEntries(tasks, {
+        stage: "devops",
+        milestoneDescriptor: currentMilestoneDescriptorValue,
+        parentTaskDescriptor: currentTaskDescriptorValue,
+        projectId,
+        projectName: projectInfo?.name || null
+      });
+      if (created.length) {
+        const summary = created.map(item => `- ${item}`).join("\n");
+        devopsDetails = `${devopsDetails}\n\nDashboard Tasks Created:\n${summary}`;
+      }
+    }
+
     return {
       pass: devopsResponse.status.status === "pass",
-      details: devopsResponse.status.details,
-      payload: devopsResponse.status.payload,
+      details: devopsDetails,
+      payload: devopsPayload,
       rawOutput: devopsResponse.result?.output || ""
     };
   }

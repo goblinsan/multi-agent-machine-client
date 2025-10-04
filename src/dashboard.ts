@@ -166,3 +166,69 @@ export async function uploadContextSnapshot(input: UploadContextInput): Promise<
     return { ok: false, status: 0, body: null, error: e };
   }
 }
+
+export type CreateTaskInput = {
+  projectId?: string;
+  milestoneId?: string;
+  parentTaskId?: string;
+  title: string;
+  description: string;
+  effortEstimate?: number;
+  priorityScore?: number;
+  assigneePersona?: string;
+};
+
+export type CreateTaskResult = {
+  ok: boolean;
+  status: number;
+  body: any;
+  error?: any;
+};
+
+export async function createDashboardTask(input: CreateTaskInput): Promise<CreateTaskResult | null> {
+  if (!cfg.dashboardBaseUrl) {
+    logger.warn("dashboard task creation skipped: dashboard base URL not configured");
+    return null;
+  }
+  const endpoint = `${cfg.dashboardBaseUrl.replace(/\/$/, "")}/v1/tasks`;
+  const body: Record<string, any> = {
+    title: input.title,
+    description: input.description
+  };
+  if (input.projectId) body.project_id = input.projectId;
+  if (input.milestoneId) body.milestone_id = input.milestoneId;
+  if (input.parentTaskId) body.parent_task_id = input.parentTaskId;
+  if (typeof input.effortEstimate === "number") body.effort_estimate = input.effortEstimate;
+  if (typeof input.priorityScore === "number") body.priority_score = input.priorityScore;
+  if (input.assigneePersona) body.assignee_persona = input.assigneePersona;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${cfg.dashboardApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    const status = res.status;
+    let responseBody: any = null;
+    try {
+      const text = await res.text();
+      responseBody = text ? JSON.parse(text) : null;
+    } catch {
+      responseBody = null;
+    }
+
+    if (!res.ok) {
+      logger.warn("dashboard task creation failed", { status, body: body.title, response: responseBody });
+      return { ok: false, status, body: responseBody };
+    }
+
+    logger.info("dashboard task created", { title: input.title, status, milestoneId: input.milestoneId, parentTaskId: input.parentTaskId });
+    return { ok: true, status, body: responseBody };
+  } catch (error) {
+    logger.warn("dashboard task creation exception", { error, title: input.title });
+    return { ok: false, status: 0, body: null, error };
+  }
+}
