@@ -71,6 +71,10 @@ const MAX_APPROVAL_RETRIES = cfg.coordinatorMaxApprovalRetries === null
   : Math.max(1, Math.floor(cfg.coordinatorMaxApprovalRetries));
 
 const ENGINEER_PERSONAS_REQUIRING_PLAN = new Set(["lead-engineer", "ui-engineer"]);
+const IMPLEMENTATION_PLANNER_MAP = new Map<string, string>([
+  ["lead-engineer", "implementation-planner"],
+  ["ui-engineer", "implementation-planner"]
+]);
 
 function personaTimeoutMs(persona: string) {
   const key = (persona || "").toLowerCase();
@@ -1850,8 +1854,14 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     return [];
   }
 
-  async function runEngineerPlanApproval(persona: string, basePayload: Record<string, any>, attempt: number, feedback: string | null): Promise<PlanApprovalOutcome | null> {
-    if (!ENGINEER_PERSONAS_REQUIRING_PLAN.has(persona.toLowerCase())) return null;
+  async function runEngineerPlanApproval(implementationPersona: string, plannerPersona: string, basePayload: Record<string, any>, attempt: number, feedback: string | null): Promise<PlanApprovalOutcome | null> {
+    if (!ENGINEER_PERSONAS_REQUIRING_PLAN.has(implementationPersona.toLowerCase())) return null;
+
+    const planner = plannerPersona || implementationPersona;
+    const plannerLower = planner.toLowerCase();
+    if (!cfg.allowedPersonas.includes(planner)) {
+      logger.warn("plan approval persona not allowed", { planner });
+    }
 
     const effectiveMax = Number.isFinite(MAX_APPROVAL_RETRIES) ? MAX_APPROVAL_RETRIES : 10;
     const baseFeedbackText = feedback && feedback.trim().length ? feedback.trim() : "";
@@ -1879,14 +1889,14 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       const planCorrId = randomUUID();
       logger.info("coordinator dispatch plan", {
         workflowId,
-        targetPersona: persona,
+        targetPersona: planner,
         attempt,
         planAttempt: planAttempt + 1
       });
 
       await sendPersonaRequest(r, {
         workflowId,
-        toPersona: persona,
+        toPersona: planner,
         step: "2-plan",
         intent: "plan_execution",
         payload: planPayload,
@@ -1896,7 +1906,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         projectId: projectId!
       });
 
-      const planEvent = await waitForPersonaCompletion(r, persona, workflowId, planCorrId);
+      const planEvent = await waitForPersonaCompletion(r, planner, workflowId, planCorrId);
       const planResultObj = parseEventResult(planEvent.fields.result);
       const planOutput = planResultObj?.output || "";
       const planJson = extractJsonPayloadFromText(planOutput) || planResultObj?.payload || null;
@@ -1907,7 +1917,7 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       if (planSteps.length) {
         logger.info("plan approved", {
           workflowId,
-          persona,
+          planner,
           attempt,
           planAttempt: planAttempt + 1,
           steps: planSteps.length
@@ -1924,14 +1934,14 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       ];
       logger.warn("plan approval feedback", {
         workflowId,
-        persona,
+        planner,
         attempt,
         planAttempt: planAttempt + 1,
         issue
       });
     }
 
-    throw new Error(`Exceeded plan approval attempts for ${persona} on revision ${attempt}`);
+    throw new Error(`Exceeded plan approval attempts for ${planner} on revision ${attempt}`);
   }
 
   type StageTaskDefinition = {
@@ -2147,7 +2157,8 @@ async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       revision: attempt
     };
 
-    const planOutcome = await runEngineerPlanApproval("lead-engineer", engineerBasePayload, attempt, feedback || null);
+    const plannerPersona = IMPLEMENTATION_PLANNER_MAP.get("lead-engineer") || "lead-engineer";
+    const planOutcome = await runEngineerPlanApproval("lead-engineer", plannerPersona, engineerBasePayload, attempt, feedback || null);
 
     const leadCorrId = randomUUID();
     logger.info("coordinator dispatch lead", {
@@ -3354,15 +3365,23 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
   }
 
 
-  if (CODING_PERSONA_SET.has(persona.toLowerCase())) {
-    const repoHint = firstString(
-      payloadObj.repo,
-      payloadObj.repository,
-      payloadObj.remote,
-      payloadObj.repo_url,
-      payloadObj.repository_url,
-      msg.repo
-    ) || "the existing repository";
+  const personaLower = persona.toLowerCase();
+  const stepLower = (msg.step || "").toLowerCase();
+  const repoHint = firstString(
+    payloadObj.repo,
+    payloadObj.repository,
+    payloadObj.remote,
+    payloadObj.repo_url,
+    payloadObj.repository_url,
+    msg.repo
+  ) || "the existing repository";
+
+  if (ENGINEER_PERSONAS_REQUIRING_PLAN.has(personaLower) && stepLower === "2-plan") {
+    messages.push({
+      role: "system",
+      content: `You are preparing an execution plan for work in ${repoHint}. This is a planning step only. Do not provide code snippets, diffs, or file changes. Respond with JSON containing a 'plan' array where each item describes a concrete numbered step (include goals, files to touch, owners if relevant, and dependencies). Add optional context such as 'risks' or 'open_questions'. Await coordinator approval before attempting any implementation.`
+    });
+  } else if (CODING_PERSONA_SET.has(personaLower)) {
     messages.push({
       role: "system",
       content: `You are working inside ${repoHint}. The repository already exists; modify only the necessary files. Do not generate a brand-new project scaffold. Provide concrete code edits as unified diffs that apply cleanly with \`git apply\`. Wrap each patch in \`\`\`diff\`\`\` fences. If you add or delete files, include the appropriate diff headers. Always reference existing files by their actual paths.`
