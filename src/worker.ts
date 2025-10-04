@@ -63,7 +63,9 @@ const PROMPT_FILE_ALWAYS_INCLUDE = new Set([
   "README.md"
 ].map(path => path.toLowerCase()));
 
-const MAX_REVISION_ATTEMPTS = Math.max(1, Math.floor(cfg.coordinatorMaxRevisionAttempts || 5));
+const MAX_REVISION_ATTEMPTS = cfg.coordinatorMaxRevisionAttempts === null
+  ? Number.POSITIVE_INFINITY
+  : Math.max(1, Math.floor(cfg.coordinatorMaxRevisionAttempts));
 
 function personaTimeoutMs(persona: string) {
   const key = (persona || "").toLowerCase();
@@ -624,7 +626,29 @@ function normalizeRepoPath(p: string | undefined, fallback: string) {
 
 function extractDiffBlocks(text: string): string[] {
   if (!text) return [];
-  const seen = new Set<string>();
+
+  const results: string[] = [];
+
+  const looksLikeDiffBlock = (block: string) => {
+    if (!block) return false;
+    if (/(^|\n)diff --git\s/.test(block)) return true;
+    if (/(^|\n)Index:/i.test(block) && /(^|\n)(---|\+\+\+)/.test(block)) return true;
+    if (/(^|\n)(---|\+\+\+|@@|\*\*\*)\s/.test(block)) return true;
+    return false;
+  };
+
+  const pushBlock = (raw: string) => {
+    const trimmed = (raw || "").trim();
+    if (!trimmed.length) return;
+    if (!looksLikeDiffBlock(trimmed)) return;
+    const duplicate = results.some(existing =>
+      existing === trimmed
+        || existing.includes(trimmed)
+        || trimmed.includes(existing)
+    );
+    if (!duplicate) results.push(trimmed);
+  };
+
   const fenceRegex = /```(\w+)?\s*\n([\s\S]*?)```/gi;
   let match: RegExpExecArray | null;
 
@@ -633,34 +657,22 @@ function extractDiffBlocks(text: string): string[] {
     const body = match[2] || "";
     const trimmed = body.trim();
     if (!trimmed.length) continue;
-    const looksLikeDiff = trimmed.startsWith("diff --git")
-      || trimmed.startsWith("Index:")
-      || trimmed.startsWith("--- ")
-      || trimmed.includes("\n@@");
-    if (lang && !["diff", "patch"].includes(lang) && !looksLikeDiff) continue;
-    if (!lang && !looksLikeDiff) continue;
-    seen.add(trimmed);
+    if (lang && !["diff", "patch"].includes(lang) && !looksLikeDiffBlock(trimmed)) continue;
+    if (!lang && !looksLikeDiffBlock(trimmed)) continue;
+    pushBlock(trimmed);
   }
 
-  const gitRegex = /(^diff --git[\s\S]*?)(?=\r?\n(?:diff --git|Index:|---\s|\+\+\+\s|```|$))/gmi;
+  const gitRegex = /(^diff --git[^\n]*\n[\s\S]*?)(?=^\s*(?:diff --git|Index:)|\n```|$)/gim;
   while ((match = gitRegex.exec(text))) {
-    const trimmed = (match[1] || "").trim();
-    if (trimmed.length) seen.add(trimmed);
+    pushBlock(match[1] || "");
   }
 
-  const unifiedRegex = /(^---\s.+?\r?\n\+\+\+\s.+?\r?\n@@[\s\S]*?)(?=\r?\n(?:---\s|\+\+\+\s|diff --git|Index:|```|$))/gm;
+  const unifiedRegex = /(^---\s.+?\r?\n\+\+\+\s.+?\r?\n@@[\s\S]*?)(?=^\s*(?:---\s|\+\+\+\s|diff --git|Index:)|\n```|$)/gm;
   while ((match = unifiedRegex.exec(text))) {
-    const trimmed = (match[1] || "").trim();
-    if (trimmed.length) seen.add(trimmed);
+    pushBlock(match[1] || "");
   }
 
-  const blocks = Array.from(seen);
-  return blocks.filter(block => {
-    if (!block) return false;
-    if (/(^|\n)(---|\+\+\+|@@|\*\*\*)\s/.test(block)) return true;
-    if (/(^|\n)Index:/i.test(block) && /(^|\n)(---|\+\+\+)/.test(block)) return true;
-    return false;
-  });
+  return results;
 }
 
 function normalizeRepoRelativePath(value: string): string {
@@ -970,6 +982,9 @@ async function applyDiffTextually(options: {
     }
   }
 
+  const normalizeLine = (value: string) => value.replace(/[\t ]+$/g, "");
+  const linesEqual = (a: string, b: string) => a === b || normalizeLine(a) === normalizeLine(b);
+
   const findSequence = (sequence: string[], guess: number) => {
     if (sequence.length === 0) return Math.max(0, Math.min(guess, lines.length));
     const maxOffset = Math.max(20, sequence.length * 2);
@@ -983,7 +998,7 @@ async function applyDiffTextually(options: {
     for (const idx of candidateRanges) {
       let matched = true;
       for (let j = 0; j < sequence.length; j += 1) {
-        if (lines[idx + j] !== sequence[j]) {
+        if (!linesEqual(lines[idx + j], sequence[j])) {
           matched = false;
           break;
         }
@@ -1018,9 +1033,26 @@ async function applyDiffTextually(options: {
     const guess = Math.max(0, Math.min(lines.length, (hunk.oldStart - 1) + offset));
     let index = findSequence(oldLines, guess);
     if (index === -1) index = findSequence(oldLines, 0);
+
+    let usedApproximateIndex = false;
+
     if (index === -1) {
+      index = Math.max(0, Math.min(lines.length, (hunk.oldStart - 1) + offset));
+      usedApproximateIndex = true;
+    }
+
+    if (index < 0 || index > lines.length) {
       logger.info("textual diff fallback skipped", { repoRoot, path: parsed.path, reason: "context_not_found", guess });
       return null;
+    }
+
+    if (usedApproximateIndex) {
+      logger.warn("textual diff fallback approximate placement", {
+        repoRoot,
+        path: parsed.path,
+        guess,
+        resolvedIndex: index
+      });
     }
 
     lines.splice(index, oldLines.length, ...newLines);
@@ -1035,6 +1067,133 @@ async function applyDiffTextually(options: {
 
   await fs.writeFile(targetPath, newContent, "utf8");
   return [parsed.path];
+}
+
+async function isDiffAlreadyApplied(options: {
+  diff: string;
+  repoRoot: string;
+  fs: FsPromisesModule;
+  pathMod: PathModule;
+}): Promise<boolean> {
+  const { diff, repoRoot, fs, pathMod } = options;
+  const parsed = parseUnifiedDiff(diff);
+  if (!parsed) return false;
+
+  const targetPath = pathMod.resolve(repoRoot, parsed.path);
+  let content: string;
+  try {
+    content = await fs.readFile(targetPath, "utf8");
+  } catch {
+    return false;
+  }
+
+  const normalizedContent = content.replace(/\r\n/g, "\n");
+  const contentLines = normalizedContent.split("\n");
+  const normalizeLine = (value: string) => value.replace(/[\t ]+$/g, "");
+  const linesEqual = (a: string, b: string) => a === b || normalizeLine(a) === normalizeLine(b);
+
+  const findSequenceIndex = (sequence: string[]): number => {
+    if (!sequence.length) return -1;
+    for (let idx = 0; idx <= contentLines.length - sequence.length; idx += 1) {
+      let matched = true;
+      for (let j = 0; j < sequence.length; j += 1) {
+        if (!linesEqual(contentLines[idx + j], sequence[j])) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) return idx;
+    }
+    return -1;
+  };
+
+  for (const hunk of parsed.hunks) {
+    const oldLines: string[] = [];
+    const newLines: string[] = [];
+    const addedSegments: string[][] = [];
+    const removedSegments: string[][] = [];
+    let currentAdded: string[] = [];
+    let currentRemoved: string[] = [];
+
+    for (const line of hunk.lines) {
+      if (line.startsWith(" ")) {
+        const value = line.slice(1);
+        oldLines.push(value);
+        newLines.push(value);
+        if (currentAdded.length) {
+          addedSegments.push(currentAdded);
+          currentAdded = [];
+        }
+        if (currentRemoved.length) {
+          removedSegments.push(currentRemoved);
+          currentRemoved = [];
+        }
+      } else if (line.startsWith("-")) {
+        const value = line.slice(1);
+        oldLines.push(value);
+        currentRemoved.push(value);
+        if (currentAdded.length) {
+          addedSegments.push(currentAdded);
+          currentAdded = [];
+        }
+      } else if (line.startsWith("+")) {
+        const value = line.slice(1);
+        newLines.push(value);
+        currentAdded.push(value);
+        if (currentRemoved.length) {
+          removedSegments.push(currentRemoved);
+          currentRemoved = [];
+        }
+      }
+    }
+
+    if (currentAdded.length) addedSegments.push(currentAdded);
+    if (currentRemoved.length) removedSegments.push(currentRemoved);
+
+    const oldText = oldLines.join("\n");
+    const newText = newLines.join("\n");
+
+    if (oldText === newText) continue;
+
+    for (const segment of addedSegments) {
+      if (segment.length && findSequenceIndex(segment) === -1) {
+        return false;
+      }
+    }
+
+    for (const segment of removedSegments) {
+      if (segment.length && findSequenceIndex(segment) !== -1) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+async function applyDiffUsingPatchTool(patchPath: string, repoRoot: string): Promise<boolean> {
+  try {
+    const childProcess = await import("child_process");
+    const util = await import("util");
+    const execFileAsync = util.promisify(childProcess.execFile);
+    const baseArgs = ["-p1", "--forward", "--silent", "--input", patchPath];
+    await execFileAsync("patch", ["--batch", "--dry-run", ...baseArgs], { cwd: repoRoot });
+    await execFileAsync("patch", ["--batch", ...baseArgs], { cwd: repoRoot });
+    return true;
+  } catch (error: any) {
+    if (error?.code === "ENOENT") {
+      logger.debug("patch cli unavailable", { repoRoot });
+      return false;
+    }
+    if (error?.stdout || error?.stderr) {
+      logger.debug("patch cli attempt failed", {
+        repoRoot,
+        stdout: error.stdout,
+        stderr: error.stderr
+      });
+    }
+    throw error;
+  }
 }
 
 function extractPathsFromDiff(diff: string): string[] {
@@ -1992,7 +2151,8 @@ async function applyModelGeneratedChanges(options: {
         for (let attemptIndex = 0; attemptIndex < diffAttempts.length; attemptIndex += 1) {
           const attempt = diffAttempts[attemptIndex];
           diffUsed = attempt;
-          await fs.writeFile(patchPath, attempt, "utf8");
+          const patchContent = attempt.endsWith("\n") ? attempt : `${attempt}\n`;
+          await fs.writeFile(patchPath, patchContent, "utf8");
           try {
             await runGit(["apply", "--whitespace=nowarn", patchPath], { cwd: repoRoot });
             for (const p of extractPathsFromDiff(attempt)) appliedPaths.add(p);
@@ -2012,6 +2172,56 @@ async function applyModelGeneratedChanges(options: {
           } catch (error: any) {
             lastError = error;
           }
+        }
+
+        if (!applied) {
+          try {
+            await runGit(["apply", "--whitespace=nowarn", "--ignore-space-change", patchPath], { cwd: repoRoot });
+            for (const p of extractPathsFromDiff(diffUsed)) appliedPaths.add(p);
+            applied = true;
+          } catch (error: any) {
+            lastError = error;
+          }
+        }
+
+        if (!applied) {
+          try {
+            await runGit(["apply", "--whitespace=nowarn", "--ignore-whitespace", patchPath], { cwd: repoRoot });
+            for (const p of extractPathsFromDiff(diffUsed)) appliedPaths.add(p);
+            applied = true;
+          } catch (error: any) {
+            lastError = error;
+          }
+        }
+
+        if (!applied) {
+          try {
+            const patched = await applyDiffUsingPatchTool(patchPath, repoRoot);
+            if (patched) {
+              logger.warn("persona apply diff fallback patch", {
+                persona,
+                workflowId,
+                patchIndex: i
+              });
+              for (const p of extractPathsFromDiff(diffUsed)) appliedPaths.add(p);
+              applied = true;
+            }
+          } catch (error: any) {
+            if (!lastError) lastError = error;
+          }
+        }
+
+        if (!applied) {
+          try {
+            await runGit(["apply", "--reverse", "--check", patchPath], { cwd: repoRoot });
+            logger.warn("persona apply diff already present", {
+              persona,
+              workflowId,
+              patchIndex: i
+            });
+            for (const p of extractPathsFromDiff(diffUsed)) appliedPaths.add(p);
+            applied = true;
+          } catch {}
         }
 
         if (applied) continue;
@@ -2065,7 +2275,37 @@ async function applyModelGeneratedChanges(options: {
           }
         }
 
+        const alreadyApplied = await isDiffAlreadyApplied({
+          diff: diffUsed,
+          repoRoot,
+          fs,
+          pathMod
+        }).catch(() => false);
+
+        if (alreadyApplied) {
+          logger.warn("persona apply diff already realized", {
+            persona,
+            workflowId,
+            patchIndex: i
+          });
+          for (const p of extractPathsFromDiff(originalDiff)) appliedPaths.add(p);
+          continue;
+        }
+
         const finalError = lastError || new Error("git apply failed");
+        let failureDumpPath: string | null = null;
+        try {
+          const failureDir = pathMod.resolve(repoRoot, ".ma/failed-patches");
+          await fs.mkdir(failureDir, { recursive: true });
+          const normalizedPersona = persona.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 40) || "persona";
+          const normalizedWorkflow = workflowId.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 40) || "workflow";
+          const failureName = `${Date.now()}-${normalizedPersona}-${normalizedWorkflow}-patch-${i}.diff`;
+          failureDumpPath = pathMod.join(failureDir, failureName);
+          const dumpContent = diffUsed.endsWith("\n") ? diffUsed : `${diffUsed}\n`;
+          await fs.writeFile(failureDumpPath, dumpContent, "utf8");
+        } catch (dumpErr) {
+          logger.warn("persona apply diff dump failed", { persona, workflowId, patchIndex: i, error: dumpErr });
+        }
         outcome.reason = "apply_failed";
         outcome.error = finalError?.message || String(finalError);
         logger.error("persona apply diff failed", {
@@ -2073,7 +2313,8 @@ async function applyModelGeneratedChanges(options: {
           workflowId,
           patchIndex: i,
           error: finalError,
-          diffPreview: originalDiff.slice(0, 800)
+          diffPreview: originalDiff.slice(0, 800),
+          failureDumpPath
         });
         throw finalError;
       } finally {
@@ -2099,6 +2340,32 @@ async function applyModelGeneratedChanges(options: {
     } catch (error) {
       logger.warn("persona apply: unable to gather git status for paths", { persona, workflowId, error });
     }
+  }
+
+  if (paths.length) {
+    const verified: string[] = [];
+    const missing: string[] = [];
+    for (const rel of paths) {
+      const absolute = pathMod.resolve(repoRoot, rel);
+      try {
+        const stat = await fs.stat(absolute);
+        if (stat.isFile()) {
+          verified.push(rel);
+        } else {
+          missing.push(rel);
+        }
+      } catch {
+        missing.push(rel);
+      }
+    }
+    if (missing.length) {
+      logger.warn("persona apply: filtered missing paths before commit", {
+        persona,
+        workflowId,
+        missing
+      });
+    }
+    paths = verified;
   }
 
   if (!paths.length) {

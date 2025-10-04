@@ -64,7 +64,19 @@ const promptFileAllowedExts = splitCsv(process.env.PROMPT_FILE_ALLOWED_EXTS || "
 const promptFileMaxChars = Number(process.env.PROMPT_FILE_MAX_CHARS || 48000);
 const promptFileMaxPerFileChars = Number(process.env.PROMPT_FILE_MAX_PER_FILE_CHARS || 12000);
 const promptFileMaxFiles = Number(process.env.PROMPT_FILE_MAX_FILES || 8);
-const coordinatorMaxRevisionAttempts = Number(process.env.COORDINATOR_MAX_REVISION_ATTEMPTS || 5);
+
+function parseRevisionLimit(value: string | undefined, fallback: number): number | null {
+  if (!value || !value.trim().length) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["unlimited", "infinite", "inf", "none", "no-limit", "nolimit"].includes(normalized)) {
+    return null;
+  }
+  const num = Number(normalized);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.floor(num);
+}
+
+const coordinatorMaxRevisionAttempts = parseRevisionLimit(process.env.COORDINATOR_MAX_REVISION_ATTEMPTS, 5);
 
 const gitToken = process.env.GIT_AUTH_TOKEN || "";
 const gitPassword = process.env.GIT_AUTH_PASSWORD || "";
