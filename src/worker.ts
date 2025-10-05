@@ -81,9 +81,9 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       projectId: payloadObj.project_id
     });
   
-    if (persona === "coordination") {
-        return await handleCoordinator(r, msg, payloadObj, entryId);
-    }
+  if (persona === "coordination") {
+    return await handleCoordinator(r, msg, payloadObj);
+  }
   
     if (persona === "context") {
         return await processContext(r, persona, msg, payloadObj, entryId);

@@ -4,9 +4,12 @@ import { createDashboardTask, fetchProjectStatus } from "../dashboard.js";
 import { cfg } from "../config.js";
 import { parseMilestoneDate } from "../milestones/milestoneManager.js";
 import { logger } from "../logger.js";
+import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "../agents/persona.js";
+import { randomUUID } from "crypto";
 
-//TODO: this should be handled in a better way
-const externalToTaskId = new Map<string,string>();
+// Note: we do not persist externalId->createdId mapping here. The dashboard
+// is the canonical store. If needed, use findTaskIdByExternalId to recover
+// the created id by querying the dashboard project status.
 
 const TASK_STATUS_PRIORITY: Record<string, number> = {
     in_progress: 0,
@@ -35,7 +38,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     archived: 7
   };
   
-  function normalizeTaskStatus(value: any) {
+  export function normalizeTaskStatus(value: any) {
     if (typeof value !== "string") return "";
     return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
   }
@@ -328,20 +331,11 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       });
 
       if (body?.ok) {
-        // store external -> task id mapping if server returned an id
-        try {
-          const createdId = body?.body && (body.body.id || body.body.task_id || (body.body.task && body.body.task.id));
-          if (createdId && externalId) externalToTaskId.set(String(externalId), String(createdId));
-          const summaryParts = [title];
-          if (schedule) summaryParts.push(`schedule: ${schedule}`);
-          summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
-          summaries.push({ summary: summaryParts.join(" | "), title, externalId, createdId: String(createdId) });
-          continue;
-        } catch {}
+        const createdId = body?.body && (body.body.id || body.body.task_id || (body.body.task && body.body.task.id));
         const summaryParts = [title];
         if (schedule) summaryParts.push(`schedule: ${schedule}`);
         summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
-        summaries.push({ summary: summaryParts.join(" | "), title, externalId });
+        summaries.push({ summary: summaryParts.join(" | "), title, externalId, createdId: createdId ? String(createdId) : undefined });
       } else {
         logger.warn("dashboard task creation failed", {
           stage: options.stage,
@@ -351,8 +345,97 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
           projectId: options.projectId,
           error: body?.error || body?.body || "unknown"
         });
+        const summaryParts = [title];
+        if (schedule) summaryParts.push(`schedule: ${schedule}`);
+        summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
+        summaries.push({ summary: summaryParts.join(" | "), title, externalId });
       }
     }
 
     return summaries;
+  }
+
+  // Wrapper that asks the summarization persona to condense each task description
+  // before creating the dashboard task. This implements the coordinator responsibility
+  // of running summarizer -> create -> (dashboard) for each follow-up task.
+  export async function createDashboardTaskEntriesWithSummarizer(r: any, workflowId: string, tasks: any[], options: {
+    stage: "qa" | "devops" | "code-review" | "security";
+    milestoneDescriptor: any;
+    parentTaskDescriptor: any;
+    projectId: string | null;
+    projectName: string | null;
+    scheduleHint?: string;
+  }): Promise<any[]> {
+    if (!tasks.length) return [];
+    const results: any[] = [];
+
+    for (const task of tasks) {
+      // Ask the summarizer persona to condense the task into concise next steps
+      let condensedDescription: string | null = null;
+      try {
+        const title = task.title || `${options.stage.toUpperCase()} follow-up`;
+        const reqPayload = { title, description: task.description || task.summary || `Follow-up required for ${options.stage}`, stage: options.stage, project_id: options.projectId };
+        const corrId = await sendPersonaRequest(r, {
+          workflowId,
+          toPersona: "summarization",
+          step: "summarize-task",
+          intent: "condense_task_description",
+          payload: reqPayload,
+          corrId: randomUUID(),
+          repo: undefined,
+          branch: undefined,
+          projectId: options.projectId || undefined
+        });
+        const ev = await waitForPersonaCompletion(r, "summarization", workflowId, corrId);
+        const res = parseEventResult(ev.fields.result);
+        // Prefer payload.summary or parsed output; fall back to plain output
+        if (res && res.payload && typeof res.payload.summary === 'string' && res.payload.summary.trim().length) condensedDescription = res.payload.summary.trim();
+        else if (res && typeof res.output === 'string' && res.output.trim().length) condensedDescription = res.output.trim();
+        else if (res && typeof res.raw === 'string' && res.raw.trim().length) condensedDescription = res.raw.trim();
+      } catch (err) {
+        logger.debug("summarizer failed for task, falling back to original description", { task: task.title, error: err });
+      }
+
+      // Use condensed description if available
+      if (condensedDescription) task.description = `${condensedDescription}\n\n(Original)\n${task.description || task.summary || ''}`;
+
+      // Delegate to the existing createDashboardTaskEntries logic for creation
+      const created = await createDashboardTaskEntries([task], options);
+      if (created && created.length) results.push(...created);
+    }
+
+    return results;
+  }
+
+  // Locate a created task id by an externalId within a project by querying the
+  // dashboard project status. Returns the task id string or null if not found.
+  export async function findTaskIdByExternalId(externalId: string, projectId: string | null): Promise<string | null> {
+    if (!externalId) return null;
+    if (!projectId) return null;
+    try {
+      const proj = await fetchProjectStatus(projectId as string);
+      if (!proj) return null;
+  const p: any = proj as any;
+  const candidates = Array.isArray(p?.tasks) ? p.tasks : (Array.isArray(p?.task_list) ? p.task_list : (Array.isArray(p?.tasks_list) ? p.tasks_list : []));
+      if (!Array.isArray(candidates) || !candidates.length) return null;
+      for (const t of candidates) {
+        if (!t) continue;
+  const ext = (t.external_id ?? t.externalId ?? t.external) || t.externalid || null;
+        if (ext && String(ext) === String(externalId)) return String(t.id || t.task_id || t.id);
+      }
+      // also try nested containers
+      for (const t of candidates) {
+        if (!t) continue;
+        const nested = Array.isArray(t.items) ? t.items : (Array.isArray(t.tasks) ? t.tasks : null);
+        if (!nested) continue;
+        for (const n of nested) {
+          const ext = (n.external_id ?? n.externalId ?? n.external) || n.externalid || null;
+          if (ext && String(ext) === String(externalId)) return String(n.id || n.task_id || n.id);
+        }
+      }
+      return null;
+    } catch (err) {
+      logger.debug('findTaskIdByExternalId failed', { projectId, externalId, error: err });
+      return null;
+    }
   }

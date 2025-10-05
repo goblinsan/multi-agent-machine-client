@@ -1,5 +1,3 @@
-
-
 import { cfg } from "./config.js";
 
 export const CODING_PERSONA_SET = new Set((cfg.personaCodingPersonas && cfg.personaCodingPersonas.length
@@ -52,7 +50,7 @@ export function slugify(value: string) {
 
   export function normalizeRepoPath(p: string | undefined, fallback: string) {
     if (!p || typeof p !== "string") return fallback;
-    const unescaped = p.replace(/\\\\/g, "\\"); // collapse escaped backslashes
+    const unescaped = p.replace(/\\/g, "/"); // collapse escaped backslashes
     const m = /^([A-Za-z]):\\(.*)$/.exec(unescaped);
     if (m) {
       const drive = m[1].toLowerCase();
@@ -88,10 +86,4 @@ export function slugify(value: string) {
     if (key && cfg.personaTimeouts[key] !== undefined) return cfg.personaTimeouts[key];
     if (CODING_PERSONA_SET.has(key)) return cfg.personaCodingTimeoutMs;
     return cfg.personaDefaultTimeoutMs;
-  }
-
-  export function clipText(text: string, max = 6000) {
-    if (!text) return text;
-    if (text.length <= max) return text;
-    return text.slice(0, max) + `\n... (truncated ${text.length - max} chars)`;
   }

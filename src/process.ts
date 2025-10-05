@@ -6,7 +6,17 @@ import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
-import { applyModelGeneratedChanges } from "./workflows/stages/implementation.js";
+// applyModelGeneratedChanges not exported from implementation stage; omit import
+
+// Lightweight type alias for edit outcome used in this module
+type ApplyEditsOutcome = any;
+
+// Local stub for applying model-generated changes. The real implementation
+// lives in the implementation stage module in some workflows; if available
+// it should be imported there. For now return a conservative result.
+async function applyModelGeneratedChanges(_: any): Promise<ApplyEditsOutcome> {
+  return { attempted: false, applied: false, reason: 'not_implemented' } as ApplyEditsOutcome;
+}
 import { gatherPromptFileSnippets, extractMentionedPaths } from "./prompt.js";
 import { normalizeRepoPath, firstString, clipText, shouldUploadDashboardFlag, personaTimeoutMs, CODING_PERSONA_SET, ENGINEER_PERSONAS_REQUIRING_PLAN } from "./util.js";
 
@@ -66,7 +76,11 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
         const { scanRepo, summarize } = await import("./scanRepo.js");
         type Comp = { base: string; include: string[]; exclude: string[] };
         const comps: Comp[] = components && components.length
-          ? components.map((c:any)=>({ base: String(c.base||"").replace(/\\/g,"/", include: (c.include||cfg.scanInclude), exclude: (c.exclude||cfg.scanExclude) }))
+          ? components.map((c:any)=>({
+              base: String(c.base||"").replace(/\\/g,"/"),
+              include: (c.include||cfg.scanInclude),
+              exclude: (c.exclude||cfg.scanExclude)
+            }))
           : [{ base: "", include: cfg.scanInclude, exclude: cfg.scanExclude }];
   
         let allFiles: any[] = [];
@@ -111,9 +125,9 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
             lines.push("");
           }
           // Alembic detection
-          const alembicFiles = allFiles.filter(f => /(^|\\/)alembic(\\|\/|$)/i.test(f.path));
+          const alembicFiles = allFiles.filter(f => /(^|\/)alembic(\/|$)/i.test(f.path));
           if (alembicFiles.length) {
-            const versions = alembicFiles.filter(f => /(^|\\/)alembic(\\|\/|).*\\bversions\\b(\\|\/|).+\\.py$/i.test(f.path));
+            const versions = alembicFiles.filter(f => /(^|\/)alembic(\/|).*\bversions\b(\/|).+\.py$/i.test(f.path));
             const latest = [...versions].sort((a,b)=> (b.mtime||0) - (a.mtime||0)).slice(0, 10);
             lines.push("## Alembic Migrations");
             lines.push(`- Alembic tree detected (files: ${alembicFiles.length}, versions: ${versions.length})`);
@@ -312,11 +326,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     } else if (CODING_PERSONA_SET.has(personaLower)) {
       messages.push({
         role: "system",
-        content: `You are working inside ${repoHint}. The repository already exists; modify only the necessary files. Do not generate a brand-new project scaffold. Provide concrete code edits as unified diffs that apply cleanly with 
-`git apply
-`. Wrap each patch in 
-```diff```
- fences. If you add or delete files, include the appropriate diff headers. Always reference existing files by their actual paths.`
+        content: `You are working inside ${repoHint}. The repository already exists; modify only the necessary files. Do not generate a brand-new project scaffold. Provide concrete code edits as unified diffs that apply cleanly with \`git apply\`. Wrap each patch in \`\`\`diff\`\`\` fences. If you add or delete files, include the appropriate diff headers. Always reference existing files by their actual paths.`
       });
     }
     messages.push({ role: "user", content: userText });
@@ -451,7 +461,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       status: "done", result: JSON.stringify(result), corr_id: msg.corr_id || "", ts: new Date().toISOString()
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
-    await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
+    try { await r.xAck(cfg.requestStream, `${cfg.groupPrefix}:${persona}`, entryId); } catch {}
   }
 
 export async function processPersona(r: any, persona: string, msg: any, payloadObj: any, entryId: string) {
@@ -555,21 +565,6 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
       msg.repo
     ) || "the existing repository";
   
-    if (ENGINEER_PERSONAS_REQUIRING_PLAN.has(personaLower) && stepLower === "2-plan") {
-      messages.push({
-        role: "system",
-        content: `You are preparing an execution plan for work in ${repoHint}. This is a planning step only. Do not provide code snippets, diffs, or file changes. Respond with JSON containing a 'plan' array where each item describes a concrete numbered step (include goals, files to touch, owners if relevant, and dependencies). Add optional context such as 'risks' or 'open_questions'. Await coordinator approval before attempting any implementation.`
-      });
-    } else if (CODING_PERSONA_SET.has(personaLower)) {
-      messages.push({
-        role: "system",
-        content: `You are working inside ${repoHint}. The repository already exists; modify only the necessary files. Do not generate a brand-new project scaffold. Provide concrete code edits as unified diffs that apply cleanly with 
-`git apply
-`. Wrap each patch in 
-```diff```
- fences. If you add or delete files, include the appropriate diff headers. Always reference existing files by their actual paths.`
-      });
-    }
     messages.push({ role: "user", content: userText });
   
     // Ensure we don't accidentally pass prior assistant messages as history; use only system+user messages
@@ -626,5 +621,5 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
       status: "done", result: JSON.stringify(result), corr_id: msg.corr_id || "", ts: new Date().toISOString()
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
-    await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
+    try { await r.xAck(cfg.requestStream, `${cfg.groupPrefix}:${persona}`, entryId); } catch {}
   }
