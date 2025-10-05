@@ -10,6 +10,7 @@ import { firstString, slugify, normalizeRepoPath } from "../util.js";
 import { waitForPersonaCompletion, sendPersonaRequest, parseEventResult, interpretPersonaStatus } from "../agents/persona.js";
 import { createDashboardTaskEntriesWithSummarizer } from "../tasks/taskManager.js";
 import { updateTaskStatus } from "../dashboard.js";
+import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
 import { runLeadCycle } from "./stages/implementation.js";
 
 export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
@@ -243,6 +244,23 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     // will then run summarizer -> create -> set-status for each follow-up and block
     // until creation+status succeed before forwarding to implementation planning.
     try {
+      // Try to discover test/lint commands from package.json in the repo root
+      let testCommands: string[] = [];
+      try {
+        const pjPath = require('path').join(repoRoot, 'package.json');
+        const pj = JSON.parse(await (await import('fs/promises')).readFile(pjPath, 'utf8'));
+        const scripts = pj && pj.scripts ? pj.scripts : {};
+        if (scripts.test) testCommands.push('npm test');
+        if (scripts.lint) testCommands.push('npm run lint');
+        // include explicit commands if present in scripts
+        if (typeof scripts.test === 'string' && scripts.test.trim().length && scripts.test.trim() !== 'echo "Error: no test specified" && exit 1') {
+          // prefer direct npm invocation
+          // already added 'npm test'
+        }
+      } catch (err) {
+        // ignore discovery errors - persona will be told if nothing available
+      }
+
       const qaCorr = randomUUID();
       await sendPersonaRequest(r, {
         workflowId,
@@ -254,7 +272,8 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
           branch: branchName,
           project_id: projectId,
           milestone: milestoneDescriptor,
-          task: taskDescriptor
+          task: taskDescriptor,
+          commands: testCommands
         },
         corrId: qaCorr,
         repo: repoRemote,
@@ -269,6 +288,27 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
 
       if (qaStatus.status === "fail") {
         // Ask project-manager to route the QA failure into tasks to create
+        // But first, if the QA persona flagged an immediate action (e.g. missing tests/framework),
+        // create that follow-up immediately and block until it's created and assigned.
+        try {
+          const qaPayloadObj = (qaResult && typeof qaResult === 'object') ? qaResult.payload ?? qaResult : null;
+          const immediate = qaPayloadObj?.immediate_action || qaPayloadObj?.immediateAction || null;
+          if (immediate && typeof immediate === 'string' && immediate.trim().length) {
+            const suggested = [{ title: `QA immediate action: ${immediate.slice(0, 120)}`, description: `Immediate action requested by QA: ${immediate}`, schedule: 'urgent', assigneePersona: 'implementation-planner' }];
+            await handleFailureMiniCycle(r, workflowId, 'qa', suggested, {
+              repo: repoRemote,
+              branch: branchName,
+              projectId,
+              milestoneDescriptor,
+              parentTaskDescriptor: taskDescriptor,
+              projectName: projectInfo?.name || null,
+              scheduleHint: payloadObj?.scheduleHint
+            });
+            // After handling immediate action, continue to request project-manager suggestions for any other follow-ups
+          }
+        } catch (err) {
+          logger.warn("coordinator immediate QA follow-up handling failed", { workflowId, error: err });
+        }
         const pmCorr = randomUUID();
         await sendPersonaRequest(r, {
           workflowId,
@@ -300,46 +340,38 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         if (!suggestedTasks.length) {
           logger.warn("project-manager returned no suggested tasks for QA failure", { workflowId, projectId });
         } else {
-          // Create tasks via summarizer -> create flow and ensure status
-          const created = await createDashboardTaskEntriesWithSummarizer(r, workflowId, suggestedTasks, {
-            stage: 'qa',
-            milestoneDescriptor,
-            parentTaskDescriptor: taskDescriptor,
-            projectId,
-            projectName: projectInfo?.name || null,
-            scheduleHint: payloadObj?.scheduleHint
-          });
-
-          // Ensure created tasks are set to in_progress (some dashboards ignore initial_status)
-          for (const c of created) {
-            try {
-              if (c && c.createdId) await updateTaskStatus(String(c.createdId), 'in_progress');
-            } catch (err) {
-              logger.warn("failed to set created task in_progress", { workflowId, created: c, error: err });
-              throw new Error("Failed to mark created QA follow-up tasks as in_progress");
-            }
-          }
-
-          // After successful creation, summarize for implementation planning and forward
-          try {
-            const implCorr = randomUUID();
-            const implPayload = { qa_result: qaResult?.payload ?? qaResult, created_tasks: created, milestone: milestoneDescriptor, task: taskDescriptor, project_id: projectId };
-            const implPersona = cfg.allowedPersonas.includes('implementation-planner') ? 'implementation-planner' : 'lead-engineer';
-            await sendPersonaRequest(r, {
-              workflowId,
-              toPersona: implPersona,
-              step: "4-implementation-plan",
-              intent: "handle_qa_followups",
-              payload: implPayload,
-              corrId: implCorr,
+            // Use the helper to perform summarizer->create->set-status and forwarding according to stage policy
+            const mini = await handleFailureMiniCycle(r, workflowId, 'qa', suggestedTasks, {
               repo: repoRemote,
               branch: branchName,
-              projectId
+              projectId,
+              milestoneDescriptor,
+              parentTaskDescriptor: taskDescriptor,
+              projectName: projectInfo?.name || null,
+              scheduleHint: payloadObj?.scheduleHint
             });
-          } catch (err) {
-            logger.warn("failed to forward QA follow-ups to implementation persona", { workflowId, error: err });
-            // It's okay to continue; the important blocking part (creation+status) succeeded
-          }
+
+            if (mini && mini.plannerResult) {
+              logger.info("coordinator received planner result", { workflowId, planner: mini.plannerResult });
+              // If planner returned an actionable plan, forward it to the implementation planning step
+              try {
+                const implCorr = randomUUID();
+                const implPersona = cfg.allowedPersonas.includes('implementation-planner') ? 'implementation-planner' : 'lead-engineer';
+                await sendPersonaRequest(r, {
+                  workflowId,
+                  toPersona: implPersona,
+                  step: "4-implementation-plan",
+                  intent: "handle_qa_followups",
+                  payload: { qa_result: qaResult?.payload ?? qaResult, planner_result: mini.plannerResult, created_tasks: mini.created, milestone: milestoneDescriptor, task: taskDescriptor, project_id: projectId },
+                  corrId: implCorr,
+                  repo: repoRemote,
+                  branch: branchName,
+                  projectId
+                });
+              } catch (err) {
+                logger.warn("failed to forward planner result to implementation persona", { workflowId, error: err });
+              }
+            }
         }
       }
     } catch (err) {

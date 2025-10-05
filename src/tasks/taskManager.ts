@@ -5,6 +5,7 @@ import { cfg } from "../config.js";
 import { parseMilestoneDate } from "../milestones/milestoneManager.js";
 import { logger } from "../logger.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "../agents/persona.js";
+import { summarizeTask } from "../agents/summarizer.js";
 import { randomUUID } from "crypto";
 
 // Note: we do not persist externalId->createdId mapping here. The dashboard
@@ -370,34 +371,15 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     const results: any[] = [];
 
     for (const task of tasks) {
-      // Ask the summarizer persona to condense the task into concise next steps
-      let condensedDescription: string | null = null;
+      // Ask the centralized summarizer helper to condense the task into concise next steps
       try {
         const title = task.title || `${options.stage.toUpperCase()} follow-up`;
-        const reqPayload = { title, description: task.description || task.summary || `Follow-up required for ${options.stage}`, stage: options.stage, project_id: options.projectId };
-        const corrId = await sendPersonaRequest(r, {
-          workflowId,
-          toPersona: "summarization",
-          step: "summarize-task",
-          intent: "condense_task_description",
-          payload: reqPayload,
-          corrId: randomUUID(),
-          repo: undefined,
-          branch: undefined,
-          projectId: options.projectId || undefined
-        });
-        const ev = await waitForPersonaCompletion(r, "summarization", workflowId, corrId);
-        const res = parseEventResult(ev.fields.result);
-        // Prefer payload.summary or parsed output; fall back to plain output
-        if (res && res.payload && typeof res.payload.summary === 'string' && res.payload.summary.trim().length) condensedDescription = res.payload.summary.trim();
-        else if (res && typeof res.output === 'string' && res.output.trim().length) condensedDescription = res.output.trim();
-        else if (res && typeof res.raw === 'string' && res.raw.trim().length) condensedDescription = res.raw.trim();
+        const desc = task.description || task.summary || `Follow-up required for ${options.stage}`;
+        const condensed = await summarizeTask(r, workflowId, { title, description: desc, stage: options.stage, project_id: options.projectId }, { concise: true });
+        if (condensed && String(condensed).trim().length) task.description = `${String(condensed).trim()}\n\n(Original)\n${desc}`;
       } catch (err) {
-        logger.debug("summarizer failed for task, falling back to original description", { task: task.title, error: err });
+        logger.debug("summarizer helper failed for task, falling back to original description", { task: task.title, error: err });
       }
-
-      // Use condensed description if available
-      if (condensedDescription) task.description = `${condensedDescription}\n\n(Original)\n${task.description || task.summary || ''}`;
 
       // Delegate to the existing createDashboardTaskEntries logic for creation
       const created = await createDashboardTaskEntries([task], options);

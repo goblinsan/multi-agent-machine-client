@@ -50,6 +50,11 @@ async function main() {
     logLevel: cfg.log.level,
     logConsole: cfg.log.console
   });
+  try {
+    // small diagnostic to confirm file logging was initialized
+    const { getLogFilePath, isFileLoggingActive } = await import("./logger.js");
+    logger.info("file logging status", { logFile: getLogFilePath(), active: isFileLoggingActive() });
+  } catch (e) { /* ignore */ }
   // Also surface persona timeout configuration to make it visible on startup
   try {
     logger.info("persona timeouts", {

@@ -153,7 +153,9 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
         revision: attempt
     };
 
-    const plannerPersona = "lead-engineer";
+    // The planner persona should be the implementation-planner which prepares the plan
+    // for the lead-engineer to execute. See projects/workflow-plans.md.
+    const plannerPersona = "implementation-planner";
     const planOutcome = await runEngineerPlanApproval(r, workflowId, projectId, repoRemote, branchName, "lead-engineer", plannerPersona, engineerBasePayload, attempt, feedback || null);
 
     const leadCorrId = randomUUID();

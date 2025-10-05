@@ -1,0 +1,107 @@
+import { logger } from "../../logger.js";
+import { createDashboardTaskEntriesWithSummarizer, findTaskIdByExternalId } from "../../tasks/taskManager.js";
+import { updateTaskStatus } from "../../dashboard.js";
+import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "../../agents/persona.js";
+
+export const STAGE_POLICY: Record<string, { immediate: boolean; initialStatus: string; assignTo?: string }> = {
+  qa: { immediate: true, initialStatus: "in_progress", assignTo: "implementation-planner" },
+  devops: { immediate: true, initialStatus: "in_progress", assignTo: "devops" },
+  "code-review": { immediate: false, initialStatus: "backlog", assignTo: "code-reviewer" },
+  security: { immediate: false, initialStatus: "backlog", assignTo: "security-review" }
+};
+
+type MiniCycleOptions = {
+  repo?: string;
+  branch?: string;
+  projectId?: string | null;
+  milestoneDescriptor?: any;
+  parentTaskDescriptor?: any;
+  projectName?: string | null;
+  scheduleHint?: string;
+};
+
+// Handle failure mini-cycle for QA/DevOps/Code-Review/Security
+// suggestedTasks: array of suggestion objects returned by PM or persona
+export async function handleFailureMiniCycle(r: any, workflowId: string, stage: string, suggestedTasks: any[], options: MiniCycleOptions) {
+  const policy = STAGE_POLICY[stage] || { immediate: false, initialStatus: "backlog" };
+  if (!Array.isArray(suggestedTasks)) suggestedTasks = [];
+
+  if (!suggestedTasks.length) {
+    logger.info("handleFailureMiniCycle: no suggested tasks", { workflowId, stage });
+    return { created: [] as any[], forwarded: false };
+  }
+
+  // For immediate stages we create tasks with initial_status from policy and block until creation+status OK
+  try {
+    const createOpts = {
+      stage: stage as any,
+      milestoneDescriptor: options.milestoneDescriptor || null,
+      parentTaskDescriptor: options.parentTaskDescriptor || null,
+      projectId: options.projectId || null,
+      projectName: options.projectName || null,
+      scheduleHint: options.scheduleHint
+    };
+
+    // Use the existing summarizer-before-create wrapper
+    const created = await createDashboardTaskEntriesWithSummarizer(r, workflowId, suggestedTasks, createOpts as any);
+
+    // If policy requires immediate visibility, ensure status is set to policy.initialStatus
+    if (policy.immediate && Array.isArray(created) && created.length) {
+      for (const c of created) {
+        try {
+          const id = c.createdId || (c.externalId && options.projectId ? await findTaskIdByExternalId(c.externalId, options.projectId) : null);
+          if (id) {
+            await updateTaskStatus(String(id), policy.initialStatus).catch((err) => {
+              logger.warn("handleFailureMiniCycle: updateTaskStatus failed", { workflowId, stage, id, error: err });
+              throw err;
+            });
+          } else {
+            logger.warn("handleFailureMiniCycle: could not determine created task id", { workflowId, stage, created: c });
+          }
+        } catch (err) {
+          logger.error("handleFailureMiniCycle: failed to set status for created task", { workflowId, stage, error: err });
+          throw err;
+        }
+      }
+    }
+
+    // Forward created tasks to implementation planner for immediate stages
+    let plannerResult: any = null;
+    if (policy.immediate && created.length) {
+      const implPersona = (policy.assignTo && policy.assignTo.length) ? policy.assignTo : ("implementation-planner");
+      try {
+        const corr = (await import("crypto")).randomUUID();
+        await sendPersonaRequest(r, {
+          workflowId,
+          toPersona: implPersona,
+          step: `${stage}-created-tasks`,
+          intent: "handle_created_followups",
+          payload: { created_tasks: created, stage, milestone: options.milestoneDescriptor, parent_task: options.parentTaskDescriptor },
+          corrId: corr,
+          repo: options.repo,
+          branch: options.branch,
+          projectId: options.projectId ?? undefined
+        });
+
+        // Block and wait for planner to finish handling created tasks
+        const plannerEvent = await waitForPersonaCompletion(r, implPersona, workflowId, corr);
+        try {
+          plannerResult = parseEventResult(plannerEvent.fields.result);
+        } catch (err) {
+          logger.warn("handleFailureMiniCycle: planner returned unparsable result", { workflowId, stage, error: err });
+          plannerResult = plannerEvent.fields.result;
+        }
+      } catch (err) {
+        logger.warn("handleFailureMiniCycle: failed to forward created tasks to planner or planner failed", { workflowId, stage, error: err });
+        throw err; // escalate since coordinator requested blocking behavior
+      }
+    }
+
+    return { created, forwarded: policy.immediate, plannerResult };
+  } catch (err) {
+    logger.error("handleFailureMiniCycle: exception", { workflowId, stage, error: err });
+    throw err;
+  }
+}
+
+export default { STAGE_POLICY, handleFailureMiniCycle };
