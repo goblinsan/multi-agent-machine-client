@@ -1,8 +1,7 @@
-
 import { randomUUID } from "crypto";
 import { cfg } from "../config.js";
 import { fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction } from "../dashboard.js";
-import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished } from "../gitUtils.js";
+import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, commitAndPushPaths } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { selectNextMilestone, deriveMilestoneContext } from "../milestones/milestoneManager.js";
 import { selectNextTask, deriveTaskContext, pickSuggestion, normalizeTaskStatus } from "../tasks/taskManager.js";
@@ -10,6 +9,7 @@ import { firstString, slugify, normalizeRepoPath } from "../util.js";
 import * as persona from "../agents/persona.js";
 import { PERSONAS } from "../personaNames.js";
 import { createDashboardTaskEntriesWithSummarizer } from "../tasks/taskManager.js";
+import { applyEditOps } from "../fileops.js";
 import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
 import { runLeadCycle } from "./stages/implementation.js";
@@ -68,7 +68,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       iterations += 1;
 
   // iteration tracing via logger
-  try { logger.debug && logger.debug(`coordinator loop iter=${iterations}`); } catch (e) {}
+  try { if (logger.debug) logger.debug(`coordinator loop iter=${iterations}`); } catch (e) {}
 
       // refresh project state each iteration so selection sees the latest dashboard
       projectInfo = await fetchProjectStatus(projectId);
@@ -156,10 +156,20 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         }
       }
 
+      // If we've selected a task, mark it as in-progress/processed early to avoid re-selection
+      try {
+        if (selectedTask && selectedTask.id) {
+          processedTaskIds.add(String(selectedTask.id));
+          logger.debug('processedTaskIds preadd', { taskId: String(selectedTask.id), processedTaskIds: Array.from(processedTaskIds) });
+        }
+      } catch (err) {}
+
       // Optional debug: use logger.debug to record selection decision and project snapshot when needed
       try {
-        const projSnapshot = (projNow && Array.isArray((projNow as any).tasks)) ? (projNow as any).tasks.map((t: any) => ({ id: t.id, name: t.name, status: t.status })) : [];
-        logger.debug('coordinator selection', { iteration: iterations, selectedTaskId: selectedTask?.id ?? null, remainingNow, projSnapshot, processedTaskIds: Array.from(processedTaskIds) });
+        if (logger.debug) {
+          const projSnapshot = (projNow && Array.isArray((projNow as any).tasks)) ? (projNow as any).tasks.map((t: any) => ({ id: t.id, name: t.name, status: t.status })) : [];
+          logger.debug('coordinator selection', { iteration: iterations, selectedTaskId: selectedTask?.id ?? null, remainingNow, projSnapshot, processedTaskIds: Array.from(processedTaskIds) });
+        }
       } catch (err) {}
 
       if (!selectedTask && !remainingNow) {
@@ -309,13 +319,24 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         // If the lead cycle succeeded and we have a task identifier, mark the task done
         try {
           // Diagnostic: show leadOutcome so we can see if coordinator considers the lead successful
-          logger.debug('leadOutcome', { taskId: taskDescriptor?.id, leadOutcome });
+          if (logger.debug) logger.debug('leadOutcome', { taskId: taskDescriptor?.id, leadOutcome: (leadOutcome && typeof leadOutcome === 'object') ? { success: !!leadOutcome.success, noChanges: !!leadOutcome.noChanges } : leadOutcome });
           if (leadOutcome && leadOutcome.success && taskDescriptor && taskDescriptor.id) {
+            if (leadOutcome.result) {
+              const editResult = await applyEditOps(JSON.stringify(leadOutcome.result), { repoRoot, branchName });
+              if (editResult.changed.length > 0) {
+                await commitAndPushPaths({
+                  repoRoot,
+                  branch: branchName,
+                  message: `feat: ${taskName}`,
+                  paths: editResult.changed,
+                });
+              }
+            }
             try {
               // Diagnostic: log intent to update task status
-              logger.debug('about to updateTaskStatus', { taskId: String(taskDescriptor.id), workflowId });
+              if (logger.debug) logger.debug('about to updateTaskStatus', { taskId: String(taskDescriptor.id), workflowId });
               const updateRes = await updateTaskStatus(String(taskDescriptor.id), 'done');
-              logger.debug('updateTaskStatus returned', { taskId: String(taskDescriptor.id), workflowId, updateRes });
+              if (logger.debug) logger.debug('updateTaskStatus returned', { taskId: String(taskDescriptor.id), workflowId, ok: !!(updateRes && updateRes.ok) });
               // Only mark as processed if the dashboard update reported ok
               if (updateRes && updateRes.ok) {
                 try {

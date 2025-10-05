@@ -543,7 +543,8 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
     return { committed: false, pushed: false, branch: targetBranch, reason: "no_changes" };
   }
 
-  await runGit(["commit", "-m", message], { cwd: repoRoot });
+  const sanitized = String(message || '').replace(/\s+/g, ' ').trim() || 'agent: update';
+  await runGit(["commit", "-m", sanitized], { cwd: repoRoot });
 
   try {
     await runGit(["push", "-u", "origin", targetBranch], { cwd: repoRoot });

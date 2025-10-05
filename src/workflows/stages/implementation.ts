@@ -81,7 +81,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
             corrId: planCorrId,
             repo: repoRemote,
             branch: branchName,
-            projectId: projectId!
+            projectId: projectId!,
         });
 
         const planEvent = await waitForPersonaCompletion(r, planner, workflowId, planCorrId);
@@ -125,7 +125,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
 
                 if (evaluationStatus.status !== 'pass') {
                     planFeedbackNotes = [
-                        `The proposed plan does not seem to address the QA feedback.`,
+                        `The proposed plan does not seem to address the QA feedback.`, 
                         `QA Feedback: ${feedback}`,
                         `Proposed Plan: ${planOutput}`,
                         `Evaluator Feedback: ${evaluationResult?.reason || evaluationResult?.details || ''}`,

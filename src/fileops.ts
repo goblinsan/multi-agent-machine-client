@@ -47,6 +47,8 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
 
   const branch = opts.branchName || "feat/agent-edit";
   const commitMsg = opts.commitMessage || "agent: apply edits";
+  // Ensure commit message is a single line
+  const sanitizedCommitMsg = String(commitMsg).replace(/\s+/g, ' ').trim();
 
   await runGit(["checkout", "-B", branch], { cwd: repoRoot });
 
@@ -61,8 +63,8 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
   }
 
   if (changed.length) {
-    await runGit(["add", ...changed], { cwd: repoRoot });
-    await runGit(["commit", "-m", commitMsg], { cwd: repoRoot });
+  await runGit(["add", ...changed], { cwd: repoRoot });
+  await runGit(["commit", "-m", sanitizedCommitMsg], { cwd: repoRoot });
     const sha = (await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })).stdout.trim();
     return { changed, branch, sha };
   }

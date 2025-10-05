@@ -3,6 +3,9 @@ import * as coordinatorMod from '../src/workflows/coordinator.js';
 import * as dashboard from '../src/dashboard.js';
 import * as persona from '../src/agents/persona.js';
 import * as tasks from '../src/tasks/taskManager.js';
+import * as fileops from '../src/fileops.js';
+import * as gitUtils from '../src/gitUtils.js';
+import { sent } from './testCapture.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -20,7 +23,8 @@ describe('Coordinator happy path across multiple milestones and tasks', () => {
     const allTasks = milestones.flatMap(m => m.tasks);
 
     vi.spyOn(dashboard, 'fetchProjectStatus').mockImplementation(async () => {
-      return { id: projectId, name: 'Happy Project', repositories: [{ url: 'https://example/repo.git' }], tasks: allTasks.filter(t => t.status !== 'done') } as any;
+      const openTasks = allTasks.filter(t => updatedTasks[t.id] !== 'done');
+      return { id: projectId, name: 'Happy Project', repositories: [{ url: 'https://example/repo.git' }], tasks: openTasks } as any;
     });
     vi.spyOn(dashboard, 'fetchProjectStatusDetails').mockResolvedValue({ milestones } as any);
     vi.spyOn(dashboard, 'fetchProjectNextAction').mockResolvedValue({ suggestions: [] } as any);
@@ -47,7 +51,7 @@ describe('Coordinator happy path across multiple milestones and tasks', () => {
       return { ok: true, status: 200, body: {} } as any;
     });
 
-    const sent: any[] = [];
+    sent.length = 0;
     vi.spyOn(persona, 'sendPersonaRequest').mockImplementation(async (_r: any, opts: any) => {
       sent.push(opts);
       return opts.corrId || 'corr-' + String(sent.length);
@@ -66,7 +70,7 @@ describe('Coordinator happy path across multiple milestones and tasks', () => {
         return { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'implement feature' }] } }) }, id: 'evt-plan' } as any;
       }
       if (step === '2-implementation') {
-        return { fields: { result: JSON.stringify({ status: 'ok', output: 'built' }) }, id: 'evt-impl' } as any;
+        return { fields: { result: JSON.stringify({ status: 'ok', output: 'built', ops: [] }) }, id: 'evt-impl' } as any;
       }
       if (step === '3-qa') {
         return { fields: { result: JSON.stringify({ status: 'pass', details: 'tests passed' }) }, id: 'evt-qa' } as any;
@@ -92,7 +96,8 @@ describe('Coordinator happy path across multiple milestones and tasks', () => {
 
     vi.spyOn(tasks, 'createDashboardTaskEntriesWithSummarizer').mockResolvedValue([{ title: 'auto-task', externalId: 'ext-x', createdId: 'created-x', description: 'auto' } as any]);
 
-    const gitUtils = await import('../src/gitUtils.js');
+    vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ changed: [], branch: 'feat/agent-edit', sha: '12345' });
+    vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: true, branch: 'feat/agent-edit' });
     vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: '/tmp/repo', branch: 'main', remote: 'https://example/repo.git' } as any);
     vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: 'example/repo', currentBranch: 'main' } as any);
     vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);

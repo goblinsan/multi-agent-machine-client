@@ -1,4 +1,3 @@
-
 import { firstString, numericHint, slugify, toArray } from "../util.js";
 import { createDashboardTask, fetchProjectStatus } from "../dashboard.js";
 import { cfg } from "../config.js";
