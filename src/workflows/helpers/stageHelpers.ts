@@ -2,12 +2,13 @@ import { logger } from "../../logger.js";
 import { createDashboardTaskEntriesWithSummarizer, findTaskIdByExternalId } from "../../tasks/taskManager.js";
 import { updateTaskStatus } from "../../dashboard.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "../../agents/persona.js";
+import { PERSONAS } from "../../personaNames.js";
 
 export const STAGE_POLICY: Record<string, { immediate: boolean; initialStatus: string; assignTo?: string }> = {
-  qa: { immediate: true, initialStatus: "in_progress", assignTo: "implementation-planner" },
-  devops: { immediate: true, initialStatus: "in_progress", assignTo: "devops" },
-  "code-review": { immediate: false, initialStatus: "backlog", assignTo: "code-reviewer" },
-  security: { immediate: false, initialStatus: "backlog", assignTo: "security-review" }
+  qa: { immediate: true, initialStatus: "in_progress", assignTo: PERSONAS.IMPLEMENTATION_PLANNER },
+  devops: { immediate: true, initialStatus: "in_progress", assignTo: PERSONAS.DEVOPS },
+  "code-review": { immediate: false, initialStatus: "backlog", assignTo: PERSONAS.CODE_REVIEWER },
+  security: { immediate: false, initialStatus: "backlog", assignTo: PERSONAS.SECURITY_REVIEW }
 };
 
 type MiniCycleOptions = {
@@ -18,6 +19,7 @@ type MiniCycleOptions = {
   parentTaskDescriptor?: any;
   projectName?: string | null;
   scheduleHint?: string;
+  qaResult?: any;
 };
 
 // Handle failure mini-cycle for QA/DevOps/Code-Review/Security
@@ -68,23 +70,35 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
     // Forward created tasks to implementation planner for immediate stages
     let plannerResult: any = null;
     if (policy.immediate && created.length) {
-      const implPersona = (policy.assignTo && policy.assignTo.length) ? policy.assignTo : ("implementation-planner");
+      logger.debug('handleFailureMiniCycle created', { created });
+      const implPersona = (policy.assignTo && policy.assignTo.length) ? policy.assignTo : (PERSONAS.IMPLEMENTATION_PLANNER);
       try {
         const corr = (await import("crypto")).randomUUID();
+        logger.info('handleFailureMiniCycle sending to planner', { workflowId, stage, corr, implPersona });
         await sendPersonaRequest(r, {
           workflowId,
           toPersona: implPersona,
           step: `${stage}-created-tasks`,
           intent: "handle_created_followups",
-          payload: { created_tasks: created, stage, milestone: options.milestoneDescriptor, parent_task: options.parentTaskDescriptor },
+          // include created tasks and any QA payload forwarded via options (if present)
+          payload: { created_tasks: created, stage, milestone: options.milestoneDescriptor, parent_task: options.parentTaskDescriptor, qa_result: (options as any).qaResult ?? null },
           corrId: corr,
           repo: options.repo,
           branch: options.branch,
           projectId: options.projectId ?? undefined
         });
+        logger.info("handleFailureMiniCycle dispatched created tasks to planner", { workflowId, stage, corr, implPersona });
 
         // Block and wait for planner to finish handling created tasks
-        const plannerEvent = await waitForPersonaCompletion(r, implPersona, workflowId, corr);
+        let plannerEvent;
+        try {
+          logger.info("handleFailureMiniCycle waiting for planner completion", { workflowId, stage, corr, implPersona });
+          plannerEvent = await waitForPersonaCompletion(r, implPersona, workflowId, corr);
+          logger.info("handleFailureMiniCycle received planner completion", { workflowId, stage, corr, implPersona, eventId: plannerEvent?.id });
+        } catch (err) {
+          logger.error("handleFailureMiniCycle waitForPersonaCompletion failed", { workflowId, stage, corr, implPersona, error: String(err) });
+          throw err;
+        }
         try {
           plannerResult = parseEventResult(plannerEvent.fields.result);
         } catch (err) {

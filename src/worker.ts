@@ -3,6 +3,7 @@ import { cfg } from "./config.js";
 import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { logger } from "./logger.js";
+import { PERSONAS } from "./personaNames.js";
 import { handleCoordinator } from "./workflows/coordinator.js";
 import { processContext, processPersona } from "./process.js";
 
@@ -86,11 +87,11 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       projectId: payloadObj.project_id
     });
   
-  if (persona === "coordination") {
+  if (persona === PERSONAS.COORDINATION) {
     return await handleCoordinator(r, msg, payloadObj);
   }
   
-    if (persona === "context") {
+  if (persona === PERSONAS.CONTEXT) {
         return await processContext(r, persona, msg, payloadObj, entryId);
     }
   

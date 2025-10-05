@@ -1,14 +1,16 @@
 import { makeRedis } from "../redisClient.js";
 import { cfg } from "../config.js";
 
-const persona = process.argv[2] || "context";
+import { PERSONAS } from "../personaNames.js";
+
+const persona = process.argv[2] || PERSONAS.CONTEXT;
 const repoUrl = process.env.SEED_REPO || process.env.REPO_URL || "https://github.com/goblinsan/multi-agent-machine-client.git";
 const repoBranch = process.env.SEED_BRANCH || undefined;
 const projectId = process.env.SEED_PROJECT_ID || "8c02ff6e-1dab-456a-8806-df1bf3520dbe";
 const projectName = process.env.SEED_PROJECT_NAME || "Multi-Agent Machine Client";
 const projectSlug = process.env.SEED_PROJECT_SLUG || "multi-agent-machine-client";
 
-const payload = persona === "context"
+const payload = persona === PERSONAS.CONTEXT
   ? {
       repo: repoUrl,
       branch: repoBranch,

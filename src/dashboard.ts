@@ -389,7 +389,8 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
     let lv = lockVersion;
     if (lv === undefined || lv === null) {
       const current = await fetchTask(taskId);
-      lv = current && (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) ? Number(current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
+      const raw = current ? (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
+      lv = (raw !== undefined && raw !== null) ? Number(raw) : undefined;
     }
 
     const endpoint = `${base}/v1/tasks/${encodeURIComponent(taskId)}`;
@@ -425,9 +426,10 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
       const textBody = String(first.responseBody || JSON.stringify(first.responseBody || '')).toLowerCase();
       if (first.statusCode === 422 || textBody.includes('lock_version') || textBody.includes('lockversion') || textBody.includes('missing')) {
         logger.debug("dashboard task update received 422 or missing lock_version; attempting to fetch current task and retry", { taskId, status, statusCode: first.statusCode, responseBody: first.responseBody });
-        const current = await fetchTask(taskId);
-        const fetchedLv = current && (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) ? Number(current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
-        if (fetchedLv !== undefined) {
+  const current = await fetchTask(taskId);
+  const raw = current ? (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
+  const fetchedLv = (raw !== undefined && raw !== null) ? Number(raw) : undefined;
+  if (fetchedLv !== undefined) {
           const second = await doPatch(fetchedLv);
           if (second.res && second.statusCode >= 200 && second.statusCode < 300) {
             logger.info("dashboard task updated (retry with lock_version)", { taskId, status, statusCode: second.statusCode, usedLockVersion: fetchedLv });

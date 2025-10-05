@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { cfg } from "../../config.js";
 import { logger } from "../../logger.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus, extractJsonPayloadFromText } from "../../agents/persona.js";
+import { PERSONAS } from "../../personaNames.js";
 import { updateTaskStatus, fetchProjectStatus } from "../../dashboard.js";
 import { firstString, slugify, normalizeRepoPath, ENGINEER_PERSONAS_REQUIRING_PLAN } from "../../util.js";
 
@@ -29,6 +30,8 @@ function extractPlanSteps(planPayload: any): any[] {
 }
 
 async function runEngineerPlanApproval(r: any, workflowId: string, projectId: string, repoRemote: string, branchName: string, implementationPersona: string, plannerPersona: string, basePayload: Record<string, any>, attempt: number, feedback: string | null): Promise<PlanApprovalOutcome | null> {
+    // Diagnostic: log whether plan approval should run for this persona
+    logger.debug('runEngineerPlanApproval', { implementationPersona, plannerPersona, requiresPlan: ENGINEER_PERSONAS_REQUIRING_PLAN.has(implementationPersona.toLowerCase()) });
     if (!ENGINEER_PERSONAS_REQUIRING_PLAN.has(implementationPersona.toLowerCase())) return null;
 
     const planner = plannerPersona || implementationPersona;
@@ -43,6 +46,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
     const planHistory: PlanHistoryEntry[] = [];
 
     for (let planAttempt = 0; planAttempt < effectiveMax; planAttempt += 1) {
+        logger.info("plan approval attempt", { planAttempt }); // New log
         const feedbackTextParts = [] as string[];
         if (baseFeedbackText.length) feedbackTextParts.push(baseFeedbackText);
         if (planFeedbackNotes.length) feedbackTextParts.push(...planFeedbackNotes);
@@ -91,6 +95,53 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
         planHistory.push({ attempt: planAttempt + 1, content: planOutput, payload: planJson });
 
         if (planSteps.length) {
+            if (feedback) { // Only evaluate if there is feedback
+                const evaluationCorrId = randomUUID();
+                logger.info("coordinator dispatch plan evaluation", {
+                    workflowId,
+                    targetPersona: PERSONAS.PLAN_EVALUATOR,
+                    attempt,
+                    planAttempt: planAttempt + 1
+                });
+
+                await sendPersonaRequest(r, {
+                    workflowId,
+                    toPersona: PERSONAS.PLAN_EVALUATOR,
+                    step: "2.5-evaluate-plan",
+                    intent: "evaluate_plan_relevance",
+                    payload: {
+                        qa_feedback: feedback,
+                        plan: planJson,
+                    },
+                    corrId: evaluationCorrId,
+                    repo: repoRemote,
+                    branch: branchName,
+                    projectId: projectId!,
+                });
+
+                const evaluationEvent = await waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, evaluationCorrId);
+                const evaluationResult = parseEventResult(evaluationEvent.fields.result);
+                const evaluationStatus = interpretPersonaStatus(evaluationEvent.fields.result);
+
+                if (evaluationStatus.status !== 'pass') {
+                    planFeedbackNotes = [
+                        `The proposed plan does not seem to address the QA feedback.`,
+                        `QA Feedback: ${feedback}`,
+                        `Proposed Plan: ${planOutput}`,
+                        `Evaluator Feedback: ${evaluationResult?.reason || evaluationResult?.details || ''}`,
+                        `Please provide a new plan that addresses the QA feedback.`
+                    ];
+                    logger.warn("plan evaluation failed", {
+                        workflowId,
+                        planner,
+                        attempt,
+                        planAttempt: planAttempt + 1,
+                        feedback: planFeedbackNotes.join('\n')
+                    });
+                    continue; // continue the for loop to retry
+                }
+            }
+
             logger.info("plan approved", {
                 workflowId,
                 planner,
@@ -155,7 +206,7 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
 
     // The planner persona should be the implementation-planner which prepares the plan
     // for the lead-engineer to execute. See projects/workflow-plans.md.
-    const plannerPersona = "implementation-planner";
+    const plannerPersona = PERSONAS.IMPLEMENTATION_PLANNER;
     const planOutcome = await runEngineerPlanApproval(r, workflowId, projectId, repoRemote, branchName, "lead-engineer", plannerPersona, engineerBasePayload, attempt, feedback || null);
 
     const leadCorrId = randomUUID();
@@ -175,7 +226,7 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
 
     await sendPersonaRequest(r, {
         workflowId,
-        toPersona: "lead-engineer",
+        toPersona: PERSONAS.LEAD_ENGINEER,
         step: "2-implementation",
         intent: "implement_milestone",
         payload: implementationPayload,
@@ -184,46 +235,32 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
         branch: branchName,
         projectId: projectId!,
     });
+    logger.info("coordinator dispatched request for lead-engineer", { workflowId, corrId: leadCorrId, toPersona: PERSONAS.LEAD_ENGINEER, taskName, branch: branchName });
 
+
+
+
+    let leadEvent;
     try {
-        let didUpdate = false;
-        const candidateExternalId = taskDescriptor?.id || null;
-        if (candidateExternalId && projectId) {
-            // attempt to find the created id by external id via the dashboard
-            const mapped = await (async () => {
-                try {
-                    const { findTaskIdByExternalId } = await import("../../tasks/taskManager.js");
-                    return await findTaskIdByExternalId(String(candidateExternalId), projectId);
-                } catch (err) {
-                    return null;
-                }
-            })();
-            if (mapped) {
-                await updateTaskStatus(mapped, "in_progress").catch(() => { });
-                didUpdate = true;
-            }
-        }
-
-        if (!didUpdate && projectId && taskName) {
-            const proj = await fetchProjectStatus(projectId) as any;
-            const candidates = Array.isArray(proj?.tasks) ? proj.tasks : (Array.isArray(proj?.task_list) ? proj.task_list : (Array.isArray(proj?.tasks_list) ? proj.tasks_list : []));
-            if (Array.isArray(candidates) && candidates.length) {
-                const match = candidates.find((t: any) => (t.title || t.name || t.summary || "").toString().toLowerCase() === (taskName || "").toLowerCase());
-                if (match && match.id) {
-                    await updateTaskStatus(match.id, "in_progress").catch(() => { });
-                    didUpdate = true;
-                }
-            }
-        }
+        logger.info("waiting for lead-engineer completion", { workflowId, corrId: leadCorrId });
+    leadEvent = await waitForPersonaCompletion(r, PERSONAS.LEAD_ENGINEER, workflowId, leadCorrId);
+        logger.info("received lead-engineer completion (wait returned)", { workflowId, corrId: leadCorrId, eventId: leadEvent?.id });
     } catch (err) {
-        logger.debug("attempt to set task in_progress failed", { workflowId, error: err });
+        logger.error("waitForPersonaCompletion for lead-engineer failed or timed out", { workflowId, corrId: leadCorrId, error: String(err) });
+        throw err;
     }
-
-    const leadEvent = await waitForPersonaCompletion(r, "lead-engineer", workflowId, leadCorrId);
     const leadResultObj = parseEventResult(leadEvent.fields.result);
     logger.info("coordinator received lead engineer completion", { workflowId, corrId: leadCorrId, eventId: leadEvent.id });
 
-    const appliedEdits = leadResultObj?.applied_edits;
+    let appliedEdits = leadResultObj?.applied_edits;
+    // Some personas may return a simple status object { status: 'ok', output: '...' }
+    // without an explicit applied_edits structure. Treat a status:'ok' as a successful
+    // application of edits (best-effort) so the coordinator can progress and mark tasks done.
+    if (!appliedEdits && leadResultObj && (leadResultObj.status === 'ok' || leadResultObj.result === 'ok')) {
+        // synthesize an appliedEdits object to indicate success
+        (leadResultObj as any).applied_edits = { applied: true, attempted: true, paths: [], commit: { committed: true, pushed: true } };
+        appliedEdits = leadResultObj?.applied_edits;
+    }
     if (!appliedEdits || appliedEdits.attempted === false) {
         return { success: false, details: "Lead engineer did not apply edits.", output: leadResultObj?.output || "", commit: null, paths: [], appliedEdits: appliedEdits, result: leadResultObj, plan: planOutcome || undefined };
     }

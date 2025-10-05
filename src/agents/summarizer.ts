@@ -1,17 +1,18 @@
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "./persona.js";
 import { randomUUID } from "crypto";
 import { logger } from "../logger.js";
+import { PERSONAS } from "../personaNames.js";
 
 export type SummarizeOptions = {
   concise?: boolean; // if true, request very brief direct next steps
   maxTokens?: number;
-  persona?: string; // persona name to use, default 'summarizer'
+  persona?: string; // persona name to use, default 'summarization'
 };
 
 // Summarize a single task description via the summarizer persona. Returns the condensed text.
 export async function summarizeTask(r: any, workflowId: string, task: any, options: SummarizeOptions = {}) {
   const corr = randomUUID();
-  const persona = options.persona || 'summarizer';
+  const persona = options.persona || PERSONAS.SUMMARIZATION;
   const payload = {
     task,
     concise: options.concise ?? true,

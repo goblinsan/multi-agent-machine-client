@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { cfg } from "../config.js";
 import { makeRedis } from "../redisClient.js";
 import { logger } from "../logger.js";
+import { PERSONAS } from "../personaNames.js";
 
 
 const PERSONA_WAIT_TIMEOUT_MS = cfg.personaDefaultTimeoutMs;
@@ -128,7 +129,7 @@ export async function sendPersonaRequest(r: any, opts: {
   const entry: Record<string, string> = {
     workflow_id: opts.workflowId,
     step: opts.step || "",
-    from: opts.fromPersona || "coordination",
+    from: opts.fromPersona || PERSONAS.COORDINATION,
     to_persona: opts.toPersona,
     intent: opts.intent || "",
     payload: JSON.stringify(opts.payload ?? {}),

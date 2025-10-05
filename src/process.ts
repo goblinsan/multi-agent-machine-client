@@ -2,6 +2,7 @@ import { cfg } from "./config.js";
 import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
+import { PERSONAS } from "./personaNames.js";
 import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
@@ -46,7 +47,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       paths: string[];
     } = null;
     let repoInfo: Awaited<ReturnType<typeof resolveRepoFromPayload>> | null = null;
-    if (persona !== "coordination") {
+  if (persona !== PERSONAS.COORDINATION) {
       try {
         repoInfo = await resolveRepoFromPayload(payloadObj);
       } catch (e:any) {
@@ -56,7 +57,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     let repoRootNormalized = repoInfo ? normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot) : null;
     let dashboardUploadEnabled = false;
     const dashboardProject: { id?: string; name?: string; slug?: string } = {};
-    if (persona === "context" && cfg.contextScan && repoInfo && repoRootNormalized) {
+  if (persona === PERSONAS.CONTEXT && cfg.contextScan && repoInfo && repoRootNormalized) {
       try {
         const repoRoot = repoRootNormalized;
         const components = Array.isArray(payloadObj.components) ? payloadObj.components
@@ -216,7 +217,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       }
     }
   
-    if (persona === "context" && cfg.contextScan && !repoInfo) {
+  if (persona === PERSONAS.CONTEXT && cfg.contextScan && !repoInfo) {
       scanSummaryText = scanSummaryText || "Context scan unavailable: repository could not be resolved.";
       logger.warn("context scan skipped: repo unresolved", { workflowId: msg.workflow_id, repo: payloadObj.repo, branch: payloadObj.branch });
     }
@@ -239,16 +240,16 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       }
     }
   
-    if (!scanSummaryText && persona !== "context" && persona !== "coordination") {
+    if (!scanSummaryText && persona !== PERSONAS.CONTEXT && persona !== PERSONAS.COORDINATION) {
       scanSummaryText = "Context summary not available.";
     }
   
     const scanSummaryForPrompt = scanArtifacts
-      ? clipText(scanArtifacts.summaryMd, persona === "context" ? 8000 : 4000)
+      ? clipText(scanArtifacts.summaryMd, persona === PERSONAS.CONTEXT ? 8000 : 4000)
       : (externalSummary ? clipText(externalSummary, 4000) : scanSummaryText);
   
     let promptFileSnippets: any[] = [];
-    if (persona !== "context" && repoRootNormalized) {
+    if (persona !== PERSONAS.CONTEXT && repoRootNormalized) {
       promptFileSnippets = await gatherPromptFileSnippets(repoRootNormalized, preferredPaths);
     }
   
@@ -259,7 +260,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       `Persona hints: ${ctx?.personaHints || ""}`
     ];
   
-    if (persona === "context") {
+    if (persona === PERSONAS.CONTEXT) {
       if (scanArtifacts) {
         userLines.push("Instruction: Use only the files, directories, and facts present in the scan summary above. If something is missing, explicitly state it was not observed.");
       } else {
@@ -276,11 +277,11 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     ];
   
     if (scanSummaryForPrompt && scanSummaryForPrompt.length) {
-      const label = persona === "context" ? "Authoritative file scan summary" : "File scan summary";
+      const label = persona === PERSONAS.CONTEXT ? "Authoritative file scan summary" : "File scan summary";
       messages.push({ role: "system", content: `${label}:\n${scanSummaryForPrompt}` });
     }
   
-    if (cfg.injectDashboardContext && (persona !== "context" || !scanArtifacts) && (ctx?.projectTree || ctx?.fileHotspots)) {
+    if (cfg.injectDashboardContext && (persona !== PERSONAS.CONTEXT || !scanArtifacts) && (ctx?.projectTree || ctx?.fileHotspots)) {
       messages.push({ role: "system", content: `Dashboard context (may be stale):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` });
     }
   
@@ -345,7 +346,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     logger.info("persona response", { persona, workflowId: msg.workflow_id, corrId: msg.corr_id || "", preview: responsePreview });
   
     // After model call: write/replace summary.md per SUMMARY_MODE
-    if (persona === "context" && scanArtifacts) {
+    if (persona === PERSONAS.CONTEXT && scanArtifacts) {
       try {
         const fs = await import("fs/promises");
         const pathMod = await import("path");
@@ -472,7 +473,7 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
     let externalSummary: string | null = null;
     let preferredPaths: string[] = [];
     let repoInfo: Awaited<ReturnType<typeof resolveRepoFromPayload>> | null = null;
-    if (persona !== "coordination") {
+    if (persona !== PERSONAS.COORDINATION) {
       try {
         repoInfo = await resolveRepoFromPayload(payloadObj);
       } catch (e:any) {
@@ -496,14 +497,14 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
       }
     }
   
-    if (!scanSummaryText && persona !== "context" && persona !== "coordination") {
+    if (!scanSummaryText && persona !== PERSONAS.CONTEXT && persona !== PERSONAS.COORDINATION) {
       scanSummaryText = "Context summary not available.";
     }
   
     const scanSummaryForPrompt = externalSummary ? clipText(externalSummary, 4000) : scanSummaryText;
   
     let promptFileSnippets: any[] = [];
-    if (persona !== "context" && repoRootNormalized) {
+    if (persona !== PERSONAS.CONTEXT && repoRootNormalized) {
       promptFileSnippets = await gatherPromptFileSnippets(repoRootNormalized, preferredPaths);
     }
   

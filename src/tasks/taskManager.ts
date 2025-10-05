@@ -6,6 +6,7 @@ import { parseMilestoneDate } from "../milestones/milestoneManager.js";
 import { logger } from "../logger.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "../agents/persona.js";
 import { summarizeTask } from "../agents/summarizer.js";
+import { PERSONAS } from "../personaNames.js";
 import { randomUUID } from "crypto";
 
 // Note: we do not persist externalId->createdId mapping here. The dashboard
@@ -143,7 +144,9 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     }
   
     if (!candidates.length) return null;
-  
+
+  // keep silent here; use logger.debug if needed
+
     candidates.sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
       if (a.due !== b.due) return a.due - b.due;
@@ -220,7 +223,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
   
   export function pickSuggestion(suggestions: any[] | undefined | null) {
     if (!Array.isArray(suggestions) || suggestions.length === 0) return null;
-    const preferred = suggestions.find(s => !s?.persona_required || s.persona_required === "lead-engineer");
+  const preferred = suggestions.find(s => !s?.persona_required || s.persona_required === PERSONAS.LEAD_ENGINEER);
     return suggestionToTask(preferred || suggestions[0]);
   }
 
@@ -336,7 +339,8 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
         const summaryParts = [title];
         if (schedule) summaryParts.push(`schedule: ${schedule}`);
         summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
-        summaries.push({ summary: summaryParts.join(" | "), title, externalId, createdId: createdId ? String(createdId) : undefined });
+        // Include description so downstream planners have the task details
+        summaries.push({ summary: summaryParts.join(" | "), title, externalId, createdId: createdId ? String(createdId) : undefined, description });
       } else {
         logger.warn("dashboard task creation failed", {
           stage: options.stage,
@@ -349,7 +353,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
         const summaryParts = [title];
         if (schedule) summaryParts.push(`schedule: ${schedule}`);
         summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
-        summaries.push({ summary: summaryParts.join(" | "), title, externalId });
+        summaries.push({ summary: summaryParts.join(" | "), title, externalId, description });
       }
     }
 
@@ -375,7 +379,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       try {
         const title = task.title || `${options.stage.toUpperCase()} follow-up`;
         const desc = task.description || task.summary || `Follow-up required for ${options.stage}`;
-        const condensed = await summarizeTask(r, workflowId, { title, description: desc, stage: options.stage, project_id: options.projectId }, { concise: true });
+  const condensed = await summarizeTask(r, workflowId, { title, description: desc, stage: options.stage, project_id: options.projectId }, { concise: true, persona: PERSONAS.SUMMARIZATION });
         if (condensed && String(condensed).trim().length) task.description = `${String(condensed).trim()}\n\n(Original)\n${desc}`;
       } catch (err) {
         logger.debug("summarizer helper failed for task, falling back to original description", { task: task.title, error: err });
