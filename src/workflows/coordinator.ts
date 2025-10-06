@@ -404,9 +404,9 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any, overr
                   }
 
                   // Try parsing each normalized candidate until one yields ops
-                  if (logger.info) logger.info('coordinator: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: normalizedCandidates.length });
-                  if (normalizedCandidates.length) {
-                    for (const nc of normalizedCandidates) logger.info('coordinator: candidate head', { workflowId, taskId: taskDescriptor?.id, head: String(nc).slice(0,200) });
+                  if (logger.debug) logger.debug('coordinator: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: normalizedCandidates.length });
+                  if (normalizedCandidates.length && logger.debug) {
+                    for (const nc of normalizedCandidates) logger.debug('coordinator: candidate head', { workflowId, taskId: taskDescriptor?.id, head: String(nc).slice(0,200) });
                   }
                   for (const c of normalizedCandidates) {
                     try {
