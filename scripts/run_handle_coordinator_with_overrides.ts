@@ -41,6 +41,18 @@ async function main() {
         throw e;
       }
     },
+    applyEditOps: async (jsonText: string, opts: any) => {
+      console.log('override applyEditOps: called with opts', { branchName: opts?.branchName || opts?.branchName });
+      const real = await import('../src/fileops.js');
+      try {
+        const res = await (real as any).applyEditOps(jsonText, { repoRoot: process.cwd(), branchName: opts?.branchName || opts?.branch || 'override-apply' });
+        console.log('override applyEditOps: result', res);
+        return res;
+      } catch (e) {
+        console.error('override applyEditOps: real apply threw', e);
+        throw e;
+      }
+    },
     persona: {
       sendPersonaRequest: async () => ({ ok: true }),
       waitForPersonaCompletion: async () => ({ fields: { result: {} }, id: 'evt-sim' }),
