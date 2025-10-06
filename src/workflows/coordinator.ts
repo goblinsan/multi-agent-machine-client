@@ -143,41 +143,29 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
 
   const projectInfo: any = await H.fetchProjectStatus(projectId);
   const details: any = await H.fetchProjectStatusDetails(projectId).catch(() => null);
-
-  let repoResolution = await H.resolveRepoFromPayload(payload || {});
-  let repoRoot = repoResolution.repoRoot;
-  let repoMeta = await H.getRepoMetadata(repoRoot);
-  let baseBranch = repoResolution.branch || repoMeta.currentBranch || cfg.git.defaultBranch || 'main';
   const projectName: string = firstString(projectInfo?.name, payload?.project_name) || 'project';
   const projectSlug: string = slugify(firstString(projectInfo?.slug, payload?.project_slug, projectName) || projectName || 'project');
 
-  // If the initially resolved repoRoot isn't a git repo, attempt a re-resolve using any available remote BEFORE checkout
-  let repoRemoteCandidate = firstString(
-    pickRemoteFrom(payload),
-    pickRemoteFrom(projectInfo),
+  // Always resolve repository from dashboard (or payload override) before any git operation
+  const repoRemoteCandidate = firstString(
     pickRemoteFrom(details),
-    repoMeta.remoteUrl,
-    repoResolution.remote
+    pickRemoteFrom(projectInfo),
+    pickRemoteFrom(payload)
   ) || '';
+  if (!repoRemoteCandidate) {
+    throw new Error(`No repository remote available for project ${projectId}. Set the project's repository URL in the dashboard.`);
+  }
+  let repoResolution = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
+  let repoRoot = repoResolution.repoRoot;
+  let repoMeta = await H.getRepoMetadata(repoRoot);
+  let baseBranch = repoResolution.branch || repoMeta.currentBranch || cfg.git.defaultBranch || 'main';
   logger.info("coordinator repo-resolve checkpoint", {
     workflowId,
     repoRoot,
     source: (repoResolution as any)?.source || 'unknown',
     hasGit: !!(repoMeta.currentBranch || repoMeta.remoteSlug),
-    remoteCandidate: !!repoRemoteCandidate
+    remoteCandidate: true
   });
-  // If we have no remote candidate and the current path is clearly not a repo and came from config default, fail early with guidance
-  if (!repoRemoteCandidate && !repoMeta.currentBranch && !repoMeta.remoteSlug && repoResolution.source === 'config_default') {
-    throw new Error(`No repository remote available for project ${projectId}. Provide payload.repo or set the project's repository URL in the dashboard. (Refusing to operate on ${repoRoot} because it is not a git repository.)`);
-  }
-  if ((!repoMeta.currentBranch && !repoMeta.remoteSlug) && repoRemoteCandidate) {
-    logger.info("coordinator re-resolve before checkout", { workflowId, repoRoot, remoteCandidate: repoRemoteCandidate });
-    const re = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
-    repoResolution = re;
-    repoRoot = re.repoRoot;
-    repoMeta = await H.getRepoMetadata(repoRoot);
-    baseBranch = re.branch || repoMeta.currentBranch || cfg.git.defaultBranch || baseBranch;
-  }
 
   // Build a flat list of tasks with milestone context if available
   type Item = { milestone: any | null; task: any };
@@ -221,23 +209,11 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       await H.checkoutBranchFromBase(repoRoot, baseBranch, branchName);
     } catch (err: any) {
       const msg = String(err?.message || err);
-      // Fallback: if checkout failed and we have a remote candidate, re-resolve and retry once
-      if (repoRemoteCandidate) {
-        logger.warn("coordinator checkout failed, retrying with re-resolve", { workflowId, repoRoot, baseBranch, branchName, error: msg });
-        const re = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
-        repoResolution = re;
-        repoRoot = re.repoRoot;
-        repoMeta = await H.getRepoMetadata(repoRoot);
-        baseBranch = re.branch || repoMeta.currentBranch || cfg.git.defaultBranch || baseBranch;
-        await H.checkoutBranchFromBase(repoRoot, baseBranch, branchName);
-      } else {
-        throw err;
-      }
+      throw new Error(`checkout failed: ${msg}`);
     }
-    logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
 
-  let repoSlug = repoMeta.remoteSlug;
-  let repoRemote = repoSlug ? `https://${repoSlug}.git` : (firstString(pickRemoteFrom(payload), pickRemoteFrom(projectInfo), pickRemoteFrom(details), repoMeta.remoteUrl, repoResolution.remote) || "");
+    let repoSlug = repoMeta.remoteSlug;
+    let repoRemote = repoSlug ? `https://${repoSlug}.git` : (firstString(pickRemoteFrom(payload), pickRemoteFrom(projectInfo), pickRemoteFrom(details), repoMeta.remoteUrl, repoResolution.remote) || "");
     if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
 
     // Context step
