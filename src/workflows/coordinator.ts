@@ -427,6 +427,8 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any, overr
                 if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
                   const editResult = await H.applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
                   if (editResult.changed.length > 0) {
+                    // Ensure the working branch is published before pushing specific paths
+                    try { await H.ensureBranchPublished(repoRoot, branchName); } catch (e) { /* non-fatal */ }
                     await H.commitAndPushPaths({
                       repoRoot,
                       branch: branchName,

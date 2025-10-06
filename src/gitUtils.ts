@@ -209,23 +209,34 @@ function branchFromPayload(payload: any): string | null {
   return null;
 }
 
+function isUuidLike(value: string) {
+  const s = value.trim();
+  // v1-v5 UUID pattern
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  // plain numeric IDs
+  const numericRe = /^[0-9]+$/;
+  return uuidRe.test(s) || numericRe.test(s);
+}
+
 function projectHintFromPayload(payload: any): string | null {
   if (!payload || typeof payload !== "object") return null;
-  // Prefer human-friendly project name / slug values before falling back to numeric ids
+  // Prefer human-friendly names/slugs; explicitly ignore UUIDs and bare numeric IDs
   const candidates = [
-    payload.project_slug,
-    payload.projectSlug,
     payload.project_name,
     payload.projectName,
     payload.project_title,
     payload.projectTitle,
+    payload.project_slug,
+    payload.projectSlug,
     payload.project,
     payload.projectId,
     payload.project_id
   ];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length) {
-      return candidate.trim();
+      const trimmed = candidate.trim();
+      if (isUuidLike(trimmed)) continue; // skip UUIDs and numeric ids
+      return trimmed;
     }
   }
   return null;
