@@ -211,13 +211,14 @@ function branchFromPayload(payload: any): string | null {
 
 function projectHintFromPayload(payload: any): string | null {
   if (!payload || typeof payload !== "object") return null;
+  // Prefer human-friendly project name / slug values before falling back to numeric ids
   const candidates = [
+    payload.project_slug,
+    payload.projectSlug,
     payload.project_name,
     payload.projectName,
     payload.project_title,
     payload.projectTitle,
-    payload.project_slug,
-    payload.projectSlug,
     payload.project,
     payload.projectId,
     payload.project_id

@@ -129,7 +129,7 @@ const logFile = (() => {
 const dashboardContextEndpoint = (() => {
   const raw = process.env.DASHBOARD_CONTEXT_ENDPOINT;
   if (raw && raw.trim().length) return raw.trim();
-  return "/v1/context/upsert";
+  return "/context/upsert";
 })();
 
 const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();

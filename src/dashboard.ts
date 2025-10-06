@@ -4,7 +4,20 @@ import { logger } from "./logger.js";
 
 export async function fetchContext(workflowId: string) {
   try {
-    const r = await fetch(`${cfg.dashboardBaseUrl}/api/context?workflow_id=${encodeURIComponent(workflowId)}`, {
+    // Use context-by-workflow endpoint if available in cfg.dashboardContextEndpoint (overrideable)
+    if (cfg.dashboardContextEndpoint && cfg.dashboardContextEndpoint.startsWith('http')) {
+      const url = new URL(cfg.dashboardContextEndpoint);
+      url.searchParams.set('workflow_id', workflowId);
+      url.searchParams.set('limit', '5');
+      const r = await fetch(url.toString(), {
+        headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+      });
+      if (!r.ok) throw new Error(`dashboard ${r.status}`);
+      const data = await r.json();
+      return data;
+    }
+
+    const r = await fetch(`${cfg.dashboardBaseUrl.replace(/\/$/, '')}/context/by-workflow?workflow_id=${encodeURIComponent(workflowId)}&limit=5`, {
       headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
     });
     if (!r.ok) throw new Error(`dashboard ${r.status}`);
@@ -124,7 +137,8 @@ export async function fetchProjectStatusSummary(projectId: string | null | undef
 
 export async function recordEvent(ev: any) {
   try {
-    await fetch(`${cfg.dashboardBaseUrl}/api/events`, {
+    const endpoint = `${cfg.dashboardBaseUrl.replace(/\/$/, '')}/v1/events`;
+    await fetch(endpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${cfg.dashboardApiKey}`,

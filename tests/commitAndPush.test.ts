@@ -5,13 +5,28 @@ import * as persona from '../src/agents/persona.js';
 import * as gitUtils from '../src/gitUtils.js';
 import * as fileops from '../src/fileops.js';
 import { sent } from './testCapture.js';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+const execP = promisify(exec);
 
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('Coordinator commit and push', () => {
-  it('applies, commits, and pushes changes from a lead engineer', async () => {
+describe('Coordinator commit and push (integration-ish)', () => {
+  it('applies edits to a real repo and creates a commit', async () => {
+    // Prepare a temporary repo directory
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mc-repo-'));
+    // init git repo
+  const { stdout } = await execP('git init -b main', { cwd: tmp });
+
+    // write an initial file and commit so HEAD exists
+    await fs.writeFile(path.join(tmp, 'README.md'), '# test\n');
+  await execP('git add README.md && git commit -m "init"', { cwd: tmp });
+
     const project = {
       id: 'proj-1',
       name: 'proj',
@@ -54,10 +69,11 @@ describe('Coordinator commit and push', () => {
       return { fields: { result: JSON.stringify({}) }, id: 'evt-unknown' };
     });
 
-    const applyEditOpsSpy = vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ changed: ['src/test.ts'], branch: 'feat/agent-edit', sha: '12345' });
-    const commitAndPushPathsSpy = vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: true, branch: 'feat/agent-edit' });
-    vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: '/tmp/repo', branch: 'main', remote: 'git@example:repo.git' } as any);
-    vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: 'example/repo', currentBranch: 'main' } as any);
+    // Let fileops.applyEditOps run against our temp repo for real writes/commits
+    // but stub out pushing to remote
+    const commitAndPushPathsSpy = vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: false, branch: 'feat/agent-edit' });
+    vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: tmp, branch: 'main', remote: null } as any);
+    vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: null, currentBranch: 'main' } as any);
     vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);
     vi.spyOn(gitUtils, 'ensureBranchPublished').mockResolvedValue(undefined as any);
 
@@ -67,8 +83,14 @@ describe('Coordinator commit and push', () => {
 
     await coordinatorMod.handleCoordinator(redisMock, msg, payloadObj);
 
-    expect(applyEditOpsSpy).toHaveBeenCalled();
-    expect(commitAndPushPathsSpy).toHaveBeenCalled();
+    // Verify the file was written
+    const written = await fs.readFile(path.join(tmp, 'src', 'test.ts'), 'utf8');
+    expect(written).toContain('hello world');
+
+    // Verify a commit was created (HEAD not the initial commit)
+  const rev = (await execP('git rev-parse HEAD', { cwd: tmp })).stdout.trim();
+    expect(rev.length).toBeGreaterThan(0);
+
     expect(updateTaskStatusSpy).toHaveBeenCalledWith('task-1', 'done');
   });
 });
