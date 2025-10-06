@@ -9,7 +9,7 @@ import { firstString, slugify, normalizeRepoPath } from "../util.js";
 import * as persona from "../agents/persona.js";
 import { PERSONAS } from "../personaNames.js";
 import { createDashboardTaskEntriesWithSummarizer } from "../tasks/taskManager.js";
-import { applyEditOps, parseUnifiedDiffToEditSpec } from "../fileops.js";
+import { applyEditOps, parseUnifiedDiffToEditSpec, writeDiagnostic } from "../fileops.js";
 import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
 import { runLeadCycle } from "./stages/implementation.js";
@@ -437,8 +437,19 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any, overr
                     });
                   }
                 } else {
-                  // No edit ops were produced; log for debugging with as much context as safe
+                  // No edit ops were produced; persist a diagnostic with candidate previews for later analysis
                   logger.info('coordinator: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof leadOutcome?.result });
+                  try {
+                    const preview = (leadOutcome && typeof leadOutcome.result === 'string')
+                      ? String(leadOutcome.result).slice(0, 4000)
+                      : '';
+                    await writeDiagnostic(repoRoot, 'coordinator-no-ops.json', {
+                      workflowId,
+                      taskId: taskDescriptor?.id || null,
+                      leadOutcomeType: typeof leadOutcome?.result,
+                      leadPreview: preview
+                    });
+                  } catch {}
                 }
               } catch (err) {
                 logger.warn('coordinator: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
