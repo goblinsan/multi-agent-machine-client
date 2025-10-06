@@ -44,7 +44,7 @@ async function main() {
   logger.info("worker ready", {
     personas: cfg.allowedPersonas,
     projectBase: cfg.projectBase,
-    defaultRepo: cfg.repoRoot,
+    defaultRepoParent: cfg.projectBase,
     contextScan: cfg.contextScan,
     summaryMode: cfg.summaryMode,
     logFile: cfg.log.file,

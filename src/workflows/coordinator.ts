@@ -159,11 +159,19 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     repoMeta.remoteUrl,
     repoResolution.remote
   ) || '';
+  logger.info("coordinator repo-resolve checkpoint", {
+    workflowId,
+    repoRoot,
+    source: (repoResolution as any)?.source || 'unknown',
+    hasGit: !!(repoMeta.currentBranch || repoMeta.remoteSlug),
+    remoteCandidate: !!repoRemoteCandidate
+  });
   // If we have no remote candidate and the current path is clearly not a repo and came from config default, fail early with guidance
   if (!repoRemoteCandidate && !repoMeta.currentBranch && !repoMeta.remoteSlug && repoResolution.source === 'config_default') {
     throw new Error(`No repository remote available for project ${projectId}. Provide payload.repo or set the project's repository URL in the dashboard. (Refusing to operate on ${repoRoot} because it is not a git repository.)`);
   }
   if ((!repoMeta.currentBranch && !repoMeta.remoteSlug) && repoRemoteCandidate) {
+    logger.info("coordinator re-resolve before checkout", { workflowId, repoRoot, remoteCandidate: repoRemoteCandidate });
     const re = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
     repoResolution = re;
     repoRoot = re.repoRoot;
@@ -215,6 +223,7 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       const msg = String(err?.message || err);
       // Fallback: if checkout failed and we have a remote candidate, re-resolve and retry once
       if (repoRemoteCandidate) {
+        logger.warn("coordinator checkout failed, retrying with re-resolve", { workflowId, repoRoot, baseBranch, branchName, error: msg });
         const re = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
         repoResolution = re;
         repoRoot = re.repoRoot;

@@ -77,20 +77,16 @@ function parsePersonaTimeouts(raw: Record<string, unknown>) {
 
 const projectBaseRaw = process.env.PROJECT_BASE || "./repo";
 const projectBase = path.resolve(expandHome(projectBaseRaw)!);
-// DEFAULT_REPO_NAME is deprecated and ignored; use fixed default folder name
+// DEFAULT_REPO_NAME env is deprecated and ignored, but we still keep a fixed fallback name for path construction utilities
 const defaultRepoName = "active";
-// REPO_ROOT is deprecated and ignored. Always place default repo under PROJECT_BASE/DEFAULT_REPO_NAME.
-let repoRoot = path.resolve(path.join(projectBase, defaultRepoName));
+// No placeholder repo under PROJECT_BASE. The default path is the PROJECT_BASE itself (parent folder for repos), never a repo.
+const repoRoot = projectBase;
 // If someone still sets REPO_ROOT, warn that it's ignored (deprecated)
 if (process.env.REPO_ROOT && process.env.REPO_ROOT.trim().length) {
-  console.warn("[config] REPO_ROOT env var is deprecated and ignored. Repos are managed under PROJECT_BASE/'active' by default.");
+  console.warn("[config] REPO_ROOT env var is deprecated and ignored. Repositories must be resolved from payload or remote; PROJECT_BASE is only a parent folder.");
 }
 if (process.env.DEFAULT_REPO_NAME && process.env.DEFAULT_REPO_NAME.trim().length) {
-  console.warn("[config] DEFAULT_REPO_NAME env var is deprecated and ignored. Using fixed default folder 'active'.");
-}
-// Guardrail: repoRoot should not be exactly the same as PROJECT_BASE. If equal, nest under defaultRepoName.
-if (repoRoot === projectBase) {
-  repoRoot = path.join(projectBase, defaultRepoName);
+  console.warn("[config] DEFAULT_REPO_NAME env var is deprecated and ignored.");
 }
 
 const maxFileBytes = Number(process.env.MAX_FILE_BYTES || 524288);
