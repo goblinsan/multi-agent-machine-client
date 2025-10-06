@@ -7,10 +7,7 @@ import * as fileops from '../src/fileops.js';
 import { sent } from './testCapture.js';
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-const execP = promisify(exec);
+import { makeTempRepo } from './makeTempRepo';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -19,13 +16,7 @@ beforeEach(() => {
 describe('Coordinator commit and push (integration-ish)', () => {
   it('applies edits to a real repo and creates a commit', async () => {
     // Prepare a temporary repo directory
-    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mc-repo-'));
-    // init git repo
-  const { stdout } = await execP('git init -b main', { cwd: tmp });
-
-    // write an initial file and commit so HEAD exists
-    await fs.writeFile(path.join(tmp, 'README.md'), '# test\n');
-  await execP('git add README.md && git commit -m "init"', { cwd: tmp });
+    const tmp = await makeTempRepo({ 'README.md': '# test\n' });
 
     const project = {
       id: 'proj-1',
@@ -88,7 +79,12 @@ describe('Coordinator commit and push (integration-ish)', () => {
     expect(written).toContain('hello world');
 
     // Verify a commit was created (HEAD not the initial commit)
-  const rev = (await execP('git rev-parse HEAD', { cwd: tmp })).stdout.trim();
+    // Confirm HEAD exists by reading the commit hash via file system interaction is enough here,
+    // but we still verify with git rev-parse with explicit cwd
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execP = promisify(exec);
+    const rev = (await execP('git rev-parse HEAD', { cwd: tmp })).stdout.trim();
     expect(rev.length).toBeGreaterThan(0);
 
     expect(updateTaskStatusSpy).toHaveBeenCalledWith('task-1', 'done');

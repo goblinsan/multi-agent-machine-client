@@ -3,24 +3,13 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import { applyEditOps } from '../src/fileops'
+import { makeTempRepo } from './makeTempRepo'
 
-// util to create a temp git repo similar to other tests
-async function makeRepo() {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mc-repo-'))
-  await fs.writeFile(path.join(dir, 'package.json'), JSON.stringify({ name: 'tmp' }))
-  // init git
-  // run git commands using child_process.execSync to keep test simple and deterministic
-  const child = await import('child_process')
-  const execSync = child.execSync;
-  execSync('git init -b main', { cwd: dir });
-  execSync('git add .', { cwd: dir });
-  execSync('git commit -m init', { cwd: dir });
-  return dir;
-}
+// use standardized helper
 
 describe('applyEditOps hunks application', () => {
   it('applies hunks to an existing file when context matches', async () => {
-    const repo = await makeRepo();
+  const repo = await makeTempRepo({ 'package.json': JSON.stringify({ name: 'tmp' }) });
     const target = path.join(repo, 'src');
     await fs.mkdir(target, { recursive: true });
     const filePath = path.join(target, 'file.js');
@@ -50,7 +39,7 @@ describe('applyEditOps hunks application', () => {
   });
 
   it('falls back to provided content if context mismatch', async () => {
-    const repo = await makeRepo();
+  const repo = await makeTempRepo({ 'package.json': JSON.stringify({ name: 'tmp' }) });
     const target = path.join(repo, 'src');
     await fs.mkdir(target, { recursive: true });
     const filePath = path.join(target, 'file2.js');
