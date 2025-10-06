@@ -9,7 +9,7 @@ import { firstString, slugify, normalizeRepoPath } from "../util.js";
 import * as persona from "../agents/persona.js";
 import { PERSONAS } from "../personaNames.js";
 import { createDashboardTaskEntriesWithSummarizer } from "../tasks/taskManager.js";
-import { applyEditOps } from "../fileops.js";
+import { applyEditOps, parseUnifiedDiffToEditSpec } from "../fileops.js";
 import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
 import { runLeadCycle } from "./stages/implementation.js";
@@ -321,17 +321,87 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
           // Diagnostic: show leadOutcome so we can see if coordinator considers the lead successful
           if (logger.debug) logger.debug('leadOutcome', { taskId: taskDescriptor?.id, leadOutcome: (leadOutcome && typeof leadOutcome === 'object') ? { success: !!leadOutcome.success, noChanges: !!leadOutcome.noChanges } : leadOutcome });
           if (leadOutcome && leadOutcome.success && taskDescriptor && taskDescriptor.id) {
-            if (leadOutcome.result) {
-              const editResult = await applyEditOps(JSON.stringify(leadOutcome.result), { repoRoot, branchName });
-              if (editResult.changed.length > 0) {
-                await commitAndPushPaths({
-                  repoRoot,
-                  branch: branchName,
-                  message: `feat: ${taskName}`,
-                  paths: editResult.changed,
-                });
+              // If the lead returned an explicit edit spec, apply it. Otherwise, try to
+              // detect a unified diff (preview/diff bundle) in the lead result and convert
+              // it into an edit spec and apply those edits.
+              try {
+                let editSpecObj: any = null;
+                // If the lead already provided a structured edit spec, use it directly
+                if (leadOutcome.result && typeof leadOutcome.result === 'object' && Array.isArray(leadOutcome.result.ops)) {
+                  editSpecObj = leadOutcome.result;
+                } else {
+                  // Build a list of candidate text fields that may contain a diff preview
+                  const rawCandidates: Array<string | null> = [];
+                  try {
+                    if (leadOutcome) {
+                      const r = leadOutcome.result;
+                      if (typeof r === 'string') rawCandidates.push(r);
+                      if (r && typeof r === 'object') {
+                        rawCandidates.push(r.preview ?? null);
+                        rawCandidates.push(r.output ?? null);
+                        rawCandidates.push(r.raw && typeof r.raw === 'string' ? r.raw : null);
+                        rawCandidates.push(r.message ?? null);
+                        // some personas place the human-visible text under 'text' or 'body'
+                        rawCandidates.push(r.text ?? null);
+                        rawCandidates.push(r.body ?? null);
+                      }
+                      // also check top-level fields on the leadOutcome object
+                      rawCandidates.push((leadOutcome.preview && typeof leadOutcome.preview === 'string') ? leadOutcome.preview : null);
+                      rawCandidates.push((leadOutcome.output && typeof leadOutcome.output === 'string') ? leadOutcome.output : null);
+                    }
+                  } catch (err) {
+                    // ignore introspection errors
+                  }
+
+                  // Normalize candidates: remove surrounding commentary and extract fenced blocks
+                  const normalizedCandidates: string[] = [];
+                  for (const c of rawCandidates) {
+                    if (!c || typeof c !== 'string') continue;
+                    let txt = c;
+                    // If wrapped in a code fence, extract inner content
+                    const fence = /```(?:diff)?\n([\s\S]*?)```/.exec(txt);
+                    if (fence && fence[1]) txt = fence[1];
+                    // Remove lines like "Changed Files:\n..." that sometimes prefix diffs
+                    const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
+                    if (idx >= 0) txt = txt.slice(idx);
+                    // Quick heuristic: contains diff indicators?
+                    if (txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/')) normalizedCandidates.push(txt);
+                  }
+
+                  // Try parsing each normalized candidate until one yields ops
+                  for (const c of normalizedCandidates) {
+                    try {
+                      const parsed = parseUnifiedDiffToEditSpec(c);
+                      if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) {
+                        editSpecObj = parsed;
+                        break;
+                      } else {
+                        // Emit a diagnostic so we can see why a candidate didn't produce ops
+                        logger.debug('coordinator: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidatePreview: c.slice(0, 200) });
+                      }
+                    } catch (err) {
+                      logger.debug('coordinator: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, error: String(err).slice(0,200) });
+                    }
+                  }
+                }
+
+                if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
+                  const editResult = await applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
+                  if (editResult.changed.length > 0) {
+                    await commitAndPushPaths({
+                      repoRoot,
+                      branch: branchName,
+                      message: `feat: ${taskName}`,
+                      paths: editResult.changed,
+                    });
+                  }
+                } else {
+                  // No edit ops were produced; log for debugging with as much context as safe
+                  logger.info('coordinator: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof leadOutcome?.result });
+                }
+              } catch (err) {
+                logger.warn('coordinator: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
               }
-            }
             try {
               // Diagnostic: log intent to update task status
               if (logger.debug) logger.debug('about to updateTaskStatus', { taskId: String(taskDescriptor.id), workflowId });
