@@ -1,0 +1,329 @@
+{
+  "generatedAt": "2025-10-06T21:49:08.576Z",
+  "requests": [
+    {
+      "step": "1-context",
+      "role": "Hydrate project context",
+      "toPersona": "context",
+      "corrId": "683f73c8-02aa-4037-96b0-76e9d7d474da",
+      "payload": {
+        "repo": "https://example/repo.git",
+        "branch": "feat/task-1",
+        "project_id": "proj-1",
+        "project_slug": "proj",
+        "project_name": "proj",
+        "milestone": null,
+        "milestone_name": "Milestone",
+        "task": {
+          "id": "task-1",
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        },
+        "task_name": "task-1",
+        "upload_dashboard": true
+      }
+    },
+    {
+      "step": "2-plan",
+      "role": "Implementation planning (planner)",
+      "toPersona": "implementation-planner",
+      "corrId": "b04450ea-d4d3-4f7a-872c-294d488c396e",
+      "payload": {
+        "repo": "https://example/repo.git",
+        "branch": "feat/task-1",
+        "project_id": "proj-1",
+        "project_slug": "proj",
+        "project_name": "proj",
+        "milestone": {
+          "task": {
+            "id": "task-1",
+            "name": "task-1",
+            "slug": "task-1",
+            "status": "open",
+            "normalized_status": "open",
+            "branch": null,
+            "summary": null
+          }
+        },
+        "milestone_name": "Milestone",
+        "milestone_slug": "milestone",
+        "task": {
+          "id": "task-1",
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        },
+        "task_name": "task-1",
+        "base_branch": "main",
+        "revision": 0,
+        "plan_request": {
+          "attempt": 1,
+          "requires_approval": true,
+          "revision": 0
+        }
+      }
+    },
+    {
+      "step": "2-implementation",
+      "role": "Lead implementation (engineer)",
+      "toPersona": "lead-engineer",
+      "corrId": "d3825b75-14c7-4910-8e18-f027e2f71bd2",
+      "payload": {
+        "repo": "https://example/repo.git",
+        "branch": "feat/task-1",
+        "project_id": "proj-1",
+        "project_slug": "proj",
+        "project_name": "proj",
+        "milestone": {
+          "task": {
+            "id": "task-1",
+            "name": "task-1",
+            "slug": "task-1",
+            "status": "open",
+            "normalized_status": "open",
+            "branch": null,
+            "summary": null
+          }
+        },
+        "milestone_name": "Milestone",
+        "milestone_slug": "milestone",
+        "task": {
+          "id": "task-1",
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        },
+        "task_name": "task-1",
+        "base_branch": "main",
+        "revision": 0,
+        "approved_plan": {
+          "plan": [
+            {
+              "goal": "feature"
+            }
+          ]
+        },
+        "approved_plan_steps": [
+          {
+            "goal": "feature"
+          }
+        ],
+        "plan_text": "",
+        "plan_history": [
+          {
+            "attempt": 1,
+            "content": "",
+            "payload": {
+              "plan": [
+                {
+                  "goal": "feature"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "step": "3-qa",
+      "role": "QA test run",
+      "toPersona": "tester-qa",
+      "corrId": "27ca773d-a717-445b-8ee4-1ee6077b71c2",
+      "payload": {
+        "repo": "https://example/repo.git",
+        "branch": "feat/task-1",
+        "project_id": "proj-1",
+        "milestone": {
+          "task": {
+            "id": "task-1",
+            "name": "task-1",
+            "slug": "task-1",
+            "status": "open",
+            "normalized_status": "open",
+            "branch": null,
+            "summary": null
+          }
+        },
+        "task": {
+          "id": "task-1",
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        },
+        "commands": []
+      }
+    },
+    {
+      "step": "qa-created-tasks",
+      "role": "QA follow-up - created tasks (after summarizer/create)",
+      "toPersona": "implementation-planner",
+      "corrId": "f5386585-0fba-42f0-b141-8a2b1181d064",
+      "payload": {
+        "created_tasks": [
+          {
+            "title": "QA failure task",
+            "externalId": "ext-1",
+            "createdId": "t-1",
+            "description": "Condensed description about missing tests"
+          }
+        ],
+        "stage": "qa",
+        "milestone": {
+          "task": {
+            "id": "task-1",
+            "name": "task-1",
+            "slug": "task-1",
+            "status": "open",
+            "normalized_status": "open",
+            "branch": null,
+            "summary": null
+          }
+        },
+        "parent_task": {
+          "id": "task-1",
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        },
+        "qa_result": {
+          "status": "fail",
+          "details": "no tests",
+          "tasks": []
+        }
+      }
+    },
+    {
+      "step": "3.5-evaluate-qa-plan",
+      "role": "Workflow step",
+      "toPersona": "plan-evaluator",
+      "corrId": "8420d208-5653-4d12-8a71-a23fca1cad6c",
+      "payload": {
+        "qa_feedback": {
+          "status": "fail",
+          "details": "no tests",
+          "tasks": []
+        },
+        "plan": {
+          "payload": {
+            "plan": [
+              {
+                "goal": "fix tests",
+                "key_files": [],
+                "owners": [
+                  "dev"
+                ]
+              }
+            ]
+          },
+          "output": ""
+        }
+      }
+    },
+    {
+      "step": "4-implementation-plan",
+      "role": "Implementation planning for QA follow-ups",
+      "toPersona": "implementation-planner",
+      "corrId": "21a275be-91af-4eca-8dc1-549f6e738dbc",
+      "payload": {
+        "qa_result": {
+          "status": "fail",
+          "details": "no tests",
+          "tasks": []
+        },
+        "planner_result": {
+          "payload": {
+            "plan": [
+              {
+                "goal": "fix tests",
+                "key_files": [],
+                "owners": [
+                  "dev"
+                ]
+              }
+            ]
+          },
+          "output": ""
+        },
+        "created_tasks": [
+          {
+            "title": "QA failure task",
+            "externalId": "ext-1",
+            "createdId": "t-1",
+            "description": "Condensed description about missing tests"
+          }
+        ],
+        "milestone": {
+          "task": {
+            "id": "task-1",
+            "name": "task-1",
+            "slug": "task-1",
+            "status": "open",
+            "normalized_status": "open",
+            "branch": null,
+            "summary": null
+          }
+        },
+        "task": {
+          "id": "task-1",
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        },
+        "project_id": "proj-1"
+      }
+    },
+    {
+      "step": "3-route",
+      "role": "Workflow step",
+      "toPersona": "project-manager",
+      "corrId": "ec8e6adf-57ae-426f-b246-f508ed424f84",
+      "payload": {
+        "qa_result": {
+          "status": "fail",
+          "details": "no tests",
+          "tasks": []
+        },
+        "project_id": "proj-1",
+        "milestone": {
+          "task": {
+            "id": "task-1",
+            "name": "task-1",
+            "slug": "task-1",
+            "status": "open",
+            "normalized_status": "open",
+            "branch": null,
+            "summary": null
+          }
+        },
+        "task": {
+          "id": "task-1",
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        }
+      }
+    }
+  ]
+}

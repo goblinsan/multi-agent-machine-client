@@ -11,3 +11,10 @@ Per-machine worker that:
 8) **Alembic aware**: if an `alembic/` tree exists, summary includes latest version files.
 
 See `.env.example` for config.
+
+## Repo workspace semantics
+
+- PROJECT_BASE is a parent directory where local repositories are managed.
+- The default local repository folder (when none is specified in the payload) is fixed to 'active', i.e., PROJECT_BASE/active.
+- REPO_ROOT is deprecated and ignored. If set, it will be logged as deprecated and not used.
+- For multi-repo workflows, the coordinator resolves the target repository dynamically from the payload (repo_root when it points to an actual git repo, or by cloning from the dashboard’s repository URL using a project name/slug hint).

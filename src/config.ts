@@ -75,11 +75,19 @@ function parsePersonaTimeouts(raw: Record<string, unknown>) {
   return out;
 }
 
-const projectBaseRaw = process.env.PROJECT_BASE || process.env.REPO_ROOT || "./repo";
+const projectBaseRaw = process.env.PROJECT_BASE || "./repo";
 const projectBase = path.resolve(expandHome(projectBaseRaw)!);
-const defaultRepoName = (process.env.DEFAULT_REPO_NAME || "active").trim() || "active";
-const repoRootRaw = process.env.REPO_ROOT ? process.env.REPO_ROOT : path.join(projectBase, defaultRepoName);
-const repoRoot = path.resolve(expandHome(repoRootRaw)!);
+// DEFAULT_REPO_NAME env is deprecated and ignored, but we still keep a fixed fallback name for path construction utilities
+const defaultRepoName = "active";
+// No placeholder repo under PROJECT_BASE. The default path is the PROJECT_BASE itself (parent folder for repos), never a repo.
+const repoRoot = projectBase;
+// If someone still sets REPO_ROOT, warn that it's ignored (deprecated)
+if (process.env.REPO_ROOT && process.env.REPO_ROOT.trim().length) {
+  console.warn("[config] REPO_ROOT env var is deprecated and ignored. Repositories must be resolved from payload or remote; PROJECT_BASE is only a parent folder.");
+}
+if (process.env.DEFAULT_REPO_NAME && process.env.DEFAULT_REPO_NAME.trim().length) {
+  console.warn("[config] DEFAULT_REPO_NAME env var is deprecated and ignored.");
+}
 
 const maxFileBytes = Number(process.env.MAX_FILE_BYTES || 524288);
 const allowedExts = splitCsv(process.env.ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.py,.md,.json,.yml,.yaml,.css,.html,.sh,.bat", [])
@@ -129,7 +137,7 @@ const logFile = (() => {
 const dashboardContextEndpoint = (() => {
   const raw = process.env.DASHBOARD_CONTEXT_ENDPOINT;
   if (raw && raw.trim().length) return raw.trim();
-  return "/v1/context/upsert";
+  return "/context/upsert";
 })();
 
 const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();

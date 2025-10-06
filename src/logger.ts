@@ -30,13 +30,36 @@ function ensureStream() {
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
   } catch {}
   try {
+    // write a header synchronously so the file is populated immediately and we observe any permission errors
+    const header = `# machine-client log (level=${configuredLevel}) started ${new Date().toISOString()}\n`;
+    try {
+      fs.appendFileSync(logFile, header);
+    } catch (e) {
+      console.error("[logger] failed to append header to log file synchronously", e);
+    }
     stream = fs.createWriteStream(logFile, { flags: "a" });
-    stream.write(`# machine-client log (level=${configuredLevel}) started ${new Date().toISOString()}\n`);
+    // attach handlers to surface errors early
+    stream.on('error', (err) => {
+      console.error('[logger] write stream error', err);
+      try { stream?.end(); } catch(_) {}
+      stream = null;
+    });
+    stream.on('open', () => {
+      if (consoleEnabled) console.log(`[logger] log stream opened ${logFile}`);
+    });
   } catch (e) {
     console.error("[logger] failed to create log file stream", e);
     stream = null;
   }
   return stream;
+}
+
+export function getLogFilePath() {
+  return logFile;
+}
+
+export function isFileLoggingActive() {
+  return !!stream;
 }
 
 function serialize(value: any): any {

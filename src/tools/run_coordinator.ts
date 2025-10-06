@@ -1,5 +1,6 @@
 import { makeRedis } from "../redisClient.js";
 import { cfg } from "../config.js";
+import { PERSONAS } from "../personaNames.js";
 
 function printUsage() {
   console.error("Usage: npm run coordinator [--drain|--drain-only] <project_id> [repo_url] [base_branch]");
@@ -79,7 +80,7 @@ async function main() {
     workflow_id: `wf_coord_${Date.now()}`,
     step: "00",
     from: "user",
-    to_persona: "coordination",
+  to_persona: PERSONAS.COORDINATION,
     intent: "orchestrate_milestone",
     corr_id: corrId,
     payload: JSON.stringify(payload),
