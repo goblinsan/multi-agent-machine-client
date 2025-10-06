@@ -7,5 +7,6 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     dir: path.resolve(process.cwd()),
+    setupFiles: [path.resolve(process.cwd(), 'tests/setup.ts')],
   },
 });
