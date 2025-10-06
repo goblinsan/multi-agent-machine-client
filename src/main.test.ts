@@ -12,4 +12,3 @@ describe('main.tsx', () => {
     expect(() => require('./main')).not.toThrow();
   });
 });
-```
