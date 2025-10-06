@@ -1,0 +1,226 @@
+openapi: 3.1.0
+info:
+  title: MADB API - External ID & Coordinator-Friendly CRUD (Proposal)
+  version: 0.2.0-proposal
+paths:
+  /v1/tasks:upsert:
+    post:
+      tags: [tasks]
+      summary: Upsert Task by external_id or natural key
+      description: |
+        Create a task if it does not exist or update and return the canonical task if it does.
+        Primary natural key is external_id. As a fallback, the server MAY support
+        (project_id + milestone_slug + task_slug) if external_id is not provided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                external_id: { type: string }
+                project_id: { type: string, format: uuid }
+                project_slug: { type: string }
+                milestone_id: { type: string, format: uuid }
+                milestone_slug: { type: string }
+                parent_task_id: { type: string, format: uuid }
+                title: { type: string }
+                description: { type: string }
+                assignee_persona: { type: string }
+                effort_estimate: { type: number }
+                priority_score: { type: number }
+                options:
+                  type: object
+                  properties:
+                    initial_status:
+                      type: string
+                      enum: [done, in_progress, on_hold]
+              required: [title]
+      responses:
+        '200':
+          description: Task existed and was returned.
+          headers:
+            Location: { description: Canonical resource URL, schema: { type: string, format: uri } }
+            ETag: { description: Weak etag with lock_version (W/"<n>") , schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRead' }
+        '201':
+          description: Task created.
+          headers:
+            Location: { description: Canonical resource URL, schema: { type: string, format: uri } }
+            ETag: { description: Weak etag with lock_version (W/"<n>") , schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRead' }
+        '409':
+          description: Conflicting external_id assignment.
+        '422':
+          description: Validation error (e.g., unknown milestone_slug).
+  /v1/tasks/resolve:
+    get:
+      tags: [tasks]
+      summary: Resolve a task by external_id or natural key
+      parameters:
+        - in: query
+          name: external_id
+          schema: { type: string }
+        - in: query
+          name: project_id
+          schema: { type: string, format: uuid }
+        - in: query
+          name: milestone_slug
+          schema: { type: string }
+        - in: query
+          name: task_slug
+          schema: { type: string }
+      responses:
+        '200': { description: Found, content: { application/json: { schema: { $ref: '#/components/schemas/TaskRead' } } } }
+        '404': { description: Not found }
+  /v1/tasks/{task_id}/status:
+    patch:
+      tags: [tasks]
+      summary: Update task status by id with optimistic concurrency
+      parameters:
+        - in: path
+          name: task_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [done, in_progress, on_hold] }
+                # Optionally support numeric lock_version in body, or use If-Match header with ETag
+                lock_version: { type: integer, nullable: true }
+              required: [status]
+      responses:
+        '200':
+          description: Updated
+          headers:
+            ETag: { description: New weak etag W/"<lock_version>", schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRead' }
+        '409':
+          description: Conflict (stale lock_version)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, example: 'conflict' }
+                  lock_version: { type: integer }
+                  task: { $ref: '#/components/schemas/TaskRead' }
+        '422': { description: Validation error }
+  /v1/tasks/by-external/{external_id}/status:
+    patch:
+      tags: [tasks]
+      summary: Update task status by external_id with optimistic concurrency
+      parameters:
+        - in: path
+          name: external_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [done, in_progress, on_hold] }
+                lock_version: { type: integer, nullable: true }
+              required: [status]
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/TaskRead' } } } }
+        '409': { description: Conflict with current lock_version, content: { application/json: { schema: { $ref: '#/components/schemas/TaskRead' } } } }
+        '404': { description: Not found }
+  /v1/tasks/status:batch:
+    post:
+      tags: [tasks]
+      summary: Batch update statuses by id or external_id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  external_id: { type: string }
+                  status: { type: string, enum: [done, in_progress, on_hold] }
+                  lock_version: { type: integer, nullable: true }
+                required: [status]
+      responses:
+        '200':
+          description: Per-item results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    ok: { type: boolean }
+                    id: { type: string, nullable: true }
+                    external_id: { type: string, nullable: true }
+                    status: { type: integer }
+                    lock_version: { type: integer, nullable: true }
+                    error: { type: string, nullable: true }
+  /v1/projects/{project_id}/milestones:upsert:
+    post:
+      tags: [milestones]
+      summary: Upsert milestone by slug
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slug: { type: string }
+                name: { type: string }
+                start_date: { type: string, format: date }
+                due_date: { type: string, format: date }
+              required: [slug]
+      responses:
+        '200': { description: Found/updated, content: { application/json: { schema: { $ref: '#/components/schemas/MilestoneRead' } } } }
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/MilestoneRead' } } } }
+components:
+  schemas:
+    TaskRead:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        external_id: { type: string, nullable: true }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        project_id: { type: string, format: uuid }
+        milestone_id: { type: string, format: uuid, nullable: true }
+        milestone_slug: { type: string, nullable: true }
+        parent_task_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [done, in_progress, on_hold] }
+        lock_version: { type: integer }
+        assignee_persona: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    MilestoneRead:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        start_date: { type: string, format: date, nullable: true }
+        due_date: { type: string, format: date, nullable: true }
