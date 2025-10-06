@@ -23,10 +23,16 @@ describe('handleCoordinator with overrides', () => {
       selectNextTask: () => ({ id: 't', name: 't' }),
       runLeadCycle: async () => ({ success: true, result: preview }),
       parseUnifiedDiffToEditSpec: async (txt: string) => { parserCalled = true; const real = await import('../src/fileops.js'); return (real as any).parseUnifiedDiffToEditSpec(txt); },
-      applyEditOps: async (jsonText: string, opts: any) => { applyCalled = true; const real = await import('../src/fileops.js'); return (real as any).applyEditOps(jsonText, { repoRoot: process.cwd(), branchName: opts?.branchName || opts?.branch }); }
+      applyEditOps: async (jsonText: string, opts: any) => { applyCalled = true; const real = await import('../src/fileops.js'); return (real as any).applyEditOps(jsonText, { repoRoot: process.cwd(), branchName: opts?.branchName || opts?.branch }); },
+      persona: {
+        sendPersonaRequest: async () => ({ ok: true }),
+        waitForPersonaCompletion: async () => ({ fields: { result: {} }, id: 'evt-test' }),
+        parseEventResult: (r: any) => r,
+        interpretPersonaStatus: (r: any) => ({ status: 'pass' })
+      }
     };
 
-    await (coord as any).handleCoordinator({}, { workflow_id: 'test-wf' }, { repo: process.cwd(), branch: 'milestone/test' }, overrides);
+  await (coord as any).handleCoordinator({}, { workflow_id: 'test-wf', project_id: 'sim-proj' }, { repo: process.cwd(), branch: 'milestone/test', project_id: 'sim-proj' }, overrides);
 
     expect(parserCalled).toBe(true);
     expect(applyCalled).toBe(true);
