@@ -111,10 +111,10 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   const projectInfo: any = await H.fetchProjectStatus(projectId);
   const details: any = await H.fetchProjectStatusDetails(projectId).catch(() => null);
 
-  const repoResolution = await H.resolveRepoFromPayload(payload || {});
-  const repoRoot = repoResolution.repoRoot;
-  const repoMeta = await H.getRepoMetadata(repoRoot);
-  const baseBranch = repoResolution.branch || repoMeta.currentBranch || cfg.git.defaultBranch || 'main';
+  let repoResolution = await H.resolveRepoFromPayload(payload || {});
+  let repoRoot = repoResolution.repoRoot;
+  let repoMeta = await H.getRepoMetadata(repoRoot);
+  let baseBranch = repoResolution.branch || repoMeta.currentBranch || cfg.git.defaultBranch || 'main';
   const projectName: string = firstString(projectInfo?.name, payload?.project_name) || 'project';
   const projectSlug: string = slugify(firstString(projectInfo?.slug, payload?.project_slug, projectName) || projectName || 'project');
 
@@ -158,9 +158,20 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     await H.checkoutBranchFromBase(repoRoot, baseBranch, branchName);
     logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
 
-    const repoSlug = repoMeta.remoteSlug;
-    const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payload.repo || (projectInfo as any)?.repository?.url || repoMeta.remoteUrl || repoResolution.remote || "");
+    let repoSlug = repoMeta.remoteSlug;
+    let repoRemote = repoSlug ? `https://${repoSlug}.git` : (payload.repo || (projectInfo as any)?.repository?.url || repoMeta.remoteUrl || repoResolution.remote || "");
     if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
+
+    // If the initially resolved repoRoot isn't a git repo (no remote/current branch), re-resolve using dashboard's remote and project hint
+    if (!repoMeta.currentBranch && !repoMeta.remoteSlug) {
+      const re = await H.resolveRepoFromPayload({ repo: repoRemote, project_name: projectName, project_slug: projectSlug });
+      repoResolution = re;
+      repoRoot = re.repoRoot;
+      repoMeta = await H.getRepoMetadata(repoRoot);
+      baseBranch = re.branch || repoMeta.currentBranch || cfg.git.defaultBranch || baseBranch;
+      repoSlug = repoMeta.remoteSlug;
+      repoRemote = repoSlug ? `https://${repoSlug}.git` : (repoMeta.remoteUrl || repoRemote);
+    }
 
     // Context step
     const contextCorrId = randomUUID();
