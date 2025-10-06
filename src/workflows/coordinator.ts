@@ -4,6 +4,7 @@ import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, commitAndPushPaths } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
+import { buildBranchName } from "../branchUtils.js";
 import * as persona from "../agents/persona.js";
 import { PERSONAS } from "../personaNames.js";
 import { applyEditOps, parseUnifiedDiffToEditSpec, writeDiagnostic } from "../fileops.js";
@@ -202,7 +203,7 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       summary: firstString(selectedTask?.summary, selectedTask?.description) || null
     } : null;
 
-    let branchName = firstString(selectedMilestone?.branch, selectedMilestone?.branch_name, selectedMilestone?.branchName) || `milestone/${milestoneSlug}`;
+  const branchName = buildBranchName(selectedMilestone, selectedTask, projectSlug, milestoneSlug, taskSlug);
 
     // Attempt checkout, with a single fallback re-resolve if checkout fails due to missing base branch
     try {
