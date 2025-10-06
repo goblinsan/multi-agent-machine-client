@@ -75,12 +75,16 @@ function parsePersonaTimeouts(raw: Record<string, unknown>) {
   return out;
 }
 
-const projectBaseRaw = process.env.PROJECT_BASE || process.env.REPO_ROOT || "./repo";
+const projectBaseRaw = process.env.PROJECT_BASE || "./repo";
 const projectBase = path.resolve(expandHome(projectBaseRaw)!);
 const defaultRepoName = (process.env.DEFAULT_REPO_NAME || "active").trim() || "active";
-const repoRootRaw = process.env.REPO_ROOT ? process.env.REPO_ROOT : path.join(projectBase, defaultRepoName);
-let repoRoot = path.resolve(expandHome(repoRootRaw)!);
-// Guardrail: REPO_ROOT should not be exactly the same as PROJECT_BASE. If equal, nest under defaultRepoName.
+// REPO_ROOT is deprecated and ignored. Always place default repo under PROJECT_BASE/DEFAULT_REPO_NAME.
+let repoRoot = path.resolve(path.join(projectBase, defaultRepoName));
+// If someone still sets REPO_ROOT, warn that it's ignored (deprecated)
+if (process.env.REPO_ROOT && process.env.REPO_ROOT.trim().length) {
+  console.warn("[config] REPO_ROOT env var is deprecated and ignored. Use PROJECT_BASE and DEFAULT_REPO_NAME instead.");
+}
+// Guardrail: repoRoot should not be exactly the same as PROJECT_BASE. If equal, nest under defaultRepoName.
 if (repoRoot === projectBase) {
   repoRoot = path.join(projectBase, defaultRepoName);
 }
