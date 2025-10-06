@@ -213,6 +213,11 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       throw new Error(`checkout failed: ${msg}`);
     }
 
+    // Ensure the branch exists on the remote as well (new milestones may not have a branch yet)
+    try {
+      await H.ensureBranchPublished(repoRoot, branchName);
+    } catch {}
+
     let repoSlug = repoMeta.remoteSlug;
     let repoRemote = repoSlug ? `https://${repoSlug}.git` : (firstString(pickRemoteFrom(payload), pickRemoteFrom(projectInfo), pickRemoteFrom(details), repoMeta.remoteUrl, repoResolution.remote) || "");
     if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
