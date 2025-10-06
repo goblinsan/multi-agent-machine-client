@@ -1,0 +1,69 @@
+Changed Files:
+- `src/App.test.tsx`
+- `README.md`
+
+Commit Message:
+```
+feat: add basic test setup and initial App component test
+
+- Added `src/App.test.tsx` with a minimal React Testing Library setup
+- Updated `README.md` to document test setup and running instructions
+- Addresses QA failure by introducing test infrastructure for the React app
+```
+
+Diff Bundle:
+```diff
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..b3a2c5d
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,20 @@
++# Machine Client Log Summarizer
++
++This is a React-based application for summarizing machine client logs.
++
++## Running Tests
++
++To run the tests, use the following command:
++
++```bash
++npm test
++```
++
++### Test Setup
++
++Tests are written using React Testing Library and Jest. The test file for the main App component is located at `src/App.test.tsx`.
++
++## Development
++
++To start the development server:
++
++```bash
++npm run dev
++```
++```
++
++diff --git a/src/App.test.tsx b/src/App.test.tsx
++new file mode 100644
++index 0000000..9b5f3a1
++--- /dev/null
++++ b/src/App.test.tsx
++@@ -0,0 +1,15 @@
++import React from 'react';
++import { render, screen } from '@testing-library/react';
++import App from './App';
++
++describe('App', () => {
++  test('renders without crashing', () => {
++    render(<App />);
++    const linkElement = screen.getByText(/machine client log summarizer/i);
++    expect(linkElement).toBeInTheDocument();
++  });
++
++  test('matches snapshot', () => {
++    const { asFragment } = render(<App />);
++    expect(asFragment()).toMatchSnapshot();
++  });
++});
++```

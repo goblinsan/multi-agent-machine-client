@@ -331,56 +331,79 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
                   editSpecObj = leadOutcome.result;
                 } else {
                   // Build a list of candidate text fields that may contain a diff preview
-                  const rawCandidates: Array<string | null> = [];
+                  const rawCandidatesMap: Array<{ name: string; text: string | null }> = [];
                   try {
                     if (leadOutcome) {
                       const r = leadOutcome.result;
-                      if (typeof r === 'string') rawCandidates.push(r);
+                      if (typeof r === 'string') rawCandidatesMap.push({ name: 'result_string', text: r });
                       if (r && typeof r === 'object') {
-                        rawCandidates.push(r.preview ?? null);
-                        rawCandidates.push(r.output ?? null);
-                        rawCandidates.push(r.raw && typeof r.raw === 'string' ? r.raw : null);
-                        rawCandidates.push(r.message ?? null);
-                        // some personas place the human-visible text under 'text' or 'body'
-                        rawCandidates.push(r.text ?? null);
-                        rawCandidates.push(r.body ?? null);
+                        rawCandidatesMap.push({ name: 'result.preview', text: r.preview ?? null });
+                        rawCandidatesMap.push({ name: 'result.output', text: r.output ?? null });
+                        rawCandidatesMap.push({ name: 'result.raw', text: (r.raw && typeof r.raw === 'string') ? r.raw : null });
+                        rawCandidatesMap.push({ name: 'result.message', text: r.message ?? null });
+                        rawCandidatesMap.push({ name: 'result.text', text: r.text ?? null });
+                        rawCandidatesMap.push({ name: 'result.body', text: r.body ?? null });
                       }
                       // also check top-level fields on the leadOutcome object
-                      rawCandidates.push((leadOutcome.preview && typeof leadOutcome.preview === 'string') ? leadOutcome.preview : null);
-                      rawCandidates.push((leadOutcome.output && typeof leadOutcome.output === 'string') ? leadOutcome.output : null);
+                      rawCandidatesMap.push({ name: 'leadOutcome.preview', text: (leadOutcome.preview && typeof leadOutcome.preview === 'string') ? leadOutcome.preview : null });
+                      rawCandidatesMap.push({ name: 'leadOutcome.output', text: (leadOutcome.output && typeof leadOutcome.output === 'string') ? leadOutcome.output : null });
                     }
                   } catch (err) {
                     // ignore introspection errors
                   }
 
                   // Normalize candidates: remove surrounding commentary and extract fenced blocks
-                  const normalizedCandidates: string[] = [];
-                  for (const c of rawCandidates) {
-                    if (!c || typeof c !== 'string') continue;
-                    let txt = c;
+                  const normalizedCandidates: Array<{ name: string; text: string }> = [];
+                  for (const entry of rawCandidatesMap) {
+                    if (!entry || !entry.text || typeof entry.text !== 'string') continue;
+                    let txt = entry.text;
                     // If wrapped in a code fence, extract inner content
                     const fence = /```(?:diff)?\n([\s\S]*?)```/.exec(txt);
                     if (fence && fence[1]) txt = fence[1];
-                    // Remove lines like "Changed Files:\n..." that sometimes prefix diffs
+                    // strip HTML pre tags
+                    const pre = /<pre[^>]*>([\s\S]*?)<\/pre>/.exec(txt);
+                    if (pre && pre[1]) txt = pre[1];
+                    // Remove header lines before the first diff marker
                     const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
                     if (idx >= 0) txt = txt.slice(idx);
-                    // Quick heuristic: contains diff indicators?
-                    if (txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/')) normalizedCandidates.push(txt);
+                    const hasMarkers = txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/');
+                    logger.debug('coordinator: candidate inspected', { workflowId, taskId: taskDescriptor?.id, candidateName: entry.name, hasMarkers, preview: txt.slice(0,200) });
+                    if (hasMarkers) normalizedCandidates.push({ name: entry.name, text: txt });
+                    else {
+                      // also treat payloads that include '*** Begin Patch' style or large code fences as candidates
+                      if (txt.includes('*** Begin Patch') || txt.includes('*** Begin Hunk') || txt.length > 1000) {
+                        normalizedCandidates.push({ name: entry.name, text: txt });
+                      }
+                    }
                   }
 
-                  // Try parsing each normalized candidate until one yields ops
-                  for (const c of normalizedCandidates) {
+                  // Try parsing each normalized candidate until one yields ops. Persist candidate text for diagnostics
+                  for (const cEntry of normalizedCandidates) {
+                    const c = cEntry.text;
                     try {
                       const parsed = parseUnifiedDiffToEditSpec(c);
                       if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) {
                         editSpecObj = parsed;
+                        logger.info('coordinator: parsed diff candidate into edit spec', { workflowId, taskId: taskDescriptor?.id, candidateName: cEntry.name, ops: parsed.ops.length });
                         break;
                       } else {
                         // Emit a diagnostic so we can see why a candidate didn't produce ops
-                        logger.debug('coordinator: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidatePreview: c.slice(0, 200) });
+                        logger.debug('coordinator: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidateName: cEntry.name, candidatePreview: c.slice(0, 200) });
+                        try {
+                          const { writeDiagnostic } = await import('../fileops.js');
+                          await writeDiagnostic(repoRoot, `parse-no-ops-${taskDescriptor?.id || 'unknown'}-${cEntry.name}.json`, { candidateName: cEntry.name, candidate: c });
+                        } catch (e) {
+                          // ignore diagnostic write failures
+                        }
                       }
                     } catch (err) {
-                      logger.debug('coordinator: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, error: String(err).slice(0,200) });
+                      logger.debug('coordinator: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, candidateName: cEntry.name, error: String(err).slice(0,200) });
+                      try {
+                        const { writeDiagnostic } = await import('../fileops.js');
+                        await writeDiagnostic(repoRoot, `parse-exception-${taskDescriptor?.id || 'unknown'}-${cEntry.name}.json`, { candidateName: cEntry.name, candidate: c, error: String(err) });
+                      } catch (e) {
+                        // ignore
+                      }
                     }
                   }
                 }
@@ -398,6 +421,13 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
                 } else {
                   // No edit ops were produced; log for debugging with as much context as safe
                   logger.info('coordinator: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof leadOutcome?.result });
+                  try {
+                    // persist a diagnostic file to help debug missing ops in CI
+                    const { writeDiagnostic } = await import('../fileops.js');
+                    await writeDiagnostic(repoRoot, `lead-outcome-${taskDescriptor?.id || 'unknown'}.json`, { leadOutcome: leadOutcome?.result ?? leadOutcome });
+                  } catch (e) {
+                    // ignore diagnostic write failures
+                  }
                 }
               } catch (err) {
                 logger.warn('coordinator: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
@@ -425,6 +455,96 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         } catch (err) {
           // swallow non-fatal errors here to avoid breaking coordinator loop
           logger.debug('coordinator: error while attempting to update task status after lead', { workflowId, error: err });
+        }
+        // If the lead cycle reported failure (no applied_edits) but the lead persona
+        // output contains a unified diff or preview, attempt a best-effort parse and
+        // application here as a fallback. This addresses cases where the persona
+        // returned a diff but didn't set applied_edits/status appropriately.
+        try {
+          if (leadOutcome && !leadOutcome.success) {
+            const rawCandidates: Array<string | null> = [];
+            try {
+              const r = leadOutcome.result;
+              if (typeof r === 'string') rawCandidates.push(r);
+              if (r && typeof r === 'object') {
+                rawCandidates.push(r.preview ?? null);
+                rawCandidates.push(r.output ?? null);
+                rawCandidates.push(r.raw && typeof r.raw === 'string' ? r.raw : null);
+                rawCandidates.push(r.message ?? null);
+                rawCandidates.push(r.text ?? null);
+                rawCandidates.push(r.body ?? null);
+              }
+              rawCandidates.push((leadOutcome.preview && typeof leadOutcome.preview === 'string') ? leadOutcome.preview : null);
+              rawCandidates.push((leadOutcome.output && typeof leadOutcome.output === 'string') ? leadOutcome.output : null);
+            } catch (e) {
+              // ignore
+            }
+
+            const normalizedCandidates: Array<{ name: string; text: string }> = [];
+            for (let idx = 0; idx < rawCandidates.length; idx++) {
+              const c = rawCandidates[idx];
+              if (!c || typeof c !== 'string') continue;
+              let txt = c;
+              const fence = /```(?:diff)?\n([\s\S]*?)```/.exec(txt);
+              if (fence && fence[1]) txt = fence[1];
+              const pre = /<pre[^>]*>([\s\S]*?)<\/pre>/.exec(txt);
+              if (pre && pre[1]) txt = pre[1];
+              const id = `fallback_${idx}`;
+              const firstIdx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
+              if (firstIdx >= 0) txt = txt.slice(firstIdx);
+              const hasMarkers = txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/');
+              logger.debug('coordinator: fallback candidate inspected', { workflowId, taskId: taskDescriptor?.id, candidateId: id, hasMarkers, preview: txt.slice(0,200) });
+              if (hasMarkers || txt.length > 1000) normalizedCandidates.push({ name: id, text: txt });
+            }
+
+            let editSpecObj: any = null;
+            for (const cEntry of normalizedCandidates) {
+              try {
+                const parsed = parseUnifiedDiffToEditSpec(cEntry.text);
+                if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) {
+                  editSpecObj = parsed;
+                  logger.info('coordinator: fallback parsed diff candidate into edit spec', { workflowId, taskId: taskDescriptor?.id, candidateName: cEntry.name, ops: parsed.ops.length });
+                  break;
+                } else {
+                  logger.debug('coordinator: fallback diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidateName: cEntry.name, candidatePreview: cEntry.text.slice(0,200) });
+                  try {
+                    const { writeDiagnostic } = await import('../fileops.js');
+                    await writeDiagnostic(repoRoot, `fallback-parse-no-ops-${taskDescriptor?.id || 'unknown'}-${cEntry.name}.json`, { candidateName: cEntry.name, candidate: cEntry.text });
+                  } catch (e) { /* ignore */ }
+                }
+              } catch (err) {
+                logger.debug('coordinator: fallback parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, candidateName: cEntry.name, error: String(err).slice(0,200) });
+                try {
+                  const { writeDiagnostic } = await import('../fileops.js');
+                  await writeDiagnostic(repoRoot, `fallback-parse-exception-${taskDescriptor?.id || 'unknown'}-${cEntry.name}.json`, { candidateName: cEntry.name, candidate: cEntry.text, error: String(err) });
+                } catch (e) { /* ignore */ }
+              }
+            }
+
+            if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
+              const editResult = await applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
+              if (editResult.changed.length > 0) {
+                await commitAndPushPaths({ repoRoot, branch: branchName, message: `feat: ${taskName}`, paths: editResult.changed });
+                try {
+                  const updateRes = await updateTaskStatus(String(taskDescriptor?.id), 'done');
+                  if (updateRes && updateRes.ok) {
+                    try {
+                      if (taskDescriptor && taskDescriptor.id) {
+                        processedTaskIds.add(String(taskDescriptor.id));
+                        logger.debug('processedTaskIds added (fallback apply)', { taskId: String(taskDescriptor.id), processedTaskIds: Array.from(processedTaskIds) });
+                      }
+                    } catch (err) { /* ignore */ }
+                  }
+                } catch (err) {
+                  logger.warn('coordinator: failed to mark task done after fallback apply', { workflowId, taskId: taskDescriptor?.id, error: err });
+                }
+              }
+            } else {
+              logger.debug('coordinator: fallback path found no parsable diff candidates', { workflowId, taskId: taskDescriptor?.id });
+            }
+          }
+        } catch (err) {
+          logger.debug('coordinator: error in fallback diff-apply path', { workflowId, error: err });
         }
       } else {
         logger.info('coordinator: no selected task for this iteration, skipping lead cycle', { workflowId, projectId });

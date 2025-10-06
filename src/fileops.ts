@@ -53,6 +53,8 @@ async function writeDiagnostic(repoRoot: string, targetPath: string, payload: an
   }
 }
 
+export { writeDiagnostic };
+
 export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
   const repoRoot = normalizeRoot(opts.repoRoot);
   const maxBytes = opts.maxBytes ?? 512 * 1024;
@@ -127,8 +129,37 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
   }
 
   if (changed.length) {
-  await runGit(["add", ...changed], { cwd: repoRoot });
-  await runGit(["commit", "-m", sanitizedCommitMsg], { cwd: repoRoot });
+    // Attempt to add and commit just the changed paths. If the commit fails
+    // (for example because files were ignored or add didn't stage them),
+    // retry with a force-add for those paths and then commit. Emit a
+    // diagnostic if we still cannot commit so the coordinator can surface
+    // the failure for debugging.
+    try {
+      await runGit(["add", ...changed], { cwd: repoRoot });
+      // Commit only the changed files to avoid failing due to other unstaged files
+      await runGit(["commit", "-m", sanitizedCommitMsg, "--", ...changed], { cwd: repoRoot });
+    } catch (err) {
+      try {
+        // Retry by force-adding the specific paths (this can override .gitignore)
+        await runGit(["add", "--force", ...changed], { cwd: repoRoot });
+        await runGit(["commit", "-m", sanitizedCommitMsg, "--", ...changed], { cwd: repoRoot });
+      } catch (err2) {
+        // As a last-resort, try a broad add of all changes and commit. This may
+        // include unrelated local edits but increases the chance the agent's
+        // edits are committed in environments where the index is dirty.
+        try {
+          await writeDiagnostic(repoRoot, 'apply-commit-broad-attempt.json', { changed, note: 'attempting git add -A and commit as fallback', error: String(err2) });
+        } catch (e) { /* ignore */ }
+        try {
+          await runGit(["add", "-A"], { cwd: repoRoot });
+          await runGit(["commit", "-m", sanitizedCommitMsg], { cwd: repoRoot });
+        } catch (err3) {
+          // write diagnostic and rethrow so callers can handle the failure
+          try { await writeDiagnostic(repoRoot, 'apply-commit-failure.json', { changed, error: String(err3), stdout: (err3 && (err3 as any).stdout) ? String((err3 as any).stdout) : undefined }); } catch (e) { /* swallow */ }
+          throw err3;
+        }
+      }
+    }
     const sha = (await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })).stdout.trim();
     return { changed, branch, sha };
   }
@@ -145,9 +176,18 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
   // Preprocess: try to extract the inner diff if wrapped in fenced code blocks or HTML
   // Examples handled: ```diff ... ```, ``` ... ```, <pre>...</pre>
   let raw = String(diffText);
-  // extract fenced code block first
+  // If the raw text already contains a diff marker somewhere, prefer slicing
+  // directly at the first 'diff --git' to avoid nested/mismatched fences.
+  const rawDiffIdx = raw.indexOf('diff --git');
+  if (rawDiffIdx >= 0) raw = raw.slice(rawDiffIdx);
+  // extract fenced code block first, but prefer using it only if it contains diff markers
   const fenced = /```(?:diff)?\n([\s\S]*?)```/.exec(raw);
-  if (fenced && fenced[1]) raw = fenced[1];
+  if (fenced && fenced[1]) {
+    const inner = fenced[1];
+    if (inner.includes('diff --git') || inner.includes('+++ b/') || inner.includes('@@')) {
+      raw = inner;
+    }
+  }
   // strip HTML pre tags
   const pre = /<pre[^>]*>([\s\S]*?)<\/pre>/.exec(raw);
   if (pre && pre[1]) raw = pre[1];
@@ -155,14 +195,16 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
   const firstIdx = raw.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
   if (firstIdx >= 0) raw = raw.slice(firstIdx);
 
-  // Split into file sections starting with 'diff --git'
-  const fileSections = raw.split(/\n(?=diff --git )/);
+  // Split into file sections starting with 'diff --git' (supports CRLF). Use a
+  // regex match so we get each 'diff --git' block even when formatting varies.
+  // Match each 'diff --git' block. Use a simple lookahead for the next 'diff --git'
+  // so we reliably extract multiple file sections even when formatting varies.
+  const fileSections = raw.match(/diff --git[\s\S]*?(?=(?:diff --git|$))/g) || [];
   for (const section of fileSections) {
     const lines = section.split(/\r?\n/);
     // Find the 'a/...' and 'b/...' paths
     const gitLine = lines.find(l => l.startsWith('diff --git')) || '';
     const m = /diff --git a\/(.+?) b\/(.+)$/.exec(gitLine);
-    let pathName: string | null = null;
     let aPath: string | null = null;
     let bPath: string | null = null;
     for (const l of lines) {
@@ -178,11 +220,10 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
     }
     // If bPath is /dev/null, this file was deleted
     const deleted = bPath === '/dev/null' || (bPath && bPath.endsWith('/dev/null'));
-    const newFile = aPath === '/dev/null' || (aPath && aPath.endsWith('/dev/null'));
     const targetPath = bPath && bPath !== '/dev/null' ? bPath : aPath;
     if (!targetPath) continue;
 
-  // Parse hunks and reconstruct the new file content by applying hunks
+    // Parse hunks and reconstruct the new file content by applying hunks
     const hunks: Array<{ oldStart:number, oldCount:number, newStart:number, newCount:number, lines: string[] }> = [];
     let i = 0;
     while (i < lines.length) {
@@ -224,14 +265,14 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
       continue;
     }
 
-  // If any hunk indicates newCount === 0, treat the file as a deletion
-  let deletedByHunks = false;
-  if (hunks.length && hunks.every(h => h.newCount === 0)) deletedByHunks = true;
+    // If any hunk indicates newCount === 0, treat the file as a deletion
+    let deletedByHunks = false;
+    if (hunks.length && hunks.every(h => h.newCount === 0)) deletedByHunks = true;
 
-  // Apply hunks to build the new content. Since we may not have the original content,
-  // we reconstruct by concatenating context and added lines in order of hunks. We try
-  // to preserve context lines and ignore deletion-only lines. This is still best-effort
-  // but handles multiple hunks per file and optional hunk header formats.
+    // Apply hunks to build the new content. Since we may not have the original content,
+    // we reconstruct by concatenating context and added lines in order of hunks. We try
+    // to preserve context lines and ignore deletion-only lines. This is still best-effort
+    // but handles multiple hunks per file and optional hunk header formats.
     const outParts: string[] = [];
     for (const h of hunks) {
       for (const hl of h.lines) {
@@ -260,9 +301,46 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
     }
   }
 
+  // Fallback: if the main parser produced no ops, try a looser scan for 'diff --git' sections
+  // and reconstruct files by collecting added lines. This handles some persona outputs
+  // that include extra markdown or slightly non-standard formatting.
+  try {
+    if (ops.length === 0) {
+      const fallbackOps: Array<UpsertOp | DeleteOp> = [];
+  const sections = raw.match(/diff --git[\s\S]*?(?=(?:diff --git|$))/g);
+      if (sections && sections.length) {
+        for (const sec of sections) {
+          const lines = sec.split(/\r?\n/);
+          let aPath: string | null = null;
+          let bPath: string | null = null;
+          for (const l of lines) {
+            const aMatch = /^---\s+(?:a\/)?(?:"([^"]+)"|([^\t\n]+))/.exec(l);
+            const bMatch = /^\+\+\+\s+(?:b\/)?(?:"([^"]+)"|([^\t\n]+))/.exec(l);
+            if (aMatch) aPath = (aMatch[1] || aMatch[2] || '').trim();
+            if (bMatch) bPath = (bMatch[1] || bMatch[2] || '').trim();
+          }
+          const targetPath = bPath && bPath !== '/dev/null' ? bPath : aPath;
+          if (!targetPath) continue;
+          const deleted = bPath === '/dev/null' || (bPath && bPath.endsWith('/dev/null'));
+          // collect plus lines (ignore +++ header)
+          const plusLines = lines.filter((l: string) => l.startsWith('+') && !l.startsWith('+++')).map(l => l.slice(1));
+          if (deleted) {
+            fallbackOps.push({ action: 'delete', path: targetPath });
+          } else if (plusLines.length) {
+            let content = plusLines.join('\n');
+            if (content.length) content = content.replace(/\n+$/,'') + '\n';
+            fallbackOps.push({ action: 'upsert', path: targetPath, content });
+          }
+        }
+      }
+      if (fallbackOps.length) return { ops: fallbackOps } as EditSpec;
+    }
+  } catch (err) {
+    // swallow fallback errors and return original empty ops
+  }
+
   return { ops } as EditSpec;
 }
-
 // Apply hunks to an array of base lines. This is a best-effort but more accurate
 // application: for each hunk we validate context lines around the hunk where possible
 // and then replace the old-range with the new hunk contents. If any hunk fails
