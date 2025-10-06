@@ -77,12 +77,16 @@ function parsePersonaTimeouts(raw: Record<string, unknown>) {
 
 const projectBaseRaw = process.env.PROJECT_BASE || "./repo";
 const projectBase = path.resolve(expandHome(projectBaseRaw)!);
-const defaultRepoName = (process.env.DEFAULT_REPO_NAME || "active").trim() || "active";
+// DEFAULT_REPO_NAME is deprecated and ignored; use fixed default folder name
+const defaultRepoName = "active";
 // REPO_ROOT is deprecated and ignored. Always place default repo under PROJECT_BASE/DEFAULT_REPO_NAME.
 let repoRoot = path.resolve(path.join(projectBase, defaultRepoName));
 // If someone still sets REPO_ROOT, warn that it's ignored (deprecated)
 if (process.env.REPO_ROOT && process.env.REPO_ROOT.trim().length) {
-  console.warn("[config] REPO_ROOT env var is deprecated and ignored. Use PROJECT_BASE and DEFAULT_REPO_NAME instead.");
+  console.warn("[config] REPO_ROOT env var is deprecated and ignored. Repos are managed under PROJECT_BASE/'active' by default.");
+}
+if (process.env.DEFAULT_REPO_NAME && process.env.DEFAULT_REPO_NAME.trim().length) {
+  console.warn("[config] DEFAULT_REPO_NAME env var is deprecated and ignored. Using fixed default folder 'active'.");
 }
 // Guardrail: repoRoot should not be exactly the same as PROJECT_BASE. If equal, nest under defaultRepoName.
 if (repoRoot === projectBase) {

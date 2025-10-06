@@ -15,6 +15,6 @@ See `.env.example` for config.
 ## Repo workspace semantics
 
 - PROJECT_BASE is a parent directory where local repositories are managed.
-- DEFAULT_REPO_NAME defines the default folder name used when no repository is specified in the payload (effective default path: PROJECT_BASE/DEFAULT_REPO_NAME).
+- The default local repository folder (when none is specified in the payload) is fixed to 'active', i.e., PROJECT_BASE/active.
 - REPO_ROOT is deprecated and ignored. If set, it will be logged as deprecated and not used.
 - For multi-repo workflows, the coordinator resolves the target repository dynamically from the payload (repo_root when it points to an actual git repo, or by cloning from the dashboard’s repository URL using a project name/slug hint).
