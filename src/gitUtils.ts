@@ -265,31 +265,41 @@ function remoteSlug(remote: string | null | undefined) {
 }
 
 export async function resolveRepoFromPayload(payload: any): Promise<RepoResolution> {
+  const branch = branchFromPayload(payload);
+  const remote = repoUrlFromPayload(payload);
+  const hint = projectHintFromPayload(payload);
+
+  // If a repo_root is provided, only use it when it's an actual git repo.
   if (payload && typeof payload.repo_root === "string" && payload.repo_root.trim().length) {
-    return {
-      repoRoot: payload.repo_root.trim(),
-      branch: branchFromPayload(payload),
-      remote: null,
-      source: "payload_repo_root"
-    };
+    const root = payload.repo_root.trim();
+    const gitDir = path.join(root, ".git");
+    const isRepo = await directoryExists(gitDir).catch(() => false);
+    if (isRepo) {
+      return { repoRoot: root, branch, remote: null, source: "payload_repo_root" };
+    }
+    // Try repo_root + project hint (common case when a parent folder is provided)
+    if (hint && hint.trim().length) {
+      const candidate = path.join(root, sanitizeSegment(hint));
+      const candGit = path.join(candidate, ".git");
+      if (await directoryExists(candGit).catch(() => false)) {
+        return { repoRoot: candidate, branch, remote: null, source: "payload_repo_root" };
+      }
+    }
+    // If remote is available, fall back to cloning/ensuring under our projectBase
+    if (remote) {
+      const ensured = await ensureRepo(remote, branch, hint);
+      return { repoRoot: ensured.repoRoot, branch, remote: ensured.remote, source: "payload_repo" };
+    }
+    // As a last resort, fall through to config default
   }
 
-  const remote = repoUrlFromPayload(payload);
-
   if (remote) {
-    const branch = branchFromPayload(payload);
-    const projectHint = projectHintFromPayload(payload);
-    const ensured = await ensureRepo(remote, branch, projectHint);
+    const ensured = await ensureRepo(remote, branch, hint);
     return { repoRoot: ensured.repoRoot, branch, remote: ensured.remote, source: "payload_repo" };
   }
 
   await ensureProjectBase();
-  return {
-    repoRoot: cfg.repoRoot,
-    branch: null,
-    remote: null,
-    source: "config_default"
-  };
+  return { repoRoot: cfg.repoRoot, branch: null, remote: null, source: "config_default" };
 }
 
 async function ensureRepo(remote: string, branch: string | null, projectHint: string | null) {
