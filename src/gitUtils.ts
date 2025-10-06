@@ -173,7 +173,7 @@ async function configureCredentialStore(repoRoot: string, credentialUrl?: URL) {
   }
 }
 
-async function detectRemoteDefaultBranch(repoRoot: string): Promise<string | null> {
+export async function detectRemoteDefaultBranch(repoRoot: string): Promise<string | null> {
   try {
     const symbolic = await runGit(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], { cwd: repoRoot });
     const ref = symbolic.stdout.trim();

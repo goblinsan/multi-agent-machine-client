@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { cfg } from "../config.js";
 import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
-import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, commitAndPushPaths } from "../gitUtils.js";
+import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, commitAndPushPaths, detectRemoteDefaultBranch } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { buildBranchName } from "../branchUtils.js";
@@ -20,6 +20,7 @@ function buildHelpers() {
     fetchProjectStatusDetails,
     resolveRepoFromPayload,
     getRepoMetadata,
+  detectRemoteDefaultBranch,
     checkoutBranchFromBase,
     ensureBranchPublished,
     commitAndPushPaths,
@@ -159,7 +160,9 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   let repoResolution = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
   let repoRoot = repoResolution.repoRoot;
   let repoMeta = await H.getRepoMetadata(repoRoot);
-  let baseBranch = repoResolution.branch || repoMeta.currentBranch || cfg.git.defaultBranch || 'main';
+  // Prefer the remote's default branch rather than the local current branch (which could be a feature branch)
+  let detectedDefault = await H.detectRemoteDefaultBranch(repoRoot).catch(() => null);
+  let baseBranch = repoResolution.branch || detectedDefault || cfg.git.defaultBranch || 'main';
   logger.info("coordinator repo-resolve checkpoint", {
     workflowId,
     repoRoot,
