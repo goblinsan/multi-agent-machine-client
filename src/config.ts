@@ -79,7 +79,11 @@ const projectBaseRaw = process.env.PROJECT_BASE || process.env.REPO_ROOT || "./r
 const projectBase = path.resolve(expandHome(projectBaseRaw)!);
 const defaultRepoName = (process.env.DEFAULT_REPO_NAME || "active").trim() || "active";
 const repoRootRaw = process.env.REPO_ROOT ? process.env.REPO_ROOT : path.join(projectBase, defaultRepoName);
-const repoRoot = path.resolve(expandHome(repoRootRaw)!);
+let repoRoot = path.resolve(expandHome(repoRootRaw)!);
+// Guardrail: REPO_ROOT should not be exactly the same as PROJECT_BASE. If equal, nest under defaultRepoName.
+if (repoRoot === projectBase) {
+  repoRoot = path.join(projectBase, defaultRepoName);
+}
 
 const maxFileBytes = Number(process.env.MAX_FILE_BYTES || 524288);
 const allowedExts = splitCsv(process.env.ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.py,.md,.json,.yml,.yaml,.css,.html,.sh,.bat", [])
