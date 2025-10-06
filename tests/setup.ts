@@ -54,17 +54,6 @@ afterAll(() => {
   try {
     fs.rmSync(tmpBase, { recursive: true, force: true });
   } catch {}
-  // Best-effort prune of test-created repos with known prefixes
-  try {
-    const entries = fs.readdirSync(os.tmpdir(), { withFileTypes: true });
-    for (const ent of entries) {
-      if (!ent.isDirectory()) continue;
-      if (ent.name.startsWith('mc-repo-') || ent.name.startsWith('mc-tests-')) {
-        const p = path.join(os.tmpdir(), ent.name);
-        try { fs.rmSync(p, { recursive: true, force: true }); } catch {}
-      }
-    }
-  } catch {}
 });
 
 // Guard: prevent git commands from running outside tmp directories during tests
