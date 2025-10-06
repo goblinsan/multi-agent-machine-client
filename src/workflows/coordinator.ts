@@ -208,6 +208,15 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
 
   const branchName = buildBranchName(selectedMilestone, selectedTask, projectSlug, milestoneSlug, taskSlug);
 
+    logger.info("coordinator branch selection", {
+      workflowId,
+      repoRoot,
+      baseBranch,
+      branchName,
+      milestone: selectedMilestone ? { id: selectedMilestone.id ?? milestoneSlug, slug: milestoneSlug } : null,
+      task: taskDescriptor ? { id: taskDescriptor.id, slug: taskDescriptor.slug } : null
+    });
+
     // Attempt checkout, with a single fallback re-resolve if checkout fails due to missing base branch
     try {
       await H.checkoutBranchFromBase(repoRoot, baseBranch, branchName);
