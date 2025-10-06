@@ -49,6 +49,39 @@ function toSlug(s: string | null | undefined, fallback: string) {
   return slugify(v);
 }
 
+function pickRemoteFrom(obj: any): string | null {
+  if (!obj) return null;
+  const candidates = [
+    obj.repo, obj.remote, obj.url,
+    obj.repository, obj.repository_url, obj.repositoryUrl,
+    obj.git_url, obj.gitUrl, obj.github_url, obj.githubUrl,
+    (obj.repository && typeof obj.repository === 'object' ? (obj.repository.url || obj.repository.ssh_url || obj.repository.git_url) : null)
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length) return c.trim();
+    if (Array.isArray(c) && c.length) {
+      for (const it of c) {
+        const v = pickRemoteFrom(it);
+        if (v) return v;
+      }
+    }
+  }
+  // common array shapes: repositories, repos
+  if (Array.isArray(obj.repositories)) {
+    for (const it of obj.repositories) {
+      const v = pickRemoteFrom(it);
+      if (v) return v;
+    }
+  }
+  if (Array.isArray(obj.repos)) {
+    for (const it of obj.repos) {
+      const v = pickRemoteFrom(it);
+      if (v) return v;
+    }
+  }
+  return null;
+}
+
 async function detectTestCommands(repoRoot: string) {
   const cmds: string[] = [];
   try {
@@ -119,7 +152,17 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   const projectSlug: string = slugify(firstString(projectInfo?.slug, payload?.project_slug, projectName) || projectName || 'project');
 
   // If the initially resolved repoRoot isn't a git repo, attempt a re-resolve using any available remote BEFORE checkout
-  let repoRemoteCandidate = firstString(payload?.repo, (projectInfo as any)?.repository?.url, repoMeta.remoteUrl, repoResolution.remote) || '';
+  let repoRemoteCandidate = firstString(
+    pickRemoteFrom(payload),
+    pickRemoteFrom(projectInfo),
+    pickRemoteFrom(details),
+    repoMeta.remoteUrl,
+    repoResolution.remote
+  ) || '';
+  // If we have no remote candidate and the current path is clearly not a repo and came from config default, fail early with guidance
+  if (!repoRemoteCandidate && !repoMeta.currentBranch && !repoMeta.remoteSlug && repoResolution.source === 'config_default') {
+    throw new Error(`No repository remote available for project ${projectId}. Provide payload.repo or set the project's repository URL in the dashboard. (Refusing to operate on ${repoRoot} because it is not a git repository.)`);
+  }
   if ((!repoMeta.currentBranch && !repoMeta.remoteSlug) && repoRemoteCandidate) {
     const re = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
     repoResolution = re;
@@ -184,8 +227,8 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     }
     logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
 
-    let repoSlug = repoMeta.remoteSlug;
-    let repoRemote = repoSlug ? `https://${repoSlug}.git` : (payload.repo || (projectInfo as any)?.repository?.url || repoMeta.remoteUrl || repoResolution.remote || "");
+  let repoSlug = repoMeta.remoteSlug;
+  let repoRemote = repoSlug ? `https://${repoSlug}.git` : (firstString(pickRemoteFrom(payload), pickRemoteFrom(projectInfo), pickRemoteFrom(details), repoMeta.remoteUrl, repoResolution.remote) || "");
     if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
 
     // Context step
