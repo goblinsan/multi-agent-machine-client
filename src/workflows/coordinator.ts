@@ -1,309 +1,170 @@
 import { randomUUID } from "crypto";
 import { cfg } from "../config.js";
-import { fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction } from "../dashboard.js";
+import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, commitAndPushPaths } from "../gitUtils.js";
 import { logger } from "../logger.js";
-import { selectNextMilestone, deriveMilestoneContext } from "../milestones/milestoneManager.js";
-import { selectNextTask, deriveTaskContext, pickSuggestion, normalizeTaskStatus } from "../tasks/taskManager.js";
-import { firstString, slugify, normalizeRepoPath } from "../util.js";
+import { firstString, slugify } from "../util.js";
 import * as persona from "../agents/persona.js";
 import { PERSONAS } from "../personaNames.js";
-import { createDashboardTaskEntriesWithSummarizer } from "../tasks/taskManager.js";
 import { applyEditOps, parseUnifiedDiffToEditSpec, writeDiagnostic } from "../fileops.js";
 import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
 import { runLeadCycle } from "./stages/implementation.js";
 
-export async function handleCoordinator(r: any, msg: any, payloadObj: any, overrides: any = {}) {
-    const workflowId = msg.workflow_id;
-    const projectId = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id);
-    if (!projectId) throw new Error("Coordinator requires project_id in payload or message");
-  
-    // Allow dependency injection via overrides for testing/harnesses.
-    const H = {
-      fetchProjectStatus: overrides.fetchProjectStatus ?? fetchProjectStatus,
-      fetchProjectStatusDetails: overrides.fetchProjectStatusDetails ?? fetchProjectStatusDetails,
-      fetchProjectNextAction: overrides.fetchProjectNextAction ?? fetchProjectNextAction,
-      resolveRepoFromPayload: overrides.resolveRepoFromPayload ?? resolveRepoFromPayload,
-      getRepoMetadata: overrides.getRepoMetadata ?? getRepoMetadata,
-      checkoutBranchFromBase: overrides.checkoutBranchFromBase ?? checkoutBranchFromBase,
-      ensureBranchPublished: overrides.ensureBranchPublished ?? ensureBranchPublished,
-      commitAndPushPaths: overrides.commitAndPushPaths ?? commitAndPushPaths,
-      updateTaskStatus: overrides.updateTaskStatus ?? updateTaskStatus,
-      parseUnifiedDiffToEditSpec: overrides.parseUnifiedDiffToEditSpec ?? parseUnifiedDiffToEditSpec,
-      applyEditOps: overrides.applyEditOps ?? applyEditOps,
-      runLeadCycle: overrides.runLeadCycle ?? runLeadCycle,
-      handleFailureMiniCycle: overrides.handleFailureMiniCycle ?? handleFailureMiniCycle,
-      selectNextMilestone: overrides.selectNextMilestone ?? selectNextMilestone,
-      selectNextTask: overrides.selectNextTask ?? selectNextTask,
-      persona: overrides.persona ?? persona
-    } as any;
+type Overrides = Partial<ReturnType<typeof buildHelpers>>;
 
-    let projectInfo: any = await H.fetchProjectStatus(projectId);
-    let projectStatus: any = await H.fetchProjectStatusDetails(projectId);
-    let nextActionData: any = await H.fetchProjectNextAction(projectId);
-    const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectInfo?.slug, projectInfo?.id);
-    const projectRepo = firstString(
-      payloadObj.repo,
-      payloadObj.repository,
-      typeof projectInfo?.repository === "string" ? projectInfo.repository : null,
-      projectInfo?.repository?.url,
-      projectInfo?.repository?.remote,
-      projectInfo?.repo?.url,
-      projectInfo?.repo_url,
-      projectInfo?.git_url,
-      Array.isArray(projectInfo?.repositories) ? projectInfo.repositories[0]?.url : null
-    );
-  
-    if (!projectRepo) {
-      logger.error("coordinator abort: project repository missing", { workflowId, projectId });
-      throw new Error(`Project ${projectId} has no repository associated`);
+function buildHelpers() {
+  return {
+    fetchProjectStatus,
+    fetchProjectStatusDetails,
+    resolveRepoFromPayload,
+    getRepoMetadata,
+    checkoutBranchFromBase,
+    ensureBranchPublished,
+    commitAndPushPaths,
+    updateTaskStatus,
+    applyEditOps,
+    parseUnifiedDiffToEditSpec,
+    handleFailureMiniCycle,
+    runLeadCycle,
+    persona: {
+      sendPersonaRequest: persona.sendPersonaRequest,
+      waitForPersonaCompletion: persona.waitForPersonaCompletion,
+      parseEventResult: persona.parseEventResult,
+      interpretPersonaStatus: persona.interpretPersonaStatus,
+    },
+  };
+}
+
+function normalizeTaskStatus(status: string | undefined | null) {
+  if (!status) return "open";
+  const s = String(status).toLowerCase();
+  if (["done","completed","closed"].includes(s)) return "done";
+  if (["in_progress","in-progress","progress","active"].includes(s)) return "in_progress";
+  return "open";
+}
+
+function toSlug(s: string | null | undefined, fallback: string) {
+  const v = firstString(s, fallback) || fallback;
+  return slugify(v);
+}
+
+async function detectTestCommands(repoRoot: string) {
+  const cmds: string[] = [];
+  try {
+    const path = (await import("path")).default;
+    const fs = await import("fs/promises");
+    const pjPath = path.join(repoRoot, 'package.json');
+    const pj = JSON.parse(await fs.readFile(pjPath, 'utf8'));
+    const scripts = pj && pj.scripts ? pj.scripts : {};
+    if (scripts.test) cmds.push('npm test');
+    if (scripts.lint) cmds.push('npm run lint');
+  } catch {}
+  return cmds;
+}
+
+function extractDiffCandidates(leadOutcome: any): string[] {
+  const rawCandidates: Array<string | null> = [];
+  try {
+    const r = (leadOutcome as any)?.result;
+    if (typeof r === 'string') rawCandidates.push(r);
+    if (r && typeof r === 'object') {
+      rawCandidates.push(r.preview ?? null);
+      rawCandidates.push(r.output ?? null);
+      rawCandidates.push(r.raw && typeof r.raw === 'string' ? r.raw : null);
+      rawCandidates.push(r.message ?? null);
+      rawCandidates.push(r.text ?? null);
+      rawCandidates.push(r.body ?? null);
     }
-  
-    if (!payloadObj.repo) payloadObj.repo = projectRepo;
-    if (!payloadObj.project_slug && projectSlug) payloadObj.project_slug = projectSlug;
-    if (!payloadObj.project_name && projectInfo?.name) payloadObj.project_name = projectInfo.name;
-  
-  const repoResolution = await H.resolveRepoFromPayload(payloadObj);
-  const repoRoot = normalizeRepoPath(repoResolution.repoRoot, cfg.repoRoot);
+    rawCandidates.push((leadOutcome as any).preview && typeof (leadOutcome as any).preview === 'string' ? (leadOutcome as any).preview : null);
+    rawCandidates.push((leadOutcome as any).output && typeof (leadOutcome as any).output === 'string' ? (leadOutcome as any).output : null);
+  } catch {}
+
+  const normalized: string[] = [];
+  for (const c of rawCandidates) {
+    if (!c || typeof c !== 'string') continue;
+    let txt = c;
+    const fenceRe = /```(?:diff)?\n([\s\S]*?)```/g;
+    const matches = Array.from(txt.matchAll(fenceRe));
+    if (matches && matches.length) {
+      let chosen: string | null = null;
+      for (const m of matches) {
+        const inner = m[1] || '';
+        if (inner.includes('diff --git') || inner.includes('@@') || inner.includes('+++ b/')) { chosen = inner; break; }
+      }
+      if (!chosen) chosen = matches[0][1] || null;
+      if (chosen) txt = chosen;
+    }
+  const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
+    if (idx >= 0) txt = txt.slice(idx);
+    if (txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/')) normalized.push(txt);
+  }
+  return normalized;
+}
+
+export async function handleCoordinator(r: any, msg: any, payload: any, overrides?: Overrides) {
+  const H = Object.assign(buildHelpers(), overrides || {});
+  const workflowId: string = firstString(msg?.workflow_id) || randomUUID();
+  const projectId: string = firstString(msg?.project_id, payload?.project_id, payload?.projectId) || '';
+  if (!projectId) throw new Error("Coordinator requires project_id");
+
+  const projectInfo: any = await H.fetchProjectStatus(projectId);
+  const details: any = await H.fetchProjectStatusDetails(projectId).catch(() => null);
+
+  const repoResolution = await H.resolveRepoFromPayload(payload || {});
+  const repoRoot = repoResolution.repoRoot;
   const repoMeta = await H.getRepoMetadata(repoRoot);
-  
-    const baseBranch = firstString(
-      payloadObj.base_branch,
-      payloadObj.branch,
-      repoResolution.branch,
-      repoMeta.currentBranch,
-      cfg.git.defaultBranch
-    ) || cfg.git.defaultBranch;
-  
-  
-  
-    // The coordinator will loop: select the next milestone/task, run the lead -> QA flow,
-    // and then re-evaluate project state until there are no remaining open tasks or a safety limit is reached.
-    const MAX_ITERATIONS = 50;
-  let iterations = 0;
-  const processedTaskIds = new Set<string>();
+  const baseBranch = repoResolution.branch || repoMeta.currentBranch || cfg.git.defaultBranch || 'main';
+  const projectName: string = firstString(projectInfo?.name, payload?.project_name) || 'project';
+  const projectSlug: string = slugify(firstString(projectInfo?.slug, payload?.project_slug, projectName) || projectName || 'project');
 
-    while (iterations < MAX_ITERATIONS) {
-      iterations += 1;
+  // Build a flat list of tasks with milestone context if available
+  type Item = { milestone: any | null; task: any };
+  const items: Item[] = [];
+  if (details && Array.isArray((details as any).milestones) && (details as any).milestones.length) {
+    for (const m of (details as any).milestones) {
+      const arr = Array.isArray(m?.tasks) ? m.tasks : [];
+      for (const t of arr) items.push({ milestone: m, task: t });
+    }
+  } else {
+    const arr = Array.isArray((projectInfo as any)?.tasks) ? (projectInfo as any).tasks : [];
+    for (const t of arr) items.push({ milestone: null, task: t });
+  }
 
-  // iteration tracing via logger
-  try { if (logger.debug) logger.debug(`coordinator loop iter=${iterations}`); } catch (e) {}
+  const pending = items.filter(it => normalizeTaskStatus(it.task?.status) !== 'done');
+  const toProcess: Item[] = pending.length ? pending : [{ milestone: null, task: { id: firstString(payload?.task_id, payload?.taskId, 't-synth') || 't-synth', name: firstString(payload?.task_name, 'task') || 'task', status: 'open' } }];
 
-      // refresh project state each iteration so selection sees the latest dashboard
-  projectInfo = await H.fetchProjectStatus(projectId);
-  projectStatus = await H.fetchProjectStatusDetails(projectId);
-  nextActionData = await H.fetchProjectNextAction(projectId);
+  for (const it of toProcess) {
+    const selectedMilestone = it.milestone;
+    const selectedTask = it.task;
 
-      const milestoneSource = projectStatus ?? projectInfo;
-      let selectedMilestone = (payloadObj.milestone && typeof payloadObj.milestone === "object")
-        ? payloadObj.milestone
-  : H.selectNextMilestone(milestoneSource);
+  const milestoneName = firstString(selectedMilestone?.name, selectedMilestone?.title, 'Milestone');
+  const milestoneNameText: string = milestoneName || 'Milestone';
+  const milestoneSlug = toSlug(selectedMilestone?.slug, milestoneNameText || 'milestone');
+    const taskName = firstString(selectedTask?.name, selectedTask?.title, selectedTask?.summary, selectedTask?.label, selectedTask?.key, selectedTask?.id) || null;
+    const taskSlug = taskName ? slugify(taskName) : null;
+    const taskDescriptor = selectedTask ? {
+      id: firstString(selectedTask.id, selectedTask.key, taskSlug, taskName) || null,
+      name: taskName,
+      slug: taskSlug,
+      status: selectedTask?.status ?? null,
+      normalized_status: normalizeTaskStatus(selectedTask?.status),
+      branch: firstString(selectedTask?.branch, selectedTask?.branch_name, selectedTask?.branchName) || null,
+      summary: firstString(selectedTask?.summary, selectedTask?.description) || null
+    } : null;
 
-      if (!selectedMilestone && projectInfo && projectInfo !== milestoneSource) {
-  selectedMilestone = H.selectNextMilestone(projectInfo) || selectedMilestone;
-      }
+    let branchName = firstString(selectedMilestone?.branch, selectedMilestone?.branch_name, selectedMilestone?.branchName) || `milestone/${milestoneSlug}`;
 
-      if (!selectedMilestone && milestoneSource && typeof milestoneSource === "object") {
-        const explicit = (milestoneSource as any).next_milestone ?? (milestoneSource as any).nextMilestone;
-        if (explicit && typeof explicit === "object") selectedMilestone = explicit;
-      }
+    await H.checkoutBranchFromBase(repoRoot, baseBranch, branchName);
+    logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
 
-      if (!selectedMilestone) {
-        logger.warn("coordinator milestone fallback", { workflowId, projectId });
-      }
-
-      const milestoneName = firstString(
-        payloadObj.milestone_name,
-        selectedMilestone?.name,
-        selectedMilestone?.title,
-        selectedMilestone?.goal,
-        (milestoneSource as any)?.next_milestone?.name,
-        (milestoneSource as any)?.nextMilestone?.name,
-        projectInfo?.next_milestone?.name,
-        "next milestone"
-      )!;
-
-      const milestoneSlug = slugify(
-        firstString(
-          payloadObj.milestone_slug,
-          selectedMilestone?.slug,
-          milestoneName,
-          "milestone"
-        )!
-      );
-
-  let selectedTask = H.selectNextTask(selectedMilestone, milestoneSource, projectStatus, projectInfo, payloadObj);
-      // If selectNextTask returned a task we've already processed in this coordinator run, skip it
-      if (selectedTask && selectedTask.id && processedTaskIds.has(String(selectedTask.id))) {
-        selectedTask = null;
-      }
-      if (!selectedTask) {
-        const suggested = pickSuggestion(nextActionData?.suggestions);
-        if (suggested) {
-          selectedTask = suggested;
-          logger.info("coordinator selected suggestion task", { workflowId, task: suggested.name, reason: suggested.summary });
-        }
-      }
-
-
-      // If nothing to do from the milestone selection, try to fall back to any open project task
-  const projNow = await H.fetchProjectStatus(projectId) as any;
-      const remainingNow = Array.isArray(projNow?.tasks) ? projNow.tasks.length : 0;
-      if (!selectedTask && remainingNow) {
-        // try to pick any open task from the project-level status; prefer the first unprocessed task
-        try {
-          if (Array.isArray(projNow?.tasks)) {
-            for (const t of projNow.tasks) {
-              const tid = firstString(t?.id, t?.key) || null;
-              if (!tid) continue;
-              if (processedTaskIds.has(String(tid))) continue;
-              // skip completed tasks
-              const ns = normalizeTaskStatus(t?.status ?? t?.state ?? t?.progress);
-              if (ns === 'done' || ns === 'completed' || ns === 'closed') continue;
-              selectedTask = t;
-              logger.info('coordinator selected project-level unprocessed task', { workflowId, taskId: tid, taskName: t?.name || t?.title || null });
-              break;
-            }
-          }
-        } catch (err) {
-          // fallback to original selector if anything goes wrong
-            const fallback = H.selectNextTask(projNow);
-          if (fallback && (!fallback.id || !processedTaskIds.has(String(fallback.id)))) {
-            selectedTask = fallback;
-            logger.info('coordinator selected fallback project-level task', { workflowId, taskId: fallback.id || null, taskName: fallback?.name || fallback?.title || null });
-          }
-        }
-      }
-
-      // If we've selected a task, mark it as in-progress/processed early to avoid re-selection
-      try {
-        if (selectedTask && selectedTask.id) {
-          processedTaskIds.add(String(selectedTask.id));
-          logger.debug('processedTaskIds preadd', { taskId: String(selectedTask.id), processedTaskIds: Array.from(processedTaskIds) });
-        }
-      } catch (err) {}
-
-      // Optional debug: use logger.debug to record selection decision and project snapshot when needed
-      try {
-        if (logger.debug) {
-          const projSnapshot = (projNow && Array.isArray((projNow as any).tasks)) ? (projNow as any).tasks.map((t: any) => ({ id: t.id, name: t.name, status: t.status })) : [];
-          logger.debug('coordinator selection', { iteration: iterations, selectedTaskId: selectedTask?.id ?? null, remainingNow, projSnapshot, processedTaskIds: Array.from(processedTaskIds) });
-        }
-      } catch (err) {}
-
-      if (!selectedTask && !remainingNow) {
-        logger.info("coordinator: no selected task and no remaining tasks, finishing", { workflowId, projectId });
-        break;
-      }
-
-  try { logger.info(`coordinator iteration=${iterations} selectedTask=${selectedTask?.id ?? selectedTask?.name ?? 'none'} remaining=${remainingNow}`); } catch (e) {}
-
-      const taskName = firstString(
-        payloadObj.task_name,
-        selectedTask?.name,
-        selectedTask?.title,
-        selectedTask?.summary,
-        selectedTask?.label,
-        selectedTask?.key,
-        selectedTask?.id
-      ) || null;
-
-      if (taskName && !payloadObj.task_name) payloadObj.task_name = taskName;
-
-      const rawTaskSlug = firstString(
-        payloadObj.task_slug,
-        selectedTask?.slug,
-        selectedTask?.key,
-        taskName,
-        selectedTask?.id,
-        "task"
-      );
-      const taskSlug = rawTaskSlug ? slugify(rawTaskSlug) : null;
-
-      const taskDueText = firstString(
-        selectedTask?.due,
-        selectedTask?.due_at,
-        selectedTask?.dueAt,
-        selectedTask?.due_date,
-        selectedTask?.target_date,
-        selectedTask?.targetDate,
-        selectedTask?.deadline,
-        selectedTask?.eta
-      );
-
-      const selectedTaskStatus = normalizeTaskStatus(
-        selectedTask?.status ??
-        selectedTask?.state ??
-        selectedTask?.phase ??
-        selectedTask?.stage ??
-        selectedTask?.progress
-      );
-
-      const taskDescriptor = selectedTask
-        ? {
-            id: firstString(selectedTask.id, selectedTask.key, taskSlug, taskName) || null,
-            name: taskName,
-            slug: taskSlug,
-            status: selectedTask?.status ?? selectedTask?.state ?? selectedTask?.progress ?? null,
-            normalized_status: selectedTaskStatus || null,
-            due: taskDueText || null,
-            assignee: firstString(
-              selectedTask?.assignee,
-              selectedTask?.assignee_name,
-              selectedTask?.assigneeName,
-              selectedTask?.owner,
-              selectedTask?.owner_name,
-              selectedTask?.assigned_to,
-              selectedTask?.assignedTo
-            ) || null,
-            branch: firstString(selectedTask?.branch, selectedTask?.branch_name, selectedTask?.branchName) || null,
-            summary: firstString(selectedTask?.summary, selectedTask?.description) || null
-          }
-        : null;
-
-      let branchName = payloadObj.branch_name
-        || firstString(
-          selectedMilestone?.branch,
-          selectedMilestone?.branch_name,
-          selectedMilestone?.branchName
-        )
-        || `milestone/${milestoneSlug}`;
-
-  await H.checkoutBranchFromBase(repoRoot, baseBranch, branchName);
-      logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
-
-  await H.ensureBranchPublished(repoRoot, branchName);
-  
     const repoSlug = repoMeta.remoteSlug;
-    const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payloadObj.repo || projectRepo || repoMeta.remoteUrl || repoResolution.remote || "");
+    const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payload.repo || (projectInfo as any)?.repository?.url || repoMeta.remoteUrl || repoResolution.remote || "");
     if (!repoRemote) throw new Error("Coordinator could not determine repo remote");
-  
-    const milestoneDue = firstString(
-      selectedMilestone?.due,
-      selectedMilestone?.due_at,
-      selectedMilestone?.dueAt,
-      selectedMilestone?.due_date,
-      selectedMilestone?.target_date,
-      selectedMilestone?.targetDate,
-      selectedMilestone?.deadline,
-      selectedMilestone?.eta
-    );
-  
-    const milestoneDescriptor = selectedMilestone
-      ? {
-          id: selectedMilestone.id ?? milestoneSlug,
-          name: milestoneName,
-          slug: milestoneSlug,
-          status: selectedMilestone.status,
-          goal: selectedMilestone.goal,
-          due: milestoneDue || null,
-          branch: firstString(selectedMilestone.branch, selectedMilestone.branch_name, selectedMilestone.branchName) || branchName,
-          task: taskDescriptor
-        }
-      : (taskDescriptor ? { task: taskDescriptor } : null);
+
+    // Context step
     const contextCorrId = randomUUID();
-  await H.persona.sendPersonaRequest(r, {
+    await H.persona.sendPersonaRequest(r, {
       workflowId,
       toPersona: PERSONAS.CONTEXT,
       step: "1-context",
@@ -312,10 +173,10 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any, overr
         repo: repoRemote,
         branch: branchName,
         project_id: projectId,
-        project_slug: projectSlug || undefined,
-        project_name: payloadObj.project_name || projectInfo?.name || "",
-        milestone: milestoneDescriptor,
-        milestone_name: milestoneName,
+        project_slug: projectSlug,
+        project_name: projectName,
+        milestone: selectedMilestone ? { id: selectedMilestone.id ?? milestoneSlug, name: milestoneName, slug: milestoneSlug } : null,
+  milestone_name: milestoneNameText,
         task: taskDescriptor,
         task_name: taskName || (taskDescriptor?.name ?? ""),
         upload_dashboard: true
@@ -325,272 +186,127 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any, overr
       branch: branchName,
       projectId
     });
-  
-    const contextEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.CONTEXT, workflowId, contextCorrId);
-      const contextResult = H.persona.parseEventResult(contextEvent.fields.result);
-    logger.info("coordinator received context completion", { workflowId, corrId: contextCorrId, eventId: contextEvent.id });
+    await H.persona.waitForPersonaCompletion(r, PERSONAS.CONTEXT, workflowId, contextCorrId);
 
+    // Lead cycle (planner + lead)
     let feedbackNotes: string[] = [];
     let attempt = 0;
-      let leadOutcome: any = null;
-      if (selectedTask) {
-  leadOutcome = await H.runLeadCycle(r, workflowId, projectId, projectInfo, projectSlug, repoRemote, branchName, baseBranch, milestoneDescriptor, milestoneName, milestoneSlug, taskDescriptor, taskName, feedbackNotes, attempt);
+  const milestoneDescriptor = selectedMilestone ? { id: selectedMilestone.id ?? milestoneSlug, name: milestoneNameText, slug: milestoneSlug, task: taskDescriptor } : (taskDescriptor ? { task: taskDescriptor } : null);
+  const leadOutcome = await H.runLeadCycle(r, workflowId, projectId, projectInfo, projectSlug, repoRemote, branchName, baseBranch, milestoneDescriptor, milestoneNameText, milestoneSlug, taskDescriptor, taskName, feedbackNotes, attempt);
 
-        // If the lead cycle succeeded and we have a task identifier, mark the task done
-        try {
-          // Diagnostic: show leadOutcome so we can see if coordinator considers the lead successful
-          if (logger.debug) logger.debug('leadOutcome', { taskId: taskDescriptor?.id, leadOutcome: (leadOutcome && typeof leadOutcome === 'object') ? { success: !!leadOutcome.success, noChanges: !!leadOutcome.noChanges } : leadOutcome });
-          if (leadOutcome && leadOutcome.success && taskDescriptor && taskDescriptor.id) {
-              // If the lead returned an explicit edit spec, apply it. Otherwise, try to
-              // detect a unified diff (preview/diff bundle) in the lead result and convert
-              // it into an edit spec and apply those edits.
-              try {
-                let editSpecObj: any = null;
-                // If the lead already provided a structured edit spec, use it directly
-                if (leadOutcome.result && typeof leadOutcome.result === 'object' && Array.isArray(leadOutcome.result.ops)) {
-                  editSpecObj = leadOutcome.result;
-                } else {
-                  // Build a list of candidate text fields that may contain a diff preview
-                  const rawCandidates: Array<string | null> = [];
-                  try {
-                    if (leadOutcome) {
-                      const r = leadOutcome.result;
-                      if (typeof r === 'string') rawCandidates.push(r);
-                      if (r && typeof r === 'object') {
-                        rawCandidates.push(r.preview ?? null);
-                        rawCandidates.push(r.output ?? null);
-                        rawCandidates.push(r.raw && typeof r.raw === 'string' ? r.raw : null);
-                        rawCandidates.push(r.message ?? null);
-                        // some personas place the human-visible text under 'text' or 'body'
-                        rawCandidates.push(r.text ?? null);
-                        rawCandidates.push(r.body ?? null);
-                      }
-                      // also check top-level fields on the leadOutcome object
-                      rawCandidates.push((leadOutcome.preview && typeof leadOutcome.preview === 'string') ? leadOutcome.preview : null);
-                      rawCandidates.push((leadOutcome.output && typeof leadOutcome.output === 'string') ? leadOutcome.output : null);
-                    }
-                  } catch (err) {
-                    // ignore introspection errors
-                  }
-
-                  // Normalize candidates: remove surrounding commentary and extract fenced blocks
-                  const normalizedCandidates: string[] = [];
-                  for (const c of rawCandidates) {
-                    if (!c || typeof c !== 'string') continue;
-                    let txt = c;
-                    // If wrapped in one or more code fences, prefer a fence that contains
-                    // diff markers (```diff or inner content with 'diff --git'/'@@'/ '+++ b/').
-                    const fenceRe = /```(?:diff)?\n([\s\S]*?)```/g;
-                    const matches = Array.from(txt.matchAll(fenceRe));
-                    if (matches && matches.length) {
-                      // find a fence that looks like a diff first
-                      let chosen: string | null = null;
-                      for (const m of matches) {
-                        const inner = m[1] || '';
-                        if (inner.includes('diff --git') || inner.includes('@@') || inner.includes('+++ b/')) {
-                          chosen = inner;
-                          break;
-                        }
-                      }
-                      // otherwise prefer the first fenced block
-                      if (!chosen) chosen = matches[0][1] || null;
-                      if (chosen) txt = chosen;
-                    }
-                    // Remove lines like "Changed Files:\n..." that sometimes prefix diffs
-                    const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
-                    if (idx >= 0) txt = txt.slice(idx);
-                    // Quick heuristic: contains diff indicators?
-                    if (txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/')) normalizedCandidates.push(txt);
-                  }
-
-                  // Try parsing each normalized candidate until one yields ops
-                  if (logger.debug) logger.debug('coordinator: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: normalizedCandidates.length });
-                  if (normalizedCandidates.length && logger.debug) {
-                    for (const nc of normalizedCandidates) logger.debug('coordinator: candidate head', { workflowId, taskId: taskDescriptor?.id, head: String(nc).slice(0,200) });
-                  }
-                  for (const c of normalizedCandidates) {
-                    try {
-                      const parsed = await H.parseUnifiedDiffToEditSpec(c);
-                      if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) {
-                        editSpecObj = parsed;
-                        break;
-                      } else {
-                        // Emit a diagnostic so we can see why a candidate didn't produce ops
-                        logger.debug('coordinator: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidatePreview: c.slice(0, 200) });
-                      }
-                    } catch (err) {
-                      logger.debug('coordinator: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, error: String(err).slice(0,200) });
-                    }
-                  }
-                }
-
-                if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
-                  const editResult = await H.applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
-                  if (editResult.changed.length > 0) {
-                    // Ensure the working branch is published before pushing specific paths
-                    try { await H.ensureBranchPublished(repoRoot, branchName); } catch (e) { /* non-fatal */ }
-                    await H.commitAndPushPaths({
-                      repoRoot,
-                      branch: branchName,
-                      message: `feat: ${taskName}`,
-                      paths: editResult.changed,
-                    });
-                  }
-                } else {
-                  // No edit ops were produced; persist a diagnostic with candidate previews for later analysis
-                  logger.info('coordinator: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof leadOutcome?.result });
-                  try {
-                    const preview = (leadOutcome && typeof leadOutcome.result === 'string')
-                      ? String(leadOutcome.result).slice(0, 4000)
-                      : '';
-                    await writeDiagnostic(repoRoot, 'coordinator-no-ops.json', {
-                      workflowId,
-                      taskId: taskDescriptor?.id || null,
-                      leadOutcomeType: typeof leadOutcome?.result,
-                      leadPreview: preview
-                    });
-                  } catch {}
-                }
-              } catch (err) {
-                logger.warn('coordinator: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
-              }
+    // Try to apply edits whenever the lead outcome contains a diff or structured ops
+    // even if the lead did not apply the edits itself.
+    let appliedSomething = false;
+    try {
+      if (logger.debug) logger.debug('leadOutcome', { taskId: taskDescriptor?.id, leadOutcome: (leadOutcome && typeof leadOutcome === 'object') ? { success: !!leadOutcome.success, noChanges: !!leadOutcome.noChanges } : leadOutcome });
+      if (taskDescriptor && taskDescriptor.id && leadOutcome) {
+        let editSpecObj: any = null;
+        if (leadOutcome.result && typeof leadOutcome.result === 'object' && Array.isArray(leadOutcome.result.ops)) {
+          editSpecObj = leadOutcome.result;
+        } else {
+          const candidates = extractDiffCandidates(leadOutcome);
+          if (logger.debug) logger.debug('coordinator: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: candidates.length });
+          for (const c of candidates) {
             try {
-              // Diagnostic: log intent to update task status
-              if (logger.debug) logger.debug('about to updateTaskStatus', { taskId: String(taskDescriptor.id), workflowId });
-              const updateRes = await H.updateTaskStatus(String(taskDescriptor.id), 'done');
-              if (logger.debug) logger.debug('updateTaskStatus returned', { taskId: String(taskDescriptor.id), workflowId, ok: !!(updateRes && updateRes.ok) });
-              // Only mark as processed if the dashboard update reported ok
-              if (updateRes && updateRes.ok) {
-                try {
-                  if (taskDescriptor && taskDescriptor.id) {
-                    processedTaskIds.add(String(taskDescriptor.id));
-                    logger.debug('processedTaskIds added', { taskId: String(taskDescriptor.id), processedTaskIds: Array.from(processedTaskIds) });
-                  }
-                } catch (err) {
-                  // ignore
-                }
-              }
+              const parsed = await H.parseUnifiedDiffToEditSpec(c);
+              if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) { editSpecObj = parsed; break; }
+              else logger.debug('coordinator: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidatePreview: c.slice(0, 200) });
             } catch (err) {
-              logger.warn('coordinator: failed to mark task done after lead success', { workflowId, taskId: taskDescriptor.id, error: err });
+              logger.debug('coordinator: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, error: String(err).slice(0,200) });
             }
           }
-        } catch (err) {
-          // swallow non-fatal errors here to avoid breaking coordinator loop
-          logger.debug('coordinator: error while attempting to update task status after lead', { workflowId, error: err });
         }
-      } else {
-        logger.info('coordinator: no selected task for this iteration, skipping lead cycle', { workflowId, projectId });
-      }
-
-      // If there was no selected task, skip QA and all subsequent stages for this iteration
-      // The coordinator should only run QA/planning/implementation for an actively selected task.
-      if (!selectedTask) {
-        logger.info('coordinator: skipping QA and subsequent stages because no selected task', { workflowId, projectId });
-        continue;
-      }
-
-    // After lead cycle, run QA tests by invoking the tester-qa persona. If QA fails,
-    // request the project-manager to return follow-up task definitions. The coordinator
-    // will then run summarizer -> create -> set-status for each follow-up and block
-    // until creation+status succeed before forwarding to implementation planning.
-    let testCommands: string[] = [];
-    try {
-      const pjPath = require('path').join(repoRoot, 'package.json');
-      const pj = JSON.parse(await (await import('fs/promises')).readFile(pjPath, 'utf8'));
-      const scripts = pj && pj.scripts ? pj.scripts : {};
-      if (scripts.test) testCommands.push('npm test');
-      if (scripts.lint) testCommands.push('npm run lint');
-      // include explicit commands if present in scripts
-      if (typeof scripts.test === 'string' && scripts.test.trim().length && scripts.test.trim() !== 'echo "Error: no test specified" && exit 1') {
-        // prefer direct npm invocation
-        // already added 'npm test'
+        if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
+          const editResult = await H.applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
+          if (editResult.changed.length > 0) {
+            appliedSomething = true;
+            try { await H.ensureBranchPublished(repoRoot, branchName); } catch {}
+            await H.commitAndPushPaths({ repoRoot, branch: branchName, message: `feat: ${taskName}`, paths: editResult.changed });
+          }
+        } else {
+          logger.info('coordinator: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof (leadOutcome as any)?.result });
+          try {
+            const preview = (leadOutcome && typeof (leadOutcome as any).result === 'string') ? String((leadOutcome as any).result).slice(0, 4000) : '';
+            await writeDiagnostic(repoRoot, 'coordinator-no-ops.json', { workflowId, taskId: taskDescriptor?.id || null, leadOutcomeType: typeof (leadOutcome as any)?.result, leadPreview: preview });
+          } catch {}
+        }
       }
     } catch (err) {
-      // ignore discovery errors - persona will be told if nothing available
+      logger.warn('coordinator: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
     }
 
-  const qaCorr = randomUUID();
-  await H.persona.sendPersonaRequest(r, {
+    if (taskDescriptor && taskDescriptor.id && (appliedSomething || (leadOutcome && leadOutcome.success))) {
+      try {
+        const updateRes = await H.updateTaskStatus(String(taskDescriptor.id), 'done');
+        if (!(updateRes && updateRes.ok)) logger.warn('coordinator: updateTaskStatus returned not-ok', { workflowId, taskId: String(taskDescriptor.id) });
+      } catch (err) {
+        logger.warn('coordinator: failed to mark task done after lead/apply', { workflowId, taskId: taskDescriptor.id, error: err });
+      }
+    }
+
+    // QA step
+    const qaCommands = await detectTestCommands(repoRoot);
+    const qaCorr = randomUUID();
+    await H.persona.sendPersonaRequest(r, {
       workflowId,
-  toPersona: PERSONAS.TESTER_QA,
+      toPersona: PERSONAS.TESTER_QA,
       step: "3-qa",
       intent: "run_qa",
-      payload: {
-        repo: repoRemote,
-        branch: branchName,
-        project_id: projectId,
-        milestone: milestoneDescriptor,
-        task: taskDescriptor,
-        commands: testCommands
-      },
+      payload: { repo: repoRemote, branch: branchName, project_id: projectId, milestone: milestoneDescriptor, task: taskDescriptor, commands: qaCommands },
       corrId: qaCorr,
       repo: repoRemote,
       branch: branchName,
       projectId
     });
-
-  const qaEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.TESTER_QA, workflowId, qaCorr);
+    const qaEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.TESTER_QA, workflowId, qaCorr);
     const qaResult = H.persona.parseEventResult(qaEvent.fields.result);
     const qaStatus = H.persona.interpretPersonaStatus(qaEvent.fields.result);
     logger.info("coordinator received QA completion", { workflowId, qaStatus: qaStatus.status, corrId: qaCorr, eventId: qaEvent.id });
 
-    if (qaStatus.status === "fail") {
-      // Any QA failure (not timeouts/system issues) is urgent: forward QA output to the summarizer -> create -> set-status flow
+    if (qaStatus.status === 'fail') {
       const qaPayloadObj = (qaResult && typeof qaResult === 'object') ? qaResult.payload ?? qaResult : null;
-      // Build suggested follow-ups from QA payload if present, otherwise synthesize one urgent follow-up using QA details
       let suggestedFromQa: any[] = [];
       if (qaPayloadObj) {
-        const candidates = qaPayloadObj.tasks || qaPayloadObj.follow_ups || qaPayloadObj.suggestions || qaPayloadObj.backlog || null;
-        if (Array.isArray(candidates) && candidates.length) {
-          suggestedFromQa = candidates.map((t: any) => (typeof t === 'object' ? t : { title: String(t) }));
-        }
+        const candidates = (qaPayloadObj as any).tasks || (qaPayloadObj as any).follow_ups || (qaPayloadObj as any).suggestions || (qaPayloadObj as any).backlog || null;
+        if (Array.isArray(candidates) && candidates.length) suggestedFromQa = candidates.map((t: any) => (typeof t === 'object' ? t : { title: String(t) }));
       }
-      // Fallback: synthesize a single urgent task using available QA details
       if (!suggestedFromQa.length) {
-        const detailsText = (qaPayloadObj && (qaPayloadObj.details || qaPayloadObj.message)) || (typeof qaResult === 'string' ? qaResult : qaResult?.details) || qaEvent.fields.result || 'QA reported failures';
+        const detailsText = (qaPayloadObj && ((qaPayloadObj as any).details || (qaPayloadObj as any).message)) || (typeof qaResult === 'string' ? qaResult : (qaResult as any)?.details) || qaEvent.fields.result || 'QA reported failures';
         const title = `QA failure: ${String(((detailsText || '') as string).split('\n')[0]).slice(0, 120)}`;
         suggestedFromQa = [{ title, description: String(detailsText).slice(0, 5000), schedule: 'urgent', assigneePersona: 'implementation-planner' }];
       }
-
-      // Forward suggested QA follow-ups to the failure mini-cycle (summarizer -> create -> set-status -> planner) and block until handled
-  const mini = await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedFromQa, {
+      const mini = await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedFromQa, {
         repo: repoRemote,
         branch: branchName,
         projectId,
         milestoneDescriptor,
         parentTaskDescriptor: taskDescriptor,
         projectName: projectInfo?.name || null,
-        scheduleHint: payloadObj?.scheduleHint,
+        scheduleHint: payload?.scheduleHint,
         qaResult: qaResult
       });
 
       if (mini && mini.plannerResult) {
         const evaluationCorrId = randomUUID();
         await persona.sendPersonaRequest(r, {
-            workflowId,
-            toPersona: PERSONAS.PLAN_EVALUATOR,
-            step: "3.5-evaluate-qa-plan",
-            intent: "evaluate_plan_relevance",
-            payload: {
-                qa_feedback: qaResult,
-                plan: mini.plannerResult,
-            },
-            corrId: evaluationCorrId,
-            repo: repoRemote,
-            branch: branchName,
-            projectId
+          workflowId,
+          toPersona: PERSONAS.PLAN_EVALUATOR,
+          step: "3.5-evaluate-qa-plan",
+          intent: "evaluate_plan_relevance",
+          payload: { qa_feedback: qaResult, plan: mini.plannerResult },
+          corrId: evaluationCorrId,
+          repo: repoRemote,
+          branch: branchName,
+          projectId
         });
         const evaluationEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, evaluationCorrId);
         const evaluationStatus = persona.interpretPersonaStatus(evaluationEvent.fields.result);
+        if (evaluationStatus.status !== 'pass') throw new Error(`Plan was rejected by ${PERSONAS.PLAN_EVALUATOR}`);
 
-        if (evaluationStatus.status !== 'pass') {
-            throw new Error(`Plan was rejected by ${PERSONAS.PLAN_EVALUATOR}`);
-        }
-
-        // If evaluation passes, then send to implementation-planner
+        // forward to implementation planning if evaluator passes
         try {
           const implCorr = randomUUID();
-          const implPersona = cfg.allowedPersonas.includes('implementation-planner') ? 'implementation-planner' : 'lead-engineer';
+          const implPersona = cfg.allowedPersonas.includes(PERSONAS.IMPLEMENTATION_PLANNER) ? PERSONAS.IMPLEMENTATION_PLANNER : PERSONAS.LEAD_ENGINEER;
           await H.persona.sendPersonaRequest(r, {
             workflowId,
             toPersona: implPersona,
@@ -607,11 +323,11 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any, overr
         }
       }
 
-      // After immediate handling, still request project-manager routing for any additional follow-ups
+      // Also route via project-manager for additional follow-ups
       const pmCorr = randomUUID();
-await persona.sendPersonaRequest(r, {
+      await persona.sendPersonaRequest(r, {
         workflowId,
-  toPersona: PERSONAS.PROJECT_MANAGER,
+        toPersona: PERSONAS.PROJECT_MANAGER,
         step: "3-route",
         intent: "route_qa_followups",
         payload: { qa_result: qaResult?.payload ?? qaResult ?? qaEvent.fields.result, project_id: projectId, milestone: milestoneDescriptor, task: taskDescriptor },
@@ -620,88 +336,29 @@ await persona.sendPersonaRequest(r, {
         branch: branchName,
         projectId
       });
-
-    const pmEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.PROJECT_MANAGER, workflowId, pmCorr);
-  const pmResult = H.persona.parseEventResult(pmEvent.fields.result) || {};
-      // prefer explicit payload fields that might contain suggested tasks
+      const pmEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.PROJECT_MANAGER, workflowId, pmCorr);
+      const pmResult = H.persona.parseEventResult(pmEvent.fields.result) || {};
       let suggestedTasks = pmResult.payload?.tasks || pmResult.payload?.follow_ups || pmResult.payload?.backlog || pmResult.payload?.suggestions || pmResult.payload || null;
-      if (!suggestedTasks) {
-        // fallback to any task-like structure in QA result
-        suggestedTasks = qaResult?.payload?.follow_ups || qaResult?.payload?.tasks || qaResult?.payload || [];
-      }
-
-      if (!Array.isArray(suggestedTasks)) {
-        // If single object, wrap it
-        if (suggestedTasks && typeof suggestedTasks === 'object') suggestedTasks = [suggestedTasks];
-        else suggestedTasks = [];
-      }
-
-      if (!suggestedTasks.length) {
-        logger.warn("project-manager returned no suggested tasks for QA failure", { workflowId, projectId });
-        // Try to synthesize an urgent follow-up when QA or PM details indicate missing tests or framework
+      if (!suggestedTasks) suggestedTasks = qaResult?.payload?.follow_ups || qaResult?.payload?.tasks || qaResult?.payload || [];
+      if (!Array.isArray(suggestedTasks)) suggestedTasks = suggestedTasks && typeof suggestedTasks === 'object' ? [suggestedTasks] : [];
+      if (suggestedTasks.length) {
         try {
-          const pmDetails = (pmResult && typeof pmResult === 'object') ? (pmResult.payload?.details || pmResult.details || '') : '';
-          const qaDetailsText = (qaResult && typeof qaResult === 'object') ? (qaResult.payload?.details || qaResult.details || '') : '';
-          const combined = ((pmDetails || '') + '\n' + (qaDetailsText || '')).toLowerCase();
-          const missingSignals = ['no test', 'no tests', 'no test commands', 'no testing framework', 'no obvious testing framework', 'add jest', 'add pytest', 'missing tests', 'no pytest', 'no jest', 'no test script'];
-          const found = missingSignals.find(sig => combined.includes(sig));
-          if (found) {
-            const reason = pmDetails || qaDetailsText || 'QA reported missing tests or test framework.';
-            const synthesized = [{ title: `Add test harness / test scripts`, description: `Urgent: ${reason}`, schedule: 'urgent', assigneePersona: 'implementation-planner' }];
-            logger.info("coordinator synthesizing urgent QA follow-up task", { workflowId, reason: found });
-            // Use the same create+status+planner blocking flow
-            await handleFailureMiniCycle(r, workflowId, 'qa', synthesized, {
-              repo: repoRemote,
-              branch: branchName,
-              projectId,
-              milestoneDescriptor,
-              parentTaskDescriptor: taskDescriptor,
-              projectName: projectInfo?.name || null,
-              scheduleHint: payloadObj?.scheduleHint
-            });
-            // After synthesizing and handling the immediate follow-up, there is nothing further to do here
-            suggestedTasks = synthesized;
-          }
-        } catch (err) {
-          logger.warn("coordinator failed to synthesize QA follow-up", { workflowId, error: err });
-        }
-      } else {
-          // Use the helper to perform summarizer->create->set-status and forwarding according to stage policy
-          const mini = await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedTasks, {
+          await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedTasks, {
             repo: repoRemote,
             branch: branchName,
             projectId,
             milestoneDescriptor,
             parentTaskDescriptor: taskDescriptor,
             projectName: projectInfo?.name || null,
-            scheduleHint: payloadObj?.scheduleHint,
+            scheduleHint: payload?.scheduleHint,
             qaResult: qaResult
           });
-
-          if (mini && mini.plannerResult) {
-            logger.info("coordinator received planner result", { workflowId, planner: mini.plannerResult });
-            // If planner returned an actionable plan, forward it to the implementation planning step
-            try {
-              const implCorr = randomUUID();
-              const implPersona = cfg.allowedPersonas.includes(PERSONAS.IMPLEMENTATION_PLANNER) ? PERSONAS.IMPLEMENTATION_PLANNER : PERSONAS.LEAD_ENGINEER;
-                await persona.sendPersonaRequest(r, {
-              workflowId,
-              toPersona: implPersona,
-                step: "4-implementation-plan",
-                intent: "handle_qa_followups",
-                payload: { qa_result: qaResult?.payload ?? qaResult, planner_result: mini.plannerResult, created_tasks: mini.created, milestone: milestoneDescriptor, task: taskDescriptor, project_id: projectId },
-                corrId: implCorr,
-                repo: repoRemote,
-                branch: branchName,
-                projectId
-              });
-            } catch (err) {
-              logger.warn("failed to forward planner result to implementation persona", { workflowId, error: err });
-            }
-          }
+        } catch (err) {
+          logger.warn("coordinator: failed to process PM-suggested QA follow-ups", { workflowId, error: err });
+        }
       }
     }
   }
 }
 
-// end handleCoordinator
+export default { handleCoordinator };

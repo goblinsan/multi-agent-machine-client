@@ -1,44 +1,25 @@
 {
-  "generatedAt": "2025-10-06T18:35:38.966Z",
+  "generatedAt": "2025-10-06T19:11:35.751Z",
   "requests": [
     {
       "step": "1-context",
       "role": "Hydrate project context",
       "toPersona": "context",
-      "corrId": "0e4535e6-8c20-48cc-9fb6-aab61ca568ec",
+      "corrId": "aef3b022-2cca-4150-b3bc-f3be77a0f4a0",
       "payload": {
         "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
+        "branch": "milestone/milestone",
         "project_id": "proj-1",
-        "project_slug": "proj-1",
+        "project_slug": "proj",
         "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": {
-            "id": "task-1",
-            "name": "task-1",
-            "slug": "task-1",
-            "status": "open",
-            "normalized_status": "open",
-            "due": null,
-            "assignee": null,
-            "branch": null,
-            "summary": null
-          }
-        },
-        "milestone_name": "Milestone 1",
+        "milestone": null,
+        "milestone_name": "Milestone",
         "task": {
           "id": "task-1",
           "name": "task-1",
           "slug": "task-1",
           "status": "open",
           "normalized_status": "open",
-          "due": null,
-          "assignee": null,
           "branch": null,
           "summary": null
         },
@@ -50,41 +31,32 @@
       "step": "2-plan",
       "role": "Implementation planning (planner)",
       "toPersona": "implementation-planner",
-      "corrId": "c3b6728b-f7bb-43cb-ad39-dea977801c00",
+      "corrId": "ba4f6d2d-e93f-4fed-835b-cf9dbc1af040",
       "payload": {
         "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
+        "branch": "milestone/milestone",
         "project_id": "proj-1",
-        "project_slug": "proj-1",
+        "project_slug": "proj",
         "project_name": "proj",
         "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
           "task": {
             "id": "task-1",
             "name": "task-1",
             "slug": "task-1",
             "status": "open",
             "normalized_status": "open",
-            "due": null,
-            "assignee": null,
             "branch": null,
             "summary": null
           }
         },
-        "milestone_name": "Milestone 1",
-        "milestone_slug": "milestone-1",
+        "milestone_name": "Milestone",
+        "milestone_slug": "milestone",
         "task": {
           "id": "task-1",
           "name": "task-1",
           "slug": "task-1",
           "status": "open",
           "normalized_status": "open",
-          "due": null,
-          "assignee": null,
           "branch": null,
           "summary": null
         },
@@ -102,41 +74,32 @@
       "step": "2-implementation",
       "role": "Lead implementation (engineer)",
       "toPersona": "lead-engineer",
-      "corrId": "915a85ca-bb0d-44e3-b4ba-6b7d66805d18",
+      "corrId": "4b8bb208-6d3c-43dc-9cdd-589df0ea5187",
       "payload": {
         "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
+        "branch": "milestone/milestone",
         "project_id": "proj-1",
-        "project_slug": "proj-1",
+        "project_slug": "proj",
         "project_name": "proj",
         "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
           "task": {
             "id": "task-1",
             "name": "task-1",
             "slug": "task-1",
             "status": "open",
             "normalized_status": "open",
-            "due": null,
-            "assignee": null,
             "branch": null,
             "summary": null
           }
         },
-        "milestone_name": "Milestone 1",
-        "milestone_slug": "milestone-1",
+        "milestone_name": "Milestone",
+        "milestone_slug": "milestone",
         "task": {
           "id": "task-1",
           "name": "task-1",
           "slug": "task-1",
           "status": "open",
           "normalized_status": "open",
-          "due": null,
-          "assignee": null,
           "branch": null,
           "summary": null
         },
@@ -175,25 +138,18 @@
       "step": "3-qa",
       "role": "QA test run",
       "toPersona": "tester-qa",
-      "corrId": "8812e470-ef42-49f5-b32d-a6bc00a81ca1",
+      "corrId": "20e03c52-3924-44eb-91a9-8e252c57aa98",
       "payload": {
         "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
+        "branch": "milestone/milestone",
         "project_id": "proj-1",
         "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
           "task": {
             "id": "task-1",
             "name": "task-1",
             "slug": "task-1",
             "status": "open",
             "normalized_status": "open",
-            "due": null,
-            "assignee": null,
             "branch": null,
             "summary": null
           }
@@ -204,8 +160,6 @@
           "slug": "task-1",
           "status": "open",
           "normalized_status": "open",
-          "due": null,
-          "assignee": null,
           "branch": null,
           "summary": null
         },
@@ -216,7 +170,7 @@
       "step": "qa-created-tasks",
       "role": "QA follow-up - created tasks (after summarizer/create)",
       "toPersona": "implementation-planner",
-      "corrId": "95f57221-39b2-4876-b21f-3265f085a26d",
+      "corrId": "ebe418b5-8468-4334-9574-4c67b9b4a016",
       "payload": {
         "created_tasks": [
           {
@@ -228,19 +182,12 @@
         ],
         "stage": "qa",
         "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
           "task": {
             "id": "task-1",
             "name": "task-1",
             "slug": "task-1",
             "status": "open",
             "normalized_status": "open",
-            "due": null,
-            "assignee": null,
             "branch": null,
             "summary": null
           }
@@ -251,8 +198,6 @@
           "slug": "task-1",
           "status": "open",
           "normalized_status": "open",
-          "due": null,
-          "assignee": null,
           "branch": null,
           "summary": null
         },
@@ -267,7 +212,7 @@
       "step": "3.5-evaluate-qa-plan",
       "role": "Workflow step",
       "toPersona": "plan-evaluator",
-      "corrId": "2bcc7a32-e6e4-4907-adff-b2519bc3adf5",
+      "corrId": "51e558e3-a953-4bbb-95ce-2db862d23328",
       "payload": {
         "qa_feedback": {
           "status": "fail",
@@ -294,7 +239,7 @@
       "step": "4-implementation-plan",
       "role": "Implementation planning for QA follow-ups",
       "toPersona": "implementation-planner",
-      "corrId": "53edb278-e133-4ac3-8ec9-0e27e7acda63",
+      "corrId": "7e571a56-83f4-4132-a48e-df80e17c25f8",
       "payload": {
         "qa_result": {
           "status": "fail",
@@ -324,19 +269,12 @@
           }
         ],
         "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
           "task": {
             "id": "task-1",
             "name": "task-1",
             "slug": "task-1",
             "status": "open",
             "normalized_status": "open",
-            "due": null,
-            "assignee": null,
             "branch": null,
             "summary": null
           }
@@ -347,8 +285,6 @@
           "slug": "task-1",
           "status": "open",
           "normalized_status": "open",
-          "due": null,
-          "assignee": null,
           "branch": null,
           "summary": null
         },
@@ -359,7 +295,7 @@
       "step": "3-route",
       "role": "Workflow step",
       "toPersona": "project-manager",
-      "corrId": "e395d905-a8f8-4ce8-9148-cfc6eb4c469d",
+      "corrId": "002cc76a-caee-453a-805b-01c0165b7a50",
       "payload": {
         "qa_result": {
           "status": "fail",
@@ -368,19 +304,12 @@
         },
         "project_id": "proj-1",
         "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
           "task": {
             "id": "task-1",
             "name": "task-1",
             "slug": "task-1",
             "status": "open",
             "normalized_status": "open",
-            "due": null,
-            "assignee": null,
             "branch": null,
             "summary": null
           }
@@ -391,1283 +320,9 @@
           "slug": "task-1",
           "status": "open",
           "normalized_status": "open",
-          "due": null,
-          "assignee": null,
           "branch": null,
           "summary": null
         }
-      }
-    },
-    {
-      "step": "qa-created-tasks",
-      "role": "QA follow-up - created tasks (after summarizer/create)",
-      "toPersona": "implementation-planner",
-      "corrId": "c5c4ffa3-359a-4d6e-a870-2777c8b416b8",
-      "payload": {
-        "created_tasks": [
-          {
-            "title": "QA failure task",
-            "externalId": "ext-1",
-            "createdId": "t-1",
-            "description": "Condensed description about missing tests"
-          }
-        ],
-        "stage": "qa",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": {
-            "id": "task-1",
-            "name": "task-1",
-            "slug": "task-1",
-            "status": "open",
-            "normalized_status": "open",
-            "due": null,
-            "assignee": null,
-            "branch": null,
-            "summary": null
-          }
-        },
-        "parent_task": {
-          "id": "task-1",
-          "name": "task-1",
-          "slug": "task-1",
-          "status": "open",
-          "normalized_status": "open",
-          "due": null,
-          "assignee": null,
-          "branch": null,
-          "summary": null
-        },
-        "qa_result": null
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "863f8c1f-e0ca-4060-8418-986b5521eb98",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "36cec21a-a2c8-47ca-b87b-918cb84c5423",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "a2a6ef24-5408-4c72-8564-1dd502e4273d",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "004a50de-c47b-4dc8-af4f-4fd0cba17ac2",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "38c5243d-1d76-4ed0-8f9b-70c4de09d9e8",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "72deab62-4757-42dd-9cd0-91e46a75f2e1",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "f4503067-fe1e-42c9-bfc5-6d3a9ce46aaa",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "c44b10fb-b865-4383-a240-d8e944908969",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "fae3aa6b-cd68-46d1-a436-d089cc6d9533",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "deed129e-841e-459e-97a6-1878af7cefbe",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "8a91f10d-2aa4-462e-a47f-acd764eca3ed",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "b37218c2-ee70-49f7-a999-10a2ace45d32",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "13d35578-41c9-4c7a-b7c3-3fc65021d050",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "1f08dbb8-f248-4af6-9d80-b9e58fbb7f9e",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "61f7c0cb-8f79-481f-9f58-8401514bd712",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "7d5bf831-5247-4d4f-b5c3-38dcae70709b",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "cf62b194-8f18-4594-93d4-7c9453ea7459",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "d8998fea-43fe-4aff-8668-161b60df5580",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "474e0155-0a15-4955-87fc-00e99c9d321b",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "09772226-c7c7-4897-9a18-19f465f4aa39",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "52921e13-143a-41cb-a423-276bf675ccf0",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "496f643b-b1c5-4849-a563-6df40e7b741c",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "19d819c9-ffed-4494-8e28-db927c3012be",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "1b670a6a-99e8-4c6c-8c77-657bc2aad065",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "70b35e8c-69cf-467a-a201-0f6823026cd0",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "90e35859-641f-4817-9852-e1902da082b0",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "fbbbe5bf-046b-420a-9151-58a9d7d4d397",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "2f7ad18e-b3dc-4950-b1ca-61014b44f0f7",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "99af1a35-6dd8-49bb-9f10-935e4b076e4c",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "e7b80892-42c3-43b4-8030-c2cfe6dc888d",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "2996e47d-3eac-45ae-9bc6-c9fb8fd1d733",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "04339196-6f8e-4207-9932-211a72b9e3f4",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "d6abcb03-276a-402f-b73b-c31bdee4ccaf",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "7dc6cd90-19ac-42ca-8217-8f276da63dfc",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "c1deec92-3f39-4e4c-adbe-7385ed8bbaf9",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "f9622f49-bd09-4297-bb11-c4a64577917a",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "2a56c35c-c483-43a6-8401-626a3819f8b9",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "25944f9e-96e6-4288-b4ce-1b23b21461eb",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "d8a33491-78f5-4b94-b1fd-187fb4bbeb00",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "8e5a4420-904c-4517-90ed-14f2ff4eeec6",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "53ce635a-6c4c-4df3-b925-215957dce45a",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "898ecee0-7e82-4743-89a8-9fb8432ae58d",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "fed73312-96f7-4e93-a468-2c3ae2bf3bcd",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "a14005ac-7819-4b3f-a355-28d118babb27",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "cec6c87c-ebbb-43e9-913b-5d771327d6d0",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "749abc4f-1bbb-4110-83cc-683c9d086d09",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "bdbf4851-d543-4ab0-aea7-6b91551c5c77",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "a2b5686f-c59f-4626-a4d1-7c6423c8f500",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
-      }
-    },
-    {
-      "step": "1-context",
-      "role": "Hydrate project context",
-      "toPersona": "context",
-      "corrId": "32cfc685-1623-4f41-ab40-c0d310180df0",
-      "payload": {
-        "repo": "https://example/repo.git",
-        "branch": "milestone/milestone-1",
-        "project_id": "proj-1",
-        "project_slug": "proj-1",
-        "project_name": "proj",
-        "milestone": {
-          "id": "milestone-1",
-          "name": "Milestone 1",
-          "slug": "milestone-1",
-          "due": null,
-          "branch": "milestone/milestone-1",
-          "task": null
-        },
-        "milestone_name": "Milestone 1",
-        "task": null,
-        "task_name": "task-1",
-        "upload_dashboard": true
       }
     }
   ]
