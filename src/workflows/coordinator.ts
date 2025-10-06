@@ -14,14 +14,34 @@ import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
 import { runLeadCycle } from "./stages/implementation.js";
 
-export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
+export async function handleCoordinator(r: any, msg: any, payloadObj: any, overrides: any = {}) {
     const workflowId = msg.workflow_id;
     const projectId = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id);
     if (!projectId) throw new Error("Coordinator requires project_id in payload or message");
   
-    let projectInfo: any = await fetchProjectStatus(projectId);
-    let projectStatus: any = await fetchProjectStatusDetails(projectId);
-    let nextActionData: any = await fetchProjectNextAction(projectId);
+    // Allow dependency injection via overrides for testing/harnesses.
+    const H = {
+      fetchProjectStatus: overrides.fetchProjectStatus ?? fetchProjectStatus,
+      fetchProjectStatusDetails: overrides.fetchProjectStatusDetails ?? fetchProjectStatusDetails,
+      fetchProjectNextAction: overrides.fetchProjectNextAction ?? fetchProjectNextAction,
+      resolveRepoFromPayload: overrides.resolveRepoFromPayload ?? resolveRepoFromPayload,
+      getRepoMetadata: overrides.getRepoMetadata ?? getRepoMetadata,
+      checkoutBranchFromBase: overrides.checkoutBranchFromBase ?? checkoutBranchFromBase,
+      ensureBranchPublished: overrides.ensureBranchPublished ?? ensureBranchPublished,
+      commitAndPushPaths: overrides.commitAndPushPaths ?? commitAndPushPaths,
+      updateTaskStatus: overrides.updateTaskStatus ?? updateTaskStatus,
+      parseUnifiedDiffToEditSpec: overrides.parseUnifiedDiffToEditSpec ?? parseUnifiedDiffToEditSpec,
+      applyEditOps: overrides.applyEditOps ?? applyEditOps,
+      runLeadCycle: overrides.runLeadCycle ?? runLeadCycle,
+      handleFailureMiniCycle: overrides.handleFailureMiniCycle ?? handleFailureMiniCycle,
+      selectNextMilestone: overrides.selectNextMilestone ?? selectNextMilestone,
+      selectNextTask: overrides.selectNextTask ?? selectNextTask,
+      persona: overrides.persona ?? persona
+    } as any;
+
+    let projectInfo: any = await H.fetchProjectStatus(projectId);
+    let projectStatus: any = await H.fetchProjectStatusDetails(projectId);
+    let nextActionData: any = await H.fetchProjectNextAction(projectId);
     const projectSlug = firstString(payloadObj.project_slug, payloadObj.projectSlug, projectInfo?.slug, projectInfo?.id);
     const projectRepo = firstString(
       payloadObj.repo,
@@ -44,9 +64,9 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
     if (!payloadObj.project_slug && projectSlug) payloadObj.project_slug = projectSlug;
     if (!payloadObj.project_name && projectInfo?.name) payloadObj.project_name = projectInfo.name;
   
-    const repoResolution = await resolveRepoFromPayload(payloadObj);
-    const repoRoot = normalizeRepoPath(repoResolution.repoRoot, cfg.repoRoot);
-    const repoMeta = await getRepoMetadata(repoRoot);
+  const repoResolution = await H.resolveRepoFromPayload(payloadObj);
+  const repoRoot = normalizeRepoPath(repoResolution.repoRoot, cfg.repoRoot);
+  const repoMeta = await H.getRepoMetadata(repoRoot);
   
     const baseBranch = firstString(
       payloadObj.base_branch,
@@ -71,17 +91,17 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
   try { if (logger.debug) logger.debug(`coordinator loop iter=${iterations}`); } catch (e) {}
 
       // refresh project state each iteration so selection sees the latest dashboard
-      projectInfo = await fetchProjectStatus(projectId);
-      projectStatus = await fetchProjectStatusDetails(projectId);
-      nextActionData = await fetchProjectNextAction(projectId);
+  projectInfo = await H.fetchProjectStatus(projectId);
+  projectStatus = await H.fetchProjectStatusDetails(projectId);
+  nextActionData = await H.fetchProjectNextAction(projectId);
 
       const milestoneSource = projectStatus ?? projectInfo;
       let selectedMilestone = (payloadObj.milestone && typeof payloadObj.milestone === "object")
         ? payloadObj.milestone
-        : selectNextMilestone(milestoneSource);
+  : H.selectNextMilestone(milestoneSource);
 
       if (!selectedMilestone && projectInfo && projectInfo !== milestoneSource) {
-        selectedMilestone = selectNextMilestone(projectInfo) || selectedMilestone;
+  selectedMilestone = H.selectNextMilestone(projectInfo) || selectedMilestone;
       }
 
       if (!selectedMilestone && milestoneSource && typeof milestoneSource === "object") {
@@ -113,7 +133,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         )!
       );
 
-      let selectedTask = selectNextTask(selectedMilestone, milestoneSource, projectStatus, projectInfo, payloadObj);
+  let selectedTask = H.selectNextTask(selectedMilestone, milestoneSource, projectStatus, projectInfo, payloadObj);
       // If selectNextTask returned a task we've already processed in this coordinator run, skip it
       if (selectedTask && selectedTask.id && processedTaskIds.has(String(selectedTask.id))) {
         selectedTask = null;
@@ -128,7 +148,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
 
 
       // If nothing to do from the milestone selection, try to fall back to any open project task
-      const projNow = await fetchProjectStatus(projectId) as any;
+  const projNow = await H.fetchProjectStatus(projectId) as any;
       const remainingNow = Array.isArray(projNow?.tasks) ? projNow.tasks.length : 0;
       if (!selectedTask && remainingNow) {
         // try to pick any open task from the project-level status; prefer the first unprocessed task
@@ -148,7 +168,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
           }
         } catch (err) {
           // fallback to original selector if anything goes wrong
-          const fallback = selectNextTask(projNow);
+            const fallback = H.selectNextTask(projNow);
           if (fallback && (!fallback.id || !processedTaskIds.has(String(fallback.id)))) {
             selectedTask = fallback;
             logger.info('coordinator selected fallback project-level task', { workflowId, taskId: fallback.id || null, taskName: fallback?.name || fallback?.title || null });
@@ -250,10 +270,10 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         )
         || `milestone/${milestoneSlug}`;
 
-      await checkoutBranchFromBase(repoRoot, baseBranch, branchName);
+  await H.checkoutBranchFromBase(repoRoot, baseBranch, branchName);
       logger.info("coordinator prepared branch", { workflowId, repoRoot, baseBranch, branchName });
 
-      await ensureBranchPublished(repoRoot, branchName);
+  await H.ensureBranchPublished(repoRoot, branchName);
   
     const repoSlug = repoMeta.remoteSlug;
     const repoRemote = repoSlug ? `https://${repoSlug}.git` : (payloadObj.repo || projectRepo || repoMeta.remoteUrl || repoResolution.remote || "");
@@ -283,7 +303,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         }
       : (taskDescriptor ? { task: taskDescriptor } : null);
     const contextCorrId = randomUUID();
-      await persona.sendPersonaRequest(r, {
+  await H.persona.sendPersonaRequest(r, {
       workflowId,
       toPersona: PERSONAS.CONTEXT,
       step: "1-context",
@@ -306,15 +326,15 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       projectId
     });
   
-    const contextEvent = await persona.waitForPersonaCompletion(r, PERSONAS.CONTEXT, workflowId, contextCorrId);
-      const contextResult = persona.parseEventResult(contextEvent.fields.result);
+    const contextEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.CONTEXT, workflowId, contextCorrId);
+      const contextResult = H.persona.parseEventResult(contextEvent.fields.result);
     logger.info("coordinator received context completion", { workflowId, corrId: contextCorrId, eventId: contextEvent.id });
 
     let feedbackNotes: string[] = [];
     let attempt = 0;
       let leadOutcome: any = null;
       if (selectedTask) {
-        leadOutcome = await runLeadCycle(r, workflowId, projectId, projectInfo, projectSlug, repoRemote, branchName, baseBranch, milestoneDescriptor, milestoneName, milestoneSlug, taskDescriptor, taskName, feedbackNotes, attempt);
+  leadOutcome = await H.runLeadCycle(r, workflowId, projectId, projectInfo, projectSlug, repoRemote, branchName, baseBranch, milestoneDescriptor, milestoneName, milestoneSlug, taskDescriptor, taskName, feedbackNotes, attempt);
 
         // If the lead cycle succeeded and we have a task identifier, mark the task done
         try {
@@ -358,9 +378,24 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
                   for (const c of rawCandidates) {
                     if (!c || typeof c !== 'string') continue;
                     let txt = c;
-                    // If wrapped in a code fence, extract inner content
-                    const fence = /```(?:diff)?\n([\s\S]*?)```/.exec(txt);
-                    if (fence && fence[1]) txt = fence[1];
+                    // If wrapped in one or more code fences, prefer a fence that contains
+                    // diff markers (```diff or inner content with 'diff --git'/'@@'/ '+++ b/').
+                    const fenceRe = /```(?:diff)?\n([\s\S]*?)```/g;
+                    const matches = Array.from(txt.matchAll(fenceRe));
+                    if (matches && matches.length) {
+                      // find a fence that looks like a diff first
+                      let chosen: string | null = null;
+                      for (const m of matches) {
+                        const inner = m[1] || '';
+                        if (inner.includes('diff --git') || inner.includes('@@') || inner.includes('+++ b/')) {
+                          chosen = inner;
+                          break;
+                        }
+                      }
+                      // otherwise prefer the first fenced block
+                      if (!chosen) chosen = matches[0][1] || null;
+                      if (chosen) txt = chosen;
+                    }
                     // Remove lines like "Changed Files:\n..." that sometimes prefix diffs
                     const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
                     if (idx >= 0) txt = txt.slice(idx);
@@ -369,9 +404,13 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
                   }
 
                   // Try parsing each normalized candidate until one yields ops
+                  if (logger.info) logger.info('coordinator: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: normalizedCandidates.length });
+                  if (normalizedCandidates.length) {
+                    for (const nc of normalizedCandidates) logger.info('coordinator: candidate head', { workflowId, taskId: taskDescriptor?.id, head: String(nc).slice(0,200) });
+                  }
                   for (const c of normalizedCandidates) {
                     try {
-                      const parsed = parseUnifiedDiffToEditSpec(c);
+                      const parsed = await H.parseUnifiedDiffToEditSpec(c);
                       if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) {
                         editSpecObj = parsed;
                         break;
@@ -386,9 +425,9 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
                 }
 
                 if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
-                  const editResult = await applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
+                  const editResult = await H.applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
                   if (editResult.changed.length > 0) {
-                    await commitAndPushPaths({
+                    await H.commitAndPushPaths({
                       repoRoot,
                       branch: branchName,
                       message: `feat: ${taskName}`,
@@ -405,7 +444,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
             try {
               // Diagnostic: log intent to update task status
               if (logger.debug) logger.debug('about to updateTaskStatus', { taskId: String(taskDescriptor.id), workflowId });
-              const updateRes = await updateTaskStatus(String(taskDescriptor.id), 'done');
+              const updateRes = await H.updateTaskStatus(String(taskDescriptor.id), 'done');
               if (logger.debug) logger.debug('updateTaskStatus returned', { taskId: String(taskDescriptor.id), workflowId, ok: !!(updateRes && updateRes.ok) });
               // Only mark as processed if the dashboard update reported ok
               if (updateRes && updateRes.ok) {
@@ -457,8 +496,8 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       // ignore discovery errors - persona will be told if nothing available
     }
 
-    const qaCorr = randomUUID();
-      await persona.sendPersonaRequest(r, {
+  const qaCorr = randomUUID();
+  await H.persona.sendPersonaRequest(r, {
       workflowId,
   toPersona: PERSONAS.TESTER_QA,
       step: "3-qa",
@@ -477,9 +516,9 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       projectId
     });
 
-  const qaEvent = await persona.waitForPersonaCompletion(r, PERSONAS.TESTER_QA, workflowId, qaCorr);
-      const qaResult = persona.parseEventResult(qaEvent.fields.result);
-      const qaStatus = persona.interpretPersonaStatus(qaEvent.fields.result);
+  const qaEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.TESTER_QA, workflowId, qaCorr);
+    const qaResult = H.persona.parseEventResult(qaEvent.fields.result);
+    const qaStatus = H.persona.interpretPersonaStatus(qaEvent.fields.result);
     logger.info("coordinator received QA completion", { workflowId, qaStatus: qaStatus.status, corrId: qaCorr, eventId: qaEvent.id });
 
     if (qaStatus.status === "fail") {
@@ -501,7 +540,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
       }
 
       // Forward suggested QA follow-ups to the failure mini-cycle (summarizer -> create -> set-status -> planner) and block until handled
-      const mini = await handleFailureMiniCycle(r, workflowId, 'qa', suggestedFromQa, {
+  const mini = await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedFromQa, {
         repo: repoRemote,
         branch: branchName,
         projectId,
@@ -539,7 +578,7 @@ export async function handleCoordinator(r: any, msg: any, payloadObj: any) {
         try {
           const implCorr = randomUUID();
           const implPersona = cfg.allowedPersonas.includes('implementation-planner') ? 'implementation-planner' : 'lead-engineer';
-          await persona.sendPersonaRequest(r, {
+          await H.persona.sendPersonaRequest(r, {
             workflowId,
             toPersona: implPersona,
             step: "4-implementation-plan",
@@ -569,8 +608,8 @@ await persona.sendPersonaRequest(r, {
         projectId
       });
 
-const pmEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PROJECT_MANAGER, workflowId, pmCorr);
-  const pmResult = persona.parseEventResult(pmEvent.fields.result) || {};
+    const pmEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.PROJECT_MANAGER, workflowId, pmCorr);
+  const pmResult = H.persona.parseEventResult(pmEvent.fields.result) || {};
       // prefer explicit payload fields that might contain suggested tasks
       let suggestedTasks = pmResult.payload?.tasks || pmResult.payload?.follow_ups || pmResult.payload?.backlog || pmResult.payload?.suggestions || pmResult.payload || null;
       if (!suggestedTasks) {
@@ -615,7 +654,7 @@ const pmEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PROJECT_MANAG
         }
       } else {
           // Use the helper to perform summarizer->create->set-status and forwarding according to stage policy
-          const mini = await handleFailureMiniCycle(r, workflowId, 'qa', suggestedTasks, {
+          const mini = await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedTasks, {
             repo: repoRemote,
             branch: branchName,
             projectId,
