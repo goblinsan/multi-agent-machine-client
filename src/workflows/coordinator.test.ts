@@ -69,7 +69,7 @@ describe("Agent Workflow", () => {
       repoRoot: "/test/repo",
       remote: "https://github.com/test/test-project.git",
       branch: "main",
-      source: "config_default"
+      source: "payload_repo"
     } as any);
 
     vi.spyOn(gitUtils, "checkoutBranchFromBase").mockResolvedValue(undefined);

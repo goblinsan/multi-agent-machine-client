@@ -24,7 +24,7 @@ export type RepoResolution = {
   repoRoot: string;
   branch?: string | null;
   remote?: string | null;
-  source: "payload_repo_root" | "payload_repo" | "config_default";
+  source: "payload_repo_root" | "payload_repo";
 };
 
 function gitEnv(): NodeJS.ProcessEnv {
@@ -298,8 +298,8 @@ export async function resolveRepoFromPayload(payload: any): Promise<RepoResoluti
     return { repoRoot: ensured.repoRoot, branch, remote: ensured.remote, source: "payload_repo" };
   }
 
-  await ensureProjectBase();
-  return { repoRoot: cfg.repoRoot, branch: null, remote: null, source: "config_default" };
+  // No valid repo_root and no remote to resolve from: refuse to return a placeholder
+  throw new Error("No repository remote provided and repo_root is not a git repository. Configure the project's repository URL in the dashboard or provide a valid repo_root.");
 }
 
 async function ensureRepo(remote: string, branch: string | null, projectHint: string | null) {
