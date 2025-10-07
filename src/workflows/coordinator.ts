@@ -12,6 +12,7 @@ import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
 import { computeQaFollowupExternalId, findTaskIdByExternalId } from "../tasks/taskManager.js";
 import { runLeadCycle } from "./stages/implementation.js";
+import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus } from "../agents/persona.js";
 
 type Overrides = Partial<ReturnType<typeof buildHelpers>>;
 
@@ -521,74 +522,58 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       });
 
       if (mini && mini.plannerResult) {
-        const evaluationCorrId = randomUUID();
-        await persona.sendPersonaRequest(r, {
-          workflowId,
-          toPersona: PERSONAS.PLAN_EVALUATOR,
-          step: "3.5-evaluate-qa-plan",
-          intent: "evaluate_plan_relevance",
-          payload: { qa_feedback: qaResult, plan: mini.plannerResult },
-          corrId: evaluationCorrId,
-          repo: repoRemote,
-          branch: branchName,
-          projectId
-        });
-        const evaluationEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, evaluationCorrId);
-        const evaluationStatus = persona.interpretPersonaStatus(evaluationEvent.fields.result);
-        if (evaluationStatus.status !== 'pass') {
-          const evalObj = persona.parseEventResult(evaluationEvent.fields.result);
-          logger.warn("qa follow-up plan rejected; requesting planner revision", { workflowId, evaluator: PERSONAS.PLAN_EVALUATOR, reason: (evalObj && (evalObj.reason || evalObj.details)) || 'unspecified' });
-          try {
-            const revCorr = randomUUID();
-            await persona.sendPersonaRequest(r, {
-              workflowId,
-              toPersona: PERSONAS.IMPLEMENTATION_PLANNER,
-              step: "3.6-plan-revision",
-              intent: "revise_plan",
-              payload: {
-                qa_feedback: qaResult?.payload ?? qaResult,
-                evaluator_feedback: evalObj,
-                previous_plan: mini.plannerResult,
-                guidance: "Revise the plan to directly address the QA feedback; ensure each step maps to a failing test or acceptance criterion and is small and verifiable."
-              },
-              corrId: revCorr,
-              repo: repoRemote,
-              branch: branchName,
-              projectId
-            });
-            const revEvent = await persona.waitForPersonaCompletion(r, PERSONAS.IMPLEMENTATION_PLANNER, workflowId, revCorr);
-            const revised = persona.parseEventResult(revEvent.fields.result);
-            // Re-evaluate revised plan
-            const reevaluateCorr = randomUUID();
-            await persona.sendPersonaRequest(r, {
-              workflowId,
-              toPersona: PERSONAS.PLAN_EVALUATOR,
-              step: "3.7-evaluate-qa-plan-revised",
-              intent: "evaluate_plan_relevance",
-              payload: { qa_feedback: qaResult, plan: revised },
-              corrId: reevaluateCorr,
-              repo: repoRemote,
-              branch: branchName,
-              projectId
-            });
-            const reevaluateEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, reevaluateCorr);
-            const reevaluateStatus = persona.interpretPersonaStatus(reevaluateEvent.fields.result);
-            if (reevaluateStatus.status !== 'pass') {
-              logger.warn("qa follow-up revised plan still rejected; skipping forward to implementation", { workflowId });
-              // Do not throw; skip forwarding step
-              // Clear plannerResult to prevent forwarding below
-              (mini as any).plannerResult = null;
-            } else {
-              (mini as any).plannerResult = revised;
-            }
-          } catch (revErr) {
-            logger.warn("qa follow-up: failed to obtain or re-evaluate revised plan", { workflowId, error: String(revErr) });
-            // Skip forwarding step by clearing plannerResult
-            (mini as any).plannerResult = null;
-          }
+        // Iterative evaluator loop: evaluate -> feedback -> revise up to cfg.planMaxIterationsPerStage
+        const maxIters = (cfg.planMaxIterationsPerStage === null || cfg.planMaxIterationsPerStage === undefined)
+          ? 5
+          : Number(cfg.planMaxIterationsPerStage) || 5;
+        let currentPlan = mini.plannerResult;
+        let approved = false;
+        for (let i = 0; i < maxIters; i++) {
+          const evaluationCorrId = randomUUID();
+          await persona.sendPersonaRequest(r, {
+            workflowId,
+            toPersona: PERSONAS.PLAN_EVALUATOR,
+            step: i === 0 ? "3.5-evaluate-qa-plan" : "3.7-evaluate-qa-plan-revised",
+            intent: "evaluate_plan_relevance",
+            payload: { qa_feedback: qaResult, plan: currentPlan },
+            corrId: evaluationCorrId,
+            repo: repoRemote,
+            branch: branchName,
+            projectId
+          });
+          const evalEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, evaluationCorrId);
+          const evalStatus = persona.interpretPersonaStatus(evalEvent.fields.result);
+          if (evalStatus.status !== 'fail') { approved = true; break; }
+          const evalObj = persona.parseEventResult(evalEvent.fields.result);
+          // Feed evaluator feedback back to planner
+          const revCorr = randomUUID();
+          await persona.sendPersonaRequest(r, {
+            workflowId,
+            toPersona: PERSONAS.IMPLEMENTATION_PLANNER,
+            step: "3.6-plan-revision",
+            intent: "revise_plan",
+            payload: {
+              qa_feedback: qaResult?.payload ?? qaResult,
+              evaluator_feedback: evalObj,
+              previous_plan: currentPlan,
+              guidance: "Revise the plan to directly address evaluator concerns; ensure each step maps to a failing test or acceptance criterion and is small and verifiable."
+            },
+            corrId: revCorr,
+            repo: repoRemote,
+            branch: branchName,
+            projectId
+          });
+          const revEvent = await persona.waitForPersonaCompletion(r, PERSONAS.IMPLEMENTATION_PLANNER, workflowId, revCorr);
+          currentPlan = persona.parseEventResult(revEvent.fields.result);
+        }
+        if (!approved) {
+          logger.warn("qa follow-up plan not approved within iteration limit; skipping forward to implementation", { workflowId, maxIters });
+          (mini as any).plannerResult = null;
+        } else {
+          (mini as any).plannerResult = currentPlan;
         }
 
-        // forward to implementation planning if evaluator passes
+        // forward to implementation planning if evaluator ultimately passes
         try {
           const implCorr = randomUUID();
           const implPersona = cfg.allowedPersonas.includes(PERSONAS.IMPLEMENTATION_PLANNER) ? PERSONAS.IMPLEMENTATION_PLANNER : PERSONAS.LEAD_ENGINEER;

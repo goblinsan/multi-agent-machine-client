@@ -116,6 +116,7 @@ function parseRevisionLimit(value: string | undefined, fallback: number): number
 
 const coordinatorMaxRevisionAttempts = parseRevisionLimit(process.env.COORDINATOR_MAX_REVISION_ATTEMPTS, 5);
 const coordinatorMaxApprovalRetries = parseRevisionLimit(process.env.COORDINATOR_MAX_APPROVAL_RETRIES, 3);
+const planMaxIterationsPerStage = parseRevisionLimit(process.env.PLAN_MAX_ITERATIONS_PER_STAGE, 5);
 
 const gitToken = process.env.GIT_AUTH_TOKEN || "";
 const gitPassword = process.env.GIT_AUTH_PASSWORD || "";
@@ -179,6 +180,7 @@ export const cfg = {
   promptFileMaxFiles,
   coordinatorMaxRevisionAttempts,
   coordinatorMaxApprovalRetries,
+  planMaxIterationsPerStage,
 
   // Context scanner feature flags & defaults
   contextScan: bool(process.env.CONTEXT_SCAN, false),

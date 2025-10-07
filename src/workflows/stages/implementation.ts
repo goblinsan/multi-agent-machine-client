@@ -6,7 +6,10 @@ import { PERSONAS } from "../../personaNames.js";
 import { updateTaskStatus, fetchProjectStatus } from "../../dashboard.js";
 import { firstString, slugify, normalizeRepoPath, ENGINEER_PERSONAS_REQUIRING_PLAN } from "../../util.js";
 
-const MAX_APPROVAL_RETRIES = 10;
+// Per-stage max planning iterations; default 5 via cfg
+const MAX_APPROVAL_RETRIES = Number.isFinite(cfg.planMaxIterationsPerStage as any) && cfg.planMaxIterationsPerStage !== null
+    ? (cfg.planMaxIterationsPerStage as number)
+    : 5;
 
 type PlanHistoryEntry = {
     attempt: number;
@@ -40,7 +43,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
         logger.warn("plan approval persona not allowed", { planner });
     }
 
-    const effectiveMax = Number.isFinite(MAX_APPROVAL_RETRIES) ? MAX_APPROVAL_RETRIES : 10;
+    const effectiveMax = Number.isFinite(MAX_APPROVAL_RETRIES) ? MAX_APPROVAL_RETRIES : 5;
     const baseFeedbackText = feedback && feedback.trim().length ? feedback.trim() : "";
     let planFeedbackNotes: string[] = [];
     const planHistory: PlanHistoryEntry[] = [];
@@ -95,51 +98,51 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
         planHistory.push({ attempt: planAttempt + 1, content: planOutput, payload: planJson });
 
         if (planSteps.length) {
-            if (feedback) { // Only evaluate if there is feedback
-                const evaluationCorrId = randomUUID();
-                logger.info("coordinator dispatch plan evaluation", {
+            // Always evaluate the plan with the evaluator; if no explicit feedback, pass context-only
+            const evaluationCorrId = randomUUID();
+            logger.info("coordinator dispatch plan evaluation", {
+                workflowId,
+                targetPersona: PERSONAS.PLAN_EVALUATOR,
+                attempt,
+                planAttempt: planAttempt + 1
+            });
+
+            await sendPersonaRequest(r, {
+                workflowId,
+                toPersona: PERSONAS.PLAN_EVALUATOR,
+                step: "2.5-evaluate-plan",
+                intent: "evaluate_plan_relevance",
+                payload: {
+                    qa_feedback: feedback || null,
+                    plan: planJson,
+                },
+                corrId: evaluationCorrId,
+                repo: repoRemote,
+                branch: branchName,
+                projectId: projectId!,
+            });
+
+            const evaluationEvent = await waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, evaluationCorrId);
+            const evaluationResult = parseEventResult(evaluationEvent.fields.result);
+            const evaluationStatus = interpretPersonaStatus(evaluationEvent.fields.result);
+
+            if (evaluationStatus.status === 'fail') {
+                // feed evaluator feedback back to the planner as added plan_feedback for next attempt
+                planFeedbackNotes = [
+                    `The proposed plan did not pass evaluation.`,
+                    feedback ? `QA Feedback: ${feedback}` : undefined,
+                    `Proposed Plan: ${planOutput}`,
+                    `Evaluator Feedback: ${evaluationResult?.reason || evaluationResult?.details || ''}`,
+                    `Please provide a new plan directly addressing evaluator concerns.`
+                ].filter(Boolean) as string[];
+                logger.warn("plan evaluation failed", {
                     workflowId,
-                    targetPersona: PERSONAS.PLAN_EVALUATOR,
+                    planner,
                     attempt,
-                    planAttempt: planAttempt + 1
+                    planAttempt: planAttempt + 1,
+                    feedback: planFeedbackNotes.join('\n')
                 });
-
-                await sendPersonaRequest(r, {
-                    workflowId,
-                    toPersona: PERSONAS.PLAN_EVALUATOR,
-                    step: "2.5-evaluate-plan",
-                    intent: "evaluate_plan_relevance",
-                    payload: {
-                        qa_feedback: feedback,
-                        plan: planJson,
-                    },
-                    corrId: evaluationCorrId,
-                    repo: repoRemote,
-                    branch: branchName,
-                    projectId: projectId!,
-                });
-
-                const evaluationEvent = await waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, evaluationCorrId);
-                const evaluationResult = parseEventResult(evaluationEvent.fields.result);
-                const evaluationStatus = interpretPersonaStatus(evaluationEvent.fields.result);
-
-                if (evaluationStatus.status !== 'pass') {
-                    planFeedbackNotes = [
-                        `The proposed plan does not seem to address the QA feedback.`, 
-                        `QA Feedback: ${feedback}`,
-                        `Proposed Plan: ${planOutput}`,
-                        `Evaluator Feedback: ${evaluationResult?.reason || evaluationResult?.details || ''}`,
-                        `Please provide a new plan that addresses the QA feedback.`
-                    ];
-                    logger.warn("plan evaluation failed", {
-                        workflowId,
-                        planner,
-                        attempt,
-                        planAttempt: planAttempt + 1,
-                        feedback: planFeedbackNotes.join('\n')
-                    });
-                    continue; // continue the for loop to retry
-                }
+                continue; // retry loop
             }
 
             logger.info("plan approved", {
