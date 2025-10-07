@@ -280,7 +280,20 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   }
 
   const pending = items.filter(it => normalizeTaskStatus(it.task?.status) !== 'done');
-  const toProcess: Item[] = pending.length ? pending : [{ milestone: null, task: { id: firstString(payload?.task_id, payload?.taskId, 't-synth') || 't-synth', name: firstString(payload?.task_name, 'task') || 'task', status: 'open' } }];
+  let toProcess: Item[];
+  if (pending.length) {
+    toProcess = pending;
+  } else {
+    // Fallback: prefer a milestone-based branch name using next_milestone when no open tasks
+    const nextMs = (details && (details as any).next_milestone) || (projectInfo && (projectInfo as any).next_milestone) || null;
+    const firstMs = (!nextMs && details && Array.isArray((details as any).milestones) && (details as any).milestones.length) ? (details as any).milestones[0] : null;
+    const chosenMs = nextMs || firstMs || null;
+    toProcess = [{ milestone: chosenMs, task: null as any }];
+    // If absolutely nothing to anchor a branch to, fall back to synthetic task as last resort
+    if (!chosenMs) {
+      toProcess = [{ milestone: null, task: { id: firstString(payload?.task_id, payload?.taskId, 't-synth') || 't-synth', name: firstString(payload?.task_name, 'task') || 'task', status: 'open' } }];
+    }
+  }
 
   for (const it of toProcess) {
     const selectedMilestone = it.milestone;
