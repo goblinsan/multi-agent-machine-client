@@ -243,6 +243,12 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       if (uuidRegex.test(rawMilestone)) milestoneId = rawMilestone;
       else milestoneSlug = String(rawMilestone);
     }
+    // If no milestone information was provided, default to a safe backlog bucket
+    // This satisfies the dashboard requirement: milestone_id OR (project_id AND milestone_slug)
+    // and aligns with our scheduling policy that unspecified items can live under Future Enhancements.
+    if (!milestoneId && !milestoneSlug) {
+      milestoneSlug = 'future-enhancements';
+    }
   const parentTaskIdRaw = options.parentTaskDescriptor?.id || null;
   // Only treat as canonical parent id if it looks like a UUID; otherwise we will pass it through
   // and the dashboard.createDashboardTask will map to parent_task_external_id.
@@ -349,6 +355,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
           stage: options.stage,
           title,
           milestoneId,
+          milestoneSlug,
           parentTaskId,
           projectId: options.projectId,
           error: body?.error || body?.body || "unknown"
