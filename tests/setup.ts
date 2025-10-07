@@ -59,6 +59,8 @@ afterAll(() => {
 // Guard: prevent git commands from running outside tmp directories during tests
 const origExec = childProcess.exec;
 const origExecSync = childProcess.execSync;
+const origExecFile = (childProcess as any).execFile;
+const origExecFileSync = (childProcess as any).execFileSync;
 const origSpawn = childProcess.spawn;
 const origSpawnSync = childProcess.spawnSync;
 
@@ -92,6 +94,26 @@ try {
       const options = args[1];
       if (typeof command === 'string' && /\bgit\b/.test(command)) ensureTmpCwd(options);
       return (origExecSync as any).apply(childProcess, args);
+    });
+  }
+  // execFile
+  // @ts-ignore
+  if (!vi.isMockFunction((childProcess as any).execFile)) {
+    vi.spyOn(childProcess as any, 'execFile').mockImplementation((...args: any[]) => {
+      const file = args[0];
+      const options = args[2];
+      if (file === 'git') ensureTmpCwd(options);
+      return (origExecFile as any).apply(childProcess, args);
+    });
+  }
+  // execFileSync
+  // @ts-ignore
+  if (!vi.isMockFunction((childProcess as any).execFileSync)) {
+    vi.spyOn(childProcess as any, 'execFileSync').mockImplementation((...args: any[]) => {
+      const file = args[0];
+      const options = args[2];
+      if (file === 'git') ensureTmpCwd(options);
+      return (origExecFileSync as any).apply(childProcess, args);
     });
   }
   // spawn
