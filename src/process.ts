@@ -477,12 +477,14 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
       try {
         repoInfo = await resolveRepoFromPayload(payloadObj);
       } catch (e:any) {
+        // For non-editing personas (e.g., summarization, PM), allow proceeding without a repo
         logger.warn("resolve repo from payload failed", { persona, workflowId: msg.workflow_id, error: e?.message || String(e) });
+        repoInfo = null;
       }
     }
     let repoRootNormalized = repoInfo ? normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot) : null;
     let scanSummaryText = "";
-    if (persona !== "context" && repoInfo && repoRootNormalized) {
+  if (persona !== "context" && repoInfo && repoRootNormalized) {
       try {
         const fs = await import("fs/promises");
         const pathMod = await import("path");

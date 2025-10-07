@@ -26,6 +26,8 @@ export async function summarizeTask(r: any, workflowId: string, task: any, optio
       step: 'summarize-task',
       intent: 'condense_task_description',
       payload,
+      // Ensure downstream sees project_id even if no repo/branch context is provided
+      projectId: (task && (task.project_id || task.projectId)) ? String(task.project_id || task.projectId) : undefined,
       corrId: corr
     });
 

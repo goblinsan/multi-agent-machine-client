@@ -374,6 +374,16 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
       await runGit(["pull", "--ff-only", "origin", branch], { cwd: repoRoot });
     } catch (e) {
       logger.warn("git pull failed", { error: e, repoRoot, branch });
+      // Safe realignment if no local changes exist
+      try {
+        if (!(await hasLocalChanges(repoRoot))) {
+          await runGit(["fetch", "origin", branch], { cwd: repoRoot }).catch(()=>{});
+          await runGit(["reset", "--hard", `origin/${branch}`], { cwd: repoRoot });
+          logger.info("git branch aligned to origin after non-FF pull (ensureRepo)", { repoRoot, branch });
+        }
+      } catch (alignErr) {
+        logger.warn("git align to origin failed (ensureRepo)", { repoRoot, branch, error: alignErr });
+      }
     }
   } else {
     let current = "";

@@ -284,9 +284,16 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
   const defaultEndpoint = `${base}/v1/tasks`;
   // Prefer upsert when we have an external_id to avoid duplicates and simplify id resolution
   const upsertEndpoint = `${base}/v1/tasks:upsert`;
+  // Sanitize potentially large or noisy inputs to reduce server 5xx risk
+  const maxTitleLen = 180;
+  const maxDescLen = 10000;
+  const safeTitle = String(input.title || '').slice(0, maxTitleLen);
+  let safeDesc = String(input.description || '');
+  if (safeDesc.length > maxDescLen) safeDesc = safeDesc.slice(0, maxDescLen) + "\n\n[truncated]";
+
   const body: Record<string, any> = {
-    title: input.title,
-    description: input.description
+    title: safeTitle,
+    description: safeDesc
   };
   if (input.projectId) body.project_id = input.projectId;
   if (input.projectSlug) body.project_slug = input.projectSlug;
@@ -367,13 +374,13 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
       responseBody = null;
     }
 
-    if (!res.ok) {
+  if (!res.ok) {
       // Include more context: request body keys and plain text when JSON parse fails
       const safeBody = { ...requestBody };
       if (safeBody.attachments) safeBody.attachments = `[${(safeBody.attachments as any[]).length} attachments]` as any;
       logger.warn("dashboard task creation failed", { status, endpoint, request: safeBody, response: responseBody ?? '<no-json>' });
       // If upsert not supported (e.g., 404/405), try falling back to legacy create once
-      if (useUpsert && (status === 404 || status === 405)) {
+      if (useUpsert && (status === 404 || status === 405 || (status >= 500 && status < 600))) {
         try {
           const legacyBody = { ...body } as any;
           if (initialStatus) legacyBody.initial_status = initialStatus;
@@ -480,7 +487,7 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
   };
 
   try {
-    const byId = isUuid(taskId);
+  const byId = isUuid(taskId);
     const endpoint = byId
       ? `${base}/v1/tasks/${encodeURIComponent(taskId)}/status`
       : `${base}/v1/tasks/by-external/${encodeURIComponent(taskId)}/status`;

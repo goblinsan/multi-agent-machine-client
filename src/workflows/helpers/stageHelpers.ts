@@ -51,7 +51,16 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
     if (policy.immediate && Array.isArray(created) && created.length) {
       for (const c of created) {
         try {
-          const key = c.externalId || c.createdId || (c.externalId && options.projectId ? await findTaskIdByExternalId(c.externalId, options.projectId) : null);
+          let key: string | null = null;
+          // Prefer a concrete created id when available
+          if (c.createdId) key = String(c.createdId);
+          // Otherwise resolve by external id within the project, then fall back to by-external
+          else if (c.externalId && options.projectId) {
+            key = (await findTaskIdByExternalId(c.externalId, options.projectId)) || String(c.externalId);
+          } else if (c.externalId) {
+            key = String(c.externalId);
+          }
+
           if (key) {
             await updateTaskStatus(String(key), policy.initialStatus).catch((err) => {
               logger.warn("handleFailureMiniCycle: updateTaskStatus failed", { workflowId, stage, key, error: err });
