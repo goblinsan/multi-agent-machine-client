@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { TaskCreateUpsertSchema, TaskStatusUpdateSchema, validate } from './helpers/dashboardSchemas.js';
 
 // Mock undici fetch used by src/dashboard.ts
 const calls: Array<{ url: string; init?: any; body?: any; method?: string }> = [];
@@ -44,12 +45,14 @@ describe('dashboard interactions', () => {
     });
     expect(resp?.ok).toBe(true);
 
-    const call = calls.find(c => c.url.includes('/v1/tasks:upsert'));
+  const call = calls.find(c => c.url.includes('/v1/tasks:upsert'));
     expect(call).toBeTruthy();
     expect(call?.body?.external_id).toBe('ext-1');
     // Should not send parent_task_id for non-UUID; should send parent_task_external_id
     expect(call?.body?.parent_task_id).toBeUndefined();
     expect(call?.body?.parent_task_external_id).toBe('t-synth');
+  const val = validate(TaskCreateUpsertSchema, call?.body);
+  expect(val.ok).toBe(true);
   });
 
   it('createDashboardTask falls back to legacy create when upsert not supported', async () => {
@@ -106,7 +109,7 @@ describe('dashboard interactions', () => {
     });
 
     const { updateTaskStatus } = await import('../src/dashboard.js');
-    const out = await updateTaskStatus('ext-missing', 'done');
+  const out = await updateTaskStatus('ext-missing', 'done');
     expect(out.ok).toBe(true);
     const byExternal = calls.find(c => c.url.includes('/v1/tasks/by-external/'));
     const resolve = calls.find(c => c.url.includes('/v1/tasks/resolve'));
@@ -114,6 +117,9 @@ describe('dashboard interactions', () => {
     expect(byExternal).toBeTruthy();
     expect(resolve).toBeTruthy();
     expect(byId).toBeTruthy();
+  const statusPayload = byExternal?.body;
+  const statusVal = validate(TaskStatusUpdateSchema, statusPayload);
+  expect(statusVal.ok).toBe(true);
   });
 });
 

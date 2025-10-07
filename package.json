@@ -7,8 +7,8 @@
     "start": "node --env-file=.env dist/worker.js",
     "build": "tsc -p tsconfig.json",
     "seed": "tsx src/tools/seed_example.ts",
-  "coordinator": "tsx src/tools/run_coordinator.ts",
-  "test": "vitest tests --run"
+    "coordinator": "tsx src/tools/run_coordinator.ts",
+    "test": "vitest tests --run"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.6.1",
+    "ajv": "^8.17.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.3"
   }
