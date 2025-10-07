@@ -29,6 +29,8 @@ function buildHelpers() {
     parseUnifiedDiffToEditSpec,
     handleFailureMiniCycle,
     runLeadCycle,
+    // Governance hook (code-review/security). Default no-op; tests can override.
+    governanceHook: async (_r: any, _ctx: any) => { return; },
     persona: {
       sendPersonaRequest: persona.sendPersonaRequest,
       waitForPersonaCompletion: persona.waitForPersonaCompletion,
@@ -49,6 +51,22 @@ function normalizeTaskStatus(status: string | undefined | null) {
 function toSlug(s: string | null | undefined, fallback: string) {
   const v = firstString(s, fallback) || fallback;
   return slugify(v);
+}
+
+type TddHints = {
+  workflow_mode?: string | null;
+  tdd_stage?: string | null;
+  qa_expectations?: any;
+};
+
+function detectTddHints(msg: any, payload: any): TddHints {
+  const wm = firstString(msg?.workflow_mode, payload?.workflow_mode) || null;
+  const stage = firstString(msg?.tdd_stage, payload?.tdd_stage) || null;
+  // Allow alternate keys often used
+  const altStage = firstString((payload?.tdd && payload?.tdd.stage), (msg?.tdd && msg?.tdd.stage)) || null;
+  const tdd_stage = stage || altStage || null;
+  const qaExp = (msg && (msg.qa_expectations || msg.qa)) || (payload && (payload.qa_expectations || payload.qa)) || null;
+  return { workflow_mode: wm, tdd_stage, qa_expectations: qaExp };
 }
 
 function pickRemoteFrom(obj: any): string | null {
@@ -142,6 +160,8 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   const workflowId: string = firstString(msg?.workflow_id) || randomUUID();
   const projectId: string = firstString(msg?.project_id, payload?.project_id, payload?.projectId) || '';
   if (!projectId) throw new Error("Coordinator requires project_id");
+
+  const tddHints = detectTddHints(msg, payload);
 
   const projectInfo: any = await H.fetchProjectStatus(projectId);
   const details: any = await H.fetchProjectStatusDetails(projectId).catch(() => null);
@@ -252,7 +272,11 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   milestone_name: milestoneNameText,
         task: taskDescriptor,
         task_name: taskName || (taskDescriptor?.name ?? ""),
-        upload_dashboard: true
+        upload_dashboard: true,
+        // propagate TDD hints for downstream personas that might care
+        workflow_mode: tddHints.workflow_mode || undefined,
+        tdd_stage: tddHints.tdd_stage || undefined,
+        qa_expectations: tddHints.qa_expectations || undefined
       },
       corrId: contextCorrId,
       repo: repoRemote,
@@ -326,7 +350,18 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       toPersona: PERSONAS.TESTER_QA,
       step: "3-qa",
       intent: "run_qa",
-      payload: { repo: repoRemote, branch: branchName, project_id: projectId, milestone: milestoneDescriptor, task: taskDescriptor, commands: qaCommands },
+      payload: {
+        repo: repoRemote,
+        branch: branchName,
+        project_id: projectId,
+        milestone: milestoneDescriptor,
+        task: taskDescriptor,
+        commands: qaCommands,
+        // TDD hints allow QA to treat expected failing tests as pass
+        workflow_mode: tddHints.workflow_mode || undefined,
+        tdd_stage: tddHints.tdd_stage || undefined,
+        qa_expectations: tddHints.qa_expectations || undefined
+      },
       corrId: qaCorr,
       repo: repoRemote,
       branch: branchName,
@@ -336,6 +371,26 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     const qaResult = H.persona.parseEventResult(qaEvent.fields.result);
     const qaStatus = H.persona.interpretPersonaStatus(qaEvent.fields.result);
     logger.info("coordinator received QA completion", { workflowId, qaStatus: qaStatus.status, corrId: qaCorr, eventId: qaEvent.id });
+
+    // Optional governance: code-review/security. Gate during TDD write_failing_test stage.
+    const isFailingTestStage = (tddHints.tdd_stage || '').toLowerCase() === 'write_failing_test';
+    if (!isFailingTestStage && qaStatus.status === 'pass') {
+      try {
+        await H.governanceHook(r, {
+          workflowId,
+          repo: repoRemote,
+          branch: branchName,
+          projectId,
+          milestone: milestoneDescriptor,
+          task: taskDescriptor,
+          qa: qaResult
+        });
+      } catch (gerr) {
+        logger.warn('coordinator: governanceHook failed', { workflowId, error: String(gerr) });
+      }
+    } else if (isFailingTestStage) {
+      logger.info('coordinator: skipping code-review/security due to TDD failing test stage', { workflowId, tdd_stage: tddHints.tdd_stage });
+    }
 
     if (qaStatus.status === 'fail') {
       const qaPayloadObj = (qaResult && typeof qaResult === 'object') ? qaResult.payload ?? qaResult : null;
