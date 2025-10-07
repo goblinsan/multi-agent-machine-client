@@ -314,7 +314,8 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
   if (!repoExists) {
     await fs.mkdir(path.dirname(repoRoot), { recursive: true });
     logger.info("git clone", { remote: displayRemote, repoRoot });
-    await runGit(["clone", remoteInfo.remote, repoRoot]);
+    // Always run clone with an explicit cwd to avoid inheriting the process cwd
+    await runGit(["clone", remoteInfo.remote, repoRoot], { cwd: cfg.projectBase });
   } else if (!gitDirExists) {
     throw new Error(`Cannot reuse ${repoRoot}: path exists but is not a git repo`);
   } else {

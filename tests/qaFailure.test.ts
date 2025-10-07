@@ -114,7 +114,7 @@ describe('Coordinator QA failure plan evaluation', () => {
       error = e as Error;
     }
 
-    // With new behavior we do not throw; instead we revise the plan
+  // New behavior: coordinator handles evaluator failure by requesting plan revision; no exception thrown
     expect(error).toBeNull();
     const revisionSent = sent.find(s => s.step === '3.6-plan-revision');
     expect(revisionSent).toBeTruthy();

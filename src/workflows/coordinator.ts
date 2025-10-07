@@ -375,13 +375,64 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
         });
         const evaluationEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, evaluationCorrId);
         const evaluationStatus = persona.interpretPersonaStatus(evaluationEvent.fields.result);
-        if (evaluationStatus.status !== 'pass') throw new Error(`Plan was rejected by ${PERSONAS.PLAN_EVALUATOR}`);
+        if (evaluationStatus.status !== 'pass') {
+          const evalObj = persona.parseEventResult(evaluationEvent.fields.result);
+          logger.warn("qa follow-up plan rejected; requesting planner revision", { workflowId, evaluator: PERSONAS.PLAN_EVALUATOR, reason: (evalObj && (evalObj.reason || evalObj.details)) || 'unspecified' });
+          try {
+            const revCorr = randomUUID();
+            await persona.sendPersonaRequest(r, {
+              workflowId,
+              toPersona: PERSONAS.IMPLEMENTATION_PLANNER,
+              step: "3.6-plan-revision",
+              intent: "revise_plan",
+              payload: {
+                qa_feedback: qaResult?.payload ?? qaResult,
+                evaluator_feedback: evalObj,
+                previous_plan: mini.plannerResult,
+                guidance: "Revise the plan to directly address the QA feedback; ensure each step maps to a failing test or acceptance criterion and is small and verifiable."
+              },
+              corrId: revCorr,
+              repo: repoRemote,
+              branch: branchName,
+              projectId
+            });
+            const revEvent = await persona.waitForPersonaCompletion(r, PERSONAS.IMPLEMENTATION_PLANNER, workflowId, revCorr);
+            const revised = persona.parseEventResult(revEvent.fields.result);
+            // Re-evaluate revised plan
+            const reevaluateCorr = randomUUID();
+            await persona.sendPersonaRequest(r, {
+              workflowId,
+              toPersona: PERSONAS.PLAN_EVALUATOR,
+              step: "3.7-evaluate-qa-plan-revised",
+              intent: "evaluate_plan_relevance",
+              payload: { qa_feedback: qaResult, plan: revised },
+              corrId: reevaluateCorr,
+              repo: repoRemote,
+              branch: branchName,
+              projectId
+            });
+            const reevaluateEvent = await persona.waitForPersonaCompletion(r, PERSONAS.PLAN_EVALUATOR, workflowId, reevaluateCorr);
+            const reevaluateStatus = persona.interpretPersonaStatus(reevaluateEvent.fields.result);
+            if (reevaluateStatus.status !== 'pass') {
+              logger.warn("qa follow-up revised plan still rejected; skipping forward to implementation", { workflowId });
+              // Do not throw; skip forwarding step
+              // Clear plannerResult to prevent forwarding below
+              (mini as any).plannerResult = null;
+            } else {
+              (mini as any).plannerResult = revised;
+            }
+          } catch (revErr) {
+            logger.warn("qa follow-up: failed to obtain or re-evaluate revised plan", { workflowId, error: String(revErr) });
+            // Skip forwarding step by clearing plannerResult
+            (mini as any).plannerResult = null;
+          }
+        }
 
         // forward to implementation planning if evaluator passes
         try {
           const implCorr = randomUUID();
           const implPersona = cfg.allowedPersonas.includes(PERSONAS.IMPLEMENTATION_PLANNER) ? PERSONAS.IMPLEMENTATION_PLANNER : PERSONAS.LEAD_ENGINEER;
-          await H.persona.sendPersonaRequest(r, {
+          if (mini.plannerResult) await H.persona.sendPersonaRequest(r, {
             workflowId,
             toPersona: implPersona,
             step: "4-implementation-plan",
