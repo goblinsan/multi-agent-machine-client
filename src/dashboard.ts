@@ -368,7 +368,10 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
     }
 
     if (!res.ok) {
-      logger.warn("dashboard task creation failed", { status, endpoint, body: body.title, response: responseBody });
+      // Include more context: request body keys and plain text when JSON parse fails
+      const safeBody = { ...requestBody };
+      if (safeBody.attachments) safeBody.attachments = `[${(safeBody.attachments as any[]).length} attachments]` as any;
+      logger.warn("dashboard task creation failed", { status, endpoint, request: safeBody, response: responseBody ?? '<no-json>' });
       // If upsert not supported (e.g., 404/405), try falling back to legacy create once
       if (useUpsert && (status === 404 || status === 405)) {
         try {

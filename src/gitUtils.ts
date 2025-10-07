@@ -459,6 +459,16 @@ export async function checkoutBranchFromBase(repoRoot: string, baseBranch: strin
       await runGit(["pull", "--ff-only", "origin", newBranch], { cwd: repoRoot });
     } catch (error) {
       logger.warn("git pull branch failed", { repoRoot, branch: newBranch, error });
+      // If there are no local changes, align the branch to the remote to recover from divergence
+      try {
+        if (!(await hasLocalChanges(repoRoot))) {
+          await runGit(["fetch", "origin", newBranch], { cwd: repoRoot }).catch(() => {});
+          await runGit(["reset", "--hard", `origin/${newBranch}`], { cwd: repoRoot });
+          logger.info("git branch aligned to origin after non-FF pull", { repoRoot, branch: newBranch });
+        }
+      } catch (alignErr) {
+        logger.warn("git align to origin failed", { repoRoot, branch: newBranch, error: alignErr });
+      }
     }
     return;
   }
