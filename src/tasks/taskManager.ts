@@ -271,7 +271,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       } else if (schedule === "low") {
         scheduleNote = "Track under Future Enhancements.";
       }
-      const descriptionBase = task.description || `Follow-up required for ${options.stage}`;
+  const descriptionBase = task.description || `Follow-up required for ${options.stage}`;
       const description = scheduleNote ? `${descriptionBase}\n\nSchedule: ${scheduleNote}` : descriptionBase;
       // If we have a milestone slug but not an ID, attempt to resolve it via the dashboard project status
       let resolvedMilestoneId = milestoneId;
@@ -299,7 +299,10 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
 
       // derive project_slug if available (use provided projectName or fallback to known project slug)
       const derivedProjectSlug = options.projectName || undefined; // prefer projectName for slug
-      const externalId = `auto-${options.stage}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+      // Use deterministic external id for QA follow-ups to prevent duplicates across retries
+      const externalId = options.stage === 'qa'
+        ? computeQaFollowupExternalId(options.projectId, options.parentTaskDescriptor)
+        : `auto-${options.stage}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
 
       // if QA diagnostics exist on the task, prepare attachments (base64) clipped to configured max size
       let attachments: { name: string; content_base64: string }[] | undefined = undefined;
@@ -365,6 +368,13 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     }
 
     return summaries;
+  }
+
+  export function computeQaFollowupExternalId(projectId: string | null, parentTaskDescriptor: any): string {
+    const proj = String(projectId || 'proj').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 50);
+    const parentRaw = parentTaskDescriptor?.id || parentTaskDescriptor?.external_id || parentTaskDescriptor?.slug || parentTaskDescriptor?.name || 'no-parent';
+    const parent = String(parentRaw).replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 80);
+    return `qa-failure:${proj}:${parent}`;
   }
 
   // Wrapper that asks the summarization persona to condense each task description

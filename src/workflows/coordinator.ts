@@ -10,6 +10,7 @@ import { PERSONAS } from "../personaNames.js";
 import { applyEditOps, parseUnifiedDiffToEditSpec, writeDiagnostic } from "../fileops.js";
 import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
+import { computeQaFollowupExternalId, findTaskIdByExternalId } from "../tasks/taskManager.js";
 import { runLeadCycle } from "./stages/implementation.js";
 
 type Overrides = Partial<ReturnType<typeof buildHelpers>>;
@@ -607,7 +608,7 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
         }
       }
 
-      // Also route via project-manager for additional follow-ups
+  // Also route via project-manager for additional follow-ups, but prevent runaway new QA tasks
       const pmCorr = randomUUID();
       await persona.sendPersonaRequest(r, {
         workflowId,
@@ -625,9 +626,20 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       let suggestedTasks = pmResult.payload?.tasks || pmResult.payload?.follow_ups || pmResult.payload?.backlog || pmResult.payload?.suggestions || pmResult.payload || null;
       if (!suggestedTasks) suggestedTasks = qaResult?.payload?.follow_ups || qaResult?.payload?.tasks || qaResult?.payload || [];
       if (!Array.isArray(suggestedTasks)) suggestedTasks = suggestedTasks && typeof suggestedTasks === 'object' ? [suggestedTasks] : [];
-      if (suggestedTasks.length) {
+      // If we already created a QA failure follow-up for this parent, suppress PM-created tasks entirely until it's resolved
+      const existingQaExternalId = computeQaFollowupExternalId(projectId, taskDescriptor);
+      let qaAnchorExists: boolean = false;
+      try {
+        const resolved = await findTaskIdByExternalId(existingQaExternalId, projectId);
+        qaAnchorExists = !!resolved;
+      } catch {}
+      const filtered = qaAnchorExists ? [] : suggestedTasks;
+      if (qaAnchorExists) {
+        logger.info("coordinator: PM gating active; existing QA follow-up detected — suppressing new PM-created tasks", { workflowId, externalId: existingQaExternalId });
+      }
+      if (filtered.length) {
         try {
-          await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedTasks, {
+          await H.handleFailureMiniCycle(r, workflowId, 'qa', filtered, {
             repo: repoRemote,
             branch: branchName,
             projectId,
