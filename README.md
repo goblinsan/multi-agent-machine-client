@@ -37,3 +37,53 @@ it('does git things safely', async () => {
 	// shell out with { cwd: repo } or pass repoRoot: repo to functions under test
 });
 ```
+
+## TDD-aware coordinator
+
+The coordinator can infer Test-Driven Development (TDD) context directly from your dashboard data. No special run flags are required, though optional flags exist for ad‑hoc runs.
+
+### How inference works
+
+For each task, the coordinator aggregates TDD hints from (highest to lowest priority):
+
+1) Explicit message/payload hints passed at dispatch time
+2) Task metadata and labels/tags
+3) Milestone metadata and labels/tags
+4) Project metadata and labels/tags
+
+Supported hint keys and label patterns:
+
+- workflow_mode: mark with label `tdd` to indicate a TDD workflow
+- tdd_stage: use labels like `stage:write_failing_test` or `stage:make_tests_pass`
+- qa_expectations: use `qa:expect_failures` when failures are expected during the failing‑test stage
+
+Example labels on a task:
+
+- `tdd`
+- `stage:write_failing_test`
+- `qa:expect_failures`
+
+These hints are propagated into the QA persona payload for clear expectations and are used to gate governance personas.
+
+### Governance gating
+
+When `tdd_stage` is `write_failing_test`, governance personas (code‑reviewer and security‑review) are skipped. After QA passes (e.g., in `make_tests_pass` stage), governance runs normally (subject to your allowed personas config).
+
+### Optional CLI flags (ad‑hoc)
+
+You can still run the coordinator with flags to override or supply hints without editing dashboard data:
+
+- `--workflow-mode <mode>` (e.g., `tdd`)
+- `--tdd-stage <stage>` (e.g., `write_failing_test` or `make_tests_pass`)
+- `--qa-expectations <value>` (e.g., `expect_failures`)
+
+Example:
+
+```sh
+npm run coordinator -- --drain <project_id> --workflow-mode tdd --tdd-stage write_failing_test --qa-expectations expect_failures
+```
+
+Notes:
+
+- Flags are optional; dashboard labels are the preferred source of truth.
+- Governance dispatch is tolerant to unknown statuses and respects `allowedPersonas` configuration.
