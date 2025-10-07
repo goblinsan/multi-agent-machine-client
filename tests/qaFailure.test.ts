@@ -10,7 +10,7 @@ beforeEach(() => {
 });
 
 describe('Coordinator QA failure plan evaluation', () => {
-  it('rejects an irrelevant plan from the implementation-planner', async () => {
+  it('routes evaluator failure back to the implementation-planner for revision and re-evaluation', async () => {
     const project = { id: 'proj-1', name: 'proj', tasks: [{ id: 'task-1', name: 'task-1', status: 'open' }], next_milestone: { id: 'milestone-1', name: 'Milestone 1' } };
     vi.spyOn(dashboard, 'fetchProjectStatus').mockImplementation(async () => (JSON.parse(JSON.stringify(project))));
     vi.spyOn(dashboard, 'updateTaskStatus').mockImplementation(async (taskId: string, status: string) => {
@@ -48,6 +48,14 @@ describe('Coordinator QA failure plan evaluation', () => {
         } else {
           return { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-eval-pass' };
         }
+      }
+      if (match.step === '3.6-plan-revision') {
+        // Planner returns a revised plan
+        return { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'address QA feedback' }] }, output: '' }) }, id: 'evt-plan-revised' } as any;
+      }
+      if (match.step === '3.7-evaluate-qa-plan-revised') {
+        // Revised plan should pass
+        return { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-eval-pass-revised' } as any;
       }
       if (!match) {
         if (corrId.endsWith('3-qa')) return completions['3-qa'];
@@ -106,7 +114,11 @@ describe('Coordinator QA failure plan evaluation', () => {
       error = e as Error;
     }
 
-    expect(error).toBeDefined();
-    expect(error?.message).toContain('Plan was rejected by plan-evaluator');
+    // With new behavior we do not throw; instead we revise the plan
+    expect(error).toBeNull();
+    const revisionSent = sent.find(s => s.step === '3.6-plan-revision');
+    expect(revisionSent).toBeTruthy();
+    const reevaluateSent = sent.find(s => s.step === '3.7-evaluate-qa-plan-revised');
+    expect(reevaluateSent).toBeTruthy();
   }, 10000);
 });
