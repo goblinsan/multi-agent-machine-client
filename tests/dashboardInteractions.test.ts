@@ -19,15 +19,15 @@ beforeEach(() => {
 });
 
 vi.mock('undici', () => {
-  return {
-    fetch: async (url: string, init?: any) => {
-      let body: any = undefined;
-      try { body = init?.body ? JSON.parse(init.body) : undefined; } catch { body = undefined; }
-      calls.push({ url, init, method: init?.method || 'GET', body });
-      // Default no-op success
-      return makeResponse(200, {});
-    }
+  const defaultImpl = async (url: string, init?: any) => {
+    let body: any = undefined;
+    try { body = init?.body ? JSON.parse(init.body) : undefined; } catch { body = undefined; }
+    calls.push({ url, init, method: init?.method || 'GET', body });
+    // Default no-op success
+    return makeResponse(200, {});
   };
+  const fetch = vi.fn(defaultImpl);
+  return { fetch };
 });
 
 describe('dashboard interactions', () => {
