@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { runGit } from "./gitUtils.js";
+import { cfg } from "./config.js";
 
 export type Hunk = { oldStart:number, oldCount:number, newStart:number, newCount:number, lines: string[] };
 export type UpsertOp = { action: "upsert"; path: string; content?: string; hunks?: Hunk[] };
@@ -57,6 +58,10 @@ export { writeDiagnostic };
 
 export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
   const repoRoot = normalizeRoot(opts.repoRoot);
+  // Prevent accidental mutations in the developer workspace by default
+  if (repoRoot === process.cwd() && !cfg.allowWorkspaceGit) {
+    throw new Error(`Workspace git mutation blocked (applyEditOps) at ${repoRoot}. Set MC_ALLOW_WORKSPACE_GIT=1 to override.`);
+  }
   const maxBytes = opts.maxBytes ?? 512 * 1024;
   const allowedExts = opts.allowedExts ?? [".ts",".tsx",".js",".jsx",".py",".md",".json",".yml",".yaml",".css",".html",".sh",".bat"];
 

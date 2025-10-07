@@ -4,6 +4,22 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { cfg } from "./config.js";
 import { logger } from "./logger.js";
+function isWorkspaceRepo(repoRoot: string) {
+  try {
+    const ws = path.resolve(process.cwd());
+    const rr = path.resolve(repoRoot);
+    // Treat the current workspace folder as protected (no mutations) unless explicitly allowed
+    return rr === ws;
+  } catch {
+    return false;
+  }
+}
+
+function guardWorkspaceMutation(repoRoot: string, op: string) {
+  if (isWorkspaceRepo(repoRoot) && !cfg.allowWorkspaceGit) {
+    throw new Error(`Workspace git mutation blocked (${op}) at ${repoRoot}. Set MC_ALLOW_WORKSPACE_GIT=1 to override.`);
+  }
+}
 
 const execGit = promisify(execFile);
 
@@ -272,6 +288,14 @@ export async function resolveRepoFromPayload(payload: any): Promise<RepoResoluti
   // If a repo_root is provided, only use it when it's an actual git repo.
   if (payload && typeof payload.repo_root === "string" && payload.repo_root.trim().length) {
     const root = payload.repo_root.trim();
+    // Avoid treating the workspace repo as an editable target unless explicitly allowed
+    if (!cfg.allowWorkspaceGit && path.resolve(root) === path.resolve(process.cwd())) {
+      if (!remote) {
+        throw new Error("Workspace repo_root provided but workspace mutations are disabled. Provide a repository remote URL so we can clone into PROJECT_BASE, or set MC_ALLOW_WORKSPACE_GIT=1 to opt-in.");
+      }
+      const ensured = await ensureRepo(remote, branch, hint);
+      return { repoRoot: ensured.repoRoot, branch, remote: ensured.remote, source: "payload_repo" };
+    }
     const gitDir = path.join(root, ".git");
     const isRepo = await directoryExists(gitDir).catch(() => false);
     if (isRepo) {
@@ -431,6 +455,7 @@ async function handleCheckoutError(repoRoot: string, branch: string, error: any)
 }
 
 export async function checkoutBranchFromBase(repoRoot: string, baseBranch: string, newBranch: string) {
+  guardWorkspaceMutation(repoRoot, `checkoutBranchFromBase ${newBranch} from ${baseBranch}`);
   const fetchBranch = async (branch: string, warnOnError: boolean) => {
     if (!branch) return;
     try {
@@ -512,6 +537,7 @@ export async function checkoutBranchFromBase(repoRoot: string, baseBranch: strin
 }
 
 export async function ensureBranchPublished(repoRoot: string, branch: string) {
+  guardWorkspaceMutation(repoRoot, `ensureBranchPublished ${branch}`);
   if (!branch) return;
   try {
     await runGit(["push", "-u", "origin", branch], { cwd: repoRoot });
@@ -529,6 +555,7 @@ export async function ensureBranchPublished(repoRoot: string, branch: string) {
 
 export async function commitAndPushPaths(options: { repoRoot: string; branch?: string | null; message: string; paths: string[] }) {
   const { repoRoot, message, paths } = options;
+  guardWorkspaceMutation(repoRoot, `commitAndPush ${options.branch || ''}`);
   if (!paths || paths.length === 0) {
     return { committed: false, pushed: false, reason: "no_paths" };
   }

@@ -211,6 +211,8 @@ export const cfg = {
     userName: gitUserName,
     userEmail: gitUserEmail
   },
+  // Guard: refuse to mutate the developer workspace repo unless explicitly allowed
+  allowWorkspaceGit: ["1","true","yes","on"].includes((process.env.MC_ALLOW_WORKSPACE_GIT || "").toLowerCase()),
 
   log: {
     level: logLevelRaw,
