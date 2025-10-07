@@ -33,12 +33,13 @@ function buildHelpers() {
     // code-reviewer and security-review personas when allowed by config.
     governanceHook: async (r: any, ctx: any) => {
       try {
+        const P = (ctx && ctx.persona) ? ctx.persona : persona;
         const toRun: Array<{ name: string; step: string }> = [];
         if (cfg.allowedPersonas.includes(PERSONAS.CODE_REVIEWER)) toRun.push({ name: PERSONAS.CODE_REVIEWER, step: "3.8-code-review" });
         if (cfg.allowedPersonas.includes(PERSONAS.SECURITY_REVIEW)) toRun.push({ name: PERSONAS.SECURITY_REVIEW, step: "3.9-security-review" });
         for (const p of toRun) {
           const corrId = randomUUID();
-          await persona.sendPersonaRequest(r, {
+          await P.sendPersonaRequest(r, {
             workflowId: ctx.workflowId,
             toPersona: p.name,
             step: p.step,
@@ -56,9 +57,9 @@ function buildHelpers() {
             branch: ctx.branch,
             projectId: ctx.projectId
           });
-          const evt = await persona.waitForPersonaCompletion(r, p.name, ctx.workflowId, corrId);
-          const status = persona.interpretPersonaStatus(evt.fields.result);
-          const resObj = persona.parseEventResult(evt.fields.result);
+          const evt = await P.waitForPersonaCompletion(r, p.name, ctx.workflowId, corrId);
+          const status = P.interpretPersonaStatus(evt.fields.result);
+          const resObj = P.parseEventResult(evt.fields.result);
           logger.info("governance persona completed", { workflowId: ctx.workflowId, persona: p.name, status: status.status, eventId: evt.id });
           // For now, only log outcomes. If needed, map resObj.issues/details into follow-ups.
         }
@@ -418,7 +419,8 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
           projectId,
           milestone: milestoneDescriptor,
           task: taskDescriptor,
-          qa: qaResult
+          qa: qaResult,
+          persona: H.persona
         });
       } catch (gerr) {
         logger.warn('coordinator: governanceHook failed', { workflowId, error: String(gerr) });
