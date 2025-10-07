@@ -101,7 +101,9 @@ describe('dashboard interactions', () => {
   it('updateTaskStatus resolves by external_id when 404 and retries by id', async () => {
     const { fetch } = await import('undici');
     (fetch as any).mockImplementation(async (url: string, init?: any) => {
-      calls.push({ url, init, method: init?.method || 'GET' });
+      let body: any = undefined;
+      try { body = init?.body ? JSON.parse(init.body) : undefined; } catch { body = undefined; }
+      calls.push({ url, init, method: init?.method || 'GET', body });
       if (url.includes('/v1/tasks/by-external/')) return makeResponse(404, { detail: 'Not found' });
       if (url.includes('/v1/tasks/resolve')) return makeResponse(200, { id: '44444444-4444-4444-4444-444444444444' });
       if (url.includes('/v1/tasks/44444444-4444-4444-4444-444444444444/status')) return makeResponse(200, { ok: true });
