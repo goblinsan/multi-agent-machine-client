@@ -55,6 +55,26 @@ describe('dashboard interactions', () => {
   expect(val.ok).toBe(true);
   });
 
+  it('createDashboardTask includes milestone_slug when milestoneId is missing', async () => {
+    const { createDashboardTask } = await import('../src/dashboard.js');
+
+    const resp = await createDashboardTask({
+      projectId: '11111111-1111-1111-1111-111111111111',
+      title: 'Test with milestone slug',
+      description: 'Desc',
+      externalId: 'ext-mslug-1',
+      milestoneSlug: 'future-enhancements'
+    });
+    expect(resp?.ok).toBe(true);
+
+    const call = calls.find(c => c.url.includes('/v1/tasks:upsert'));
+    expect(call).toBeTruthy();
+    expect(call?.body?.milestone_id).toBeUndefined();
+    expect(call?.body?.milestone_slug).toBe('future-enhancements');
+    const val = validate(TaskCreateUpsertSchema, call?.body);
+    expect(val.ok).toBe(true);
+  });
+
   it('createDashboardTask falls back to legacy create when upsert not supported', async () => {
     // Swap fetch to return 405 for first upsert, then 201 for legacy create
     const { fetch } = await import('undici');
