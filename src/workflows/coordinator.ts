@@ -302,8 +302,11 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   const milestoneName = firstString(selectedMilestone?.name, selectedMilestone?.title, 'Milestone');
   const milestoneNameText: string = milestoneName || 'Milestone';
   const milestoneSlug = toSlug(selectedMilestone?.slug, milestoneNameText || 'milestone');
-    const taskName = firstString(selectedTask?.name, selectedTask?.title, selectedTask?.summary, selectedTask?.label, selectedTask?.key, selectedTask?.id) || null;
-    const taskSlug = taskName ? slugify(taskName) : null;
+  const taskName = firstString(selectedTask?.name, selectedTask?.title, selectedTask?.summary, selectedTask?.label, selectedTask?.key, selectedTask?.id) || null;
+  const rawTaskSlug = taskName ? slugify(taskName) : null;
+  // If we're operating on a synthetic fallback (no real task), avoid feat/task; prefer milestone/project instead
+  const isSynthetic = !selectedTask || firstString(selectedTask?.id) === 't-synth';
+  const taskSlug = isSynthetic ? null : rawTaskSlug;
     const taskDescriptor = selectedTask ? {
       id: firstString(selectedTask.id, selectedTask.key, taskSlug, taskName) || null,
       external_id: firstString((selectedTask as any)?.external_id, (selectedTask as any)?.externalId) || null,
