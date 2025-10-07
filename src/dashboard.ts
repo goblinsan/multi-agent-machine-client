@@ -313,14 +313,16 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
     }
   }
   if (resolvedMilestoneId) body.milestone_id = resolvedMilestoneId;
-  else if (input.milestoneSlug && input.options && input.options.create_milestone_if_missing) {
-    // Only allow auto-creating the 'Future Enhancements' milestone to avoid accidental duplicates
-    const norm = (input.milestoneSlug || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    const allowOnlyFuture = (typeof cfg.dashboardAutoCreateFutureEnhancementsOnly === 'boolean') ? cfg.dashboardAutoCreateFutureEnhancementsOnly : true;
-    if (!allowOnlyFuture || norm === 'future-enhancements' || norm === 'future-enhancement' || norm === 'future_enhancements' || norm === 'future') {
-      body.milestone_slug = input.milestoneSlug;
-    } else {
-      logger.info('milestone auto-create blocked (only allowed for Future Enhancements)', { requested: input.milestoneSlug, projectId: input.projectId });
+  else if (input.milestoneSlug) {
+    // Always send milestone_slug when provided so the server can resolve it; auto-create is controlled separately via options
+    body.milestone_slug = input.milestoneSlug;
+    // Optionally log if auto-create would be blocked by policy; server may still accept existing slug
+    if (input.options && input.options.create_milestone_if_missing) {
+      const norm = (input.milestoneSlug || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const allowOnlyFuture = (typeof cfg.dashboardAutoCreateFutureEnhancementsOnly === 'boolean') ? cfg.dashboardAutoCreateFutureEnhancementsOnly : true;
+      if (allowOnlyFuture && !(norm === 'future-enhancements' || norm === 'future-enhancement' || norm === 'future_enhancements' || norm === 'future')) {
+        logger.info('milestone auto-create policy would block non-future slug', { requested: input.milestoneSlug, projectId: input.projectId });
+      }
     }
   }
   // Only send parent_task_id if it's a UUID; otherwise, prefer external linkage when supported

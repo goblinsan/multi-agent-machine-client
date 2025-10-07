@@ -353,10 +353,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
           projectId: options.projectId,
           error: body?.error || body?.body || "unknown"
         });
-        const summaryParts = [title];
-        if (schedule) summaryParts.push(`schedule: ${schedule}`);
-        summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
-        summaries.push({ summary: summaryParts.join(" | "), title, externalId, description });
+        // Do not include non-created items in summaries to avoid downstream status updates on non-existent tasks
       }
     }
 
