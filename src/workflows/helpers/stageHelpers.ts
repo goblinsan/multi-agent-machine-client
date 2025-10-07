@@ -51,10 +51,10 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
     if (policy.immediate && Array.isArray(created) && created.length) {
       for (const c of created) {
         try {
-          const id = c.createdId || (c.externalId && options.projectId ? await findTaskIdByExternalId(c.externalId, options.projectId) : null);
-          if (id) {
-            await updateTaskStatus(String(id), policy.initialStatus).catch((err) => {
-              logger.warn("handleFailureMiniCycle: updateTaskStatus failed", { workflowId, stage, id, error: err });
+          const key = c.externalId || c.createdId || (c.externalId && options.projectId ? await findTaskIdByExternalId(c.externalId, options.projectId) : null);
+          if (key) {
+            await updateTaskStatus(String(key), policy.initialStatus).catch((err) => {
+              logger.warn("handleFailureMiniCycle: updateTaskStatus failed", { workflowId, stage, key, error: err });
               throw err;
             });
           } else {

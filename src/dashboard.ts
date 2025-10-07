@@ -392,6 +392,8 @@ export async function fetchTask(taskId: string): Promise<any | null> {
 }
 
 // Update the task status using the task's lock/version to prevent races.
+// Update the task status using new coordinator-friendly endpoints.
+// If taskId looks like a UUID, call /v1/tasks/{id}/status; otherwise treat it as external_id and call /v1/tasks/by-external/{external_id}/status.
 export async function updateTaskStatus(taskId: string, status: string, lockVersion?: number): Promise<CreateTaskResult> {
   if (!cfg.dashboardBaseUrl) {
     logger.warn("dashboard update skipped: base URL not configured");
@@ -399,67 +401,81 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
   }
   const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
 
+  const isUuid = (s: string) => /^(?:[0-9a-fA-F]{8})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{12})$/.test(s);
+  const patchOnce = async (endpoint: string, lv?: number | null) => {
+    const payload: any = { status };
+    if (lv !== undefined && lv !== null) payload.lock_version = lv;
+    const res = await fetch(endpoint, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${cfg.dashboardApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    const statusCode = res.status;
+    let responseBody: any = null;
+    try { const text = await res.text(); responseBody = text ? JSON.parse(text) : null; } catch { responseBody = null; }
+    return { statusCode, responseBody } as { statusCode: number; responseBody: any };
+  };
+
   try {
-    let lv = lockVersion;
-    if (lv === undefined || lv === null) {
-      const current = await fetchTask(taskId);
-      const raw = current ? (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
-      lv = (raw !== undefined && raw !== null) ? Number(raw) : undefined;
+    const byId = isUuid(taskId);
+    const endpoint = byId
+      ? `${base}/v1/tasks/${encodeURIComponent(taskId)}/status`
+      : `${base}/v1/tasks/by-external/${encodeURIComponent(taskId)}/status`;
+
+    // First attempt; supply provided lockVersion if any
+    const first = await patchOnce(endpoint, lockVersion ?? undefined);
+    if (first.statusCode >= 200 && first.statusCode < 300) {
+      logger.info("dashboard task updated", { taskId, by: byId ? 'id' : 'external', status, statusCode: first.statusCode });
+      return { ok: true, status: first.statusCode, body: first.responseBody } as any;
     }
 
-    const endpoint = `${base}/v1/tasks/${encodeURIComponent(taskId)}`;
-    const body: any = { status };
-    if (lv !== undefined) body.lock_version = lv;
-
-    const doPatch = async (lv: number | undefined) => {
-      const payload: any = { status };
-      if (lv !== undefined && lv !== null) payload.lock_version = lv;
-      const res = await fetch(endpoint, {
-        method: "PATCH",
-        headers: {
-          "Authorization": `Bearer ${cfg.dashboardApiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-      const statusCode = res.status;
-      let responseBody: any = null;
-      try { const text = await res.text(); responseBody = text ? JSON.parse(text) : null; } catch { responseBody = null; }
-      return { res, statusCode, responseBody } as { res: any; statusCode: number; responseBody: any };
-    };
-
-    // First attempt
-    const first = await doPatch(lv);
-    if (first.res && first.statusCode >= 200 && first.statusCode < 300) {
-      logger.info("dashboard task updated", { taskId, status, statusCode: first.statusCode });
-      return { ok: true, status: first.statusCode, body: first.responseBody };
-    }
-
-    // If server complains about missing lock_version (422) or similar, try to fetch current task and retry once
-    try {
-      const textBody = String(first.responseBody || JSON.stringify(first.responseBody || '')).toLowerCase();
-      if (first.statusCode === 422 || textBody.includes('lock_version') || textBody.includes('lockversion') || textBody.includes('missing')) {
-        logger.debug("dashboard task update received 422 or missing lock_version; attempting to fetch current task and retry", { taskId, status, statusCode: first.statusCode, responseBody: first.responseBody });
-  const current = await fetchTask(taskId);
-  const raw = current ? (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
-  const fetchedLv = (raw !== undefined && raw !== null) ? Number(raw) : undefined;
-  if (fetchedLv !== undefined) {
-          const second = await doPatch(fetchedLv);
-          if (second.res && second.statusCode >= 200 && second.statusCode < 300) {
+    // Handle optimistic concurrency or missing lock gracefully: fetch current and retry once when updating by id
+    if (byId && (first.statusCode === 409 || first.statusCode === 422)) {
+      try {
+        const current = await fetchTask(taskId);
+        const raw = current ? (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
+        const fetchedLv = (raw !== undefined && raw !== null) ? Number(raw) : undefined;
+        if (fetchedLv !== undefined) {
+          const second = await patchOnce(endpoint, fetchedLv);
+          if (second.statusCode >= 200 && second.statusCode < 300) {
             logger.info("dashboard task updated (retry with lock_version)", { taskId, status, statusCode: second.statusCode, usedLockVersion: fetchedLv });
-            return { ok: true, status: second.statusCode, body: second.responseBody };
+            return { ok: true, status: second.statusCode, body: second.responseBody } as any;
           }
           logger.warn("dashboard task update retry failed", { taskId, status, statusCode: second.statusCode, responseBody: second.responseBody, usedLockVersion: fetchedLv });
           return { ok: false, status: second.statusCode, body: second.responseBody };
-        } else {
-          logger.warn("dashboard task update retry skipped: could not determine lock_version from fetch", { taskId, status, fetchResult: current });
         }
+      } catch (e) {
+        logger.debug('dashboard task update: failed to fetch for retry', { taskId, error: (e as Error).message });
       }
-    } catch (err) {
-      logger.warn("dashboard task update retry attempt failed", { taskId, status, error: err });
     }
 
-    logger.warn("dashboard task update failed", { taskId, status, statusCode: first.statusCode, responseBody: first.responseBody });
+    // If by-external returned 404, we can optionally try to resolve to id and retry by id
+    if (!byId && first.statusCode === 404) {
+      try {
+        const resolveUrl = `${base}/v1/tasks/resolve?external_id=${encodeURIComponent(taskId)}`;
+        const r = await fetch(resolveUrl, { headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` } });
+        if (r.ok) {
+          const body: any = await r.json().catch(() => null);
+          const id = body && (body.id || body.task_id || (body.task && body.task.id)) ? String(body.id || body.task_id || body.task.id) : null;
+          if (id) {
+            const byIdEndpoint = `${base}/v1/tasks/${encodeURIComponent(id)}/status`;
+            const second = await patchOnce(byIdEndpoint, undefined);
+            if (second.statusCode >= 200 && second.statusCode < 300) {
+              logger.info("dashboard task updated (resolved by external)", { externalId: taskId, resolvedId: id, status, statusCode: second.statusCode });
+              return { ok: true, status: second.statusCode, body: second.responseBody } as any;
+            }
+            return { ok: false, status: second.statusCode, body: second.responseBody };
+          }
+        }
+      } catch (e) {
+        logger.debug('dashboard task update: resolve by external failed', { externalId: taskId, error: (e as Error).message });
+      }
+    }
+
+    logger.warn("dashboard task update failed", { taskId, by: byId ? 'id' : 'external', status, statusCode: first.statusCode, responseBody: first.responseBody });
     return { ok: false, status: first.statusCode, body: first.responseBody };
   } catch (e) {
     logger.warn("dashboard task update exception", { taskId, status, error: (e as Error).message });

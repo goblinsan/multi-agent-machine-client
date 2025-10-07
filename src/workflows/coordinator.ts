@@ -198,6 +198,7 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     const taskSlug = taskName ? slugify(taskName) : null;
     const taskDescriptor = selectedTask ? {
       id: firstString(selectedTask.id, selectedTask.key, taskSlug, taskName) || null,
+      external_id: firstString((selectedTask as any)?.external_id, (selectedTask as any)?.externalId) || null,
       name: taskName,
       slug: taskSlug,
       status: selectedTask?.status ?? null,
@@ -307,9 +308,10 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       logger.warn('coordinator: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
     }
 
-    if (taskDescriptor && taskDescriptor.id && (appliedSomething || (leadOutcome && leadOutcome.success))) {
+    if (taskDescriptor && (taskDescriptor.id || taskDescriptor.external_id) && (appliedSomething || (leadOutcome && leadOutcome.success))) {
       try {
-        const updateRes = await H.updateTaskStatus(String(taskDescriptor.id), 'done');
+        const key = String(taskDescriptor.external_id || taskDescriptor.id);
+        const updateRes = await H.updateTaskStatus(key, 'done');
         if (!(updateRes && updateRes.ok)) logger.warn('coordinator: updateTaskStatus returned not-ok', { workflowId, taskId: String(taskDescriptor.id) });
       } catch (err) {
         logger.warn('coordinator: failed to mark task done after lead/apply', { workflowId, taskId: taskDescriptor.id, error: err });
