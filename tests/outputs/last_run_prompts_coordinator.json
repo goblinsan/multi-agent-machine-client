@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2025-10-07T03:38:08.203Z",
+  "generatedAt": "2025-10-07T12:29:40.961Z",
   "requests": [
     {
       "step": "1-context",
       "role": "Hydrate project context",
       "toPersona": "context",
-      "corrId": "b857b7e8-689f-4815-9ed0-1cd5b590436f",
+      "corrId": "ef8e98c5-7271-4b79-bc9d-8bbd9d98ca83",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -32,7 +32,7 @@
       "step": "2-plan",
       "role": "Implementation planning (planner)",
       "toPersona": "implementation-planner",
-      "corrId": "8bb82a11-7fbd-4dba-9f6f-c497a20bee92",
+      "corrId": "4c4ea4fa-c296-4b83-b396-5d3199eebf7a",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -77,7 +77,7 @@
       "step": "2-implementation",
       "role": "Lead implementation (engineer)",
       "toPersona": "lead-engineer",
-      "corrId": "131a52a0-7839-4990-910b-c28e8af4609f",
+      "corrId": "9ee887a8-63fd-4294-8908-fcae03b056c7",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -143,7 +143,7 @@
       "step": "3-qa",
       "role": "QA test run",
       "toPersona": "tester-qa",
-      "corrId": "25083b2a-1467-4d8e-b262-f5d6f371e347",
+      "corrId": "c90d3e5d-dff8-41ec-857c-516bae8c8330",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -177,7 +177,7 @@
       "step": "qa-created-tasks",
       "role": "QA follow-up - created tasks (after summarizer/create)",
       "toPersona": "implementation-planner",
-      "corrId": "d3394341-4753-47c3-95f7-fbab667bb9d1",
+      "corrId": "3a558a55-1142-49cc-86b9-6726d3e6d635",
       "payload": {
         "created_tasks": [
           {
@@ -221,7 +221,7 @@
       "step": "3.5-evaluate-qa-plan",
       "role": "Workflow step",
       "toPersona": "plan-evaluator",
-      "corrId": "120571de-f53c-4b12-be80-0e868897cabd",
+      "corrId": "3104b89d-ef2f-4512-b413-203fe1cf36ac",
       "payload": {
         "qa_feedback": {
           "status": "fail",
@@ -248,7 +248,7 @@
       "step": "4-implementation-plan",
       "role": "Implementation planning for QA follow-ups",
       "toPersona": "implementation-planner",
-      "corrId": "7e87532b-41f6-4911-b267-eb1af2af4172",
+      "corrId": "1cf8ca8f-ddeb-49a2-9da4-10eece2c5157",
       "payload": {
         "qa_result": {
           "status": "fail",
@@ -306,7 +306,7 @@
       "step": "3-route",
       "role": "Workflow step",
       "toPersona": "project-manager",
-      "corrId": "ee5bb55f-3913-42b6-b021-793b2cabef57",
+      "corrId": "21e56053-ebd1-423f-ab60-02f3c587ede5",
       "payload": {
         "qa_result": {
           "status": "fail",

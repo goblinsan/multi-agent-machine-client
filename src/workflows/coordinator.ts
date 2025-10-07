@@ -94,15 +94,54 @@ type TddHints = {
   tdd_stage?: string | null;
   qa_expectations?: any;
 };
+function normalizeLabels(value: any): string[] {
+  const out: string[] = [];
+  const pushStr = (s: any) => { if (typeof s === 'string' && s.trim()) out.push(s.trim()); };
+  if (!value) return out;
+  if (Array.isArray(value)) {
+    for (const it of value) {
+      if (typeof it === 'string') pushStr(it);
+      else if (it && typeof it === 'object') pushStr((it as any).name || (it as any).label || (it as any).value || '');
+    }
+  } else if (typeof value === 'object') {
+    for (const v of Object.values(value)) pushStr(v as any);
+  } else {
+    pushStr(value);
+  }
+  return out.map(s => s.toLowerCase());
+}
 
-function detectTddHints(msg: any, payload: any): TddHints {
-  const wm = firstString(msg?.workflow_mode, payload?.workflow_mode) || null;
-  const stage = firstString(msg?.tdd_stage, payload?.tdd_stage) || null;
-  // Allow alternate keys often used
-  const altStage = firstString((payload?.tdd && payload?.tdd.stage), (msg?.tdd && msg?.tdd.stage)) || null;
-  const tdd_stage = stage || altStage || null;
-  const qaExp = (msg && (msg.qa_expectations || msg.qa)) || (payload && (payload.qa_expectations || payload.qa)) || null;
-  return { workflow_mode: wm, tdd_stage, qa_expectations: qaExp };
+function detectTddHints(msg: any, payload: any, project?: any, milestone?: any, task?: any): TddHints {
+  // Highest priority: explicit fields in msg/payload
+  let workflow_mode = firstString(msg?.workflow_mode, payload?.workflow_mode) || null;
+  let tdd_stage = firstString(msg?.tdd_stage, payload?.tdd_stage) || null;
+  // Alternate shapes like tdd: { stage }
+  if (!tdd_stage) tdd_stage = firstString((payload?.tdd && payload?.tdd.stage), (msg?.tdd && msg?.tdd.stage)) || null;
+  let qa_expectations = (msg && (msg.qa_expectations || msg.qa)) || (payload && (payload.qa_expectations || payload.qa)) || null;
+
+  // Next: task/milestone/project-level fields
+  const candidates = [task, milestone, project];
+  for (const src of candidates) {
+    if (!src || typeof src !== 'object') continue;
+    workflow_mode = workflow_mode || firstString((src as any).workflow_mode, (src as any).mode, (src as any).workflow);
+    tdd_stage = tdd_stage || firstString((src as any).tdd_stage, (src as any).stage);
+    qa_expectations = qa_expectations || (src as any).qa_expectations || (src as any).qa || null;
+    // Labels/tags heuristics
+    const labels = normalizeLabels((src as any).labels || (src as any).tags || (src as any).label || (src as any).tag);
+    if (labels.length) {
+      if (!workflow_mode && labels.includes('tdd')) workflow_mode = 'tdd';
+      // stage:* pattern
+      const stageLbl = labels.find(l => l.startsWith('stage:'));
+      if (!tdd_stage && stageLbl) tdd_stage = stageLbl.split(':')[1] || null;
+      // qa expectations hints
+      if (!qa_expectations) {
+        const expectFail = labels.includes('qa:expect_failures') || labels.includes('qa:expected_failures');
+        if (expectFail) qa_expectations = { expect_failures: true };
+      }
+    }
+  }
+
+  return { workflow_mode: workflow_mode || null, tdd_stage: tdd_stage || null, qa_expectations };
 }
 
 function pickRemoteFrom(obj: any): string | null {
@@ -197,10 +236,10 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   const projectId: string = firstString(msg?.project_id, payload?.project_id, payload?.projectId) || '';
   if (!projectId) throw new Error("Coordinator requires project_id");
 
-  const tddHints = detectTddHints(msg, payload);
-
   const projectInfo: any = await H.fetchProjectStatus(projectId);
   const details: any = await H.fetchProjectStatusDetails(projectId).catch(() => null);
+  // Global defaults (may be overridden per-task below)
+  const tddDefaults = detectTddHints(msg, payload, projectInfo, details, null);
   const projectName: string = firstString(projectInfo?.name, payload?.project_name) || 'project';
   const projectSlug: string = slugify(firstString(projectInfo?.slug, payload?.project_slug, projectName) || projectName || 'project');
 
@@ -293,6 +332,14 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
 
     // Context step
     const contextCorrId = randomUUID();
+    // Compute TDD hints for this item (task/milestone) using dashboard metadata
+    const tddHints = detectTddHints(msg, payload, projectInfo, selectedMilestone, selectedTask);
+    const effectiveTdd = {
+      workflow_mode: tddHints.workflow_mode || tddDefaults.workflow_mode || undefined,
+      tdd_stage: tddHints.tdd_stage || tddDefaults.tdd_stage || undefined,
+      qa_expectations: tddHints.qa_expectations || tddDefaults.qa_expectations || undefined
+    };
+
     await H.persona.sendPersonaRequest(r, {
       workflowId,
       toPersona: PERSONAS.CONTEXT,
@@ -310,9 +357,9 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
         task_name: taskName || (taskDescriptor?.name ?? ""),
         upload_dashboard: true,
         // propagate TDD hints for downstream personas that might care
-        workflow_mode: tddHints.workflow_mode || undefined,
-        tdd_stage: tddHints.tdd_stage || undefined,
-        qa_expectations: tddHints.qa_expectations || undefined
+        workflow_mode: effectiveTdd.workflow_mode,
+        tdd_stage: effectiveTdd.tdd_stage,
+        qa_expectations: effectiveTdd.qa_expectations
       },
       corrId: contextCorrId,
       repo: repoRemote,
@@ -394,9 +441,9 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
         task: taskDescriptor,
         commands: qaCommands,
         // TDD hints allow QA to treat expected failing tests as pass
-        workflow_mode: tddHints.workflow_mode || undefined,
-        tdd_stage: tddHints.tdd_stage || undefined,
-        qa_expectations: tddHints.qa_expectations || undefined
+        workflow_mode: effectiveTdd.workflow_mode,
+        tdd_stage: effectiveTdd.tdd_stage,
+        qa_expectations: effectiveTdd.qa_expectations
       },
       corrId: qaCorr,
       repo: repoRemote,
@@ -409,7 +456,7 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     logger.info("coordinator received QA completion", { workflowId, qaStatus: qaStatus.status, corrId: qaCorr, eventId: qaEvent.id });
 
     // Optional governance: code-review/security. Gate during TDD write_failing_test stage.
-    const isFailingTestStage = (tddHints.tdd_stage || '').toLowerCase() === 'write_failing_test';
+  const isFailingTestStage = String((effectiveTdd.tdd_stage || '')).toLowerCase() === 'write_failing_test';
     if (!isFailingTestStage && qaStatus.status === 'pass') {
       try {
         await H.governanceHook(r, {
