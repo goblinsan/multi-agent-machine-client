@@ -243,7 +243,11 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       if (uuidRegex.test(rawMilestone)) milestoneId = rawMilestone;
       else milestoneSlug = String(rawMilestone);
     }
-    const parentTaskId = options.parentTaskDescriptor?.id || null;
+  const parentTaskIdRaw = options.parentTaskDescriptor?.id || null;
+  // Only treat as canonical parent id if it looks like a UUID; otherwise we will pass it through
+  // and the dashboard.createDashboardTask will map to parent_task_external_id.
+  const isUuid = (s: string) => /^(?:[0-9a-fA-F]{8})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{12})$/.test(s);
+  const parentTaskId = (typeof parentTaskIdRaw === 'string' && isUuid(parentTaskIdRaw)) ? parentTaskIdRaw : (parentTaskIdRaw || null);
   const summaries: any[] = [];
 
     for (const task of tasks) {

@@ -417,9 +417,13 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
 
     if (taskDescriptor && (taskDescriptor.id || taskDescriptor.external_id) && (appliedSomething || (leadOutcome && leadOutcome.success))) {
       try {
-        const key = String(taskDescriptor.external_id || taskDescriptor.id);
-        const updateRes = await H.updateTaskStatus(key, 'done');
-        if (!(updateRes && updateRes.ok)) logger.warn('coordinator: updateTaskStatus returned not-ok', { workflowId, taskId: String(taskDescriptor.id) });
+        const key = String(taskDescriptor.external_id || taskDescriptor.id || '');
+        if (!key || key === 't-synth') {
+          logger.debug('coordinator: skipping updateTaskStatus; synthetic or missing task id', { workflowId, taskId: taskDescriptor?.id, external_id: taskDescriptor?.external_id });
+        } else {
+          const updateRes = await H.updateTaskStatus(key, 'done');
+          if (!(updateRes && updateRes.ok)) logger.warn('coordinator: updateTaskStatus returned not-ok', { workflowId, taskKey: key });
+        }
       } catch (err) {
         logger.warn('coordinator: failed to mark task done after lead/apply', { workflowId, taskId: taskDescriptor.id, error: err });
       }

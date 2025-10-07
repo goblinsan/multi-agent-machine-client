@@ -46,15 +46,22 @@ export async function fetchProjectMilestones(projectId: string | null | undefine
   if (!projectId) return null;
   try {
     const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
-    const res = await fetch(`${base}/v1/milestones?project_id=${encodeURIComponent(projectId)}`, {
+    // Updated API: GET /v1/projects/{project_id}/milestones
+    const res = await fetch(`${base}/v1/projects/${encodeURIComponent(projectId)}/milestones?limit=100`, {
       headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
     });
     if (!res.ok) {
       logger.debug('fetchProjectMilestones non-ok', { projectId, status: res.status });
       return null;
     }
-    const body = await res.json();
-    return body;
+    const body = await res.json().catch(() => null);
+    // Normalize to an array of milestone objects
+    const list = Array.isArray(body)
+      ? body
+      : (Array.isArray((body as any)?.milestones) ? (body as any).milestones
+        : (Array.isArray((body as any)?.items) ? (body as any).items
+          : (Array.isArray((body as any)?.milestones?.items) ? (body as any).milestones.items : null)));
+    return list ?? null;
   } catch (e) {
     logger.warn('fetchProjectMilestones failed', { projectId, error: (e as Error).message });
     return null;
@@ -273,7 +280,10 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
     logger.warn("dashboard task creation skipped: dashboard base URL not configured");
     return null;
   }
-  const endpoint = `${cfg.dashboardBaseUrl.replace(/\/$/, "")}/v1/tasks`;
+  const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
+  const defaultEndpoint = `${base}/v1/tasks`;
+  // Prefer upsert when we have an external_id to avoid duplicates and simplify id resolution
+  const upsertEndpoint = `${base}/v1/tasks:upsert`;
   const body: Record<string, any> = {
     title: input.title,
     description: input.description
@@ -313,26 +323,38 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
       logger.info('milestone auto-create blocked (only allowed for Future Enhancements)', { requested: input.milestoneSlug, projectId: input.projectId });
     }
   }
-  if (input.parentTaskId) body.parent_task_id = input.parentTaskId;
+  // Only send parent_task_id if it's a UUID; otherwise, prefer external linkage when supported
+  if (input.parentTaskId) {
+    const isUuid = /^(?:[0-9a-fA-F]{8})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{12})$/.test(String(input.parentTaskId));
+    if (isUuid) body.parent_task_id = input.parentTaskId;
+    else body.parent_task_external_id = input.parentTaskId; // tolerated by updated API; ignored by older servers
+  }
   if (typeof input.effortEstimate === "number") body.effort_estimate = input.effortEstimate;
   if (typeof input.priorityScore === "number") body.priority_score = input.priorityScore;
   if (input.assigneePersona) body.assignee_persona = input.assigneePersona;
   if (input.externalId) body.external_id = input.externalId;
   if (input.attachments && Array.isArray(input.attachments)) body.attachments = input.attachments;
   if (input.options) body.options = input.options;
-  // Allow the caller to request an initial status for newly created tasks (some dashboards accept this)
-  if (input.options && typeof input.options.initial_status === 'string' && input.options.initial_status.trim().length) {
-    body.initial_status = input.options.initial_status.trim();
-  }
+  // For legacy POST /v1/tasks some dashboards accept initial_status at top level; we'll include it only for that path.
+  const initialStatus = (input.options && typeof input.options.initial_status === 'string' && input.options.initial_status.trim().length)
+    ? input.options.initial_status.trim()
+    : null;
 
   try {
+    // Choose endpoint: use upsert when external_id is present; otherwise fallback to simple create
+    const useUpsert = Boolean(input.externalId);
+    const endpoint = useUpsert ? upsertEndpoint : defaultEndpoint;
+    // For upsert, keep initial status under options; for legacy create, also include top-level initial_status if requested
+    const requestBody = { ...body } as any;
+    if (!useUpsert && initialStatus) requestBody.initial_status = initialStatus;
+
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${cfg.dashboardApiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(requestBody)
     });
     const status = res.status;
     let responseBody: any = null;
@@ -344,7 +366,40 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
     }
 
     if (!res.ok) {
-      logger.warn("dashboard task creation failed", { status, body: body.title, response: responseBody });
+      logger.warn("dashboard task creation failed", { status, endpoint, body: body.title, response: responseBody });
+      // If upsert not supported (e.g., 404/405), try falling back to legacy create once
+      if (useUpsert && (status === 404 || status === 405)) {
+        try {
+          const legacyBody = { ...body } as any;
+          if (initialStatus) legacyBody.initial_status = initialStatus;
+          const res2 = await fetch(defaultEndpoint, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify(legacyBody)
+          });
+          const status2 = res2.status;
+          let rb2: any = null; try { const t2 = await res2.text(); rb2 = t2 ? JSON.parse(t2) : null; } catch { rb2 = null; }
+          if (!res2.ok) {
+            logger.warn("dashboard task creation failed (legacy fallback)", { status: status2, endpoint: defaultEndpoint, body: body.title, response: rb2 });
+            return { ok: false, status: status2, body: rb2, createdId: null };
+          }
+          let createdId2: string | null = null;
+          try {
+            if (rb2 && (rb2.id || rb2.task_id || (rb2.task && rb2.task.id))) createdId2 = String(rb2.id || rb2.task_id || rb2.task.id);
+            else {
+              const loc2 = res2.headers.get("location") || res2.headers.get("Location");
+              if (loc2 && typeof loc2 === 'string') {
+                const parts = loc2.split('/').filter(Boolean); const last = parts[parts.length - 1]; if (last && last.length) createdId2 = last;
+              }
+            }
+          } catch { createdId2 = null; }
+          logger.info("dashboard task created (legacy fallback)", { title: input.title, status: status2, milestoneId: input.milestoneId || null, milestoneSlug: input.milestoneSlug || null, parentTaskId: input.parentTaskId, createdId: createdId2 });
+          return { ok: true, status: status2, body: rb2, createdId: createdId2 };
+        } catch (e) {
+          logger.warn("dashboard task creation exception (legacy fallback)", { error: e, title: input.title });
+          return { ok: false, status: 0, body: null, error: e };
+        }
+      }
       return { ok: false, status, body: responseBody, createdId: null };
     }
 
@@ -365,7 +420,7 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
       createdId = null;
     }
 
-    logger.info("dashboard task created", { title: input.title, status, milestoneId: input.milestoneId || null, milestoneSlug: input.milestoneSlug || null, parentTaskId: input.parentTaskId, createdId });
+    logger.info("dashboard task created", { title: input.title, status, endpoint, milestoneId: input.milestoneId || null, milestoneSlug: input.milestoneSlug || null, parentTaskId: input.parentTaskId, createdId });
     return { ok: true, status, body: responseBody, createdId };
   } catch (error) {
     logger.warn("dashboard task creation exception", { error, title: input.title });
