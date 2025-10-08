@@ -777,11 +777,15 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
               projectId
             });
             const execEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.LEAD_ENGINEER, workflowId, execCorr);
+            logger.info('qa-exec: received lead-engineer completion', { workflowId, execCorr, eventId: execEvent.id });
             const execResult = H.persona.parseEventResult(execEvent.fields.result);
+            logger.info('qa-exec: parsed lead-engineer result', { workflowId, execCorr, resultType: typeof execResult, hasResult: !!execResult });
             // Attempt to apply edits if present, similar to the main lead cycle
             let execApplied = false;
             try {
+              logger.info('qa-exec: checking conditions', { workflowId, hasTaskDescriptor: !!taskDescriptor, taskId: taskDescriptor?.id, hasExecResult: !!execResult });
               if (taskDescriptor && taskDescriptor.id && execResult) {
+                logger.info('qa-exec: conditions met, processing result', { workflowId, taskId: taskDescriptor.id });
                 let editSpecObj: any = null;
                 const structuredExec = findEditSpecCandidate(execResult) || findEditSpecCandidate((execResult as any)?.result);
                 if (structuredExec && Array.isArray(structuredExec.ops) && structuredExec.ops.length) {
