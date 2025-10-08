@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import { applyEditOps } from '../src/fileops'
+import { cfg } from '../src/config'
 import { makeTempRepo } from './makeTempRepo'
 
 // use standardized helper
@@ -48,6 +49,10 @@ describe('applyEditOps hunks application', () => {
   const child = await import('child_process')
   child.execSync('git add . && git commit -m base', { cwd: repo });
 
+    // Temporarily enable diagnostics for this test
+    const prev = cfg.writeDiagnostics;
+    cfg.writeDiagnostics = true;
+    try {
     const editSpec = {
       ops: [
         {
@@ -73,5 +78,8 @@ describe('applyEditOps hunks application', () => {
     const first = diags[0];
     const data = JSON.parse(await fs.readFile(path.join(diagDir, first), 'utf8'));
     expect(data.reason).toBe('hunk_context_mismatch');
+    } finally {
+      cfg.writeDiagnostics = prev;
+    }
   })
 })
