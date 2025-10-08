@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseUnifiedDiffToEditSpec } from '../src/fileops'
+import { extractDiffCandidates } from '../src/workflows/coordinator'
 
 describe('parseUnifiedDiffToEditSpec', () => {
   it('parses a multi-file unified diff bundle and produces upsert ops', () => {
@@ -35,5 +36,147 @@ import { render } from '@testing-library/react'
   expect(pkg).toBeDefined()
   // non-null assertion because we just checked it's defined
   expect(pkg!.content).toContain('"name": "example"')
+  })
+})
+
+describe('extractDiffCandidates', () => {
+  it('extracts diff from preview field with mixed content', () => {
+    const leadOutcome = {
+      result: {
+        preview: `Changed Files:
+- src/__tests__/ingestion.test.ts
+- src/__tests__/App.test.tsx
+
+Commit Message:
+\`\`\`
+feat: write failing unit test for ingestion API and update App.test.tsx
+
+- Added a new failing unit test to verify that the ingestion API can read a single JSON file and return a parsed object.
+- Updated App.test.tsx to ensure it passes with current implementation.
+\`\`\`
+
+diff --git a/src/__tests__/ingestion.test.ts b/src/__tests__/ingestion.test.ts
+index 3c6a0d8..9f4b7e1 100644
+--- a/src/__tests__/ingestion.test.ts
++++ b/src/__tests__/ingestion.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, it, expect } from 'vitest';
+ import { render, screen } from '@testing-library/react';
+-import App from '../App';
++import App from '../App'; // importing App from App.tsx
+ 
+ describe('App component', () => {
+   it('renders learn react link', () => {
+@@ -10,3 +10,22 @@ describe('App component', () => {
+     expect(linkElement).toBeInTheDocument();
+   });
+ });
++
++describe('Ingestion API', () => {
++  it('should read a single JSON file and return a parsed object', async () => {
++    // This test is intentionally failing to drive development
++    
++    const mockFilePath = 'test-data.json';
++    const expectedData = { key: 'value', number: 42 };
++    
++    // For now, we'll fail this test as the functionality doesn't exist yet
++    const result = null;
++    
++    expect(result).toEqual(expectedData);
++  });
++});
+
+diff --git a/src/__tests__/App.test.tsx b/src/__tests__/App.test.tsx
+index d76787e..51d3ad1 100644
+--- a/src/__tests__/App.test.tsx
++++ b/src/__tests__/App.test.tsx
+@@ -6,6 +6,7 @@ describe('App component', () => {
+   it('renders learn react link', () => {
+     render(<App />);
+     const linkElement = screen.getByText(/learn react/i);
++    // Updated to ensure test passes with current implementation
+     expect(linkElement).toBeInTheDocument();
+   });
+ });`
+      }
+    }
+
+    const candidates = extractDiffCandidates(leadOutcome)
+    
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]).toContain('diff --git a/src/__tests__/ingestion.test.ts')
+    expect(candidates[0]).toContain('diff --git a/src/__tests__/App.test.tsx')
+    expect(candidates[0]).toContain('@@ -1,6 +1,6 @@')
+    expect(candidates[0]).toContain('+import App from \'../App\'; // importing App from App.tsx')
+  })
+
+  it('ignores fenced code blocks without diff markers', () => {
+    const leadOutcome = {
+      result: {
+        output: `Here's my analysis:
+
+\`\`\`
+This is just a regular code block without diff markers.
+It should be ignored.
+\`\`\`
+
+And here's the actual diff:
+
+diff --git a/README.md b/README.md
+index 1111111..2222222 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,2 @@
+-Old content
++New content`
+      }
+    }
+
+    const candidates = extractDiffCandidates(leadOutcome)
+    
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]).toContain('diff --git a/README.md b/README.md')
+    expect(candidates[0]).toContain('-Old content')
+    expect(candidates[0]).toContain('+New content')
+    expect(candidates[0]).not.toContain('This is just a regular code block')
+  })
+
+  it('extracts diff from nested result field', () => {
+    const leadOutcome = {
+      result: {
+        output: 'done',
+        result: `\`\`\`diff
+diff --git a/test.js b/test.js
+index 1111111..2222222 100644
+--- a/test.js
++++ b/test.js
+@@ -1,1 +1,1 @@
+-console.log('old');
++console.log('new');
+\`\`\``
+      }
+    }
+
+    const candidates = extractDiffCandidates(leadOutcome)
+    
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]).toContain('diff --git a/test.js b/test.js')
+    expect(candidates[0]).toContain('-console.log(\'old\');')
+    expect(candidates[0]).toContain('+console.log(\'new\');')
+  })
+
+  it('handles multiple response formats', () => {
+    // Test direct string response
+    const stringResponse = { result: 'diff --git a/file.txt b/file.txt\n+added line' }
+    expect(extractDiffCandidates(stringResponse)).toHaveLength(1)
+
+    // Test top-level preview field
+    const topLevelPreview = { preview: 'diff --git a/file.txt b/file.txt\n+added line' }
+    expect(extractDiffCandidates(topLevelPreview)).toHaveLength(1)
+
+    // Test empty/null responses
+    expect(extractDiffCandidates({})).toHaveLength(0)
+    expect(extractDiffCandidates({ result: null })).toHaveLength(0)
+    expect(extractDiffCandidates({ result: { preview: null } })).toHaveLength(0)
   })
 })

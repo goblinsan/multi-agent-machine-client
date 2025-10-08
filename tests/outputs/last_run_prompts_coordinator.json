@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2025-10-08T03:06:03.374Z",
+  "generatedAt": "2025-10-08T03:59:29.068Z",
   "requests": [
     {
       "step": "1-context",
       "role": "Hydrate project context",
       "toPersona": "context",
-      "corrId": "81df82db-8411-4402-bda6-29099396c351",
+      "corrId": "cc38794b-83e0-44c5-a1b9-b693415d7385",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -32,7 +32,7 @@
       "step": "2-plan",
       "role": "Implementation planning (planner)",
       "toPersona": "implementation-planner",
-      "corrId": "8b3998ec-5880-4410-96d9-817842b4643c",
+      "corrId": "d1e42868-be9d-4a17-9e24-0fc3d8c70ae0",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -93,7 +93,7 @@
       "step": "2.5-evaluate-plan",
       "role": "Workflow step",
       "toPersona": "plan-evaluator",
-      "corrId": "32f1f46a-3300-4a6f-9748-67fabf3c03b1",
+      "corrId": "c59488ae-010e-433f-b26a-55b3a13a87a4",
       "payload": {
         "qa_feedback": {
           "status": "unknown",
@@ -121,7 +121,7 @@
       "step": "2-implementation",
       "role": "Lead implementation (engineer)",
       "toPersona": "lead-engineer",
-      "corrId": "6fe2d6fa-2d36-440f-a014-b500e7e2387e",
+      "corrId": "7e729636-5b1f-400d-926f-44dd131e698a",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -192,7 +192,7 @@
       "step": "3-qa",
       "role": "QA test run",
       "toPersona": "tester-qa",
-      "corrId": "18d1f102-96e8-408f-aeb6-a838a4e4c289",
+      "corrId": "32ef090e-d80a-45e2-97de-84ab3fb7b3f0",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -226,7 +226,7 @@
       "step": "qa-created-tasks",
       "role": "QA follow-up - created tasks (after summarizer/create)",
       "toPersona": "implementation-planner",
-      "corrId": "656183ea-1e10-4c8b-af3d-cd1471b0b4fa",
+      "corrId": "2dad0fad-0ff0-415f-a99a-dbdc95eb4fbc",
       "payload": {
         "created_tasks": [
           {
@@ -270,7 +270,7 @@
       "step": "3.5-evaluate-qa-plan",
       "role": "Workflow step",
       "toPersona": "plan-evaluator",
-      "corrId": "920fe6cf-08a9-42bf-bfc6-cdf0403ff39c",
+      "corrId": "378a456f-a5b1-47ba-8d2f-9bc3c836da70",
       "payload": {
         "qa_feedback": {
           "status": "fail",
@@ -308,7 +308,7 @@
       "step": "4-implementation-plan",
       "role": "Implementation planning for QA follow-ups",
       "toPersona": "implementation-planner",
-      "corrId": "9ec888b9-ca45-4311-a69d-17468b88daae",
+      "corrId": "9b724943-e2f9-40de-92c6-5d887cadadcc",
       "payload": {
         "qa_result": {
           "status": "fail",
@@ -370,7 +370,7 @@
       "step": "4.6-implementation-execute",
       "role": "Workflow step",
       "toPersona": "lead-engineer",
-      "corrId": "4386333c-d946-494f-8c24-273bab6d46cf",
+      "corrId": "05a25344-aad2-44f8-9d3a-6d8e381bafc9",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -434,7 +434,7 @@
       "step": "3-route",
       "role": "Workflow step",
       "toPersona": "project-manager",
-      "corrId": "dcafe4f4-37d7-4751-93af-37bc5d558345",
+      "corrId": "350b5e10-7b28-4af1-839c-13ba8b543866",
       "payload": {
         "qa_result": {
           "status": "fail",

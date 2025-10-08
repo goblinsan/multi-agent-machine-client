@@ -205,6 +205,7 @@ function extractDiffCandidates(leadOutcome: any): string[] {
       rawCandidates.push(r.message ?? null);
       rawCandidates.push(r.text ?? null);
       rawCandidates.push(r.body ?? null);
+      rawCandidates.push(r.result ?? null);
     }
     rawCandidates.push((leadOutcome as any).preview && typeof (leadOutcome as any).preview === 'string' ? (leadOutcome as any).preview : null);
     rawCandidates.push((leadOutcome as any).output && typeof (leadOutcome as any).output === 'string' ? (leadOutcome as any).output : null);
@@ -224,7 +225,7 @@ function extractDiffCandidates(leadOutcome: any): string[] {
         const inner = m[1] || '';
         if (inner.includes('diff --git') || inner.includes('@@') || inner.includes('+++ b/')) { chosen = inner; break; }
       }
-      if (!chosen) chosen = matches[0][1] || null;
+      // Only use fenced content if it actually contains diff markers
       if (chosen) txt = chosen;
     }
     const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
@@ -885,4 +886,5 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   }
 }
 
+export { extractDiffCandidates };
 export default { handleCoordinator };
