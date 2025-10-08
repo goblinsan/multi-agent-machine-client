@@ -1,8 +1,0 @@
-{
-  "changed": [
-    "src/App.test.tsx",
-    "src/main.test.ts"
-  ],
-  "error": "Error: Command failed: git commit -m sim: coordinator apply -- src/App.test.tsx src/main.test.ts\n",
-  "stdout": "On branch coordinator-sim\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   src/fileops.ts\n\tmodified:   src/workflows/coordinator.ts\n\tmodified:   tests/outputs/last_run_prompts_coordinator.json\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\toutputs/\n\tscripts/apply_lead_preview.ts\n\tscripts/lead_preview.txt\n\tscripts/lead_preview_current.txt\n\tscripts/parse_lead_preview.ts\n\tscripts/simulate_coordinator_run.ts\n\ttests/parseLeadPreview.test.ts\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n"
-}

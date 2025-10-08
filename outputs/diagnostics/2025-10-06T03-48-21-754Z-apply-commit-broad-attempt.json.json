@@ -1,8 +1,0 @@
-{
-  "changed": [
-    "src/App.test.tsx",
-    "src/main.test.ts"
-  ],
-  "note": "attempting git add -A and commit as fallback",
-  "error": "Error: Command failed: git commit -m sim: handleCoordinator apply -- src/App.test.tsx src/main.test.ts\n"
-}

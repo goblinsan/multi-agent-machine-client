@@ -40,7 +40,11 @@ async function upsertFile(fullPath: string, content: string, maxBytes: number) {
 }
 
 async function writeDiagnostic(repoRoot: string, targetPath: string, payload: any) {
+  // Honor configuration: only write diagnostics when explicitly enabled
   try {
+    // Lazy import to avoid circulars
+    const { cfg } = await import('./config.js');
+    if (!cfg.writeDiagnostics) return undefined;
     const outDir = path.join(repoRoot, 'outputs', 'diagnostics');
     await fs.mkdir(outDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');

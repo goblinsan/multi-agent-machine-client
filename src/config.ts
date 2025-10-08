@@ -206,6 +206,9 @@ export const cfg = {
   planUncitedBudget,
   planTreatUncitedAsInvalid,
 
+  // Diagnostics writing (disabled by default)
+  writeDiagnostics: bool(process.env.WRITE_DIAGNOSTICS, false),
+
   // Context scanner feature flags & defaults
   contextScan: bool(process.env.CONTEXT_SCAN, false),
   scanInclude: splitCsv(process.env.SCAN_INCLUDE || "src/**,app/**,tests/**", []),

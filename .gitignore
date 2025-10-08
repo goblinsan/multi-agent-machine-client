@@ -35,6 +35,10 @@ coverage/
 *.log
 *.tmp
 
+# Diagnostics and run artifacts
+outputs/diagnostics/
+outputs/**/*.json
+
 # Ignore compiled JS in src if present
 src/**/*.js
 src/**/*.js.map

@@ -1,7 +1,0 @@
-{
-  "changed": [
-    "src/App.test.tsx",
-    "src/main.test.ts"
-  ],
-  "error": "Error: Command failed: git commit -m sim: coordinator apply\n"
-}
