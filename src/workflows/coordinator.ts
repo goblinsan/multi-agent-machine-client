@@ -214,7 +214,9 @@ function extractDiffCandidates(leadOutcome: any): string[] {
   for (const c of rawCandidates) {
     if (!c || typeof c !== 'string') continue;
     let txt = c;
-    const fenceRe = /```(?:diff)?\n([\s\S]*?)```/g;
+    // Capture generic fenced code blocks, including diff/patch/git, but also allow any label;
+    // we'll validate contents by looking for diff markers below.
+    const fenceRe = /```(?:diff|patch|git)?[^\n]*\n([\s\S]*?)```/g;
     const matches = Array.from(txt.matchAll(fenceRe));
     if (matches && matches.length) {
       let chosen: string | null = null;
@@ -225,11 +227,67 @@ function extractDiffCandidates(leadOutcome: any): string[] {
       if (!chosen) chosen = matches[0][1] || null;
       if (chosen) txt = chosen;
     }
-  const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
+    const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
     if (idx >= 0) txt = txt.slice(idx);
     if (txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/')) normalized.push(txt);
   }
   return normalized;
+}
+
+// Attempt to find a structured edit spec ({ ops: [...] }) in various shapes within a persona result.
+function findEditSpecCandidate(value: any): any | null {
+  const seen = new Set<any>();
+  const queue: any[] = [];
+  const push = (v: any) => { if (!v || typeof v !== 'object') return; if (seen.has(v)) return; seen.add(v); queue.push(v); };
+
+  const tryParseJson = (s: any) => {
+    if (typeof s !== 'string') return null;
+    try { const obj = JSON.parse(s); return obj && typeof obj === 'object' ? obj : null; } catch { return null; }
+  };
+
+  // seed
+  if (value && typeof value === 'object') push(value);
+  else {
+    const parsed = tryParseJson(value);
+    if (parsed) push(parsed);
+  }
+
+  const keysToCheck = [
+    'ops',
+    'payload', 'result', 'data', 'edit_spec', 'editSpec', 'edits', 'changes'
+  ];
+
+  while (queue.length) {
+    const cur = queue.shift();
+    // direct ops
+    if (Array.isArray(cur?.ops)) return cur;
+    // nested under common keys
+    for (const k of keysToCheck) {
+      const v = (cur as any)?.[k];
+      if (!v) continue;
+      if (Array.isArray((v as any)?.ops)) return v;
+      if (typeof v === 'string') {
+        const parsed = tryParseJson(v);
+        if (Array.isArray((parsed as any)?.ops)) return parsed;
+        if (parsed) push(parsed);
+      } else if (typeof v === 'object') {
+        push(v);
+      }
+    }
+    // shallow scan of object values to discover embedded specs
+    for (const val of Object.values(cur)) {
+      if (!val) continue;
+      if (Array.isArray((val as any)?.ops)) return val as any;
+      if (typeof val === 'string') {
+        const parsed = tryParseJson(val);
+        if (Array.isArray((parsed as any)?.ops)) return parsed as any;
+        if (parsed) push(parsed);
+      } else if (typeof val === 'object') {
+        push(val);
+      }
+    }
+  }
+  return null;
 }
 
 export async function handleCoordinator(r: any, msg: any, payload: any, overrides?: Overrides) {
@@ -399,8 +457,9 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
       if (logger.debug) logger.debug('leadOutcome', { taskId: taskDescriptor?.id, leadOutcome: (leadOutcome && typeof leadOutcome === 'object') ? { success: !!leadOutcome.success, noChanges: !!leadOutcome.noChanges } : leadOutcome });
       if (taskDescriptor && taskDescriptor.id && leadOutcome) {
         let editSpecObj: any = null;
-        if (leadOutcome.result && typeof leadOutcome.result === 'object' && Array.isArray(leadOutcome.result.ops)) {
-          editSpecObj = leadOutcome.result;
+        const structuredLead = findEditSpecCandidate((leadOutcome as any)?.result) || findEditSpecCandidate(leadOutcome);
+        if (structuredLead && Array.isArray(structuredLead.ops) && structuredLead.ops.length) {
+          editSpecObj = structuredLead;
         } else {
           const candidates = extractDiffCandidates(leadOutcome);
           if (logger.debug) logger.debug('coordinator: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: candidates.length });
@@ -424,8 +483,23 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
         } else {
           logger.info('coordinator: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof (leadOutcome as any)?.result });
           try {
-            const preview = (leadOutcome && typeof (leadOutcome as any).result === 'string') ? String((leadOutcome as any).result).slice(0, 4000) : '';
-            await writeDiagnostic(repoRoot, 'coordinator-no-ops.json', { workflowId, taskId: taskDescriptor?.id || null, leadOutcomeType: typeof (leadOutcome as any)?.result, leadPreview: preview });
+            const r: any = (leadOutcome as any)?.result;
+            const take = (v: unknown) => (typeof v === 'string' ? v.slice(0, 15000) : undefined);
+            const diag = {
+              workflowId,
+              taskId: taskDescriptor?.id || null,
+              leadOutcomeType: typeof r,
+              leadPreview: take(typeof r === 'string' ? r : ''),
+              fields: r && typeof r === 'object' ? {
+                preview: take(r.preview),
+                output: take(r.output),
+                raw: take(r.raw),
+                message: take(r.message),
+                text: take(r.text),
+                body: take(r.body)
+              } : undefined
+            };
+            await writeDiagnostic(repoRoot, 'coordinator-no-ops.json', diag);
           } catch {}
         }
       }
@@ -528,6 +602,7 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
           : Number(cfg.planMaxIterationsPerStage) || 5;
         let currentPlan = mini.plannerResult;
         let approved = false;
+        const planHistory: Array<{ attempt: number; payload: any }> = [];
         for (let i = 0; i < maxIters; i++) {
           const evaluationCorrId = randomUUID();
           await persona.sendPersonaRequest(r, {
@@ -535,7 +610,14 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
             toPersona: PERSONAS.PLAN_EVALUATOR,
             step: i === 0 ? "3.5-evaluate-qa-plan" : "3.7-evaluate-qa-plan-revised",
             intent: "evaluate_plan_relevance",
-            payload: { qa_feedback: qaResult, plan: currentPlan },
+            payload: {
+              qa_feedback: qaResult,
+              plan: currentPlan,
+              require_citations: cfg.planRequireCitations,
+              citation_fields: cfg.planCitationFields,
+              uncited_budget: cfg.planUncitedBudget,
+              treat_uncited_as_invalid: cfg.planTreatUncitedAsInvalid
+            },
             corrId: evaluationCorrId,
             repo: repoRemote,
             branch: branchName,
@@ -545,7 +627,14 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
           const evalStatus = persona.interpretPersonaStatus(evalEvent.fields.result);
           if (evalStatus.status !== 'fail') { approved = true; break; }
           const evalObj = persona.parseEventResult(evalEvent.fields.result);
-          // Feed evaluator feedback back to planner
+          // Feed evaluator feedback back to planner with explicit plan_feedback and history
+          const evalReason = (evalObj && (evalObj.reason || evalObj.details || evalObj.message)) || '';
+          const planFeedbackText = [
+            'The proposed plan did not pass evaluation.',
+            evalReason ? `Evaluator Feedback: ${evalReason}` : undefined,
+            qaResult ? `QA Feedback Summary: ${typeof qaResult === 'string' ? qaResult.slice(0, 500) : (JSON.stringify(qaResult).slice(0, 500))}` : undefined,
+          ].filter(Boolean).join('\n');
+          planHistory.push({ attempt: i + 1, payload: currentPlan });
           const revCorr = randomUUID();
           await persona.sendPersonaRequest(r, {
             workflowId,
@@ -556,7 +645,33 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
               qa_feedback: qaResult?.payload ?? qaResult,
               evaluator_feedback: evalObj,
               previous_plan: currentPlan,
-              guidance: "Revise the plan to directly address evaluator concerns; ensure each step maps to a failing test or acceptance criterion and is small and verifiable."
+              // planner parity with initial planning loop: include feedback and plan_feedback
+              feedback: planFeedbackText,
+              plan_feedback: planFeedbackText,
+              plan_request: { attempt: i + 1, requires_approval: true, revision: i },
+              plan_history: planHistory.slice(),
+              // Ask the planner to restate the evaluator feedback verbatim so we can validate it was seen
+              require_acknowledged_feedback: true,
+              acknowledge_key: "acknowledged_feedback",
+              // Explicit prioritization flags and structured revision requirements
+              prioritize_evaluator_feedback: true,
+              evaluator_feedback_text: evalReason || (typeof evalObj === 'string' ? String(evalObj) : JSON.stringify(evalObj || {})),
+              revision_guidelines: [
+                "Only include steps that directly address evaluator comments and QA failures.",
+                "Keep steps small, verifiable, and cite the failing test, error, or acceptance criteria they address.",
+                "Remove unrelated or speculative work.",
+                "Update the plan until the evaluator would pass it as relevant and sufficient."
+              ].join("\n"),
+              require_plan_changes_mapping: true,
+              mapping_key: "plan_changes_mapping",
+              mapping_instructions: "Provide an array 'plan_changes_mapping' where each item maps one evaluator point to concrete plan changes (fields: evaluator_point, change, justification).",
+              strict_relevance: true,
+              // Relevance budget: require citations with budget for uncited steps
+              require_citations: cfg.planRequireCitations,
+              citation_fields: cfg.planCitationFields,
+              uncited_budget: cfg.planUncitedBudget,
+              treat_uncited_as_invalid: cfg.planTreatUncitedAsInvalid,
+              guidance: "Revise the plan to directly address evaluator concerns; ensure each step maps to a failing test or acceptance criterion and is small and verifiable. Include a field 'acknowledged_feedback' that repeats the evaluator feedback you received, and briefly describe how each change addresses it."
             },
             corrId: revCorr,
             repo: repoRemote,
@@ -565,12 +680,39 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
           });
           const revEvent = await persona.waitForPersonaCompletion(r, PERSONAS.IMPLEMENTATION_PLANNER, workflowId, revCorr);
           currentPlan = persona.parseEventResult(revEvent.fields.result);
+          try {
+            const ack = (currentPlan && ((currentPlan as any).acknowledged_feedback || (currentPlan as any)?.payload?.acknowledged_feedback)) || null;
+            if (ack) {
+              const preview = typeof ack === 'string' ? String(ack).slice(0, 500) : JSON.stringify(ack).slice(0, 500);
+              logger.info("planner acknowledged evaluator feedback", { workflowId, preview });
+            } else {
+              logger.info("planner did not include acknowledged_feedback field", { workflowId });
+            }
+          } catch {}
         }
         if (!approved) {
-          logger.warn("qa follow-up plan not approved within iteration limit; skipping forward to implementation", { workflowId, maxIters });
-          (mini as any).plannerResult = null;
+          logger.warn("qa follow-up plan not approved within iteration limit; proceeding with latest plan to engineer", { workflowId, maxIters });
+          try {
+            // mark plan as unapproved but usable
+            if (currentPlan && typeof currentPlan === 'object') {
+              const obj = currentPlan as any;
+              if (obj && typeof obj === 'object') {
+                if (!obj.meta) obj.meta = {};
+                obj.meta.plan_approved = false;
+                obj.meta.reason = 'iteration_limit_exceeded';
+              }
+            }
+          } catch {}
+          (mini as any).plannerResult = currentPlan;
         } else {
           (mini as any).plannerResult = currentPlan;
+          try {
+            if ((mini as any).plannerResult && typeof (mini as any).plannerResult === 'object') {
+              const obj = (mini as any).plannerResult as any;
+              if (!obj.meta) obj.meta = {};
+              obj.meta.plan_approved = true;
+            }
+          } catch {}
         }
 
         // forward to implementation planning if evaluator ultimately passes
@@ -582,7 +724,7 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
             toPersona: implPersona,
             step: "4-implementation-plan",
             intent: "handle_qa_followups",
-            payload: { qa_result: qaResult?.payload ?? qaResult, planner_result: mini.plannerResult, created_tasks: mini.created, milestone: milestoneDescriptor, task: taskDescriptor, project_id: projectId },
+            payload: { qa_result: qaResult?.payload ?? qaResult, planner_result: mini.plannerResult, plan_approved: approved, created_tasks: mini.created, milestone: milestoneDescriptor, task: taskDescriptor, project_id: projectId },
             corrId: implCorr,
             repo: repoRemote,
             branch: branchName,
@@ -591,51 +733,152 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
         } catch (err) {
           logger.warn("failed to forward mini planner result to implementation persona", { workflowId, error: err });
         }
+
+        // If we have an approved plannerResult, route to lead-engineer to actually execute the plan
+        if (mini.plannerResult) {
+          try {
+            const execCorr = randomUUID();
+            await H.persona.sendPersonaRequest(r, {
+              workflowId,
+              toPersona: PERSONAS.LEAD_ENGINEER,
+              step: "4.6-implementation-execute",
+              intent: "implement_qa_followups",
+              payload: {
+                repo: repoRemote,
+                branch: branchName,
+                project_id: projectId,
+                milestone: milestoneDescriptor,
+                task: taskDescriptor,
+                approved_plan: mini.plannerResult?.payload ?? mini.plannerResult,
+                approved_plan_steps: (mini.plannerResult?.payload?.plan || mini.plannerResult?.plan || mini.plannerResult?.steps || null),
+                plan_text: (mini.plannerResult?.output || null),
+                plan_approved: approved,
+                created_tasks: mini.created,
+                stage: 'qa'
+              },
+              corrId: execCorr,
+              repo: repoRemote,
+              branch: branchName,
+              projectId
+            });
+            const execEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.LEAD_ENGINEER, workflowId, execCorr);
+            const execResult = H.persona.parseEventResult(execEvent.fields.result);
+            // Attempt to apply edits if present, similar to the main lead cycle
+            let execApplied = false;
+            try {
+              if (taskDescriptor && taskDescriptor.id && execResult) {
+                let editSpecObj: any = null;
+                const structuredExec = findEditSpecCandidate(execResult) || findEditSpecCandidate((execResult as any)?.result);
+                if (structuredExec && Array.isArray(structuredExec.ops) && structuredExec.ops.length) {
+                  editSpecObj = structuredExec;
+                } else {
+                  const candidates = extractDiffCandidates(execResult);
+                  if (logger.debug) logger.debug('qa-exec: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: candidates.length });
+                  for (const c of candidates) {
+                    try {
+                      const parsed = await H.parseUnifiedDiffToEditSpec(c);
+                      if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) { editSpecObj = parsed; break; }
+                      else logger.debug('qa-exec: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidatePreview: c.slice(0, 200) });
+                    } catch (err) {
+                      logger.debug('qa-exec: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, error: String(err).slice(0,200) });
+                    }
+                  }
+                }
+                if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
+                  const editResult = await H.applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
+                  if (editResult.changed.length > 0) {
+                    execApplied = true;
+                    try { await H.ensureBranchPublished(repoRoot, branchName); } catch {}
+                    await H.commitAndPushPaths({ repoRoot, branch: branchName, message: `fix(qa): ${taskName || taskDescriptor?.name || 'qa follow-ups'}`, paths: editResult.changed });
+                  }
+                } else {
+                  logger.info('qa-exec: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof (execResult as any)?.result });
+                  try {
+                    const r: any = (execResult as any)?.result;
+                    const take = (v: unknown) => (typeof v === 'string' ? v.slice(0, 15000) : undefined);
+                    const diag = {
+                      workflowId,
+                      taskId: taskDescriptor?.id || null,
+                      leadOutcomeType: typeof r,
+                      leadPreview: take(typeof r === 'string' ? r : ''),
+                      fields: r && typeof r === 'object' ? {
+                        preview: take(r.preview),
+                        output: take(r.output),
+                        raw: take(r.raw),
+                        message: take(r.message),
+                        text: take(r.text),
+                        body: take(r.body)
+                      } : undefined
+                    };
+                    await writeDiagnostic(repoRoot, 'qa-exec-no-ops.json', diag);
+                  } catch {}
+                }
+              }
+            } catch (err) {
+              logger.warn('qa-exec: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
+            }
+
+            // Optionally mark original task done if edits applied successfully
+            if (taskDescriptor && (taskDescriptor.id || taskDescriptor.external_id) && execApplied) {
+              try {
+                const key = String(taskDescriptor.external_id || taskDescriptor.id || '');
+                if (key && key !== 't-synth') {
+                  const updateRes = await H.updateTaskStatus(key, 'done');
+                  if (!(updateRes && updateRes.ok)) logger.warn('qa-exec: updateTaskStatus returned not-ok', { workflowId, taskKey: key });
+                }
+              } catch (err) {
+                logger.warn('qa-exec: failed to mark task done after execution/apply', { workflowId, taskId: taskDescriptor?.id, error: err });
+              }
+            }
+          } catch (err) {
+            logger.warn('qa-exec: failed to route plan to lead-engineer or execute', { workflowId, error: String(err) });
+          }
+        }
       }
 
   // Also route via project-manager for additional follow-ups, but prevent runaway new QA tasks
-      const pmCorr = randomUUID();
-      await persona.sendPersonaRequest(r, {
-        workflowId,
-        toPersona: PERSONAS.PROJECT_MANAGER,
-        step: "3-route",
-        intent: "route_qa_followups",
-        payload: { qa_result: qaResult?.payload ?? qaResult ?? qaEvent.fields.result, project_id: projectId, milestone: milestoneDescriptor, task: taskDescriptor },
-        corrId: pmCorr,
-        repo: repoRemote,
-        branch: branchName,
-        projectId
-      });
-      const pmEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.PROJECT_MANAGER, workflowId, pmCorr);
-      const pmResult = H.persona.parseEventResult(pmEvent.fields.result) || {};
-      let suggestedTasks = pmResult.payload?.tasks || pmResult.payload?.follow_ups || pmResult.payload?.backlog || pmResult.payload?.suggestions || pmResult.payload || null;
-      if (!suggestedTasks) suggestedTasks = qaResult?.payload?.follow_ups || qaResult?.payload?.tasks || qaResult?.payload || [];
-      if (!Array.isArray(suggestedTasks)) suggestedTasks = suggestedTasks && typeof suggestedTasks === 'object' ? [suggestedTasks] : [];
-      // If we already created a QA failure follow-up for this parent, suppress PM-created tasks entirely until it's resolved
+      // Gate PM entirely when a canonical QA follow-up already exists for this parent task
       const existingQaExternalId = computeQaFollowupExternalId(projectId, taskDescriptor);
       let qaAnchorExists: boolean = false;
       try {
         const resolved = await findTaskIdByExternalId(existingQaExternalId, projectId);
         qaAnchorExists = !!resolved;
       } catch {}
-      const filtered = qaAnchorExists ? [] : suggestedTasks;
       if (qaAnchorExists) {
-        logger.info("coordinator: PM gating active; existing QA follow-up detected — suppressing new PM-created tasks", { workflowId, externalId: existingQaExternalId });
-      }
-      if (filtered.length) {
-        try {
-          await H.handleFailureMiniCycle(r, workflowId, 'qa', filtered, {
-            repo: repoRemote,
-            branch: branchName,
-            projectId,
-            milestoneDescriptor,
-            parentTaskDescriptor: taskDescriptor,
-            projectName: projectInfo?.name || null,
-            scheduleHint: payload?.scheduleHint,
-            qaResult: qaResult
-          });
-        } catch (err) {
-          logger.warn("coordinator: failed to process PM-suggested QA follow-ups", { workflowId, error: err });
+        logger.info("coordinator: PM gating active; existing QA follow-up detected — skipping PM routing entirely", { workflowId, externalId: existingQaExternalId });
+      } else {
+        const pmCorr = randomUUID();
+        await persona.sendPersonaRequest(r, {
+          workflowId,
+          toPersona: PERSONAS.PROJECT_MANAGER,
+          step: "3-route",
+          intent: "route_qa_followups",
+          payload: { qa_result: qaResult?.payload ?? qaResult ?? qaEvent.fields.result, project_id: projectId, milestone: milestoneDescriptor, task: taskDescriptor },
+          corrId: pmCorr,
+          repo: repoRemote,
+          branch: branchName,
+          projectId
+        });
+        const pmEvent = await H.persona.waitForPersonaCompletion(r, PERSONAS.PROJECT_MANAGER, workflowId, pmCorr);
+        const pmResult = H.persona.parseEventResult(pmEvent.fields.result) || {};
+        let suggestedTasks = pmResult.payload?.tasks || pmResult.payload?.follow_ups || pmResult.payload?.backlog || pmResult.payload?.suggestions || pmResult.payload || null;
+        if (!suggestedTasks) suggestedTasks = qaResult?.payload?.follow_ups || qaResult?.payload?.tasks || qaResult?.payload || [];
+        if (!Array.isArray(suggestedTasks)) suggestedTasks = suggestedTasks && typeof suggestedTasks === 'object' ? [suggestedTasks] : [];
+        if (suggestedTasks.length) {
+          try {
+            await H.handleFailureMiniCycle(r, workflowId, 'qa', suggestedTasks, {
+              repo: repoRemote,
+              branch: branchName,
+              projectId,
+              milestoneDescriptor,
+              parentTaskDescriptor: taskDescriptor,
+              projectName: projectInfo?.name || null,
+              scheduleHint: payload?.scheduleHint,
+              qaResult: qaResult
+            });
+          } catch (err) {
+            logger.warn("coordinator: failed to process PM-suggested QA follow-ups", { workflowId, error: err });
+          }
         }
       }
     }

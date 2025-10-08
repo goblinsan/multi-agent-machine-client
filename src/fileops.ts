@@ -200,11 +200,20 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
   const firstIdx = raw.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
   if (firstIdx >= 0) raw = raw.slice(firstIdx);
 
-  // Split into file sections starting with 'diff --git' (supports CRLF). Use a
-  // regex match so we get each 'diff --git' block even when formatting varies.
-  // Match each 'diff --git' block. Use a simple lookahead for the next 'diff --git'
-  // so we reliably extract multiple file sections even when formatting varies.
-  const fileSections = raw.match(/diff --git[\s\S]*?(?=(?:diff --git|$))/g) || [];
+  // Split into file sections. Prefer 'diff --git' blocks when present.
+  let fileSections: string[] = raw.match(/diff --git[\s\S]*?(?=(?:diff --git|$))/g) || [] as string[];
+  // Fallback: some diffs omit 'diff --git' and only include '--- a/...' and '+++ b/...'.
+  if (fileSections.length === 0 && /^(?:--- |\+\+\+ |@@ )/m.test(raw)) {
+    // Heuristically split by file header lines '--- ' that precede '+++ '
+    // and include following hunks until the next header.
+    const headerless: string[] = [];
+    const parts = raw.split(/(?=^---\s+)/m);
+    for (const part of parts) {
+      if (!/\+\+\+\s+/.test(part)) continue;
+      headerless.push(part);
+    }
+  if (headerless.length) fileSections = headerless;
+  }
   for (const section of fileSections) {
     const lines = section.split(/\r?\n/);
     // Find the 'a/...' and 'b/...' paths

@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2025-10-07T23:21:10.929Z",
+  "generatedAt": "2025-10-08T03:06:03.374Z",
   "requests": [
     {
       "step": "1-context",
       "role": "Hydrate project context",
       "toPersona": "context",
-      "corrId": "293c6f2d-8bc0-4ac1-9137-6e4969886cdd",
+      "corrId": "81df82db-8411-4402-bda6-29099396c351",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -32,7 +32,7 @@
       "step": "2-plan",
       "role": "Implementation planning (planner)",
       "toPersona": "implementation-planner",
-      "corrId": "f52220cc-c036-4bab-a724-52b168b4b73a",
+      "corrId": "8b3998ec-5880-4410-96d9-817842b4643c",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -66,34 +66,62 @@
         "task_name": "task-1",
         "base_branch": "main",
         "revision": 0,
+        "qa_feedback": {
+          "status": "unknown",
+          "details": "task-1",
+          "source": "task_fallback"
+        },
         "plan_request": {
           "attempt": 1,
           "requires_approval": true,
           "revision": 0
-        }
+        },
+        "require_citations": true,
+        "citation_fields": [
+          "failing_test",
+          "error_message",
+          "acceptance_criterion_id"
+        ],
+        "uncited_budget": 0,
+        "treat_uncited_as_invalid": true,
+        "guidance": "At the very top of your response, include a field 'acknowledged_feedback' that restates the evaluator QA feedback you received (verbatim or summarized), followed immediately by a concise description of how your plan addresses each point.",
+        "require_acknowledged_feedback": true,
+        "acknowledge_key": "acknowledged_feedback"
       }
     },
     {
       "step": "2.5-evaluate-plan",
       "role": "Workflow step",
       "toPersona": "plan-evaluator",
-      "corrId": "e4a2d238-c6fb-48ee-8abf-97e8ef2d71b2",
+      "corrId": "32f1f46a-3300-4a6f-9748-67fabf3c03b1",
       "payload": {
-        "qa_feedback": null,
+        "qa_feedback": {
+          "status": "unknown",
+          "details": "task-1",
+          "source": "task_fallback"
+        },
         "plan": {
           "plan": [
             {
               "goal": "feature"
             }
           ]
-        }
+        },
+        "require_citations": true,
+        "citation_fields": [
+          "failing_test",
+          "error_message",
+          "acceptance_criterion_id"
+        ],
+        "uncited_budget": 0,
+        "treat_uncited_as_invalid": true
       }
     },
     {
       "step": "2-implementation",
       "role": "Lead implementation (engineer)",
       "toPersona": "lead-engineer",
-      "corrId": "d78c722f-e088-463c-9c2b-4ea57fe3077e",
+      "corrId": "6fe2d6fa-2d36-440f-a014-b500e7e2387e",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -127,6 +155,11 @@
         "task_name": "task-1",
         "base_branch": "main",
         "revision": 0,
+        "qa_feedback": {
+          "status": "unknown",
+          "details": "task-1",
+          "source": "task_fallback"
+        },
         "approved_plan": {
           "plan": [
             {
@@ -159,7 +192,7 @@
       "step": "3-qa",
       "role": "QA test run",
       "toPersona": "tester-qa",
-      "corrId": "e9f946ea-67e7-44c9-9ee3-b2f7d2469a9d",
+      "corrId": "18d1f102-96e8-408f-aeb6-a838a4e4c289",
       "payload": {
         "repo": "https://example/repo.git",
         "branch": "feat/task-1",
@@ -193,7 +226,7 @@
       "step": "qa-created-tasks",
       "role": "QA follow-up - created tasks (after summarizer/create)",
       "toPersona": "implementation-planner",
-      "corrId": "7b6d33ee-0113-4520-af08-a55d4384d7dd",
+      "corrId": "656183ea-1e10-4c8b-af3d-cd1471b0b4fa",
       "payload": {
         "created_tasks": [
           {
@@ -237,7 +270,7 @@
       "step": "3.5-evaluate-qa-plan",
       "role": "Workflow step",
       "toPersona": "plan-evaluator",
-      "corrId": "b73471f0-1457-458a-9dc0-9a0839b5b894",
+      "corrId": "920fe6cf-08a9-42bf-bfc6-cdf0403ff39c",
       "payload": {
         "qa_feedback": {
           "status": "fail",
@@ -256,15 +289,26 @@
               }
             ]
           },
-          "output": ""
-        }
+          "output": "",
+          "meta": {
+            "plan_approved": true
+          }
+        },
+        "require_citations": true,
+        "citation_fields": [
+          "failing_test",
+          "error_message",
+          "acceptance_criterion_id"
+        ],
+        "uncited_budget": 0,
+        "treat_uncited_as_invalid": true
       }
     },
     {
       "step": "4-implementation-plan",
       "role": "Implementation planning for QA follow-ups",
       "toPersona": "implementation-planner",
-      "corrId": "3fa46c19-f443-4c09-81cd-2cf09caa519c",
+      "corrId": "9ec888b9-ca45-4311-a69d-17468b88daae",
       "payload": {
         "qa_result": {
           "status": "fail",
@@ -283,8 +327,12 @@
               }
             ]
           },
-          "output": ""
+          "output": "",
+          "meta": {
+            "plan_approved": true
+          }
         },
+        "plan_approved": true,
         "created_tasks": [
           {
             "title": "QA failure task",
@@ -319,10 +367,74 @@
       }
     },
     {
+      "step": "4.6-implementation-execute",
+      "role": "Workflow step",
+      "toPersona": "lead-engineer",
+      "corrId": "4386333c-d946-494f-8c24-273bab6d46cf",
+      "payload": {
+        "repo": "https://example/repo.git",
+        "branch": "feat/task-1",
+        "project_id": "proj-1",
+        "milestone": {
+          "task": {
+            "id": "task-1",
+            "external_id": null,
+            "name": "task-1",
+            "slug": "task-1",
+            "status": "open",
+            "normalized_status": "open",
+            "branch": null,
+            "summary": null
+          }
+        },
+        "task": {
+          "id": "task-1",
+          "external_id": null,
+          "name": "task-1",
+          "slug": "task-1",
+          "status": "open",
+          "normalized_status": "open",
+          "branch": null,
+          "summary": null
+        },
+        "approved_plan": {
+          "plan": [
+            {
+              "goal": "fix tests",
+              "key_files": [],
+              "owners": [
+                "dev"
+              ]
+            }
+          ]
+        },
+        "approved_plan_steps": [
+          {
+            "goal": "fix tests",
+            "key_files": [],
+            "owners": [
+              "dev"
+            ]
+          }
+        ],
+        "plan_text": null,
+        "plan_approved": true,
+        "created_tasks": [
+          {
+            "title": "QA failure task",
+            "externalId": "ext-1",
+            "createdId": "t-1",
+            "description": "Condensed description about missing tests"
+          }
+        ],
+        "stage": "qa"
+      }
+    },
+    {
       "step": "3-route",
       "role": "Workflow step",
       "toPersona": "project-manager",
-      "corrId": "8a872222-a904-4838-8cb8-b4c80afa1206",
+      "corrId": "dcafe4f4-37d7-4751-93af-37bc5d558345",
       "payload": {
         "qa_result": {
           "status": "fail",

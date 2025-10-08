@@ -120,5 +120,20 @@ describe('Coordinator QA failure plan evaluation', () => {
     expect(revisionSent).toBeTruthy();
     const reevaluateSent = sent.find(s => s.step === '3.7-evaluate-qa-plan-revised');
     expect(reevaluateSent).toBeTruthy();
+    // New expectations: prioritization flags and mapping instructions are present in the revision payload
+    expect(revisionSent?.payload?.prioritize_evaluator_feedback).toBe(true);
+    expect(typeof revisionSent?.payload?.evaluator_feedback_text).toBe('string');
+    expect(revisionSent?.payload?.require_plan_changes_mapping).toBe(true);
+    expect(revisionSent?.payload?.mapping_key).toBe('plan_changes_mapping');
+    expect(typeof revisionSent?.payload?.mapping_instructions).toBe('string');
+    // Citation constraints forwarded to revision and evaluator
+    expect(typeof revisionSent?.payload?.require_citations).toBe('boolean');
+    expect(Array.isArray(revisionSent?.payload?.citation_fields)).toBe(true);
+    expect(typeof revisionSent?.payload?.uncited_budget).toBe('number');
+    expect(typeof revisionSent?.payload?.treat_uncited_as_invalid).toBe('boolean');
+    expect(typeof reevaluateSent?.payload?.require_citations).toBe('boolean');
+    expect(Array.isArray(reevaluateSent?.payload?.citation_fields)).toBe(true);
+    expect(typeof reevaluateSent?.payload?.uncited_budget).toBe('number');
+    expect(typeof reevaluateSent?.payload?.treat_uncited_as_invalid).toBe('boolean');
   }, 10000);
 });

@@ -118,6 +118,25 @@ const coordinatorMaxRevisionAttempts = parseRevisionLimit(process.env.COORDINATO
 const coordinatorMaxApprovalRetries = parseRevisionLimit(process.env.COORDINATOR_MAX_APPROVAL_RETRIES, 3);
 const planMaxIterationsPerStage = parseRevisionLimit(process.env.PLAN_MAX_ITERATIONS_PER_STAGE, 5);
 
+// Plan citation/relevance enforcement
+function parseJsonArray(value: string | undefined, fallback: string[]): string[] {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String);
+  } catch {}
+  // allow CSV fallback
+  return splitCsv(value, fallback);
+}
+const planRequireCitations = bool(process.env.PLAN_REQUIRE_CITATIONS, true);
+const planCitationFields = parseJsonArray(process.env.PLAN_CITATION_FIELDS_JSON || process.env.PLAN_CITATION_FIELDS, [
+  'failing_test',
+  'error_message',
+  'acceptance_criterion_id'
+]);
+const planUncitedBudget = Number(process.env.PLAN_UNCITED_BUDGET ?? 0);
+const planTreatUncitedAsInvalid = bool(process.env.PLAN_TREAT_UNCITED_AS_INVALID, true);
+
 const gitToken = process.env.GIT_AUTH_TOKEN || "";
 const gitPassword = process.env.GIT_AUTH_PASSWORD || "";
 const gitCredentialsPath = (() => {
@@ -181,6 +200,11 @@ export const cfg = {
   coordinatorMaxRevisionAttempts,
   coordinatorMaxApprovalRetries,
   planMaxIterationsPerStage,
+  // Plan citation and relevance budget settings
+  planRequireCitations,
+  planCitationFields,
+  planUncitedBudget,
+  planTreatUncitedAsInvalid,
 
   // Context scanner feature flags & defaults
   contextScan: bool(process.env.CONTEXT_SCAN, false),
