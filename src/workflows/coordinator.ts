@@ -196,6 +196,12 @@ async function detectTestCommands(repoRoot: string) {
 function extractDiffCandidates(leadOutcome: any): string[] {
   const rawCandidates: Array<string | null> = [];
   try {
+    // Handle direct string input
+    if (typeof leadOutcome === 'string') {
+      rawCandidates.push(leadOutcome);
+    }
+    
+    // Handle leadOutcome.result nested structure
     const r = (leadOutcome as any)?.result;
     if (typeof r === 'string') rawCandidates.push(r);
     if (r && typeof r === 'object') {
@@ -207,8 +213,16 @@ function extractDiffCandidates(leadOutcome: any): string[] {
       rawCandidates.push(r.body ?? null);
       rawCandidates.push(r.result ?? null);
     }
-    rawCandidates.push((leadOutcome as any).preview && typeof (leadOutcome as any).preview === 'string' ? (leadOutcome as any).preview : null);
-    rawCandidates.push((leadOutcome as any).output && typeof (leadOutcome as any).output === 'string' ? (leadOutcome as any).output : null);
+    
+    // Handle direct fields on leadOutcome
+    if (leadOutcome && typeof leadOutcome === 'object') {
+      rawCandidates.push((leadOutcome as any).preview && typeof (leadOutcome as any).preview === 'string' ? (leadOutcome as any).preview : null);
+      rawCandidates.push((leadOutcome as any).output && typeof (leadOutcome as any).output === 'string' ? (leadOutcome as any).output : null);
+      rawCandidates.push((leadOutcome as any).raw && typeof (leadOutcome as any).raw === 'string' ? (leadOutcome as any).raw : null);
+      rawCandidates.push((leadOutcome as any).message && typeof (leadOutcome as any).message === 'string' ? (leadOutcome as any).message : null);
+      rawCandidates.push((leadOutcome as any).text && typeof (leadOutcome as any).text === 'string' ? (leadOutcome as any).text : null);
+      rawCandidates.push((leadOutcome as any).body && typeof (leadOutcome as any).body === 'string' ? (leadOutcome as any).body : null);
+    }
   } catch {}
 
   const normalized: string[] = [];

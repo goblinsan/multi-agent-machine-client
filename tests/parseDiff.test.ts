@@ -179,4 +179,48 @@ index 1111111..2222222 100644
     expect(extractDiffCandidates({ result: null })).toHaveLength(0)
     expect(extractDiffCandidates({ result: { preview: null } })).toHaveLength(0)
   })
+
+  it('handles direct string input and raw field response structure', () => {
+    // Test direct string input (QA execution path issue)
+    const directString = `Here's the fix:
+
+\`\`\`diff
+diff --git a/src/test.js b/src/test.js
+index 1234567..89abcde 100644
+--- a/src/test.js
++++ b/src/test.js
+@@ -1,3 +1,4 @@
+ console.log('hello');
++console.log('world');
+ const x = 1;
+\`\`\``;
+    
+    const candidates1 = extractDiffCandidates(directString);
+    expect(candidates1).toHaveLength(1);
+    expect(candidates1[0]).toContain('diff --git a/src/test.js');
+    expect(candidates1[0]).toContain('+console.log(\'world\');');
+
+    // Test {raw: string} response structure (parseEventResult fallback case)
+    const rawResponse = {
+      raw: `Here's the fix:
+
+\`\`\`diff  
+diff --git a/package.json b/package.json
+index 1234567..89abcde 100644
+--- a/package.json
++++ b/package.json
+@@ -1,5 +1,6 @@
+ {
+   "name": "test",
++  "version": "1.0.0",
+   "dependencies": {}
+ }
+\`\`\``
+    };
+    
+    const candidates2 = extractDiffCandidates(rawResponse);
+    expect(candidates2).toHaveLength(1);
+    expect(candidates2[0]).toContain('diff --git a/package.json');
+    expect(candidates2[0]).toContain('+  "version": "1.0.0",');
+  })
 })
