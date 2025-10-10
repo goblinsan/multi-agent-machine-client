@@ -146,3 +146,38 @@ The workflow system consists of:
 - **WorkflowContext**: Shared execution context across workflow steps
 
 For detailed documentation, see [docs/WORKFLOW_SYSTEM.md](docs/WORKFLOW_SYSTEM.md).
+
+## Workflow selection: defaults and how to choose a different YAML
+
+This project uses declarative YAML workflows loaded from `src/workflows/definitions/`. When you dispatch the coordinator (for example with `npm run coordinator -- <project_id>`), the coordinator loads all YAMLs and selects a workflow per task as follows:
+
+- Default preference: if `legacy-compatible-task-flow.yaml` exists, it is selected first for every task. This preserves legacy test behavior and acts as the default workflow.
+- Trigger-based match: if the legacy-compatible file isn’t present, the engine matches workflows by each file’s `trigger.condition` against the inferred task type/scope.
+- Fallback: if no trigger matches, the coordinator falls back to `project-loop.yaml`.
+
+What drives trigger matching
+
+- The coordinator infers `task_type` and `scope` from task name/description/labels:
+  - task_type examples: `hotfix`, `feature`, `analysis`, `bugfix`, `task` (default)
+  - scope examples: `large`, `medium`, `small`
+- Typical built-ins:
+  - `feature.yaml` triggers on `task_type == 'feature' || scope == 'large'`
+  - `hotfix.yaml` triggers on `task_type == 'hotfix'` or critical/high severity
+  - `project-loop.yaml` has a gentle trigger and also serves as fallback
+
+Ways to select a different workflow
+
+1) Quick override (no code change): Rename or add a copy of your desired workflow file as `legacy-compatible-task-flow.yaml`. The coordinator will prefer it automatically.
+
+2) Trigger-based selection (recommended):
+   - Add a new YAML to `src/workflows/definitions/` with a `trigger.condition` that matches your tasks, for example:
+     - `task_type == 'feature' && scope == 'small'`
+     - `task_type == 'analysis'`
+   - Ensure your task title/description/labels in the dashboard include keywords so the coordinator infers the intended `task_type`/`scope`.
+
+3) Tune the mapping (advanced): Edit `determineTaskType`/`determineTaskScope` in `src/workflows/WorkflowCoordinator.ts` to change how tasks are classified for trigger matching.
+
+Operational notes
+
+- The coordinator logs the list of loaded workflows and which one is used per task.
+- Workflows are hot-loaded at process start; changing YAMLs requires a restart of the worker to pick up changes.

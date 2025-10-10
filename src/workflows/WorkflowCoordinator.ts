@@ -568,3 +568,10 @@ export class WorkflowCoordinator {
     }
   }
 }
+
+// Legacy-compatible named export expected by worker.ts
+// Provides a function wrapper around the class-based coordinator
+export async function handleCoordinator(r: any, msg: any, payload: any): Promise<any> {
+  const coordinator = new WorkflowCoordinator();
+  return coordinator.handleCoordinator(r, msg, payload);
+}
