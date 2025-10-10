@@ -4,7 +4,7 @@ import { makeRedis } from "./redisClient.js";
 import { RequestSchema } from "./schema.js";
 import { logger } from "./logger.js";
 import { PERSONAS } from "./personaNames.js";
-import { handleCoordinator } from "./workflows/coordinator.js";
+import { handleCoordinator } from "./workflows/WorkflowCoordinator.js";
 import { processContext, processPersona } from "./process.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
