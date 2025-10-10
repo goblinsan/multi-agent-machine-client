@@ -10,6 +10,12 @@ import { PlanEvaluationStep } from './steps/PlanEvaluationStep';
 import { QAAnalysisStep } from './steps/QAAnalysisStep';
 import { TaskCreationStep } from './steps/TaskCreationStep';
 import { DiffApplyStep } from './steps/DiffApplyStep';
+import { PersonaRequestStep } from './steps/PersonaRequestStep';
+import { ConditionalStep } from './steps/ConditionalStep';
+import { SimpleTaskStatusStep } from './steps/SimpleTaskStatusStep';
+import { GitOperationStep } from './steps/GitOperationStep';
+import { PlanningLoopStep } from './steps/PlanningLoopStep';
+import { QAFailureCoordinationStep } from './steps/QAFailureCoordinationStep';
 import { parse as yamlParse } from 'yaml';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
@@ -91,6 +97,12 @@ export class WorkflowEngine {
     this.stepRegistry.set('QAAnalysisStep', QAAnalysisStep);
     this.stepRegistry.set('TaskCreationStep', TaskCreationStep);
     this.stepRegistry.set('DiffApplyStep', DiffApplyStep);
+    this.stepRegistry.set('PersonaRequestStep', PersonaRequestStep);
+    this.stepRegistry.set('ConditionalStep', ConditionalStep);
+    this.stepRegistry.set('SimpleTaskStatusStep', SimpleTaskStatusStep);
+    this.stepRegistry.set('GitOperationStep', GitOperationStep);
+    this.stepRegistry.set('PlanningLoopStep', PlanningLoopStep);
+    this.stepRegistry.set('QAFailureCoordinationStep', QAFailureCoordinationStep);
   }
 
   /**
@@ -476,7 +488,8 @@ export class WorkflowEngine {
 
     // Check condition
     if (stepDef.condition) {
-      return this.evaluateSimpleCondition(stepDef.condition, context);
+      const result = this.evaluateSimpleCondition(stepDef.condition, context);
+      return result;
     }
 
     return true;
@@ -491,9 +504,19 @@ export class WorkflowEngine {
       // This could be expanded with a proper expression parser
       if (condition.includes('==')) {
         const [left, right] = condition.split('==').map(s => s.trim());
-        const leftValue = this.getNestedValue(context, left.replace(/['"]/g, ''));
+        
+        // Handle ${variable} syntax in left side
+        let leftVariableName = left.replace(/['"]/g, '');
+        if (leftVariableName.startsWith('${') && leftVariableName.endsWith('}')) {
+          leftVariableName = leftVariableName.slice(2, -1);
+        }
+        
+        const leftValue = this.getNestedValue(context, leftVariableName);
         const rightValue = right.replace(/['"]/g, '');
-        return String(leftValue) === rightValue;
+        
+        const result = String(leftValue) === rightValue;
+        
+        return result;
       }
       
       return true; // Default to true for unhandled conditions
@@ -612,6 +635,7 @@ export class WorkflowEngine {
     context.setVariable('CONSUMER_GROUP', context.getVariable('CONSUMER_GROUP') || process.env.CONSUMER_GROUP || 'workflow-consumers');
     context.setVariable('CONSUMER_ID', context.getVariable('CONSUMER_ID') || process.env.CONSUMER_ID || 'workflow-engine');
     context.setVariable('REPO_PATH', context.repoRoot);
+    context.setVariable('repoRoot', context.repoRoot);
   }
 
   /**

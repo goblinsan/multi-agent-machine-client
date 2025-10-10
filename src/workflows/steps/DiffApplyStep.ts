@@ -227,6 +227,8 @@ export class DiffApplyStep extends WorkflowStep {
           return output.diffs || output.code_diffs;
         } else if (output.result) {
           return output.result;
+        } else if (output.output) {
+          return output.output;
         }
       }
     }
