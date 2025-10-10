@@ -6,6 +6,9 @@ import { CodeGenStep } from '../src/workflows/steps/CodeGenStep.js';
 import { QAStep } from '../src/workflows/steps/QAStep.js';
 import { PlanningStep } from '../src/workflows/steps/PlanningStep.js';
 import { TaskUpdateStep } from '../src/workflows/steps/TaskUpdateStep.js';
+import { PlanEvaluationStep } from '../src/workflows/steps/PlanEvaluationStep.js';
+import { QAAnalysisStep } from '../src/workflows/steps/QAAnalysisStep.js';
+import { TaskCreationStep } from '../src/workflows/steps/TaskCreationStep.js';
 
 // Mock external dependencies
 vi.mock('../src/redisClient.js', () => ({
@@ -398,6 +401,538 @@ describe('Workflow Steps', () => {
 
       expect(validation.valid).toBe(false);
       expect(validation.errors).toContain('TaskUpdateStep: updateType must be one of: status, progress, result, failure');
+    });
+  });
+
+  // New workflow steps tests
+  describe('PlanEvaluationStep', () => {
+    beforeEach(() => {
+      // Add mock plan data to context
+      context.setStepOutput('planning', {
+        plan: {
+          title: 'Test Implementation Plan',
+          description: 'A comprehensive plan for testing',
+          steps: [
+            {
+              step: 'Setup tests',
+              description: 'Create test infrastructure',
+              rationale: 'Tests ensure code quality'
+            },
+            {
+              step: 'Implement feature',
+              description: 'Add core functionality',
+              rationale: 'Delivers required behavior'
+            }
+          ],
+          risks: [
+            {
+              description: 'Test complexity',
+              impact: 'medium',
+              mitigation: 'Start with simple tests'
+            }
+          ],
+          complexity: 'medium',
+          timeline: {
+            estimated_hours: 8,
+            confidence: 'medium'
+          },
+          requirements: ['Feature A', 'Feature B'],
+          dependencies: ['Library X']
+        }
+      });
+    });
+
+    it('should evaluate a good quality plan successfully', async () => {
+      const config = {
+        name: 'plan-evaluation',
+        type: 'PlanEvaluationStep',
+        config: {
+          minFeasibilityScore: 0.7,
+          minQualityScore: 0.6,
+          requireRiskAssessment: true
+        }
+      };
+
+      const step = new PlanEvaluationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.approved).toBe(true);
+      expect(result.outputs?.evaluationScore).toBeGreaterThan(0.5);
+      expect(result.outputs?.feasibilityScore).toBeGreaterThan(0);
+      expect(result.outputs?.qualityScore).toBeGreaterThan(0);
+    });
+
+    it('should fail evaluation for poor quality plan', async () => {
+      // Override with poor quality plan
+      context.setStepOutput('planning', {
+        plan: {
+          title: 'Bad',
+          description: 'Too short',
+          steps: [], // No steps
+          complexity: 'high'
+          // Missing required fields
+        }
+      });
+
+      const config = {
+        name: 'plan-evaluation',
+        type: 'PlanEvaluationStep',
+        config: {
+          minFeasibilityScore: 0.7,
+          minQualityScore: 0.6,
+          requireRiskAssessment: true
+        }
+      };
+
+      const step = new PlanEvaluationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      expect(result.outputs?.approved).toBe(false);
+      expect(result.outputs?.issues).toBeDefined();
+      expect(result.outputs?.issues.length).toBeGreaterThan(0);
+    });
+
+    it('should validate configuration properly', async () => {
+      const config = {
+        name: 'plan-evaluation',
+        type: 'PlanEvaluationStep',
+        config: {
+          minFeasibilityScore: 1.5, // Invalid: > 1
+          minQualityScore: -0.1,    // Invalid: < 0
+          customCriteria: [
+            {
+              name: 'test',
+              description: 'test criteria',
+              weight: 2.0 // Invalid: > 1
+            }
+          ]
+        }
+      };
+
+      const step = new PlanEvaluationStep(config);
+      const validation = await step.validate(context);
+
+      expect(validation.valid).toBe(false);
+      expect(validation.errors.length).toBeGreaterThan(0);
+      expect(validation.errors.some(e => e.includes('minFeasibilityScore'))).toBe(true);
+      expect(validation.errors.some(e => e.includes('minQualityScore'))).toBe(true);
+      expect(validation.errors.some(e => e.includes('weight'))).toBe(true);
+    });
+
+    it('should handle missing plan data', async () => {
+      // Clear plan data
+      context.setStepOutput('planning', {});
+
+      const config = {
+        name: 'plan-evaluation',
+        type: 'PlanEvaluationStep',
+        config: {}
+      };
+
+      const step = new PlanEvaluationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      expect(result.error?.message).toContain('No plan data found');
+    });
+  });
+
+  describe('QAAnalysisStep', () => {
+    beforeEach(() => {
+      // Add mock QA results to context
+      context.setStepOutput('qa', {
+        qaResults: {
+          status: 'failed',
+          totalTests: 10,
+          passedTests: 7,
+          failedTests: 3,
+          skippedTests: 0,
+          coverage: {
+            statements: 85,
+            branches: 75,
+            functions: 90,
+            lines: 80
+          },
+          failures: [
+            {
+              testName: 'should handle user input',
+              error: 'TypeError: Cannot read property of undefined',
+              stackTrace: 'at test.js:10:5',
+              file: 'test.js',
+              line: 10
+            },
+            {
+              testName: 'should validate syntax',
+              error: 'SyntaxError: Unexpected token',
+              file: 'parser.js',
+              line: 25
+            },
+            {
+              testName: 'should process timeout',
+              error: 'Test timeout after 5000ms',
+              file: 'async.test.js'
+            }
+          ],
+          executionTime: 5000
+        }
+      });
+    });
+
+    it('should analyze QA results successfully', async () => {
+      const config = {
+        name: 'qa-analysis',
+        type: 'QAAnalysisStep',
+        config: {
+          categorizeFailures: true,
+          suggestFixes: true,
+          analyzeCoverage: true
+        }
+      };
+
+      const step = new QAAnalysisStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.overallStatus).toBeOneOf(['critical', 'concerning', 'manageable', 'good']);
+      expect(result.outputs?.failureCount).toBe(3);
+      expect(result.outputs?.recommendations).toBeDefined();
+      expect(result.outputs?.nextActions).toBeDefined();
+      expect(result.data?.analysis.failureCategories).toBeDefined();
+      expect(result.data?.analysis.coverageAnalysis).toBeDefined();
+    });
+
+    it('should categorize failures correctly', async () => {
+      const config = {
+        name: 'qa-analysis',
+        type: 'QAAnalysisStep',
+        config: {
+          categorizeFailures: true,
+          customCategories: [
+            {
+              name: 'Custom Error',
+              patterns: ['custom pattern'],
+              severity: 'high',
+              description: 'Custom error type'
+            }
+          ]
+        }
+      };
+
+      const step = new QAAnalysisStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      const categories = result.data?.analysis.failureCategories;
+      expect(categories).toBeDefined();
+      expect(categories.length).toBeGreaterThan(0);
+      
+      // Should categorize TypeErrors and SyntaxErrors
+      expect(categories.some((c: any) => c.name === 'Type Error')).toBe(true);
+      expect(categories.some((c: any) => c.name === 'Syntax Error')).toBe(true);
+    });
+
+    it('should handle good QA results', async () => {
+      // Override with passing tests
+      context.setStepOutput('qa', {
+        qaResults: {
+          status: 'passed',
+          totalTests: 10,
+          passedTests: 10,
+          failedTests: 0,
+          skippedTests: 0,
+          failures: [],
+          executionTime: 2000
+        }
+      });
+
+      const config = {
+        name: 'qa-analysis',
+        type: 'QAAnalysisStep',
+        config: {}
+      };
+
+      const step = new QAAnalysisStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.overallStatus).toBe('good');
+      expect(result.outputs?.failureCount).toBe(0);
+    });
+
+    it('should validate configuration', async () => {
+      const config = {
+        name: 'qa-analysis',
+        type: 'QAAnalysisStep',
+        config: {
+          maxFailuresToAnalyze: 0, // Invalid
+          customCategories: [
+            {
+              name: '', // Invalid: empty name
+              patterns: [], // Invalid: empty patterns
+              severity: 'high',
+              description: ''
+            }
+          ]
+        }
+      };
+
+      const step = new QAAnalysisStep(config);
+      const validation = await step.validate(context);
+
+      expect(validation.valid).toBe(false);
+      expect(validation.errors.some(e => e.includes('maxFailuresToAnalyze'))).toBe(true);
+      expect(validation.errors.some(e => e.includes('Custom categories'))).toBe(true);
+    });
+
+    it('should handle missing QA results', async () => {
+      // Clear QA data
+      context.setStepOutput('qa', {});
+
+      const config = {
+        name: 'qa-analysis',
+        type: 'QAAnalysisStep',
+        config: {}
+      };
+
+      const step = new QAAnalysisStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      expect(result.error?.message).toContain('No QA results found');
+    });
+  });
+
+  describe('TaskCreationStep', () => {
+    beforeEach(() => {
+      // Add mock QA analysis results
+      context.setStepOutput('qa-analysis', {
+        analysis: {
+          overallAssessment: {
+            status: 'concerning',
+            confidence: 0.8,
+            summary: 'Multiple test failures detected'
+          },
+          failureAnalyses: [
+            {
+              category: 'Type Error',
+              severity: 'high',
+              rootCause: 'Undefined variable access',
+              suggestedFix: 'Add null checks',
+              confidence: 0.9,
+              pattern: 'type',
+              relatedFailures: []
+            },
+            {
+              category: 'Timeout',
+              severity: 'medium',
+              rootCause: 'Slow async operation',
+              suggestedFix: 'Optimize or increase timeout',
+              confidence: 0.7,
+              pattern: 'timeout',
+              relatedFailures: []
+            }
+          ],
+          recommendations: [
+            {
+              priority: 'high',
+              action: 'Fix critical type errors',
+              rationale: 'Blocking basic functionality',
+              estimatedEffort: '2 hours'
+            }
+          ]
+        }
+      });
+
+      // Add mock plan evaluation results
+      context.setStepOutput('plan-evaluation', {
+        evaluation: {
+          issues: [
+            {
+              type: 'error',
+              category: 'completeness',
+              message: 'Missing risk assessment',
+              severity: 'high'
+            }
+          ],
+          recommendations: [
+            'Add more detailed timeline estimates',
+            'Include dependency analysis'
+          ]
+        }
+      });
+    });
+
+    it('should create tasks from QA analysis successfully', async () => {
+      const config = {
+        name: 'task-creation',
+        type: 'TaskCreationStep',
+        config: {
+          dataSource: 'qa-analysis',
+          maxTasks: 10,
+          minConfidenceThreshold: 0.6
+        }
+      };
+
+      const step = new TaskCreationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.tasksCreated).toBeGreaterThan(0);
+      expect(result.outputs?.tasks).toBeDefined();
+      expect(result.outputs?.tasksByPriority).toBeDefined();
+      
+      const tasks = result.outputs?.tasks as any[];
+      expect(tasks.some(t => t.category === 'Type Error')).toBe(true);
+      expect(tasks.some(t => t.priority === 'critical' || t.priority === 'high')).toBe(true);
+    });
+
+    it('should create tasks from plan evaluation', async () => {
+      const config = {
+        name: 'task-creation',
+        type: 'TaskCreationStep',
+        config: {
+          dataSource: 'plan-evaluation',
+          maxTasks: 5
+        }
+      };
+
+      const step = new TaskCreationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.tasksCreated).toBeGreaterThan(0);
+      
+      const tasks = result.outputs?.tasks as any[];
+      expect(tasks.some(t => t.category === 'planning')).toBe(true);
+    });
+
+    it('should filter tasks by confidence threshold', async () => {
+      const config = {
+        name: 'task-creation',
+        type: 'TaskCreationStep',
+        config: {
+          dataSource: 'qa-analysis',
+          minConfidenceThreshold: 0.95 // Very high threshold
+        }
+      };
+
+      const step = new TaskCreationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      
+      const tasks = result.outputs?.tasks as any[];
+      // Should filter out the medium confidence timeout task (0.7)
+      expect(tasks.every(t => t.confidence >= 0.95)).toBe(true);
+    });
+
+    it('should limit number of tasks created', async () => {
+      const config = {
+        name: 'task-creation',
+        type: 'TaskCreationStep',
+        config: {
+          dataSource: 'all',
+          maxTasks: 2
+        }
+      };
+
+      const step = new TaskCreationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.tasksCreated).toBeLessThanOrEqual(2);
+    });
+
+    it('should group related issues when enabled', async () => {
+      // Add multiple similar failures
+      context.setStepOutput('qa-analysis', {
+        analysis: {
+          failureAnalyses: [
+            {
+              category: 'Type Error',
+              severity: 'high',
+              rootCause: 'Issue 1',
+              suggestedFix: 'Fix 1',
+              confidence: 0.9,
+              pattern: 'type'
+            },
+            {
+              category: 'Type Error',
+              severity: 'high',
+              rootCause: 'Issue 2',
+              suggestedFix: 'Fix 2',
+              confidence: 0.8,
+              pattern: 'type'
+            }
+          ]
+        }
+      });
+
+      const config = {
+        name: 'task-creation',
+        type: 'TaskCreationStep',
+        config: {
+          dataSource: 'qa-analysis',
+          groupRelatedIssues: true
+        }
+      };
+
+      const step = new TaskCreationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      
+      const tasks = result.outputs?.tasks as any[];
+      // Should create grouped task
+      expect(tasks.some(t => t.title.includes('Type Error issues'))).toBe(true);
+    });
+
+    it('should validate configuration', async () => {
+      const config = {
+        name: 'task-creation',
+        type: 'TaskCreationStep',
+        config: {
+          maxTasks: 0, // Invalid
+          minConfidenceThreshold: 1.5, // Invalid
+          taskTemplates: {
+            'test': {
+              title: '', // Invalid: empty title
+              description: ''
+            }
+          }
+        }
+      };
+
+      const step = new TaskCreationStep(config);
+      const validation = await step.validate(context);
+
+      expect(validation.valid).toBe(false);
+      expect(validation.errors.some(e => e.includes('maxTasks'))).toBe(true);
+      expect(validation.errors.some(e => e.includes('minConfidenceThreshold'))).toBe(true);
+      expect(validation.errors.some(e => e.includes('title and description'))).toBe(true);
+    });
+
+    it('should handle missing source data gracefully', async () => {
+      // Clear all source data
+      context.setStepOutput('qa-analysis', {});
+      context.setStepOutput('plan-evaluation', {});
+
+      const config = {
+        name: 'task-creation',
+        type: 'TaskCreationStep',
+        config: {
+          dataSource: 'all'
+        }
+      };
+
+      const step = new TaskCreationStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.tasksCreated).toBe(0);
+      expect(result.outputs?.summary).toContain('No tasks created');
     });
   });
 });

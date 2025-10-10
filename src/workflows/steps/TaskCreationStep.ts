@@ -1,0 +1,708 @@
+import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
+import { WorkflowContext } from '../engine/WorkflowContext.js';
+import { logger } from '../../logger.js';
+
+interface TaskCreationConfig {
+  /**
+   * Source of data to base task creation on
+   */
+  dataSource?: 'qa-analysis' | 'plan-evaluation' | 'context' | 'all';
+  
+  /**
+   * Maximum number of tasks to create
+   */
+  maxTasks?: number;
+  
+  /**
+   * Whether to create tasks for high-priority issues only
+   */
+  highPriorityOnly?: boolean;
+  
+  /**
+   * Whether to group related issues into single tasks
+   */
+  groupRelatedIssues?: boolean;
+  
+  /**
+   * Task priority assignment strategy
+   */
+  priorityStrategy?: 'severity-based' | 'impact-based' | 'effort-based' | 'balanced';
+  
+  /**
+   * Whether to include estimated effort in task descriptions
+   */
+  includeEffortEstimates?: boolean;
+  
+  /**
+   * Whether to create subtasks for complex issues
+   */
+  createSubtasks?: boolean;
+  
+  /**
+   * Custom task templates for different issue types
+   */
+  taskTemplates?: Record<string, {
+    title: string;
+    description: string;
+    labels?: string[];
+    estimatedHours?: number;
+  }>;
+  
+  /**
+   * Minimum confidence threshold for creating tasks from automated analysis
+   */
+  minConfidenceThreshold?: number;
+  
+  /**
+   * Whether to assign tasks to specific personas/agents
+   */
+  assignToPersonas?: boolean;
+}
+
+interface TaskDefinition {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  category: string;
+  estimatedHours?: number;
+  confidence: number;
+  assignedPersona?: string;
+  labels: string[];
+  subtasks?: TaskDefinition[];
+  sourceData: {
+    type: 'qa-failure' | 'plan-issue' | 'coverage-gap' | 'recommendation' | 'manual';
+    sourceId: string;
+    confidence: number;
+  };
+  dependencies?: string[];
+  acceptanceCriteria: string[];
+}
+
+interface TaskCreationResult {
+  tasksCreated: number;
+  tasksByPriority: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  tasksByCategory: Record<string, number>;
+  skippedIssues: Array<{
+    reason: string;
+    sourceData: any;
+  }>;
+  recommendations: string[];
+  summary: string;
+}
+
+export class TaskCreationStep extends WorkflowStep {
+  private static readonly DEFAULT_TEMPLATES = {
+    'syntax-error': {
+      title: 'Fix Syntax Error: {description}',
+      description: 'Resolve syntax error preventing compilation:\n\n{details}\n\nLocation: {location}',
+      labels: ['bug', 'syntax', 'high-priority'],
+      estimatedHours: 0.5
+    },
+    'type-error': {
+      title: 'Fix Type Error: {description}',
+      description: 'Resolve type-related runtime error:\n\n{details}\n\nSuggested fix: {suggestedFix}',
+      labels: ['bug', 'type-error', 'medium-priority'],
+      estimatedHours: 1
+    },
+    'test-failure': {
+      title: 'Fix Test Failure: {testName}',
+      description: 'Address failing test case:\n\n{error}\n\nTest: {testName}\nFile: {file}',
+      labels: ['test', 'bug', 'medium-priority'],
+      estimatedHours: 1.5
+    },
+    'coverage-gap': {
+      title: 'Improve Test Coverage: {area}',
+      description: 'Add tests to improve coverage in {area}:\n\n{details}',
+      labels: ['test', 'coverage', 'low-priority'],
+      estimatedHours: 2
+    },
+    'plan-issue': {
+      title: 'Address Plan Issue: {issue}',
+      description: 'Resolve planning issue identified during evaluation:\n\n{details}\n\nRecommended action: {action}',
+      labels: ['planning', 'improvement'],
+      estimatedHours: 3
+    },
+    'performance': {
+      title: 'Fix Performance Issue: {description}',
+      description: 'Address performance bottleneck:\n\n{details}\n\nImpact: {impact}',
+      labels: ['performance', 'optimization'],
+      estimatedHours: 4
+    }
+  };
+
+  async execute(context: WorkflowContext): Promise<StepResult> {
+    const config = this.config.config as TaskCreationConfig;
+    const startTime = Date.now();
+    
+    try {
+      logger.info('Starting task creation', { stepName: this.config.name });
+      
+      // Gather data from various sources
+      const sourceData = this.gatherSourceData(context, config);
+      
+      // Generate tasks based on gathered data
+      const tasks = this.generateTasks(sourceData, config);
+      
+      // Filter and prioritize tasks
+      const finalTasks = this.filterAndPrioritizeTasks(tasks, config);
+      
+      // Create summary
+      const result = this.createSummary(finalTasks, tasks);
+      
+      logger.info('Task creation completed', {
+        stepName: this.config.name,
+        tasksCreated: finalTasks.length,
+        totalIssuesAnalyzed: tasks.length
+      });
+      
+      return {
+        status: 'success',
+        data: {
+          tasks: finalTasks,
+          result
+        },
+        outputs: {
+          tasks: finalTasks,
+          tasksCreated: finalTasks.length,
+          tasksByPriority: result.tasksByPriority,
+          tasksByCategory: result.tasksByCategory,
+          summary: result.summary
+        },
+        metrics: {
+          duration_ms: Date.now() - startTime,
+          operations_count: finalTasks.length
+        }
+      };
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Task creation failed', {
+        stepName: this.config.name,
+        error: errorMessage
+      });
+      
+      return {
+        status: 'failure',
+        error: new Error(`Task creation failed: ${errorMessage}`),
+        metrics: { duration_ms: Date.now() - startTime }
+      };
+    }
+  }
+
+  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+    const config = this.config.config as TaskCreationConfig;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    
+    if (config.maxTasks !== undefined && config.maxTasks < 1) {
+      errors.push('TaskCreationStep: maxTasks must be at least 1');
+    }
+    
+    if (config.minConfidenceThreshold !== undefined && 
+        (config.minConfidenceThreshold < 0 || config.minConfidenceThreshold > 1)) {
+      errors.push('TaskCreationStep: minConfidenceThreshold must be between 0 and 1');
+    }
+    
+    if (config.taskTemplates) {
+      for (const [key, template] of Object.entries(config.taskTemplates)) {
+        if (!template.title || !template.description) {
+          errors.push(`TaskCreationStep: Task template '${key}' must have title and description`);
+        }
+      }
+    }
+    
+    // Check if required data sources are available
+    const dataSource = config.dataSource || 'all';
+    if (dataSource === 'qa-analysis' || dataSource === 'all') {
+      if (!context.hasStepOutput('qa-analysis') && !context.hasStepOutput('qa')) {
+        warnings.push('TaskCreationStep: No QA analysis data found. QA-based tasks will not be created.');
+      }
+    }
+    
+    if (dataSource === 'plan-evaluation' || dataSource === 'all') {
+      if (!context.hasStepOutput('plan-evaluation') && !context.hasStepOutput('planning')) {
+        warnings.push('TaskCreationStep: No plan evaluation data found. Plan-based tasks will not be created.');
+      }
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
+
+  private gatherSourceData(context: WorkflowContext, config: TaskCreationConfig): any[] {
+    const sourceData: any[] = [];
+    const dataSource = config.dataSource || 'all';
+    
+    // Gather QA analysis data
+    if (dataSource === 'qa-analysis' || dataSource === 'all') {
+      const qaAnalysis = context.getStepOutput('qa-analysis');
+      if (qaAnalysis?.analysis) {
+        sourceData.push({
+          type: 'qa-analysis',
+          data: qaAnalysis.analysis
+        });
+      }
+      
+      // Also check for raw QA results
+      const qaResults = context.getStepOutput('qa');
+      if (qaResults?.qaResults || qaResults?.testResults) {
+        sourceData.push({
+          type: 'qa-results',
+          data: qaResults.qaResults || qaResults.testResults
+        });
+      }
+    }
+    
+    // Gather plan evaluation data
+    if (dataSource === 'plan-evaluation' || dataSource === 'all') {
+      const planEvaluation = context.getStepOutput('plan-evaluation');
+      if (planEvaluation?.evaluation) {
+        sourceData.push({
+          type: 'plan-evaluation',
+          data: planEvaluation.evaluation
+        });
+      }
+    }
+    
+    // Gather general context data
+    if (dataSource === 'context' || dataSource === 'all') {
+      // Look for any step outputs that might contain actionable items
+      const stepNames = ['code-generation', 'implementation', 'review'];
+      for (const stepName of stepNames) {
+        const stepOutput = context.getStepOutput(stepName);
+        if (stepOutput) {
+          sourceData.push({
+            type: 'context',
+            stepName,
+            data: stepOutput
+          });
+        }
+      }
+    }
+    
+    return sourceData;
+  }
+
+  private generateTasks(sourceData: any[], config: TaskCreationConfig): TaskDefinition[] {
+    const tasks: TaskDefinition[] = [];
+    let taskCounter = 0;
+    
+    for (const source of sourceData) {
+      switch (source.type) {
+        case 'qa-analysis':
+          tasks.push(...this.generateQAAnalysisTasks(source.data, config, taskCounter));
+          taskCounter += tasks.length;
+          break;
+          
+        case 'qa-results':
+          tasks.push(...this.generateQAResultsTasks(source.data, config, taskCounter));
+          taskCounter += tasks.length;
+          break;
+          
+        case 'plan-evaluation':
+          tasks.push(...this.generatePlanEvaluationTasks(source.data, config, taskCounter));
+          taskCounter += tasks.length;
+          break;
+          
+        case 'context':
+          // General context-based task generation
+          tasks.push(...this.generateContextTasks(source.data, source.stepName, config, taskCounter));
+          taskCounter += tasks.length;
+          break;
+      }
+    }
+    
+    return tasks;
+  }
+
+  private generateQAAnalysisTasks(analysis: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
+    const tasks: TaskDefinition[] = [];
+    
+    // Create tasks from failure analyses
+    if (analysis.failureAnalyses) {
+      for (let i = 0; i < analysis.failureAnalyses.length; i++) {
+        const failure = analysis.failureAnalyses[i];
+        const minConfidence = config.minConfidenceThreshold || 0.3;
+        
+        if (failure.confidence < minConfidence) continue;
+        
+        const priority = this.mapSeverityToPriority(failure.severity);
+        const category = failure.category.toLowerCase().replace(/\s+/g, '-');
+        
+        tasks.push({
+          id: `task-${startId + i + 1}`,
+          title: `Fix ${failure.category}: ${failure.pattern}`,
+          description: this.formatTaskDescription(failure, 'qa-failure'),
+          priority,
+          category: failure.category,
+          confidence: failure.confidence,
+          labels: ['qa', 'bug', category],
+          sourceData: {
+            type: 'qa-failure',
+            sourceId: `failure-${i}`,
+            confidence: failure.confidence
+          },
+          acceptanceCriteria: [
+            'Error no longer occurs during test execution',
+            'Related tests pass consistently',
+            'Root cause is addressed, not just symptoms'
+          ]
+        });
+      }
+    }
+    
+    // Create tasks from recommendations
+    if (analysis.recommendations) {
+      for (let i = 0; i < analysis.recommendations.length; i++) {
+        const rec = analysis.recommendations[i];
+        
+        tasks.push({
+          id: `task-rec-${startId + i + 1}`,
+          title: rec.action,
+          description: `${rec.rationale}\n\nEstimated effort: ${rec.estimatedEffort}`,
+          priority: rec.priority === 'high' ? 'high' : rec.priority === 'medium' ? 'medium' : 'low',
+          category: 'improvement',
+          confidence: 0.8,
+          labels: ['improvement', 'recommendation'],
+          sourceData: {
+            type: 'recommendation',
+            sourceId: `rec-${i}`,
+            confidence: 0.8
+          },
+          acceptanceCriteria: [
+            'Recommendation is fully implemented',
+            'Success metrics are improved',
+            'No regression in existing functionality'
+          ]
+        });
+      }
+    }
+    
+    return tasks;
+  }
+
+  private generateQAResultsTasks(qaResults: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
+    const tasks: TaskDefinition[] = [];
+    
+    if (qaResults.failures) {
+      for (let i = 0; i < qaResults.failures.length; i++) {
+        const failure = qaResults.failures[i];
+        
+        tasks.push({
+          id: `task-qa-${startId + i + 1}`,
+          title: `Fix failing test: ${failure.testName}`,
+          description: `Test failure details:\n\nError: ${failure.error}\n\nFile: ${failure.file || 'Unknown'}\nLine: ${failure.line || 'Unknown'}`,
+          priority: 'medium',
+          category: 'test-failure',
+          confidence: 0.9,
+          labels: ['test', 'bug', 'failure'],
+          sourceData: {
+            type: 'qa-failure',
+            sourceId: `qa-failure-${i}`,
+            confidence: 0.9
+          },
+          acceptanceCriteria: [
+            `Test "${failure.testName}" passes consistently`,
+            'Underlying issue is resolved',
+            'No other tests are broken by the fix'
+          ]
+        });
+      }
+    }
+    
+    return tasks;
+  }
+
+  private generatePlanEvaluationTasks(evaluation: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
+    const tasks: TaskDefinition[] = [];
+    
+    if (evaluation.issues) {
+      for (let i = 0; i < evaluation.issues.length; i++) {
+        const issue = evaluation.issues[i];
+        
+        if (issue.type === 'error') {
+          const priority = issue.severity === 'high' ? 'critical' : 
+                          issue.severity === 'medium' ? 'high' : 'medium';
+          
+          tasks.push({
+            id: `task-plan-${startId + i + 1}`,
+            title: `Address planning issue: ${issue.category}`,
+            description: issue.message,
+            priority,
+            category: 'planning',
+            confidence: 0.8,
+            labels: ['planning', 'issue', issue.category],
+            sourceData: {
+              type: 'plan-issue',
+              sourceId: `plan-issue-${i}`,
+              confidence: 0.8
+            },
+            acceptanceCriteria: [
+              'Planning issue is resolved',
+              'Plan quality score improves',
+              'No new planning issues are introduced'
+            ]
+          });
+        }
+      }
+    }
+    
+    if (evaluation.recommendations) {
+      for (let i = 0; i < evaluation.recommendations.length; i++) {
+        const rec = evaluation.recommendations[i];
+        
+        tasks.push({
+          id: `task-plan-rec-${startId + i + 1}`,
+          title: `Improve plan: ${rec}`,
+          description: `Plan improvement recommendation: ${rec}`,
+          priority: 'low',
+          category: 'plan-improvement',
+          confidence: 0.7,
+          labels: ['planning', 'improvement'],
+          sourceData: {
+            type: 'recommendation',
+            sourceId: `plan-rec-${i}`,
+            confidence: 0.7
+          },
+          acceptanceCriteria: [
+            'Recommendation is implemented',
+            'Plan quality metrics improve',
+            'Planning process is enhanced'
+          ]
+        });
+      }
+    }
+    
+    return tasks;
+  }
+
+  private generateContextTasks(data: any, stepName: string, config: TaskCreationConfig, startId: number): TaskDefinition[] {
+    const tasks: TaskDefinition[] = [];
+    
+    // This is a basic implementation - could be enhanced based on specific step output formats
+    if (data.errors && Array.isArray(data.errors)) {
+      for (let i = 0; i < data.errors.length; i++) {
+        const error = data.errors[i];
+        
+        tasks.push({
+          id: `task-ctx-${stepName}-${startId + i + 1}`,
+          title: `Fix error from ${stepName}`,
+          description: typeof error === 'string' ? error : JSON.stringify(error, null, 2),
+          priority: 'medium',
+          category: `${stepName}-error`,
+          confidence: 0.6,
+          labels: [stepName, 'error'],
+          sourceData: {
+            type: 'manual',
+            sourceId: `${stepName}-error-${i}`,
+            confidence: 0.6
+          },
+          acceptanceCriteria: [
+            'Error is resolved',
+            `${stepName} step completes successfully`,
+            'No regression in other areas'
+          ]
+        });
+      }
+    }
+    
+    return tasks;
+  }
+
+  private filterAndPrioritizeTasks(tasks: TaskDefinition[], config: TaskCreationConfig): TaskDefinition[] {
+    let filteredTasks = [...tasks];
+    
+    // Filter by confidence threshold
+    const minConfidence = config.minConfidenceThreshold || 0.3;
+    filteredTasks = filteredTasks.filter(task => task.confidence >= minConfidence);
+    
+    // Filter by priority if high priority only
+    if (config.highPriorityOnly) {
+      filteredTasks = filteredTasks.filter(task => 
+        task.priority === 'critical' || task.priority === 'high'
+      );
+    }
+    
+    // Group related issues if enabled
+    if (config.groupRelatedIssues) {
+      filteredTasks = this.groupRelatedTasks(filteredTasks);
+    }
+    
+    // Sort by priority and confidence
+    filteredTasks.sort((a, b) => {
+      const priorityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return b.confidence - a.confidence;
+    });
+    
+    // Limit number of tasks
+    const maxTasks = config.maxTasks || 20;
+    filteredTasks = filteredTasks.slice(0, maxTasks);
+    
+    return filteredTasks;
+  }
+
+  private groupRelatedTasks(tasks: TaskDefinition[]): TaskDefinition[] {
+    // Simple grouping by category - could be enhanced with more sophisticated similarity detection
+    const grouped = new Map<string, TaskDefinition[]>();
+    
+    for (const task of tasks) {
+      const key = task.category;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(task);
+    }
+    
+    const result: TaskDefinition[] = [];
+    
+    for (const [category, categoryTasks] of grouped) {
+      if (categoryTasks.length === 1) {
+        result.push(categoryTasks[0]);
+      } else {
+        // Create a parent task with subtasks
+        const parentTask: TaskDefinition = {
+          id: `grouped-${category}-${Date.now()}`,
+          title: `Address ${category} issues (${categoryTasks.length} items)`,
+          description: `Group of related ${category} issues:\n\n${categoryTasks.map(t => `- ${t.title}`).join('\n')}`,
+          priority: this.getHighestPriority(categoryTasks),
+          category,
+          confidence: categoryTasks.reduce((sum, task) => sum + task.confidence, 0) / categoryTasks.length,
+          labels: ['grouped', category],
+          subtasks: categoryTasks,
+          sourceData: {
+            type: 'manual',
+            sourceId: `grouped-${category}`,
+            confidence: 0.8
+          },
+          acceptanceCriteria: [
+            'All subtasks are completed',
+            `All ${category} issues are resolved`,
+            'No regression in related functionality'
+          ]
+        };
+        
+        result.push(parentTask);
+      }
+    }
+    
+    return result;
+  }
+
+  private getHighestPriority(tasks: TaskDefinition[]): TaskDefinition['priority'] {
+    const order = { critical: 4, high: 3, medium: 2, low: 1 };
+    return tasks.reduce((highest, task) => {
+      return order[task.priority] > order[highest] ? task.priority : highest;
+    }, 'low' as TaskDefinition['priority']);
+  }
+
+  private createSummary(finalTasks: TaskDefinition[], allTasks: TaskDefinition[]): TaskCreationResult {
+    const tasksByPriority = {
+      critical: finalTasks.filter(t => t.priority === 'critical').length,
+      high: finalTasks.filter(t => t.priority === 'high').length,
+      medium: finalTasks.filter(t => t.priority === 'medium').length,
+      low: finalTasks.filter(t => t.priority === 'low').length
+    };
+    
+    const tasksByCategory: Record<string, number> = {};
+    finalTasks.forEach(task => {
+      tasksByCategory[task.category] = (tasksByCategory[task.category] || 0) + 1;
+    });
+    
+    const skippedIssues = allTasks.filter(task => 
+      !finalTasks.some(ft => ft.id === task.id)
+    ).map(task => ({
+      reason: task.confidence < 0.3 ? 'Low confidence' : 'Filtered out',
+      sourceData: task.sourceData
+    }));
+    
+    const summary = this.generateSummaryText(finalTasks, tasksByPriority);
+    
+    return {
+      tasksCreated: finalTasks.length,
+      tasksByPriority,
+      tasksByCategory,
+      skippedIssues,
+      recommendations: [
+        'Review high-priority tasks first',
+        'Consider grouping related tasks for efficiency',
+        'Update task estimates based on actual effort'
+      ],
+      summary
+    };
+  }
+
+  private generateSummaryText(tasks: TaskDefinition[], byPriority: any): string {
+    const total = tasks.length;
+    const critical = byPriority.critical;
+    const high = byPriority.high;
+    
+    if (total === 0) {
+      return 'No tasks created - all issues may have been resolved or filtered out';
+    }
+    
+    let summary = `Created ${total} task(s) from analysis. `;
+    
+    if (critical > 0) {
+      summary += `${critical} critical issue(s) require immediate attention. `;
+    }
+    
+    if (high > 0) {
+      summary += `${high} high-priority task(s) should be addressed soon. `;
+    }
+    
+    const topCategory = Object.entries(tasks.reduce((acc, task) => {
+      acc[task.category] = (acc[task.category] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>))
+    .sort(([,a], [,b]) => b - a)[0];
+    
+    if (topCategory) {
+      summary += `Most issues are related to ${topCategory[0]} (${topCategory[1]} task(s)).`;
+    }
+    
+    return summary;
+  }
+
+  private mapSeverityToPriority(severity: string): TaskDefinition['priority'] {
+    switch (severity.toLowerCase()) {
+      case 'high': return 'critical';
+      case 'medium': return 'high';
+      case 'low': return 'medium';
+      default: return 'low';
+    }
+  }
+
+  private formatTaskDescription(failure: any, type: string): string {
+    let description = '';
+    
+    if (type === 'qa-failure') {
+      description = `QA Analysis identified a ${failure.severity} severity issue:\n\n`;
+      description += `**Root Cause:** ${failure.rootCause}\n\n`;
+      description += `**Suggested Fix:** ${failure.suggestedFix}\n\n`;
+      description += `**Pattern:** ${failure.pattern}\n\n`;
+      description += `**Confidence:** ${(failure.confidence * 100).toFixed(1)}%`;
+      
+      if (failure.relatedFailures && failure.relatedFailures.length > 0) {
+        description += `\n\n**Related Issues:** ${failure.relatedFailures.join(', ')}`;
+      }
+    }
+    
+    return description;
+  }
+
+  async cleanup(context: WorkflowContext): Promise<void> {
+    // No cleanup needed for task creation
+    logger.debug('Task creation step cleanup completed', { stepName: this.config.name });
+  }
+}
