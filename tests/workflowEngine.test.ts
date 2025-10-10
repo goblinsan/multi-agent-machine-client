@@ -19,39 +19,10 @@ describe('WorkflowEngine', () => {
     // Create temp repo for testing
     tempRepo = await makeTempRepo();
     
-    // Create temporary workflow definitions directory
-    const workflowsDir = path.join(tempRepo, 'workflows');
-    await fs.mkdir(workflowsDir, { recursive: true });
+    // Use the dedicated test workflows directory
+    const testWorkflowsDir = path.join(process.cwd(), 'tests', 'workflows');
     
-    // Copy test workflow
-    const testWorkflowContent = `
-name: "test-workflow"
-description: "Simple test workflow for validating the workflow engine"
-version: "1.0"
-
-steps:
-  - name: "test_step"
-    type: "TestStep"
-    description: "A simple test step"
-    config:
-      message: "Hello from workflow engine!"
-      delay_ms: 100
-    outputs:
-      - "test_result"
-      
-  - name: "dependent_step"
-    type: "TestStep"
-    description: "A step that depends on the first"
-    depends_on: ["test_step"]
-    config:
-      message: "This step ran after test_step"
-    outputs:
-      - "dependent_result"
-`;
-
-    await fs.writeFile(path.join(workflowsDir, 'test-workflow.yaml'), testWorkflowContent);
-    
-    engine = new WorkflowEngine(workflowsDir);
+    engine = new WorkflowEngine(testWorkflowsDir);
   });
 
   it('should load and validate workflow configuration', async () => {

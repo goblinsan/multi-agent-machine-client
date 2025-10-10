@@ -2,20 +2,13 @@ name: "test-workflow"
 description: "Simple test workflow for validating the workflow engine"
 version: "1.0"
 
-trigger:
-  condition: "always_true"
-
-context:
-  repo_required: true
-  branch_strategy: "feature_based"
-
 steps:
   - name: "test_step"
     type: "TestStep"
     description: "A simple test step"
     config:
       message: "Hello from workflow engine!"
-      delay_ms: 1000
+      delay_ms: 100
     outputs:
       - "test_result"
       
