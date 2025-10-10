@@ -5,6 +5,7 @@ import { ContextStep } from '../src/workflows/steps/ContextStep.js';
 import { CodeGenStep } from '../src/workflows/steps/CodeGenStep.js';
 import { QAStep } from '../src/workflows/steps/QAStep.js';
 import { PlanningStep } from '../src/workflows/steps/PlanningStep.js';
+import { TaskUpdateStep } from '../src/workflows/steps/TaskUpdateStep.js';
 
 // Mock external dependencies
 vi.mock('../src/redisClient.js', () => ({
@@ -324,6 +325,79 @@ describe('Workflow Steps', () => {
       expect(result.status).toBe('success');
       expect(result.data).toBeDefined();
       expect(result.outputs?.testsPassed).toBe(true);
+    });
+  });
+
+  describe('TaskUpdateStep', () => {
+    it('should update task status', async () => {
+      // Set up task in context
+      context.setVariable('task', {
+        id: 'test-task-123',
+        type: 'code-task'
+      });
+
+      const config = {
+        name: 'task-update',
+        type: 'TaskUpdateStep',
+        config: {
+          updateType: 'status',
+          status: 'in_progress',
+          message: 'Task is now in progress'
+        }
+      };
+
+      const step = new TaskUpdateStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.data).toBeDefined();
+      expect(result.outputs?.updated).toBe(true);
+      expect(result.outputs?.taskId).toBe('test-task-123');
+      
+      // Check context variables
+      const updateResult = context.getVariable('updateResult');
+      expect(updateResult).toBeDefined();
+      expect(updateResult.taskId).toBe('test-task-123');
+      expect(updateResult.updateType).toBe('status');
+    });
+
+    it('should update task progress', async () => {
+      context.setVariable('task', {
+        id: 'test-task-456',
+        type: 'code-task'
+      });
+
+      const config = {
+        name: 'task-progress',
+        type: 'TaskUpdateStep',
+        config: {
+          updateType: 'progress',
+          progress: 75,
+          message: 'Task is 75% complete'
+        }
+      };
+
+      const step = new TaskUpdateStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(result.outputs?.updated).toBe(true);
+    });
+
+    it('should validate configuration', async () => {
+      const config = {
+        name: 'task-update',
+        type: 'TaskUpdateStep',
+        config: {
+          updateType: 'invalid-type'
+        }
+      };
+
+      const step = new TaskUpdateStep(config);
+      const validation = await step.validate(context);
+
+      expect(validation.valid).toBe(false);
+      expect(validation.errors).toContain('TaskUpdateStep: updateType must be one of: status, progress, result, failure');
     });
   });
 });
