@@ -87,3 +87,62 @@ Notes:
 
 - Flags are optional; dashboard labels are the preferred source of truth.
 - Governance dispatch is tolerant to unknown statuses and respects `allowedPersonas` configuration.
+
+## Workflow System
+
+The multi-agent client now includes a YAML-based workflow system that provides declarative coordination workflows while maintaining full backward compatibility.
+
+### Key Features
+
+- **YAML Configuration**: Define workflows declaratively in `workflows/` directory
+- **Step-based Execution**: Modular workflow steps with dependency management
+- **Error Handling**: Configurable retry policies and graceful error recovery
+- **Conditional Logic**: Dynamic workflow routing based on runtime conditions
+- **Backward Compatibility**: Seamless integration with existing coordinator logic
+
+### Basic Usage
+
+Workflows are automatically selected based on task type and properties. The system includes built-in workflows:
+
+- `project-loop.yml`: Standard development workflow with planning, implementation, and QA
+- `hotfix.yml`: Emergency hotfix workflow with abbreviated process
+- `feature.yml`: Feature-specific workflow with enhanced validation
+
+### Example Workflow Structure
+
+```yaml
+name: "project-loop"
+version: "1.0.0"
+description: "Standard project workflow"
+
+steps:
+  - id: "planning"
+    name: "Implementation Planning"
+    type: "persona-request"
+    persona: "implementation-planner"
+    timeout: 1800
+    
+  - id: "implementation"
+    name: "Lead Engineer Implementation"
+    type: "persona-request"
+    persona: "lead-engineer"
+    dependencies: ["planning"]
+    timeout: 3600
+    
+  - id: "qa"
+    name: "Quality Assurance"
+    type: "persona-request"
+    persona: "qa-engineer"
+    dependencies: ["implementation"]
+```
+
+### Architecture
+
+The workflow system consists of:
+
+- **WorkflowEngine**: Core execution engine for YAML workflows
+- **WorkflowCoordinator**: Integration layer maintaining backward compatibility
+- **Step Registry**: Built-in step implementations (persona-request, git-operation, conditional, parallel)
+- **WorkflowContext**: Shared execution context across workflow steps
+
+For detailed documentation, see [docs/WORKFLOW_SYSTEM.md](docs/WORKFLOW_SYSTEM.md).

@@ -73,22 +73,12 @@ export class DiffApplyStep extends WorkflowStep {
       }
 
       if (!parseResult.editSpec || parseResult.editSpec.ops.length === 0) {
-        context.logger.warn('No edit operations found in diff', {
-          stepName: this.config.name
+        context.logger.error('Critical failure: No edit operations found in diff', {
+          stepName: this.config.name,
+          diffContent: diffContent.substring(0, 500) + '...'
         });
         
-        return {
-          status: 'success',
-          data: { message: 'No changes to apply' },
-          outputs: {
-            applied_files: [],
-            commit_sha: null,
-            operations_count: 0
-          },
-          metrics: {
-            duration_ms: Date.now() - startTime
-          }
-        };
+        throw new Error('Coordinator-critical: Implementation returned no diff operations to apply. Aborting.');
       }
 
       // Apply validation if requested
@@ -124,6 +114,28 @@ export class DiffApplyStep extends WorkflowStep {
           branchName: context.branch,
           commitMessage: stepConfig.commit_message || this.generateCommitMessage(context)
         });
+
+        // Critical validation: ensure changes were actually applied
+        if (!applyResult.changed || applyResult.changed.length === 0) {
+          context.logger.error('Critical failure: No file changes after applying diffs', {
+            stepName: this.config.name,
+            operationsCount: parseResult.editSpec.ops.length,
+            applyResult
+          });
+          
+          throw new Error('Coordinator-critical: Implementation edits produced no file changes. Aborting.');
+        }
+
+        // Critical validation: ensure commit was created (applyEditOps handles commit/push internally)
+        if (!applyResult.sha || applyResult.sha === '') {
+          context.logger.error('Critical failure: No commit SHA after applying changes', {
+            stepName: this.config.name,
+            filesChanged: applyResult.changed.length,
+            applyResult
+          });
+          
+          throw new Error('Coordinator-critical: Implementation changes were not committed to repository. Aborting.');
+        }
       }
 
       context.logger.info('Diff application completed', {

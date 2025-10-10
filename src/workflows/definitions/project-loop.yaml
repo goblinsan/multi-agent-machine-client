@@ -1,0 +1,358 @@
+name: "project-loop"
+description: "Main development cycle workflow for feature implementation and iteration"
+version: "1.0.0"
+trigger:
+  condition: "task_type == 'project-loop' || task_type == 'feature-implementation'"
+context:
+  repo_required: true
+  branch_strategy: "feature-branch"
+
+steps:
+  # Phase 1: Task Setup and Context Gathering
+  - name: "pull-task"
+    type: "PullTaskStep"
+    description: "Pull task from Redis stream"
+    config:
+      streamName: "${REDIS_STREAM_NAME}"
+      consumerGroup: "${CONSUMER_GROUP}"
+      consumerId: "${CONSUMER_ID}"
+      blockTime: 5000
+      maxMessages: 1
+    outputs:
+      - "task"
+      - "taskId"
+
+  - name: "update-status-starting"
+    type: "TaskUpdateStep"
+    description: "Update task status to in_progress"
+    depends_on: ["pull-task"]
+    config:
+      updateType: "status"
+      status: "in_progress"
+      message: "Starting project loop workflow"
+      metadata:
+        workflow: "project-loop"
+        phase: "initialization"
+    outputs:
+      - "updated"
+
+  - name: "gather-context"
+    type: "ContextStep"
+    description: "Scan repository and gather comprehensive context"
+    depends_on: ["pull-task"]
+    config:
+      repoPath: "${REPO_PATH}"
+      includePatterns: 
+        - "**/*.ts"
+        - "**/*.js"
+        - "**/*.json"
+        - "**/*.md"
+        - "**/*.yml"
+        - "**/*.yaml"
+        - "**/package*.json"
+        - "**/tsconfig*.json"
+        - "**/vitest*.config*"
+        - "**/README*"
+      excludePatterns: 
+        - "node_modules/**"
+        - ".git/**"
+        - "dist/**"
+        - "build/**"
+        - "coverage/**"
+        - "*.log"
+      maxFiles: 1000
+      maxBytes: 10485760  # 10MB
+      trackLines: true
+      trackHash: true
+      scanGitHistory: true
+    outputs:
+      - "context"
+      - "repoScan"
+      - "gitInfo"
+
+  # Phase 2: Planning and Evaluation
+  - name: "create-implementation-plan"
+    type: "PlanningStep"
+    description: "Create comprehensive implementation plan"
+    depends_on: ["pull-task", "gather-context"]
+    config:
+      persona: "lead_engineer"
+      temperature: 0.2
+      maxPlanningTokens: 3000
+      requireApproval: true
+      planValidationRules: 
+        - "require_risks"
+        - "require_timeline"
+        - "require_testing_strategy"
+      includeContextSummary: true
+      analysisDepth: "comprehensive"
+    outputs:
+      - "planningResult"
+      - "plan"
+      - "breakdown"
+      - "risks"
+      - "timeline"
+      - "testingStrategy"
+
+  - name: "evaluate-plan-quality"
+    type: "PlanEvaluationStep"
+    description: "Evaluate implementation plan quality and feasibility"
+    depends_on: ["create-implementation-plan"]
+    config:
+      planSource: "context"
+      minFeasibilityScore: 0.75
+      minQualityScore: 0.70
+      requireRiskAssessment: true
+      maxComplexityScore: 0.80
+      validateRequirements: true
+      performRootCauseAnalysis: true
+      customCriteria:
+        - name: "Technical Debt Impact"
+          description: "Assess impact on technical debt"
+          weight: 0.15
+        - name: "Maintainability"
+          description: "Long-term maintainability assessment"
+          weight: 0.20
+    outputs:
+      - "evaluationScore"
+      - "feasibilityScore"
+      - "qualityScore"
+      - "approved"
+      - "issues"
+      - "recommendations"
+
+  - name: "handle-plan-rejection"
+    type: "TaskUpdateStep"
+    description: "Handle rejected implementation plan"
+    depends_on: ["evaluate-plan-quality"]
+    condition: "approved == false"
+    config:
+      updateType: "failure"
+      status: "failed"
+      message: "Implementation plan rejected due to quality/feasibility issues"
+      metadata:
+        evaluationScore: "${evaluationScore}"
+        feasibilityScore: "${feasibilityScore}"
+        qualityScore: "${qualityScore}"
+        issues: "${issues}"
+        recommendations: "${recommendations}"
+        phase: "planning"
+    outputs:
+      - "updated"
+
+  - name: "update-progress-planning"
+    type: "TaskUpdateStep"
+    description: "Update progress after successful planning"
+    depends_on: ["evaluate-plan-quality"]
+    condition: "approved == true"
+    config:
+      updateType: "progress"
+      progress: 30
+      message: "Implementation plan created and approved"
+      metadata:
+        evaluationScore: "${evaluationScore}"
+        planSteps: "${breakdown.length}"
+        estimatedHours: "${timeline.estimated_hours}"
+        phase: "planning_complete"
+    outputs:
+      - "updated"
+
+  # Phase 3: Implementation
+  - name: "generate-code-implementation"
+    type: "CodeGenStep"
+    description: "Generate code implementation based on approved plan"
+    depends_on: ["evaluate-plan-quality"]
+    condition: "approved == true"
+    config:
+      persona: "lead_engineer"
+      temperature: 0.6
+      maxTokens: 6000
+      includeContext: true
+      includePlan: true
+      retryCount: 3
+      enableDiffValidation: true
+      requireTestUpdates: true
+    outputs:
+      - "codeGenResult"
+      - "response"
+      - "diffs"
+      - "testUpdates"
+
+  - name: "apply-code-changes"
+    type: "DiffApplyStep"
+    description: "Apply generated code changes to repository"
+    depends_on: ["generate-code-implementation"]
+    config:
+      dryRun: false
+      backupOriginals: true
+      validateBeforeApply: true
+      createCommit: true
+      commitMessage: "feat: ${task.title}\n\n${task.description}"
+    outputs:
+      - "appliedFiles"
+      - "success"
+      - "commitHash"
+
+  - name: "update-progress-implementation"
+    type: "TaskUpdateStep"
+    description: "Update progress after implementation"
+    depends_on: ["apply-code-changes"]
+    condition: "success == true"
+    config:
+      updateType: "progress"
+      progress: 70
+      message: "Code implementation completed successfully"
+      metadata:
+        filesModified: "${appliedFiles.length}"
+        commitHash: "${commitHash}"
+        phase: "implementation_complete"
+    outputs:
+      - "updated"
+
+  # Phase 4: Quality Assurance
+  - name: "run-comprehensive-tests"
+    type: "QAStep"
+    description: "Run comprehensive quality assurance tests"
+    depends_on: ["apply-code-changes"]
+    condition: "success == true"
+    config:
+      testCommand: "npm test"
+      timeout: 600000  # 10 minutes
+      retryCount: 2
+      failureThreshold: 0
+      skipOnNoTests: false
+      collectCoverage: true
+      generateReports: true
+    outputs:
+      - "qaResult"
+      - "testsPassed"
+      - "failures"
+      - "coverage"
+      - "testReport"
+
+  # Phase 5: Success Path
+  - name: "update-status-completed"
+    type: "TaskUpdateStep"
+    description: "Mark task as completed successfully"
+    depends_on: ["run-comprehensive-tests"]
+    condition: "testsPassed == true"
+    config:
+      updateType: "result"
+      status: "completed"
+      message: "Project loop completed successfully - all tests passing"
+      metadata:
+        testsRun: "${qaResult.testResults.total}"
+        testsPassed: "${qaResult.testResults.passed}"
+        coverage: "${coverage}"
+        commitHash: "${commitHash}"
+        evaluationScore: "${evaluationScore}"
+        phase: "completed"
+    outputs:
+      - "updated"
+
+  # Phase 6: Failure Analysis and Recovery (When Tests Fail)
+  - name: "analyze-qa-failures"
+    type: "QAAnalysisStep"
+    description: "Analyze QA test failures and determine root causes"
+    depends_on: ["run-comprehensive-tests"]
+    condition: "testsPassed == false"
+    config:
+      qaResultsSource: "context"
+      categorizeFailures: true
+      suggestFixes: true
+      analyzeCoverage: true
+      performRootCauseAnalysis: true
+      trackPatterns: true
+      maxFailuresToAnalyze: 25
+      customCategories:
+        - name: "Integration Test Failure"
+          patterns: ["integration", "api", "database", "external"]
+          severity: "high"
+          description: "Failures in integration testing"
+        - name: "Unit Test Regression"
+          patterns: ["unit", "isolated", "mock"]
+          severity: "medium"
+          description: "Unit test regressions"
+    outputs:
+      - "overallStatus"
+      - "failureCount"
+      - "criticalIssues"
+      - "recommendations"
+      - "nextActions"
+      - "patterns"
+      - "analysisReport"
+
+  - name: "create-recovery-tasks"
+    type: "TaskCreationStep"
+    description: "Create follow-up tasks for systematic failure resolution"
+    depends_on: ["analyze-qa-failures"]
+    config:
+      dataSource: "qa-analysis"
+      maxTasks: 15
+      highPriorityOnly: false
+      groupRelatedIssues: true
+      priorityStrategy: "severity-based"
+      minConfidenceThreshold: 0.5
+      includeEffortEstimates: true
+      createSubtasks: true
+      assignToPersonas: true
+    outputs:
+      - "tasks"
+      - "tasksCreated"
+      - "tasksByPriority"
+      - "summary"
+      - "recoveryPlan"
+
+  - name: "update-status-failed-with-recovery"
+    type: "TaskUpdateStep"
+    description: "Mark task as failed with comprehensive recovery plan"
+    depends_on: ["create-recovery-tasks"]
+    config:
+      updateType: "failure"
+      status: "failed"
+      message: "Project loop failed QA - ${tasksCreated} recovery tasks created"
+      metadata:
+        failures: "${failures}"
+        testsRun: "${qaResult.testResults.total}"
+        testsFailed: "${qaResult.testResults.failed}"
+        overallStatus: "${overallStatus}"
+        criticalIssues: "${criticalIssues}"
+        recoveryTasks: "${tasksCreated}"
+        highPriorityTasks: "${tasksByPriority.critical + tasksByPriority.high}"
+        analysisConfidence: "${analysisReport.confidence}"
+        patterns: "${patterns}"
+        phase: "failed_with_recovery"
+    outputs:
+      - "updated"
+
+# Global failure handling
+failure_handling:
+  on_step_failure:
+    - step: "update-status-error"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "Workflow step failed: ${error.step} - ${error.message}"
+        metadata:
+          failedStep: "${error.step}"
+          errorType: "${error.type}"
+          phase: "step_failure"
+  
+  on_workflow_failure:
+    - step: "emergency-cleanup"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "Workflow failed completely - manual intervention required"
+        metadata:
+          workflowError: "${error.message}"
+          phase: "workflow_failure"
+
+# Timeout configuration
+timeouts:
+  default_step: 300000  # 5 minutes
+  planning_step: 600000  # 10 minutes
+  code_generation: 900000  # 15 minutes
+  qa_step: 1200000  # 20 minutes

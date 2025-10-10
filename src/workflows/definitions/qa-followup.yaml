@@ -1,0 +1,310 @@
+name: "qa-followup"
+description: "QA failure handling workflow with automated analysis and recovery task creation"
+version: "1.0.0"
+trigger:
+  condition: "task_type == 'qa-followup' || previous_workflow_failed == true"
+context:
+  repo_required: true
+  branch_strategy: "current-branch"  # Work on existing branch
+
+steps:
+  # Phase 1: Setup and Context
+  - name: "pull-followup-task"
+    type: "PullTaskStep"
+    description: "Pull QA followup task from stream"
+    config:
+      streamName: "${REDIS_STREAM_NAME}"
+      consumerGroup: "${CONSUMER_GROUP}-qa"
+      consumerId: "${CONSUMER_ID}-qa"
+      blockTime: 3000
+      maxMessages: 1
+    outputs:
+      - "task"
+      - "taskId"
+      - "originalTaskId"
+
+  - name: "update-status-analyzing"
+    type: "TaskUpdateStep"
+    description: "Update task status to analyzing failures"
+    depends_on: ["pull-followup-task"]
+    config:
+      updateType: "status"
+      status: "in_progress"
+      message: "Starting QA failure analysis and recovery planning"
+      metadata:
+        workflow: "qa-followup"
+        originalTask: "${originalTaskId}"
+        phase: "analysis_start"
+    outputs:
+      - "updated"
+
+  - name: "gather-failure-context"
+    type: "ContextStep"
+    description: "Gather context about current repository state and failures"
+    depends_on: ["pull-followup-task"]
+    config:
+      repoPath: "${REPO_PATH}"
+      includePatterns: 
+        - "**/*.ts"
+        - "**/*.js"
+        - "**/*.json"
+        - "**/test/**"
+        - "**/tests/**"
+        - "**/*.test.*"
+        - "**/*.spec.*"
+        - "**/package*.json"
+        - "**/vitest*.config*"
+        - "**/jest*.config*"
+        - "**/coverage/**"
+        - "**/*.log"
+      excludePatterns: 
+        - "node_modules/**"
+        - ".git/**"
+        - "dist/**"
+        - "build/**"
+      maxFiles: 800
+      maxBytes: 8388608  # 8MB
+      trackLines: true
+      trackHash: false
+      focusOnTestFiles: true
+    outputs:
+      - "context"
+      - "repoScan"
+      - "testFiles"
+
+  # Phase 2: Re-run Tests to Capture Current State
+  - name: "run-current-tests"
+    type: "QAStep"
+    description: "Re-run tests to capture current failure state"
+    depends_on: ["gather-failure-context"]
+    config:
+      testCommand: "npm test"
+      timeout: 480000  # 8 minutes
+      retryCount: 1  # Only one retry for consistency
+      failureThreshold: 100  # Allow all failures for analysis
+      skipOnNoTests: false
+      collectCoverage: true
+      generateReports: true
+      verboseOutput: true
+    outputs:
+      - "qaResult"
+      - "testsPassed"
+      - "failures"
+      - "coverage"
+      - "detailedOutput"
+
+  # Phase 3: Comprehensive Failure Analysis
+  - name: "analyze-test-failures"
+    type: "QAAnalysisStep"
+    description: "Perform comprehensive analysis of test failures"
+    depends_on: ["run-current-tests"]
+    config:
+      qaResultsSource: "context"
+      categorizeFailures: true
+      suggestFixes: true
+      analyzeCoverage: true
+      performRootCauseAnalysis: true
+      trackPatterns: true
+      maxFailuresToAnalyze: 50
+      customCategories:
+        - name: "Regression"
+          patterns: ["was working", "previously passed", "broke after"]
+          severity: "high"
+          description: "Tests that were previously passing"
+        - name: "Environment Issue"
+          patterns: ["ENOENT", "permission denied", "path not found", "module not found"]
+          severity: "medium"
+          description: "Environment or dependency issues"
+        - name: "Async/Timing"
+          patterns: ["timeout", "race condition", "async", "promise", "await"]
+          severity: "medium"
+          description: "Asynchronous operation failures"
+        - name: "Data/State Issue"
+          patterns: ["null", "undefined", "empty", "state", "data"]
+          severity: "high"
+          description: "Data or state management issues"
+        - name: "Logic Error"
+          patterns: ["assertion", "expected", "actual", "toBe", "toEqual"]
+          severity: "high"
+          description: "Logic or expectation mismatches"
+    outputs:
+      - "overallStatus"
+      - "failureCount"
+      - "criticalIssues"
+      - "recommendations"
+      - "nextActions"
+      - "patterns"
+      - "rootCauses"
+      - "priorityMatrix"
+
+  - name: "update-progress-analyzed"
+    type: "TaskUpdateStep"
+    description: "Update progress after analysis completion"
+    depends_on: ["analyze-test-failures"]
+    config:
+      updateType: "progress"
+      progress: 40
+      message: "QA failure analysis completed - ${failureCount} failures categorized"
+      metadata:
+        overallStatus: "${overallStatus}"
+        failureCount: "${failureCount}"
+        criticalIssues: "${criticalIssues}"
+        topPatterns: "${patterns.recurring}"
+        phase: "analysis_complete"
+    outputs:
+      - "updated"
+
+  # Phase 4: Recovery Task Creation
+  - name: "create-systematic-recovery-tasks"
+    type: "TaskCreationStep"
+    description: "Create systematic recovery tasks with prioritization"
+    depends_on: ["analyze-test-failures"]
+    config:
+      dataSource: "qa-analysis"
+      maxTasks: 20
+      highPriorityOnly: false
+      groupRelatedIssues: true
+      priorityStrategy: "impact-based"
+      minConfidenceThreshold: 0.4  # Lower threshold for recovery
+      includeEffortEstimates: true
+      createSubtasks: true
+      assignToPersonas: true
+      taskTemplates:
+        regression:
+          title: "Fix Regression: {description}"
+          description: "Address regression in {testName}:\n\n{details}\n\nRoot cause: {rootCause}\nSuggested approach: {suggestedFix}"
+          labels: ["regression", "high-priority", "qa-recovery"]
+          estimatedHours: 2
+        environment:
+          title: "Resolve Environment Issue: {description}"
+          description: "Fix environment/dependency issue:\n\n{details}\n\nSteps to resolve:\n{suggestedFix}"
+          labels: ["environment", "dependency", "medium-priority"]
+          estimatedHours: 1
+        logic:
+          title: "Fix Logic Error: {description}"
+          description: "Correct logic error in {area}:\n\n{details}\n\nExpected behavior: {expected}\nActual behavior: {actual}"
+          labels: ["logic", "bug", "high-priority"]
+          estimatedHours: 3
+    outputs:
+      - "tasks"
+      - "tasksCreated"
+      - "tasksByPriority"
+      - "tasksByCategory"
+      - "recoveryPlan"
+      - "estimatedTotalEffort"
+
+  # Phase 5: Generate Recovery Plan
+  - name: "create-recovery-plan"
+    type: "PlanningStep"
+    description: "Create comprehensive recovery execution plan"
+    depends_on: ["create-systematic-recovery-tasks"]
+    config:
+      persona: "implementation-planner"
+      temperature: 0.1  # Very focused for recovery planning
+      maxPlanningTokens: 2500
+      requireApproval: false  # Auto-approve recovery plans
+      planValidationRules: 
+        - "require_timeline"
+        - "require_dependencies"
+      includeTaskContext: true
+      recoveryMode: true
+    outputs:
+      - "recoveryPlan"
+      - "executionOrder"
+      - "dependencies"
+      - "timeline"
+      - "riskAssessment"
+
+  - name: "update-progress-planned"
+    type: "TaskUpdateStep"
+    description: "Update progress after recovery planning"
+    depends_on: ["create-recovery-plan"]
+    config:
+      updateType: "progress"
+      progress: 80
+      message: "Recovery plan created with ${tasksCreated} tasks"
+      metadata:
+        tasksCreated: "${tasksCreated}"
+        criticalTasks: "${tasksByPriority.critical}"
+        highPriorityTasks: "${tasksByPriority.high}"
+        estimatedHours: "${estimatedTotalEffort}"
+        phase: "recovery_planned"
+    outputs:
+      - "updated"
+
+  # Phase 6: Completion Paths
+  - name: "complete-qa-followup-success"
+    type: "TaskUpdateStep"
+    description: "Complete QA followup with recovery tasks created"
+    depends_on: ["create-recovery-plan"]
+    condition: "tasksCreated > 0"
+    config:
+      updateType: "result"
+      status: "completed"
+      message: "QA failure analysis completed - ${tasksCreated} recovery tasks created and prioritized"
+      metadata:
+        analysisStatus: "${overallStatus}"
+        totalFailures: "${failureCount}"
+        criticalIssues: "${criticalIssues}"
+        tasksCreated: "${tasksCreated}"
+        taskBreakdown: "${tasksByCategory}"
+        priorityBreakdown: "${tasksByPriority}"
+        estimatedRecoveryTime: "${estimatedTotalEffort}"
+        topRootCauses: "${rootCauses}"
+        recoveryStrategy: "${recoveryPlan.strategy}"
+        phase: "completed"
+    outputs:
+      - "updated"
+
+  - name: "complete-qa-followup-no-tasks"
+    type: "TaskUpdateStep"
+    description: "Complete QA followup when no actionable tasks found"
+    depends_on: ["create-systematic-recovery-tasks"]
+    condition: "tasksCreated == 0"
+    config:
+      updateType: "result"
+      status: "completed"
+      message: "QA failure analysis completed - no actionable recovery tasks identified"
+      metadata:
+        analysisStatus: "${overallStatus}"
+        totalFailures: "${failureCount}"
+        lowConfidenceIssues: true
+        manualInvestigationRequired: true
+        recommendations: "${recommendations}"
+        phase: "completed_manual_required"
+    outputs:
+      - "updated"
+
+# Special handling for critical analysis failures
+failure_handling:
+  on_step_failure:
+    - step: "update-status-analysis-failed"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "QA analysis workflow failed at step: ${error.step}"
+        metadata:
+          failedStep: "${error.step}"
+          errorMessage: "${error.message}"
+          requiresManualAnalysis: true
+          phase: "analysis_failure"
+  
+  on_workflow_failure:
+    - step: "escalate-to-manual"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "QA followup workflow failed - escalating to manual investigation"
+        metadata:
+          workflowError: "${error.message}"
+          escalationRequired: true
+          phase: "escalated"
+
+# Optimized timeouts for analysis workflow
+timeouts:
+  default_step: 180000  # 3 minutes
+  qa_step: 600000      # 10 minutes
+  analysis_step: 900000 # 15 minutes
+  planning_step: 300000 # 5 minutes

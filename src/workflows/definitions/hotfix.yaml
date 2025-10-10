@@ -1,0 +1,309 @@
+name: "hotfix"
+description: "Critical bug fix workflow optimized for speed and reliability"
+version: "1.0.0"
+trigger:
+  condition: "task_type == 'hotfix' || priority == 'critical' || severity == 'high'"
+context:
+  repo_required: true
+  branch_strategy: "hotfix-branch"
+
+steps:
+  # Phase 1: Rapid Setup
+  - name: "pull-hotfix-task"
+    type: "PullTaskStep"
+    description: "Pull critical hotfix task"
+    config:
+      streamName: "${REDIS_STREAM_NAME}"
+      consumerGroup: "${CONSUMER_GROUP}-hotfix"
+      consumerId: "${CONSUMER_ID}-hotfix"
+      blockTime: 1000  # Shorter block time for urgency
+      maxMessages: 1
+    outputs:
+      - "task"
+      - "taskId"
+
+  - name: "update-status-urgent"
+    type: "TaskUpdateStep"
+    description: "Mark as urgent hotfix in progress"
+    depends_on: ["pull-hotfix-task"]
+    config:
+      updateType: "status"
+      status: "in_progress"
+      message: "🚨 HOTFIX IN PROGRESS - Critical bug fix started"
+      metadata:
+        workflow: "hotfix"
+        priority: "critical"
+        urgency: "high"
+        phase: "urgent_start"
+    outputs:
+      - "updated"
+
+  - name: "gather-focused-context"
+    type: "ContextStep"
+    description: "Gather focused context for hotfix area"
+    depends_on: ["pull-hotfix-task"]
+    config:
+      repoPath: "${REPO_PATH}"
+      includePatterns: 
+        - "**/*.ts"
+        - "**/*.js"
+        - "**/*.json"
+        - "**/package*.json"
+        - "**/test/**"
+        - "**/tests/**"
+        - "**/*.test.*"
+        - "**/*.spec.*"
+      excludePatterns: 
+        - "node_modules/**"
+        - ".git/**"
+        - "dist/**"
+        - "build/**"
+        - "coverage/**"
+        - "docs/**"
+        - "*.md"
+      maxFiles: 300  # Reduced for speed
+      maxBytes: 5242880  # 5MB limit for speed
+      trackLines: true
+      trackHash: false
+      prioritizeRecentChanges: true
+    outputs:
+      - "context"
+      - "repoScan"
+
+  # Phase 2: Minimal Planning (Skip evaluation for speed)
+  - name: "create-hotfix-plan"
+    type: "PlanningStep"
+    description: "Create focused hotfix plan"
+    depends_on: ["pull-hotfix-task", "gather-focused-context"]
+    config:
+      persona: "lead_engineer"
+      temperature: 0.1  # Very focused
+      maxPlanningTokens: 1500  # Shorter for speed
+      requireApproval: false  # Skip approval for hotfixes
+      planValidationRules: 
+        - "require_minimal_testing"  # Only essential testing
+      includeContextSummary: false  # Skip for speed
+      analysisDepth: "targeted"
+      hotfixMode: true
+    outputs:
+      - "planningResult"
+      - "plan"
+      - "targetArea"
+      - "testingPlan"
+
+  - name: "update-progress-planned"
+    type: "TaskUpdateStep"
+    description: "Update progress after rapid planning"
+    depends_on: ["create-hotfix-plan"]
+    config:
+      updateType: "progress"
+      progress: 25
+      message: "Hotfix plan created - proceeding to implementation"
+      metadata:
+        targetArea: "${targetArea}"
+        phase: "planning_complete"
+    outputs:
+      - "updated"
+
+  # Phase 3: Rapid Implementation
+  - name: "generate-hotfix-code"
+    type: "CodeGenStep"
+    description: "Generate targeted hotfix code"
+    depends_on: ["create-hotfix-plan"]
+    config:
+      persona: "lead_engineer"
+      temperature: 0.3  # Conservative for hotfixes
+      maxTokens: 3000  # Focused output
+      includeContext: true
+      includePlan: true
+      retryCount: 2  # Fewer retries for speed
+      enableDiffValidation: true
+      requireTestUpdates: false  # Skip for speed unless critical
+      hotfixMode: true
+    outputs:
+      - "codeGenResult"
+      - "response"
+      - "diffs"
+
+  - name: "apply-hotfix-changes"
+    type: "DiffApplyStep"
+    description: "Apply hotfix changes immediately"
+    depends_on: ["generate-hotfix-code"]
+    config:
+      dryRun: false
+      backupOriginals: true
+      validateBeforeApply: true
+      createCommit: true
+      commitMessage: "hotfix: ${task.title}\n\n🚨 Critical fix: ${task.description}\n\nTask: ${taskId}"
+    outputs:
+      - "appliedFiles"
+      - "success"
+      - "commitHash"
+
+  - name: "update-progress-implemented"
+    type: "TaskUpdateStep"
+    description: "Update progress after implementation"
+    depends_on: ["apply-hotfix-changes"]
+    condition: "success == true"
+    config:
+      updateType: "progress"
+      progress: 70
+      message: "Hotfix implementation completed - running validation tests"
+      metadata:
+        filesModified: "${appliedFiles.length}"
+        commitHash: "${commitHash}"
+        phase: "implementation_complete"
+    outputs:
+      - "updated"
+
+  # Phase 4: Essential Testing Only
+  - name: "run-essential-tests"
+    type: "QAStep"
+    description: "Run essential tests for hotfix validation"
+    depends_on: ["apply-hotfix-changes"]
+    condition: "success == true"
+    config:
+      testCommand: "npm test -- --testPathPattern='(critical|essential|hotfix)' --maxWorkers=4"
+      timeout: 180000  # 3 minutes only
+      retryCount: 1  # Single retry
+      failureThreshold: 0  # No tolerance for failures in hotfix
+      skipOnNoTests: true  # Skip if no essential tests
+      collectCoverage: false  # Skip coverage for speed
+      verboseOutput: false
+    outputs:
+      - "qaResult"
+      - "testsPassed"
+      - "failures"
+
+  # Phase 5: Success Path
+  - name: "complete-hotfix-success"
+    type: "TaskUpdateStep"
+    description: "Complete successful hotfix"
+    depends_on: ["run-essential-tests"]
+    condition: "testsPassed == true"
+    config:
+      updateType: "result"
+      status: "completed"
+      message: "🎉 HOTFIX COMPLETED - Critical bug fixed and validated"
+      metadata:
+        testsRun: "${qaResult.testResults.total}"
+        commitHash: "${commitHash}"
+        filesModified: "${appliedFiles.length}"
+        targetArea: "${targetArea}"
+        executionTime: "${workflow.totalTime}"
+        phase: "hotfix_success"
+    outputs:
+      - "updated"
+
+  # Phase 6: Failure Handling (Streamlined)
+  - name: "analyze-hotfix-failure"
+    type: "QAAnalysisStep"
+    description: "Quick analysis of hotfix test failures"
+    depends_on: ["run-essential-tests"]
+    condition: "testsPassed == false"
+    config:
+      qaResultsSource: "context"
+      categorizeFailures: true
+      suggestFixes: true
+      analyzeCoverage: false  # Skip for speed
+      performRootCauseAnalysis: false  # Skip detailed analysis
+      maxFailuresToAnalyze: 10  # Limit for speed
+    outputs:
+      - "overallStatus"
+      - "failureCount"
+      - "criticalIssues"
+      - "quickRecommendations"
+
+  - name: "create-urgent-followup"
+    type: "TaskCreationStep"
+    description: "Create urgent followup tasks for failed hotfix"
+    depends_on: ["analyze-hotfix-failure"]
+    config:
+      dataSource: "qa-analysis"
+      maxTasks: 5  # Limit for urgency
+      highPriorityOnly: true  # Only critical tasks
+      groupRelatedIssues: false  # Keep separate for clarity
+      priorityStrategy: "severity-based"
+      minConfidenceThreshold: 0.7  # Higher confidence required
+      includeEffortEstimates: false  # Skip for speed
+      assignToPersonas: true
+    outputs:
+      - "tasks"
+      - "tasksCreated"
+      - "urgentTasks"
+
+  - name: "complete-hotfix-failed"
+    type: "TaskUpdateStep"
+    description: "Mark hotfix as failed with urgent followup"
+    depends_on: ["create-urgent-followup"]
+    config:
+      updateType: "failure"
+      status: "failed"
+      message: "🚨 HOTFIX FAILED - ${failureCount} critical issues, ${tasksCreated} urgent tasks created"
+      metadata:
+        failures: "${failures}"
+        overallStatus: "${overallStatus}"
+        criticalIssues: "${criticalIssues}"
+        urgentTasks: "${tasksCreated}"
+        requiresImmediateAttention: true
+        escalateToOnCall: true
+        phase: "hotfix_failed"
+    outputs:
+      - "updated"
+
+  # Alternative path: Skip tests if requested
+  - name: "complete-hotfix-no-tests"
+    type: "TaskUpdateStep"
+    description: "Complete hotfix without testing (emergency mode)"
+    depends_on: ["apply-hotfix-changes"]
+    condition: "success == true && skip_tests == true"
+    config:
+      updateType: "result"
+      status: "completed"
+      message: "⚠️ EMERGENCY HOTFIX DEPLOYED - Testing skipped, monitor closely"
+      metadata:
+        commitHash: "${commitHash}"
+        filesModified: "${appliedFiles.length}"
+        testingSkipped: true
+        monitoringRequired: true
+        emergencyMode: true
+        phase: "emergency_deploy"
+    outputs:
+      - "updated"
+
+# Critical failure handling
+failure_handling:
+  on_step_failure:
+    - step: "escalate-hotfix-failure"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "🚨 HOTFIX WORKFLOW FAILURE - Step ${error.step} failed: ${error.message}"
+        metadata:
+          failedStep: "${error.step}"
+          errorType: "${error.type}"
+          escalateToOnCall: true
+          requiresImmediateIntervention: true
+          phase: "workflow_failure"
+  
+  on_workflow_failure:
+    - step: "emergency-escalation"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "🚨 CRITICAL: Hotfix workflow completely failed - manual intervention required immediately"
+        metadata:
+          workflowError: "${error.message}"
+          emergencyEscalation: true
+          onCallRequired: true
+          phase: "emergency"
+
+# Aggressive timeouts for hotfix speed
+timeouts:
+  default_step: 60000   # 1 minute
+  planning_step: 120000 # 2 minutes
+  code_generation: 180000 # 3 minutes
+  qa_step: 240000      # 4 minutes
+  analysis_step: 60000  # 1 minute for hotfix analysis

@@ -1,0 +1,62 @@
+name: "hotfix"
+version: "1.0.0"
+description: "Emergency hotfix workflow with abbreviated process for critical issues"
+
+variables:
+  max_retries: 2
+  timeout_minutes: 15
+  urgent_timeout: 900
+
+steps:
+  - id: "assessment"
+    name: "Hotfix Assessment"
+    type: "persona-request"
+    persona: "implementation-planner"
+    timeout: "{{variables.urgent_timeout}}"
+    retries: 1
+    params:
+      stage: "hotfix_assessment"
+      priority: "critical"
+      
+  - id: "implementation"
+    name: "Emergency Implementation"
+    type: "persona-request"
+    persona: "lead-engineer"
+    dependencies: ["assessment"]
+    timeout: "{{variables.urgent_timeout}}"
+    retries: 1
+    params:
+      stage: "hotfix_implementation"
+      apply_changes: true
+      bypass_planning: true
+      
+  - id: "validation"
+    name: "Critical Path Validation"
+    type: "persona-request"
+    persona: "qa-engineer"
+    dependencies: ["implementation"]
+    timeout: 600
+    params:
+      stage: "hotfix_validation"
+      test_scope: "critical_path_only"
+      
+  - id: "security-check"
+    name: "Security Quick Check"
+    type: "persona-request"
+    persona: "security-review"
+    dependencies: ["validation"]
+    condition: "context.state.get('validation_status') === 'pass'"
+    timeout: 600
+    params:
+      stage: "security_quick"
+      scope: "minimal"
+      
+  - id: "deployment"
+    name: "Hotfix Deployment"
+    type: "git-operation"
+    dependencies: ["security-check"]
+    operation: "hotfix_deploy"
+    params:
+      target_branch: "main"
+      immediate_deploy: true
+      notification: "critical"

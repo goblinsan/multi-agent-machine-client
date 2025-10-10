@@ -1,0 +1,479 @@
+name: "feature"
+description: "Feature development workflow with enhanced planning, iterative development, and comprehensive validation"
+version: "1.0.0"
+trigger:
+  condition: "task_type == 'feature' || task_type == 'enhancement' || scope == 'large'"
+context:
+  repo_required: true
+  branch_strategy: "feature-branch"
+
+steps:
+  # Phase 1: Comprehensive Setup
+  - name: "pull-feature-task"
+    type: "PullTaskStep"
+    description: "Pull feature development task"
+    config:
+      streamName: "${REDIS_STREAM_NAME}"
+      consumerGroup: "${CONSUMER_GROUP}-feature"
+      consumerId: "${CONSUMER_ID}-feature"
+      blockTime: 5000
+      maxMessages: 1
+    outputs:
+      - "task"
+      - "taskId"
+      - "featureScope"
+
+  - name: "update-status-feature-start"
+    type: "TaskUpdateStep"
+    description: "Mark feature development as started"
+    depends_on: ["pull-feature-task"]
+    config:
+      updateType: "status"
+      status: "in_progress"
+      message: "🚀 Feature development started - comprehensive planning phase"
+      metadata:
+        workflow: "feature"
+        scope: "${featureScope}"
+        expectedComplexity: "high"
+        phase: "feature_start"
+    outputs:
+      - "updated"
+
+  - name: "gather-comprehensive-context"
+    type: "ContextStep"
+    description: "Gather comprehensive repository context for feature development"
+    depends_on: ["pull-feature-task"]
+    config:
+      repoPath: "${REPO_PATH}"
+      includePatterns: 
+        - "**/*.ts"
+        - "**/*.js"
+        - "**/*.json"
+        - "**/*.md"
+        - "**/*.yml"
+        - "**/*.yaml"
+        - "**/package*.json"
+        - "**/tsconfig*.json"
+        - "**/vitest*.config*"
+        - "**/jest*.config*"
+        - "**/test/**"
+        - "**/tests/**"
+        - "**/spec/**"
+        - "**/docs/**"
+        - "**/README*"
+        - "**/*.test.*"
+        - "**/*.spec.*"
+      excludePatterns: 
+        - "node_modules/**"
+        - ".git/**"
+        - "dist/**"
+        - "build/**"
+        - "coverage/**"
+        - "*.log"
+      maxFiles: 1500  # Larger scope for features
+      maxBytes: 15728640  # 15MB for comprehensive analysis
+      trackLines: true
+      trackHash: true
+      scanGitHistory: true
+      includeArchitecture: true
+    outputs:
+      - "context"
+      - "repoScan"
+      - "gitInfo"
+      - "architecture"
+
+  # Phase 2: Enhanced Planning with Multiple Iterations
+  - name: "create-feature-specification"
+    type: "PlanningStep"
+    description: "Create detailed feature specification and requirements"
+    depends_on: ["pull-feature-task", "gather-comprehensive-context"]
+    config:
+      persona: "product_manager"
+      temperature: 0.3
+      maxPlanningTokens: 4000
+      requireApproval: true
+      planValidationRules: 
+        - "require_risks"
+        - "require_timeline"
+        - "require_testing_strategy"
+        - "require_acceptance_criteria"
+        - "require_integration_points"
+      includeContextSummary: true
+      analysisDepth: "comprehensive"
+      specificationMode: true
+    outputs:
+      - "featureSpec"
+      - "requirements"
+      - "acceptanceCriteria"
+      - "integrationPoints"
+      - "userStories"
+
+  - name: "create-technical-design"
+    type: "PlanningStep"
+    description: "Create technical design and implementation plan"
+    depends_on: ["create-feature-specification"]
+    config:
+      persona: "lead_engineer"
+      temperature: 0.2
+      maxPlanningTokens: 5000
+      requireApproval: true
+      planValidationRules: 
+        - "require_risks"
+        - "require_timeline"
+        - "require_testing_strategy"
+        - "require_architecture_impact"
+        - "require_performance_considerations"
+      includeContextSummary: true
+      includeSpecification: true
+      analysisDepth: "comprehensive"
+      designMode: true
+    outputs:
+      - "technicalDesign"
+      - "implementationPlan"
+      - "architectureChanges"
+      - "performanceImpact"
+      - "testingStrategy"
+      - "breakdown"
+      - "risks"
+      - "timeline"
+
+  - name: "evaluate-feature-plan"
+    type: "PlanEvaluationStep"
+    description: "Evaluate comprehensive feature plan quality"
+    depends_on: ["create-technical-design"]
+    config:
+      planSource: "context"
+      minFeasibilityScore: 0.80
+      minQualityScore: 0.75
+      requireRiskAssessment: true
+      maxComplexityScore: 0.90  # Allow higher complexity for features
+      validateRequirements: true
+      performRootCauseAnalysis: true
+      customCriteria:
+        - name: "Architecture Impact"
+          description: "Impact on system architecture"
+          weight: 0.25
+        - name: "User Experience"
+          description: "User experience considerations"
+          weight: 0.20
+        - name: "Performance Impact"
+          description: "Performance implications"
+          weight: 0.15
+        - name: "Maintainability"
+          description: "Long-term maintainability"
+          weight: 0.20
+        - name: "Testing Coverage"
+          description: "Comprehensive testing approach"
+          weight: 0.20
+    outputs:
+      - "evaluationScore"
+      - "feasibilityScore"
+      - "qualityScore"
+      - "approved"
+      - "issues"
+      - "recommendations"
+      - "architectureScore"
+
+  - name: "handle-feature-plan-rejection"
+    type: "TaskUpdateStep"
+    description: "Handle rejected feature plan with detailed feedback"
+    depends_on: ["evaluate-feature-plan"]
+    condition: "approved == false"
+    config:
+      updateType: "failure"
+      status: "failed"
+      message: "Feature plan rejected - requires revision before implementation"
+      metadata:
+        evaluationScore: "${evaluationScore}"
+        feasibilityScore: "${feasibilityScore}"
+        qualityScore: "${qualityScore}"
+        architectureScore: "${architectureScore}"
+        issues: "${issues}"
+        recommendations: "${recommendations}"
+        requiresRevision: true
+        phase: "planning_rejected"
+    outputs:
+      - "updated"
+
+  - name: "update-progress-planning-complete"
+    type: "TaskUpdateStep"
+    description: "Update progress after comprehensive planning"
+    depends_on: ["evaluate-feature-plan"]
+    condition: "approved == true"
+    config:
+      updateType: "progress"
+      progress: 35
+      message: "Feature planning completed and approved - proceeding to implementation"
+      metadata:
+        evaluationScore: "${evaluationScore}"
+        planSteps: "${breakdown.length}"
+        estimatedHours: "${timeline.estimated_hours}"
+        architectureImpact: "${architectureChanges}"
+        phase: "planning_approved"
+    outputs:
+      - "updated"
+
+  # Phase 3: Iterative Implementation
+  - name: "generate-feature-implementation"
+    type: "CodeGenStep"
+    description: "Generate comprehensive feature implementation"
+    depends_on: ["evaluate-feature-plan"]
+    condition: "approved == true"
+    config:
+      persona: "lead_engineer"
+      temperature: 0.5
+      maxTokens: 8000  # Larger for features
+      includeContext: true
+      includePlan: true
+      includeDesign: true
+      retryCount: 3
+      enableDiffValidation: true
+      requireTestUpdates: true
+      featureMode: true
+      iterativeApproach: true
+    outputs:
+      - "codeGenResult"
+      - "response"
+      - "diffs"
+      - "testUpdates"
+      - "documentationUpdates"
+
+  - name: "apply-feature-changes"
+    type: "DiffApplyStep"
+    description: "Apply feature implementation changes"
+    depends_on: ["generate-feature-implementation"]
+    config:
+      dryRun: false
+      backupOriginals: true
+      validateBeforeApply: true
+      createCommit: true
+      commitMessage: "feat: ${task.title}\n\n${task.description}\n\nImplements:\n${userStories}\n\nBreaking changes: ${architectureChanges}"
+    outputs:
+      - "appliedFiles"
+      - "success"
+      - "commitHash"
+
+  - name: "update-progress-implementation"
+    type: "TaskUpdateStep"
+    description: "Update progress after implementation"
+    depends_on: ["apply-feature-changes"]
+    condition: "success == true"
+    config:
+      updateType: "progress"
+      progress: 75
+      message: "Feature implementation completed - running comprehensive tests"
+      metadata:
+        filesModified: "${appliedFiles.length}"
+        commitHash: "${commitHash}"
+        testsAdded: "${testUpdates.length}"
+        phase: "implementation_complete"
+    outputs:
+      - "updated"
+
+  # Phase 4: Comprehensive Quality Assurance
+  - name: "run-comprehensive-feature-tests"
+    type: "QAStep"
+    description: "Run comprehensive test suite for feature validation"
+    depends_on: ["apply-feature-changes"]
+    condition: "success == true"
+    config:
+      testCommand: "npm test"
+      timeout: 900000  # 15 minutes for comprehensive testing
+      retryCount: 2
+      failureThreshold: 0
+      skipOnNoTests: false
+      collectCoverage: true
+      generateReports: true
+      runIntegrationTests: true
+      runE2ETests: true
+    outputs:
+      - "qaResult"
+      - "testsPassed"
+      - "failures"
+      - "coverage"
+      - "integrationResults"
+      - "e2eResults"
+      - "testReport"
+
+  # Phase 5: Success Path
+  - name: "validate-acceptance-criteria"
+    type: "TaskUpdateStep"
+    description: "Validate that acceptance criteria are met"
+    depends_on: ["run-comprehensive-feature-tests"]
+    condition: "testsPassed == true"
+    config:
+      updateType: "progress"
+      progress: 95
+      message: "All tests passing - validating acceptance criteria"
+      metadata:
+        testsRun: "${qaResult.testResults.total}"
+        testsPassed: "${qaResult.testResults.passed}"
+        coverage: "${coverage}"
+        integrationTestsPassed: "${integrationResults.passed}"
+        e2eTestsPassed: "${e2eResults.passed}"
+        phase: "validation"
+    outputs:
+      - "updated"
+
+  - name: "complete-feature-success"
+    type: "TaskUpdateStep"
+    description: "Complete successful feature development"
+    depends_on: ["validate-acceptance-criteria"]
+    config:
+      updateType: "result"
+      status: "completed"
+      message: "🎉 Feature development completed successfully - all acceptance criteria met"
+      metadata:
+        evaluationScore: "${evaluationScore}"
+        testsRun: "${qaResult.testResults.total}"
+        testsPassed: "${qaResult.testResults.passed}"
+        coverage: "${coverage}"
+        commitHash: "${commitHash}"
+        filesModified: "${appliedFiles.length}"
+        acceptanceCriteriaMet: true
+        userStoriesCompleted: "${userStories.length}"
+        architectureImpactValidated: true
+        phase: "feature_complete"
+    outputs:
+      - "updated"
+
+  # Phase 6: Failure Analysis and Recovery
+  - name: "analyze-feature-test-failures"
+    type: "QAAnalysisStep"
+    description: "Comprehensive analysis of feature test failures"
+    depends_on: ["run-comprehensive-feature-tests"]
+    condition: "testsPassed == false"
+    config:
+      qaResultsSource: "context"
+      categorizeFailures: true
+      suggestFixes: true
+      analyzeCoverage: true
+      performRootCauseAnalysis: true
+      trackPatterns: true
+      maxFailuresToAnalyze: 30
+      customCategories:
+        - name: "Feature Integration"
+          patterns: ["integration", "feature", "api", "interface"]
+          severity: "high"
+          description: "Feature integration issues"
+        - name: "New Functionality"
+          patterns: ["new", "added", "feature", "enhancement"]
+          severity: "high"
+          description: "Issues with new functionality"
+        - name: "Regression"
+          patterns: ["regression", "broke", "previously worked"]
+          severity: "critical"
+          description: "Regression in existing functionality"
+        - name: "Performance"
+          patterns: ["slow", "timeout", "performance", "memory"]
+          severity: "medium"
+          description: "Performance-related issues"
+    outputs:
+      - "overallStatus"
+      - "failureCount"
+      - "criticalIssues"
+      - "recommendations"
+      - "nextActions"
+      - "patterns"
+      - "featureSpecificIssues"
+
+  - name: "create-feature-recovery-tasks"
+    type: "TaskCreationStep"
+    description: "Create comprehensive recovery tasks for feature issues"
+    depends_on: ["analyze-feature-test-failures"]
+    config:
+      dataSource: "qa-analysis"
+      maxTasks: 25  # More tasks for complex features
+      highPriorityOnly: false
+      groupRelatedIssues: true
+      priorityStrategy: "balanced"
+      minConfidenceThreshold: 0.5
+      includeEffortEstimates: true
+      createSubtasks: true
+      assignToPersonas: true
+      taskTemplates:
+        feature_integration:
+          title: "Fix Feature Integration: {description}"
+          description: "Resolve integration issue in {area}:\n\n{details}\n\nImpact on feature: {impact}\nSuggested approach: {suggestedFix}"
+          labels: ["feature", "integration", "high-priority"]
+          estimatedHours: 4
+        new_functionality:
+          title: "Fix New Feature: {description}"
+          description: "Address issue in new functionality:\n\n{details}\n\nAcceptance criteria affected: {criteria}\nRequired fix: {suggestedFix}"
+          labels: ["feature", "new-functionality", "medium-priority"]
+          estimatedHours: 3
+        regression:
+          title: "Fix Regression: {description}"
+          description: "Critical regression caused by feature:\n\n{details}\n\nPrevious behavior: {expected}\nCurrent behavior: {actual}\nUrgent fix needed: {suggestedFix}"
+          labels: ["regression", "critical", "feature-related"]
+          estimatedHours: 2
+    outputs:
+      - "tasks"
+      - "tasksCreated"
+      - "tasksByPriority"
+      - "tasksByCategory"
+      - "featureRecoveryPlan"
+      - "regressionTasks"
+
+  - name: "complete-feature-failed"
+    type: "TaskUpdateStep"
+    description: "Complete failed feature with comprehensive recovery plan"
+    depends_on: ["create-feature-recovery-tasks"]
+    config:
+      updateType: "failure"
+      status: "failed"
+      message: "Feature development failed QA - ${tasksCreated} recovery tasks created for systematic resolution"
+      metadata:
+        failures: "${failures}"
+        testsRun: "${qaResult.testResults.total}"
+        testsFailed: "${qaResult.testResults.failed}"
+        overallStatus: "${overallStatus}"
+        criticalIssues: "${criticalIssues}"
+        featureSpecificIssues: "${featureSpecificIssues}"
+        regressionCount: "${regressionTasks.length}"
+        recoveryTasks: "${tasksCreated}"
+        taskBreakdown: "${tasksByCategory}"
+        priorityBreakdown: "${tasksByPriority}"
+        acceptanceCriteriaImpact: true
+        requiresFeatureRevision: true
+        phase: "feature_failed"
+    outputs:
+      - "updated"
+
+# Enhanced failure handling for features
+failure_handling:
+  on_step_failure:
+    - step: "update-status-feature-error"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "Feature workflow failed at step: ${error.step} - ${error.message}"
+        metadata:
+          failedStep: "${error.step}"
+          errorType: "${error.type}"
+          featureImpact: "high"
+          requiresArchitectureReview: true
+          phase: "step_failure"
+  
+  on_workflow_failure:
+    - step: "escalate-feature-failure"
+      type: "TaskUpdateStep"
+      config:
+        updateType: "failure"
+        status: "failed"
+        message: "Feature workflow failed completely - architecture review and manual intervention required"
+        metadata:
+          workflowError: "${error.message}"
+          architectureReviewRequired: true
+          manualInterventionRequired: true
+          phase: "workflow_failure"
+
+# Extended timeouts for feature complexity
+timeouts:
+  default_step: 300000     # 5 minutes
+  planning_step: 900000    # 15 minutes
+  evaluation_step: 600000  # 10 minutes
+  code_generation: 1200000 # 20 minutes
+  qa_step: 1800000        # 30 minutes
+  analysis_step: 900000    # 15 minutes
