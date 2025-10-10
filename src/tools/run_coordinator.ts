@@ -10,14 +10,65 @@ function printUsage() {
 
 async function drainStreams(redis: any) {
   const streams = [cfg.requestStream, cfg.eventStream];
+  
   for (const stream of streams) {
     try {
+      console.log(`Draining stream: ${stream}`);
+      
+      // 1. Get all consumer groups for this stream
+      let groups: any[] = [];
+      try {
+        groups = await redis.xInfoGroups(stream);
+        console.log(`Found ${groups.length} consumer groups for ${stream}`);
+      } catch (error) {
+        // Stream might not exist or have no groups
+        console.log(`No consumer groups found for ${stream}:`, (error as Error).message);
+      }
+      
+      // 2. For each group, destroy it (this removes all pending messages)
+      for (const group of groups) {
+        try {
+          await redis.xGroupDestroy(stream, group.name);
+          console.log(`Destroyed consumer group: ${group.name}`);
+        } catch (error) {
+          console.warn(`Failed to destroy group ${group.name}:`, (error as Error).message);
+        }
+      }
+      
+      // 3. Delete the entire stream
       const removed = await redis.del(stream);
-      console.log(`Drained ${stream}`, { removed });
+      console.log(`Deleted stream ${stream}`, { removed });
+      
     } catch (error) {
       console.warn(`Failed to drain ${stream}`, error);
     }
   }
+  
+  // 4. Also clean up any persona-specific groups that might exist
+  console.log("Cleaning up persona-specific consumer groups...");
+  const personas = cfg.allowedPersonas || [];
+  for (const persona of personas) {
+    const groupName = `${cfg.groupPrefix}:${persona}`;
+    try {
+      // Try to destroy persona groups on request stream
+      await redis.xGroupDestroy(cfg.requestStream, groupName);
+      console.log(`Destroyed persona group: ${groupName}`);
+    } catch (error) {
+      // Group might not exist, which is fine
+      console.log(`Persona group ${groupName} not found (this is normal)`);
+    }
+  }
+  
+  // 5. Clean up coordination group on event stream
+  try {
+    const coordGroupName = `${cfg.groupPrefix}:coordinator`;
+    await redis.xGroupDestroy(cfg.eventStream, coordGroupName);
+    console.log(`Destroyed coordinator group: ${coordGroupName}`);
+  } catch (error) {
+    console.log(`Coordinator group not found (this is normal)`);
+  }
+  
+  console.log("Stream drain complete - all streams, groups, and pending messages cleared");
 }
 
 async function main() {
