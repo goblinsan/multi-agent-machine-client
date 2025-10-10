@@ -626,3 +626,158 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
   logger.info("context artifacts committed", { repoRoot, branch: targetBranch, paths });
   return { committed: true, pushed: true, branch: targetBranch };
 }
+
+export type RemoteDiffVerification = {
+  ok: boolean;
+  hasDiff: boolean;
+  branch: string;
+  baseBranch?: string | null;
+  branchSha?: string | null;
+  baseSha?: string | null;
+  aheadCount?: number;
+  diffSummary?: string;
+  reason?: string;
+  error?: string;
+};
+
+export async function verifyRemoteBranchHasDiff(options: { repoRoot: string; branch: string; baseBranch?: string | null }): Promise<RemoteDiffVerification> {
+  const { repoRoot } = options;
+  const branch = options.branch?.trim();
+  const baseBranch = options.baseBranch?.trim() || null;
+
+  if (!branch) {
+    return { ok: false, hasDiff: false, branch: '', baseBranch, reason: 'missing_branch' };
+  }
+
+  const branchRef = `origin/${branch}`;
+  let branchSha: string | null = null;
+  let baseSha: string | null = null;
+  let aheadCount = 0;
+  let diffSummary = '';
+
+  const fetchTarget = async (target: string | null) => {
+    if (!target) return;
+    try {
+      await runGit(["fetch", "origin", target], { cwd: repoRoot });
+    } catch (err) {
+      logger.debug("verifyRemoteBranchHasDiff: fetch failed", { repoRoot, target, error: err });
+    }
+  };
+
+  await fetchTarget(branch);
+  if (baseBranch && baseBranch !== branch) {
+    await fetchTarget(baseBranch);
+  }
+
+  try {
+    branchSha = (await runGit(["rev-parse", branchRef], { cwd: repoRoot })).stdout.trim();
+  } catch (err: any) {
+    const errorMessage = err?.message || String(err);
+    return {
+      ok: false,
+      hasDiff: false,
+      branch,
+      baseBranch,
+      branchSha: null,
+      baseSha: null,
+      aheadCount,
+      diffSummary,
+      reason: 'branch_not_found',
+      error: errorMessage
+    };
+  }
+
+  let baseRef: string | null = null;
+  if (baseBranch && baseBranch !== branch) {
+    baseRef = `origin/${baseBranch}`;
+    try {
+      baseSha = (await runGit(["rev-parse", baseRef], { cwd: repoRoot })).stdout.trim();
+    } catch (err) {
+      logger.debug("verifyRemoteBranchHasDiff: base branch missing", { repoRoot, baseBranch, error: err });
+      baseRef = null;
+      baseSha = null;
+    }
+  }
+
+  const hasMeaningfulDiff = (text: string | null | undefined) => {
+    if (!text) return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    return !/0 files changed/i.test(trimmed);
+  };
+
+  if (baseRef) {
+    try {
+      const revList = await runGit(["rev-list", "--count", `${baseRef}..${branchRef}`], { cwd: repoRoot });
+      aheadCount = Number.parseInt(revList.stdout.trim() || '0', 10) || 0;
+    } catch (err) {
+      logger.debug("verifyRemoteBranchHasDiff: rev-list failed", { repoRoot, baseRef, branchRef, error: err });
+    }
+
+    try {
+      const diffRes = await runGit(["diff", "--stat", `${baseRef}..${branchRef}`], { cwd: repoRoot });
+      diffSummary = diffRes.stdout.trim();
+    } catch (err) {
+      logger.debug("verifyRemoteBranchHasDiff: diff stat failed", { repoRoot, baseRef, branchRef, error: err });
+      diffSummary = '';
+    }
+
+    const ok = aheadCount > 0 || hasMeaningfulDiff(diffSummary);
+    return {
+      ok,
+      hasDiff: ok,
+      branch,
+      baseBranch,
+      branchSha,
+      baseSha,
+      aheadCount,
+      diffSummary,
+      reason: ok ? undefined : 'no_diff'
+    };
+  }
+
+  try {
+    const showRes = await runGit(["show", "--stat", "--format=medium", "-1", branchRef], { cwd: repoRoot });
+    diffSummary = showRes.stdout.trim();
+  } catch (err: any) {
+    const errorMessage = err?.message || String(err);
+    return {
+      ok: false,
+      hasDiff: false,
+      branch,
+      baseBranch,
+      branchSha,
+      baseSha,
+      aheadCount,
+      diffSummary: '',
+      reason: 'diff_inspection_failed',
+      error: errorMessage
+    };
+  }
+
+  const ok = hasMeaningfulDiff(diffSummary);
+  return {
+    ok,
+    hasDiff: ok,
+    branch,
+    baseBranch,
+    branchSha,
+    baseSha,
+    aheadCount,
+    diffSummary,
+    reason: ok ? undefined : 'no_diff_no_base'
+  };
+}
+
+export async function getBranchHeadSha(options: { repoRoot: string; branch: string; remote?: boolean }): Promise<string | null> {
+  const { repoRoot, branch, remote } = options;
+  if (!branch) return null;
+  const ref = remote ? `origin/${branch}` : branch;
+  try {
+    const result = await runGit(["rev-parse", "--verify", ref], { cwd: repoRoot });
+    const sha = result.stdout.trim();
+    return sha.length ? sha : null;
+  } catch {
+    return null;
+  }
+}

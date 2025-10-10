@@ -36,7 +36,6 @@ describe('Coordinator commit and push (integration-ish)', () => {
     });
 
     const leadEngineerResult = {
-      status: 'ok',
       ops: [
         {
           action: 'upsert',
@@ -62,7 +61,23 @@ describe('Coordinator commit and push (integration-ish)', () => {
 
     // Let fileops.applyEditOps run against our temp repo for real writes/commits
     // but stub out pushing to remote
-    const commitAndPushPathsSpy = vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: false, branch: 'feat/agent-edit' });
+    const commitAndPushPathsSpy = vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: true, branch: 'feat/agent-edit' });
+    let localShaCounter = 0;
+    let remoteShaCounter = 0;
+    vi.spyOn(gitUtils, 'getBranchHeadSha').mockImplementation(async ({ remote }) => {
+      if (remote) {
+        remoteShaCounter += 1;
+        if (remoteShaCounter === 1) return null;
+        return `remote-sha-${remoteShaCounter}`;
+      }
+      localShaCounter += 1;
+      return `local-sha-${localShaCounter}`;
+    });
+    let verifyCounter = 0;
+    vi.spyOn(gitUtils, 'verifyRemoteBranchHasDiff').mockImplementation(async () => {
+      verifyCounter += 1;
+      return { ok: true, hasDiff: true, branch: 'feat/agent-edit', baseBranch: 'main', branchSha: `verify-sha-${verifyCounter}`, baseSha: 'base', aheadCount: 1, diffSummary: '1 file changed' } as any;
+    });
     vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: tmp, branch: 'main', remote: null } as any);
     vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: null, currentBranch: 'main' } as any);
     vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);

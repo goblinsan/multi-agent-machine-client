@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseUnifiedDiffToEditSpec } from '../src/fileops'
-import { extractDiffCandidates } from '../src/workflows/coordinator'
+import { extractDiffCandidates, parseAgentEditsFromResponse } from '../src/workflows/helpers/agentResponseParser'
 
 describe('parseUnifiedDiffToEditSpec', () => {
   it('parses a multi-file unified diff bundle and produces upsert ops', () => {
@@ -224,3 +224,52 @@ index 1234567..89abcde 100644
     expect(candidates2[0]).toContain('+  "version": "1.0.0",');
   })
 })
+
+describe('parseAgentEditsFromResponse', () => {
+  it('prefers structured edit specs when present', async () => {
+    const structured = {
+      result: {
+        ops: [
+          { action: 'upsert', path: 'foo.txt', content: 'hello' }
+        ]
+      }
+    }
+    const outcome = await parseAgentEditsFromResponse(structured, {
+      parseDiff: async () => ({ ops: [] })
+    })
+    const ops = Array.isArray(outcome.editSpec?.ops) ? outcome.editSpec?.ops : []
+    expect(outcome.source).toBe('structured')
+    expect(ops.length).toBe(1)
+    expect(outcome.diffCandidates).toHaveLength(0)
+  })
+
+  it('parses diff candidates when structured edits are absent', async () => {
+    const diff = `diff --git a/foo.txt b/foo.txt
+index 0000000..1111111 100644
+--- a/foo.txt
++++ b/foo.txt
+@@ -0,0 +1 @@
++hello
+`
+    const response = { result: { preview: diff } }
+    const outcome = await parseAgentEditsFromResponse(response, {
+      parseDiff: (txt: string) => parseUnifiedDiffToEditSpec(txt)
+    })
+    const ops = Array.isArray(outcome.editSpec?.ops) ? outcome.editSpec?.ops : []
+    expect(outcome.source).toBe('diff')
+    expect(ops.length).toBeGreaterThan(0)
+    expect(outcome.diffCandidates.length).toBeGreaterThan(0)
+  })
+
+  it('records diff parse attempts when parsing yields no operations', async () => {
+    const diffOnly = '```diff\ndiff --git a/foo b/foo\n@@ -1 +1 @@\n-a\n+a\n```'
+    const outcome = await parseAgentEditsFromResponse(diffOnly, {
+      parseDiff: async () => ({ ops: [] })
+    })
+    const ops = Array.isArray(outcome.editSpec?.ops) ? outcome.editSpec?.ops : []
+    expect(ops.length).toBe(0)
+    expect(outcome.errors.length).toBeGreaterThan(0)
+    expect(outcome.diffCandidates.length).toBeGreaterThan(0)
+  })
+})
+

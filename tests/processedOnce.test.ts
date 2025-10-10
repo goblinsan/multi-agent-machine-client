@@ -38,8 +38,24 @@ describe('Coordinator processes each task only once', () => {
     vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: 'example/repo', currentBranch: 'main' } as any);
     vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);
     vi.spyOn(gitUtils, 'ensureBranchPublished').mockResolvedValue(undefined as any);
-    vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ changed: [], branch: 'feat/agent-edit', sha: '' });
+    vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ changed: ['dummy.txt'], branch: 'feat/agent-edit', sha: 'stub-sha' });
     vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: true, branch: 'feat/agent-edit' });
+    let verifyCounter = 0;
+    vi.spyOn(gitUtils, 'verifyRemoteBranchHasDiff').mockImplementation(async () => {
+      verifyCounter += 1;
+      return { ok: true, hasDiff: true, branch: 'feat/agent-edit', baseBranch: 'main', branchSha: `verify-sha-${verifyCounter}`, baseSha: 'base', aheadCount: 1, diffSummary: '1 file changed' } as any;
+    });
+    let localShaCounter = 0;
+    let remoteShaCounter = 0;
+    vi.spyOn(gitUtils, 'getBranchHeadSha').mockImplementation(async ({ remote }) => {
+      if (remote) {
+        remoteShaCounter += 1;
+        if (remoteShaCounter === 1) return null;
+        return `remote-sha-${remoteShaCounter}`;
+      }
+      localShaCounter += 1;
+      return `local-sha-${localShaCounter}`;
+    });
 
     const redisMock: any = {};
     const msg = { workflow_id: 'wf-once', project_id: projectId } as any;

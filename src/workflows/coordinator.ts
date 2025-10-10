@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { cfg } from "../config.js";
 import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
-import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, commitAndPushPaths, detectRemoteDefaultBranch } from "../gitUtils.js";
+import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, commitAndPushPaths, detectRemoteDefaultBranch, verifyRemoteBranchHasDiff, getBranchHeadSha } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { buildBranchName } from "../branchUtils.js";
@@ -10,6 +10,8 @@ import { PERSONAS } from "../personaNames.js";
 import { applyEditOps, parseUnifiedDiffToEditSpec, writeDiagnostic } from "../fileops.js";
 import { updateTaskStatus } from "../dashboard.js";
 import { handleFailureMiniCycle } from "./helpers/stageHelpers.js";
+import { parseAgentEditsFromResponse } from "./helpers/agentResponseParser.js";
+import { applyAgentCodeChanges } from "./helpers/codeApplication.js";
 import { computeQaFollowupExternalId, findTaskIdByExternalId } from "../tasks/taskManager.js";
 import { runLeadCycle } from "./stages/implementation.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus } from "../agents/persona.js";
@@ -22,10 +24,12 @@ function buildHelpers() {
     fetchProjectStatusDetails,
     resolveRepoFromPayload,
     getRepoMetadata,
-  detectRemoteDefaultBranch,
+    detectRemoteDefaultBranch,
     checkoutBranchFromBase,
     ensureBranchPublished,
     commitAndPushPaths,
+    verifyRemoteBranchHasDiff,
+    getBranchHeadSha,
     updateTaskStatus,
     applyEditOps,
     parseUnifiedDiffToEditSpec,
@@ -193,117 +197,6 @@ async function detectTestCommands(repoRoot: string) {
   return cmds;
 }
 
-function extractDiffCandidates(leadOutcome: any): string[] {
-  const rawCandidates: Array<string | null> = [];
-  try {
-    // Handle direct string input
-    if (typeof leadOutcome === 'string') {
-      rawCandidates.push(leadOutcome);
-    }
-    
-    // Handle leadOutcome.result nested structure
-    const r = (leadOutcome as any)?.result;
-    if (typeof r === 'string') rawCandidates.push(r);
-    if (r && typeof r === 'object') {
-      rawCandidates.push(r.preview ?? null);
-      rawCandidates.push(r.output ?? null);
-      rawCandidates.push(r.raw && typeof r.raw === 'string' ? r.raw : null);
-      rawCandidates.push(r.message ?? null);
-      rawCandidates.push(r.text ?? null);
-      rawCandidates.push(r.body ?? null);
-      rawCandidates.push(r.result ?? null);
-    }
-    
-    // Handle direct fields on leadOutcome
-    if (leadOutcome && typeof leadOutcome === 'object') {
-      rawCandidates.push((leadOutcome as any).preview && typeof (leadOutcome as any).preview === 'string' ? (leadOutcome as any).preview : null);
-      rawCandidates.push((leadOutcome as any).output && typeof (leadOutcome as any).output === 'string' ? (leadOutcome as any).output : null);
-      rawCandidates.push((leadOutcome as any).raw && typeof (leadOutcome as any).raw === 'string' ? (leadOutcome as any).raw : null);
-      rawCandidates.push((leadOutcome as any).message && typeof (leadOutcome as any).message === 'string' ? (leadOutcome as any).message : null);
-      rawCandidates.push((leadOutcome as any).text && typeof (leadOutcome as any).text === 'string' ? (leadOutcome as any).text : null);
-      rawCandidates.push((leadOutcome as any).body && typeof (leadOutcome as any).body === 'string' ? (leadOutcome as any).body : null);
-    }
-  } catch {}
-
-  const normalized: string[] = [];
-  for (const c of rawCandidates) {
-    if (!c || typeof c !== 'string') continue;
-    let txt = c;
-    // Capture generic fenced code blocks, including diff/patch/git, but also allow any label;
-    // we'll validate contents by looking for diff markers below.
-    const fenceRe = /```(?:diff|patch|git)?[^\n]*\n([\s\S]*?)```/g;
-    const matches = Array.from(txt.matchAll(fenceRe));
-    if (matches && matches.length) {
-      let chosen: string | null = null;
-      for (const m of matches) {
-        const inner = m[1] || '';
-        if (inner.includes('diff --git') || inner.includes('@@') || inner.includes('+++ b/')) { chosen = inner; break; }
-      }
-      // Only use fenced content if it actually contains diff markers
-      if (chosen) txt = chosen;
-    }
-    const idx = txt.search(/(^|\n)(diff --git |@@ |\+\+\+ b\/)/);
-    if (idx >= 0) txt = txt.slice(idx);
-    if (txt.includes('diff --git') || txt.includes('@@') || txt.includes('+++ b/')) normalized.push(txt);
-  }
-  return normalized;
-}
-
-// Attempt to find a structured edit spec ({ ops: [...] }) in various shapes within a persona result.
-function findEditSpecCandidate(value: any): any | null {
-  const seen = new Set<any>();
-  const queue: any[] = [];
-  const push = (v: any) => { if (!v || typeof v !== 'object') return; if (seen.has(v)) return; seen.add(v); queue.push(v); };
-
-  const tryParseJson = (s: any) => {
-    if (typeof s !== 'string') return null;
-    try { const obj = JSON.parse(s); return obj && typeof obj === 'object' ? obj : null; } catch { return null; }
-  };
-
-  // seed
-  if (value && typeof value === 'object') push(value);
-  else {
-    const parsed = tryParseJson(value);
-    if (parsed) push(parsed);
-  }
-
-  const keysToCheck = [
-    'ops',
-    'payload', 'result', 'data', 'edit_spec', 'editSpec', 'edits', 'changes'
-  ];
-
-  while (queue.length) {
-    const cur = queue.shift();
-    // direct ops
-    if (Array.isArray(cur?.ops)) return cur;
-    // nested under common keys
-    for (const k of keysToCheck) {
-      const v = (cur as any)?.[k];
-      if (!v) continue;
-      if (Array.isArray((v as any)?.ops)) return v;
-      if (typeof v === 'string') {
-        const parsed = tryParseJson(v);
-        if (Array.isArray((parsed as any)?.ops)) return parsed;
-        if (parsed) push(parsed);
-      } else if (typeof v === 'object') {
-        push(v);
-      }
-    }
-    // shallow scan of object values to discover embedded specs
-    for (const val of Object.values(cur)) {
-      if (!val) continue;
-      if (Array.isArray((val as any)?.ops)) return val as any;
-      if (typeof val === 'string') {
-        const parsed = tryParseJson(val);
-        if (Array.isArray((parsed as any)?.ops)) return parsed as any;
-        if (parsed) push(parsed);
-      } else if (typeof val === 'object') {
-        push(val);
-      }
-    }
-  }
-  return null;
-}
 
 export async function handleCoordinator(r: any, msg: any, payload: any, overrides?: Overrides) {
   const H = Object.assign(buildHelpers(), overrides || {});
@@ -329,6 +222,11 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   }
   let repoResolution = await H.resolveRepoFromPayload({ ...payload, repo: repoRemoteCandidate, project_name: projectName, project_slug: projectSlug });
   let repoRoot = repoResolution.repoRoot;
+  const recordDiagnostic = async (file: string, payload: any) => {
+    try {
+      await writeDiagnostic(repoRoot, file, payload);
+    } catch {}
+  };
   let repoMeta = await H.getRepoMetadata(repoRoot);
   // Prefer the remote's default branch rather than the local current branch (which could be a feature branch)
   let detectedDefault = await H.detectRemoteDefaultBranch(repoRoot).catch(() => null);
@@ -463,6 +361,172 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     let feedbackNotes: string[] = [];
     let attempt = 0;
   const milestoneDescriptor = selectedMilestone ? { id: selectedMilestone.id ?? milestoneSlug, name: milestoneNameText, slug: milestoneSlug, task: taskDescriptor } : (taskDescriptor ? { task: taskDescriptor } : null);
+  const readHeadSha = async (remote?: boolean) => {
+    try {
+      return await H.getBranchHeadSha({ repoRoot, branch: branchName, remote });
+    } catch (err) {
+      logger.debug('coordinator: getBranchHeadSha failed', { workflowId, branchName, remote: !!remote, error: err });
+      return null;
+    }
+  };
+  let lastLocalHead = await readHeadSha(false);
+  let lastRemoteHead = await readHeadSha(true);
+  const verifyRemoteDiffOrAbort = async (phase: string, extras?: Record<string, any>) => {
+    const phaseKey = phase.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'phase';
+    logger.info('coordinator: verifying commit state', {
+      workflowId,
+      phase: phaseKey,
+      branchName,
+      baseBranch,
+      lastLocalHead,
+      lastRemoteHead,
+      taskId: taskDescriptor?.id || null
+    });
+    const localAfter = await readHeadSha(false);
+    if (!localAfter) {
+      logger.error('coordinator: unable to read branch head after phase', {
+        workflowId,
+        phase: phaseKey,
+        branchName,
+        baseBranch,
+        taskId: taskDescriptor?.id || null,
+        extras: extras || null
+      });
+      await recordDiagnostic(`coordinator-${phaseKey}-head-unreadable.json`, {
+        workflowId,
+        branchName,
+        baseBranch,
+        taskId: taskDescriptor?.id || null,
+        lastLocalHead,
+        extras
+      });
+      throw new Error(`Coordinator-critical: ${phase} could not read branch head. Aborting.`);
+    }
+    if (lastLocalHead && localAfter === lastLocalHead) {
+      logger.error('coordinator: branch head unchanged after phase', {
+        workflowId,
+        phase: phaseKey,
+        branchName,
+        baseBranch,
+        taskId: taskDescriptor?.id || null,
+        lastLocalHead,
+        extras: extras || null
+      });
+      await recordDiagnostic(`coordinator-${phaseKey}-no-new-commit.json`, {
+        workflowId,
+        branchName,
+        baseBranch,
+        taskId: taskDescriptor?.id || null,
+        lastLocalHead,
+        localAfter,
+        extras
+      });
+      throw new Error(`Coordinator-critical: ${phase} did not create a new commit. Aborting.`);
+    }
+    try {
+      const verification = await H.verifyRemoteBranchHasDiff({ repoRoot, branch: branchName, baseBranch });
+      if (!verification || !verification.hasDiff) {
+        logger.error('coordinator: remote diff verification failed', {
+          workflowId,
+          phase: phaseKey,
+          branchName,
+          baseBranch,
+          taskId: taskDescriptor?.id || null,
+          verification: verification || null,
+          extras: extras || null
+        });
+        await recordDiagnostic(`coordinator-${phaseKey}-no-remote-diff.json`, {
+          workflowId,
+          branchName,
+          baseBranch,
+          taskId: taskDescriptor?.id || null,
+          verification,
+          extras
+        });
+        throw new Error(`Coordinator-critical: ${phase} produced no remote diff. Aborting.`);
+      }
+      const remoteBefore = lastRemoteHead;
+      let remoteAfter = verification.branchSha || null;
+      if (!remoteAfter) remoteAfter = await readHeadSha(true);
+      if (!remoteAfter) {
+        logger.error('coordinator: remote head unreadable after phase', {
+          workflowId,
+          phase: phaseKey,
+          branchName,
+          baseBranch,
+          taskId: taskDescriptor?.id || null,
+          verification,
+          extras: extras || null
+        });
+        await recordDiagnostic(`coordinator-${phaseKey}-remote-head-unreadable.json`, {
+          workflowId,
+          branchName,
+          baseBranch,
+          taskId: taskDescriptor?.id || null,
+          verification,
+          extras
+        });
+        throw new Error(`Coordinator-critical: ${phase} could not verify remote commit. Aborting.`);
+      }
+      if (remoteBefore && remoteAfter === remoteBefore) {
+        logger.error('coordinator: remote head unchanged after phase', {
+          workflowId,
+          phase: phaseKey,
+          branchName,
+          baseBranch,
+          taskId: taskDescriptor?.id || null,
+          remoteBefore,
+          remoteAfter,
+          extras: extras || null
+        });
+        await recordDiagnostic(`coordinator-${phaseKey}-remote-head-unchanged.json`, {
+          workflowId,
+          branchName,
+          baseBranch,
+          taskId: taskDescriptor?.id || null,
+          remoteBefore,
+          remoteAfter,
+          verification,
+          extras
+        });
+        throw new Error(`Coordinator-critical: ${phase} did not push a new remote commit. Aborting.`);
+      }
+      logger.info('coordinator: remote diff verified', {
+        workflowId,
+        phase: phaseKey,
+        branchName,
+        baseBranch,
+        aheadCount: verification.aheadCount ?? null,
+        diffSummary: (verification.diffSummary || '').slice(0, 400)
+      });
+      lastLocalHead = localAfter;
+      lastRemoteHead = remoteAfter;
+      return verification;
+    } catch (err: any) {
+      if (err && typeof err.message === 'string' && err.message.includes('Coordinator-critical')) throw err;
+      const errorMessage = err?.message || String(err);
+      logger.warn('coordinator: remote diff verification error', {
+        workflowId,
+        phase: phaseKey,
+        branchName,
+        baseBranch,
+        taskId: taskDescriptor?.id || null,
+        error: errorMessage,
+        extras: extras || null
+      });
+      await recordDiagnostic(`coordinator-${phaseKey}-verify-error.json`, {
+        workflowId,
+        branchName,
+        baseBranch,
+        taskId: taskDescriptor?.id || null,
+        lastLocalHead,
+        lastRemoteHead,
+        error: errorMessage,
+        extras
+      });
+      throw new Error(`Coordinator-critical: ${phase} verification failed. ${errorMessage}`);
+    }
+  };
   const leadOutcome = await H.runLeadCycle(r, workflowId, projectId, projectInfo, projectSlug, repoRemote, branchName, baseBranch, milestoneDescriptor, milestoneNameText, milestoneSlug, taskDescriptor, taskName, feedbackNotes, attempt);
 
     // Try to apply edits whenever the lead outcome contains a diff or structured ops
@@ -471,55 +535,35 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
     try {
       if (logger.debug) logger.debug('leadOutcome', { taskId: taskDescriptor?.id, leadOutcome: (leadOutcome && typeof leadOutcome === 'object') ? { success: !!leadOutcome.success, noChanges: !!leadOutcome.noChanges } : leadOutcome });
       if (taskDescriptor && taskDescriptor.id && leadOutcome) {
-        let editSpecObj: any = null;
-        const structuredLead = findEditSpecCandidate((leadOutcome as any)?.result) || findEditSpecCandidate(leadOutcome);
-        if (structuredLead && Array.isArray(structuredLead.ops) && structuredLead.ops.length) {
-          editSpecObj = structuredLead;
-        } else {
-          const candidates = extractDiffCandidates(leadOutcome);
-          if (logger.debug) logger.debug('coordinator: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: candidates.length });
-          for (const c of candidates) {
-            try {
-              const parsed = await H.parseUnifiedDiffToEditSpec(c);
-              if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) { editSpecObj = parsed; break; }
-              else logger.debug('coordinator: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidatePreview: c.slice(0, 200) });
-            } catch (err) {
-              logger.debug('coordinator: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, error: String(err).slice(0,200) });
-            }
-          }
-        }
-        if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
-          const editResult = await H.applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
-          if (editResult.changed.length > 0) {
-            appliedSomething = true;
-            try { await H.ensureBranchPublished(repoRoot, branchName); } catch {}
-            await H.commitAndPushPaths({ repoRoot, branch: branchName, message: `feat: ${taskName}`, paths: editResult.changed });
-          }
-        } else {
-          logger.info('coordinator: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof (leadOutcome as any)?.result });
-          try {
-            const r: any = (leadOutcome as any)?.result;
-            const take = (v: unknown) => (typeof v === 'string' ? v.slice(0, 15000) : undefined);
-            const diag = {
-              workflowId,
-              taskId: taskDescriptor?.id || null,
-              leadOutcomeType: typeof r,
-              leadPreview: take(typeof r === 'string' ? r : ''),
-              fields: r && typeof r === 'object' ? {
-                preview: take(r.preview),
-                output: take(r.output),
-                raw: take(r.raw),
-                message: take(r.message),
-                text: take(r.text),
-                body: take(r.body)
-              } : undefined
-            };
-            await writeDiagnostic(repoRoot, 'coordinator-no-ops.json', diag);
-          } catch {}
-        }
+        const result = await applyAgentCodeChanges({
+          workflowId,
+          phase: 'lead',
+          repoRoot,
+          branchName,
+          baseBranch,
+          agentResult: leadOutcome,
+          taskDescriptor,
+          taskName,
+          messages: {
+            noOps: 'Coordinator-critical: lead engineer returned no diff operations to apply. Aborting.',
+            noChanges: 'Coordinator-critical: lead engineer edits produced no file changes. Aborting.',
+            commitFailed: 'Coordinator-critical: lead engineer changes were not pushed to the remote. Aborting.',
+          },
+          commitMessage: `feat: ${taskName}`,
+          parseAgentEditsFromResponse,
+          parseUnifiedDiffToEditSpec: (txt: string) => H.parseUnifiedDiffToEditSpec(txt),
+          applyEditOps: H.applyEditOps,
+          ensureBranchPublished: H.ensureBranchPublished,
+          commitAndPushPaths: H.commitAndPushPaths,
+          recordDiagnostic,
+          verifyCommitState: verifyRemoteDiffOrAbort,
+          logger,
+        });
+        if (result.applied || result.upstreamApplied) appliedSomething = true;
       }
     } catch (err) {
       logger.warn('coordinator: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
+      throw err;
     }
 
     if (taskDescriptor && (taskDescriptor.id || taskDescriptor.external_id) && (appliedSomething || (leadOutcome && leadOutcome.success))) {
@@ -786,55 +830,35 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
               logger.info('qa-exec: checking conditions', { workflowId, hasTaskDescriptor: !!taskDescriptor, taskId: taskDescriptor?.id, hasExecResult: !!execResult });
               if (taskDescriptor && taskDescriptor.id && execResult) {
                 logger.info('qa-exec: conditions met, processing result', { workflowId, taskId: taskDescriptor.id });
-                let editSpecObj: any = null;
-                const structuredExec = findEditSpecCandidate(execResult) || findEditSpecCandidate((execResult as any)?.result);
-                if (structuredExec && Array.isArray(structuredExec.ops) && structuredExec.ops.length) {
-                  editSpecObj = structuredExec;
-                } else {
-                  const candidates = extractDiffCandidates(execResult);
-                  if (logger.debug) logger.debug('qa-exec: normalizedCandidates', { workflowId, taskId: taskDescriptor?.id, count: candidates.length });
-                  for (const c of candidates) {
-                    try {
-                      const parsed = await H.parseUnifiedDiffToEditSpec(c);
-                      if (parsed && Array.isArray(parsed.ops) && parsed.ops.length) { editSpecObj = parsed; break; }
-                      else logger.debug('qa-exec: diff candidate produced no ops', { workflowId, taskId: taskDescriptor?.id, candidatePreview: c.slice(0, 200) });
-                    } catch (err) {
-                      logger.debug('qa-exec: parseUnifiedDiffToEditSpec threw', { workflowId, taskId: taskDescriptor?.id, error: String(err).slice(0,200) });
-                    }
-                  }
-                }
-                if (editSpecObj && Array.isArray(editSpecObj.ops) && editSpecObj.ops.length) {
-                  const editResult = await H.applyEditOps(JSON.stringify(editSpecObj), { repoRoot, branchName });
-                  if (editResult.changed.length > 0) {
-                    execApplied = true;
-                    try { await H.ensureBranchPublished(repoRoot, branchName); } catch {}
-                    await H.commitAndPushPaths({ repoRoot, branch: branchName, message: `fix(qa): ${taskName || taskDescriptor?.name || 'qa follow-ups'}`, paths: editResult.changed });
-                  }
-                } else {
-                  logger.info('qa-exec: no edit operations detected in lead outcome', { workflowId, taskId: taskDescriptor?.id, leadOutcomeType: typeof (execResult as any)?.result });
-                  try {
-                    const r: any = (execResult as any)?.result;
-                    const take = (v: unknown) => (typeof v === 'string' ? v.slice(0, 15000) : undefined);
-                    const diag = {
-                      workflowId,
-                      taskId: taskDescriptor?.id || null,
-                      leadOutcomeType: typeof r,
-                      leadPreview: take(typeof r === 'string' ? r : ''),
-                      fields: r && typeof r === 'object' ? {
-                        preview: take(r.preview),
-                        output: take(r.output),
-                        raw: take(r.raw),
-                        message: take(r.message),
-                        text: take(r.text),
-                        body: take(r.body)
-                      } : undefined
-                    };
-                    await writeDiagnostic(repoRoot, 'qa-exec-no-ops.json', diag);
-                  } catch {}
-                }
+                const result = await applyAgentCodeChanges({
+                  workflowId,
+                  phase: 'qa-followup',
+                  repoRoot,
+                  branchName,
+                  baseBranch,
+                  agentResult: execResult,
+                  taskDescriptor,
+                  taskName: taskName || taskDescriptor?.name || 'qa follow-ups',
+                  messages: {
+                    noOps: 'Coordinator-critical: QA follow-up execution returned no diff operations. Aborting.',
+                    noChanges: 'Coordinator-critical: QA follow-up edits produced no file changes. Aborting.',
+                    commitFailed: 'Coordinator-critical: QA follow-up changes were not pushed to the remote. Aborting.',
+                  },
+                  parseAgentEditsFromResponse,
+                  parseUnifiedDiffToEditSpec: (txt: string) => H.parseUnifiedDiffToEditSpec(txt),
+                  applyEditOps: H.applyEditOps,
+                  ensureBranchPublished: H.ensureBranchPublished,
+                  commitAndPushPaths: H.commitAndPushPaths,
+                  commitMessage: `fix(qa): ${taskName || taskDescriptor?.name || 'qa follow-ups'}`,
+                  recordDiagnostic,
+                  verifyCommitState: verifyRemoteDiffOrAbort,
+                  logger,
+                });
+                execApplied = result.applied || result.upstreamApplied;
               }
             } catch (err) {
               logger.warn('qa-exec: failed to apply lead-engineer diff/edit spec', { workflowId, error: err });
+              throw err;
             }
 
             // Optionally mark original task done if edits applied successfully
@@ -904,5 +928,5 @@ export async function handleCoordinator(r: any, msg: any, payload: any, override
   }
 }
 
-export { extractDiffCandidates };
+export { extractDiffCandidates } from "./helpers/agentResponseParser.js";
 export default { handleCoordinator };

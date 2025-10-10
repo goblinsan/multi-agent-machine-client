@@ -3,6 +3,8 @@ import * as dashboard from '../src/dashboard.js';
 import * as persona from '../src/agents/persona.js';
 import { sent } from './testCapture';
 import * as tasks from '../src/tasks/taskManager.js';
+import * as fileops from '../src/fileops.js';
+import * as gitUtils from '../src/gitUtils.js';
 
 // This test verifies the QA follow-up iterative loop:
 // - Evaluator runs every time
@@ -36,7 +38,7 @@ describe('QA follow-up plan iteration respects max retries and requires ack', ()
       const step: string = match.step || '';
       if (step === '1-context') return { fields: { result: JSON.stringify({}) }, id: 'evt-ctx' } as any;
       if (step === '2-plan') return { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'feature' }] }, output: '' }) }, id: 'evt-plan' } as any;
-      if (step === '2-implementation') return { fields: { result: JSON.stringify({}) }, id: 'evt-lead' } as any;
+      if (step === '2-implementation') return { fields: { result: JSON.stringify({ applied_edits: { attempted: true, applied: true, paths: ['dummy.txt'], commit: { committed: true, pushed: true } } }) }, id: 'evt-lead' } as any;
       if (step === '3-qa') return { fields: { result: JSON.stringify({ status: 'fail', details: 'tests failing' }) }, id: 'evt-qa' } as any;
       if (step === '3.5-evaluate-qa-plan' || step === '3.7-evaluate-qa-plan-revised') {
         return { fields: { result: JSON.stringify({ status: 'fail', reason: 'not aligned with QA feedback' }) } , id: `evt-${step}` } as any;
@@ -55,7 +57,24 @@ describe('QA follow-up plan iteration respects max retries and requires ack', ()
     ]);
 
     // Stub git utils to avoid real operations
-    const gitUtils = await import('../src/gitUtils.js');
+    vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ changed: ['dummy.txt'], branch: 'feat/task-1', sha: 'stub-sha' } as any);
+    vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: true, branch: 'feat/task-1' });
+    let verifyCounter = 0;
+    vi.spyOn(gitUtils, 'verifyRemoteBranchHasDiff').mockImplementation(async () => {
+      verifyCounter += 1;
+      return { ok: true, hasDiff: true, branch: 'feat/task-1', baseBranch: 'main', branchSha: `verify-sha-${verifyCounter}`, baseSha: 'base', aheadCount: 1, diffSummary: '1 file changed' } as any;
+    });
+    let localShaCounter = 0;
+    let remoteShaCounter = 0;
+    vi.spyOn(gitUtils, 'getBranchHeadSha').mockImplementation(async ({ remote }) => {
+      if (remote) {
+        remoteShaCounter += 1;
+        if (remoteShaCounter === 1) return null;
+        return `remote-sha-${remoteShaCounter}`;
+      }
+      localShaCounter += 1;
+      return `local-sha-${localShaCounter}`;
+    });
     vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: '/tmp/repo', branch: 'main', remote: 'git@example:repo.git' } as any);
     vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: 'example/repo', currentBranch: 'main' } as any);
     vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);

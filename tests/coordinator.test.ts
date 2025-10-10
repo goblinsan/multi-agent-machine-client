@@ -4,6 +4,8 @@ import * as dashboard from '../src/dashboard.js';
 import * as persona from '../src/agents/persona.js';
 import { sent, writeCapturedOutputs, annotateCaptured } from './testCapture';
 import * as tasks from '../src/tasks/taskManager.js';
+import * as fileops from '../src/fileops.js';
+import * as gitUtils from '../src/gitUtils.js';
 
 // Lightweight in-memory mocks to simulate redis and persona events.
 // We'll stub sendPersonaRequest and waitForPersonaCompletion to intercept payloads.
@@ -41,7 +43,7 @@ describe('Coordinator QA failure handling', () => {
   // implementation-planner initial plan -> done (wrap in payload to match parser expectations)
   completions['2-plan'] = { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'feature' }] }, output: '' }) }, id: 'evt-plan' };
     // lead-engineer -> done
-    completions['2-implementation'] = { fields: { result: JSON.stringify({}) }, id: 'evt-lead' };
+    completions['2-implementation'] = { fields: { result: JSON.stringify({ applied_edits: { attempted: true, applied: true, paths: ['dummy.txt'], commit: { committed: true, pushed: true } } }) }, id: 'evt-lead' };
     // tester-qa -> fail
     completions['3-qa'] = { fields: { result: JSON.stringify({ status: 'fail', details: 'no tests', tasks: [] }) }, id: 'evt-qa' };
     // implementation-planner when handling created followups -> should receive created tasks + qa_result
@@ -85,11 +87,28 @@ describe('Coordinator QA failure handling', () => {
     vi.spyOn(tasks, 'createDashboardTaskEntriesWithSummarizer').mockResolvedValue([{ title: 'QA failure task', externalId: 'ext-1', createdId: 't-1', description: 'Condensed description about missing tests' } as any]);
 
   // Mock git helpers to avoid real git operations
-  const gitUtils = await import('../src/gitUtils.js');
-  vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: '/tmp/repo', branch: 'main', remote: 'git@example:repo.git' } as any);
-  vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: 'example/repo', currentBranch: 'main' } as any);
-  vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);
-  vi.spyOn(gitUtils, 'ensureBranchPublished').mockResolvedValue(undefined as any);
+    vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ changed: ['dummy.txt'], branch: 'feat/task-1', sha: 'stub-sha' } as any);
+    vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: true, branch: 'feat/task-1' });
+    let localShaCounter = 0;
+    let remoteShaCounter = 0;
+    vi.spyOn(gitUtils, 'getBranchHeadSha').mockImplementation(async ({ remote }) => {
+      if (remote) {
+        remoteShaCounter += 1;
+        if (remoteShaCounter === 1) return null;
+        return `remote-sha-${remoteShaCounter}`;
+      }
+      localShaCounter += 1;
+      return `local-sha-${localShaCounter}`;
+    });
+    let verifyCounter = 0;
+    vi.spyOn(gitUtils, 'verifyRemoteBranchHasDiff').mockImplementation(async () => {
+      verifyCounter += 1;
+      return { ok: true, hasDiff: true, branch: 'feat/task-1', baseBranch: 'main', branchSha: `verify-sha-${verifyCounter}`, baseSha: 'base', aheadCount: 1, diffSummary: '1 file changed' } as any;
+    });
+    vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: '/tmp/repo', branch: 'main', remote: 'git@example:repo.git' } as any);
+    vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: 'example/repo', currentBranch: 'main' } as any);
+    vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);
+    vi.spyOn(gitUtils, 'ensureBranchPublished').mockResolvedValue(undefined as any);
 
   // Act: call handleCoordinator with a minimal message and payload
     const redisMock: any = {};
@@ -120,4 +139,33 @@ describe('Coordinator QA failure handling', () => {
   expect(finalPlannerReq).toBeDefined();
 
   }, 10000);
+
+  it('aborts when remote diff verification reports no changes after lead step', async () => {
+    const coord = await import('../src/workflows/coordinator.js');
+    const overrides: any = {
+      fetchProjectStatus: async () => ({ id: 'proj-x', name: 'proj', tasks: [{ id: 'task-1', name: 'task-1', status: 'open' }] }),
+      fetchProjectStatusDetails: async () => ({ milestones: [] }),
+      resolveRepoFromPayload: async () => ({ repoRoot: process.cwd(), branch: 'main', remote: '' }),
+      getRepoMetadata: async () => ({ currentBranch: 'main', remoteSlug: null, remoteUrl: '' }),
+      detectRemoteDefaultBranch: async () => 'main',
+      checkoutBranchFromBase: async () => {},
+      ensureBranchPublished: async () => {},
+      runLeadCycle: async () => ({ appliedEdits: { applied: true, commit: { committed: true, pushed: true } } }),
+      verifyRemoteBranchHasDiff: async () => ({ ok: false, hasDiff: false, branch: 'main', baseBranch: 'main', diffSummary: '', reason: 'no_diff' }),
+      commitAndPushPaths: async () => ({ committed: true, pushed: true, branch: 'main' }),
+      updateTaskStatus: async () => ({ ok: true }),
+      parseUnifiedDiffToEditSpec: async () => ({ ops: [] }),
+      applyEditOps: async () => ({ changed: ['dummy.txt'] }),
+      persona: {
+        sendPersonaRequest: async () => ({ ok: true }),
+        waitForPersonaCompletion: async () => ({ fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt' }),
+        parseEventResult: (r: any) => (typeof r === 'string' ? JSON.parse(r) : r),
+        interpretPersonaStatus: (r: any) => ({ status: (typeof r === 'string' ? JSON.parse(r) : r)?.status || 'pass' })
+      }
+    };
+
+    vi.spyOn(gitUtils, 'getBranchHeadSha').mockImplementation(async ({ remote }) => (remote ? 'remote-static' : 'local-static'));
+
+    await expect((coord as any).handleCoordinator({}, { workflow_id: 'wf-verify-fail', project_id: 'proj-x' }, { project_id: 'proj-x', repo: process.cwd() }, overrides)).rejects.toThrow(/did not create a new commit/i);
+  });
 });

@@ -157,13 +157,33 @@ describe('coordinator dashboard hygiene', () => {
       getRepoMetadata: async () => ({ currentBranch: 'main', remoteSlug: null, remoteUrl: '' }),
       checkoutBranchFromBase: async () => {},
       ensureBranchPublished: async () => {},
-      commitAndPushPaths: async () => ({ ok: true }),
+      commitAndPushPaths: async () => ({ committed: true, pushed: true, branch: 'main' }),
+      verifyRemoteBranchHasDiff: (() => {
+        let counter = 0;
+        return async () => {
+          counter += 1;
+          return { ok: true, hasDiff: true, branch: 'main', baseBranch: 'main', diffSummary: '1 file changed', aheadCount: 1, branchSha: `verify-sha-${counter}` };
+        };
+      })(),
+      getBranchHeadSha: (() => {
+        let local = 0;
+        let remote = 0;
+        return async ({ remote: isRemote }: any) => {
+          if (isRemote) {
+            remote += 1;
+            if (remote === 1) return null;
+            return `remote-sha-${remote}`;
+          }
+          local += 1;
+          return `local-sha-${local}`;
+        };
+      })(),
       updateTaskStatus: async () => { updateCalled++; return { ok: true }; },
       selectNextMilestone: () => null,
       selectNextTask: () => null,
-      runLeadCycle: async () => ({ success: true, result: { ops: [] } }),
+      runLeadCycle: async () => ({ success: true, result: { ops: [{ action: 'upsert', path: 'dummy.txt', content: 'hello' }] } }),
       parseUnifiedDiffToEditSpec: async () => ({ ops: [] }),
-      applyEditOps: async () => ({ changed: [] }),
+      applyEditOps: async () => ({ changed: ['dummy.txt'] }),
       persona: {
         sendPersonaRequest: async () => ({ ok: true }),
         waitForPersonaCompletion: async () => ({ fields: { result: {} }, id: 'evt-test' }),

@@ -4,6 +4,8 @@ import * as dashboard from '../src/dashboard.js';
 import * as persona from '../src/agents/persona.js';
 import { sent } from './testCapture';
 import * as tasks from '../src/tasks/taskManager.js';
+import * as fileops from '../src/fileops.js';
+import * as gitUtils from '../src/gitUtils.js';
 
 describe('Coordinator routes approved QA follow-up plan to engineer', () => {
   beforeEach(() => {
@@ -54,7 +56,24 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
 
     vi.spyOn(tasks, 'createDashboardTaskEntriesWithSummarizer').mockResolvedValue([{ title: 'QA failure task', externalId: 'ext-1', createdId: 't-1', description: 'Condensed description about missing tests' } as any]);
 
-    const gitUtils = await import('../src/gitUtils.js');
+    vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ changed: ['README.md'], branch: 'feat/task-1', sha: 'stub-sha' } as any);
+    vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValue({ committed: true, pushed: true, branch: 'feat/task-1' });
+    let verifyCounter = 0;
+    vi.spyOn(gitUtils, 'verifyRemoteBranchHasDiff').mockImplementation(async () => {
+      verifyCounter += 1;
+      return { ok: true, hasDiff: true, branch: 'feat/task-1', baseBranch: 'main', branchSha: `verify-sha-${verifyCounter}`, baseSha: 'base', aheadCount: 1, diffSummary: '1 file changed' } as any;
+    });
+    let localShaCounter = 0;
+    let remoteShaCounter = 0;
+    vi.spyOn(gitUtils, 'getBranchHeadSha').mockImplementation(async ({ remote }) => {
+      if (remote) {
+        remoteShaCounter += 1;
+        if (remoteShaCounter === 1) return null;
+        return `remote-sha-${remoteShaCounter}`;
+      }
+      localShaCounter += 1;
+      return `local-sha-${localShaCounter}`;
+    });
     vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ repoRoot: '/tmp/repo', branch: 'main', remote: 'git@example:repo.git' } as any);
     vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ remoteSlug: 'example/repo', currentBranch: 'main' } as any);
     vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);

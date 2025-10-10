@@ -17,13 +17,33 @@ describe('handleCoordinator with overrides', () => {
       getRepoMetadata: async () => ({ currentBranch: 'main', remoteSlug: null, remoteUrl: '' }),
       checkoutBranchFromBase: async () => {},
       ensureBranchPublished: async () => {},
-      commitAndPushPaths: async () => ({ ok: true }),
+      commitAndPushPaths: async () => ({ committed: true, pushed: true, branch: 'main' }),
+      verifyRemoteBranchHasDiff: (() => {
+        let counter = 0;
+        return async () => {
+          counter += 1;
+          return { ok: true, hasDiff: true, branch: 'main', baseBranch: 'main', diffSummary: '1 file changed', aheadCount: 1, branchSha: `verify-sha-${counter}` };
+        };
+      })(),
+      getBranchHeadSha: (() => {
+        let local = 0;
+        let remote = 0;
+        return async ({ remote: isRemote }: any) => {
+          if (isRemote) {
+            remote += 1;
+            if (remote === 1) return null;
+            return `remote-sha-${remote}`;
+          }
+          local += 1;
+          return `local-sha-${local}`;
+        };
+      })(),
       updateTaskStatus: async () => ({ ok: true }),
       selectNextMilestone: () => ({ id: 'm', name: 'm' }),
       selectNextTask: () => ({ id: 't', name: 't' }),
       runLeadCycle: async () => ({ success: true, result: preview }),
       parseUnifiedDiffToEditSpec: async (txt: string) => { parserCalled = true; const real = await import('../src/fileops.js'); return (real as any).parseUnifiedDiffToEditSpec(txt); },
-      applyEditOps: async (jsonText: string, opts: any) => { applyCalled = true; const real = await import('../src/fileops.js'); return (real as any).applyEditOps(jsonText, { repoRoot: process.cwd(), branchName: opts?.branchName || opts?.branch }); },
+      applyEditOps: async (_jsonText: string, opts: any) => { applyCalled = true; return { changed: ['dummy.txt'], branch: opts?.branchName || opts?.branch || 'main', sha: 'stub-sha' }; },
       persona: {
         sendPersonaRequest: async () => ({ ok: true }),
         waitForPersonaCompletion: async () => ({ fields: { result: {} }, id: 'evt-test' }),
