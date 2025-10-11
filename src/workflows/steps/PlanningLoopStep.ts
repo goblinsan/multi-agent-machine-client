@@ -1,6 +1,6 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { sendPersonaRequest, waitForPersonaCompletion } from '../../agents/persona.js';
+import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus } from '../../agents/persona.js';
 import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
 
@@ -87,7 +87,9 @@ export class PlanningLoopStep extends WorkflowStep {
         });
 
         planResult = await waitForPersonaCompletion(redis, plannerPersona, context.workflowId, planCorrId, timeout);
-        
+
+        const parsedPlanResult = summarizePlanResult(planResult);
+
         logger.info('Planning request completed', {
           workflowId: context.workflowId,
           step: planStep,
@@ -95,6 +97,16 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration,
           status: planResult?.status || 'unknown'
         });
+
+        if (parsedPlanResult) {
+          logger.info('Planning loop plan output', {
+            workflowId: context.workflowId,
+            step: planStep,
+            persona: plannerPersona,
+            iteration: currentIteration,
+            plan: parsedPlanResult
+          });
+        }
 
       } catch (error) {
         logger.error('Planning request failed', {
@@ -143,7 +155,9 @@ export class PlanningLoopStep extends WorkflowStep {
         });
 
         evaluationResult = await waitForPersonaCompletion(redis, evaluatorPersona, context.workflowId, evalCorrId, timeout);
-        
+
+        const parsedEvaluation = summarizeEvaluationResult(evaluationResult);
+
         logger.info('Evaluation request completed', {
           workflowId: context.workflowId,
           step: evaluateStep,
@@ -151,6 +165,16 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration,
           status: evaluationResult?.status || 'unknown'
         });
+
+        if (parsedEvaluation) {
+          logger.info('Planning loop evaluation result', {
+            workflowId: context.workflowId,
+            step: evaluateStep,
+            persona: evaluatorPersona,
+            iteration: currentIteration,
+            evaluation: parsedEvaluation
+          });
+        }
 
         // Check if evaluation passed
         lastEvaluationPassed = evaluationResult?.status === 'success' || 
@@ -216,4 +240,58 @@ export class PlanningLoopStep extends WorkflowStep {
       }
     };
   }
+}
+
+function truncate(value: any, max = 1000): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const text = typeof value === 'string' ? value : (() => {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  })();
+
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}…(+${text.length - max} chars)`;
+}
+
+function summarizePlanResult(event: any) {
+  if (!event) return null;
+  const fields = event.fields ?? {};
+  const parsed = parseEventResult(fields.result);
+  const planText = typeof parsed?.plan === 'string' ? parsed.plan : fields.result ?? undefined;
+  const breakdown = Array.isArray(parsed?.breakdown) ? parsed.breakdown : undefined;
+  const risks = Array.isArray(parsed?.risks) ? parsed.risks : undefined;
+
+  const breakdownPreview = breakdown ? truncate(breakdown, 2000) : undefined;
+  const risksPreview = risks ? truncate(risks, 1500) : undefined;
+
+  return {
+    corrId: fields.corr_id,
+    status: event.status ?? fields.status ?? 'unknown',
+    planPreview: truncate(planText, 2000),
+    breakdownSteps: breakdown?.length,
+    breakdownPreview,
+    riskCount: risks?.length,
+    risksPreview,
+    metadata: parsed?.metadata,
+    rawLength: typeof fields.result === 'string' ? fields.result.length : undefined
+  };
+}
+
+function summarizeEvaluationResult(event: any) {
+  if (!event) return null;
+  const fields = event.fields ?? {};
+  const payload = parseEventResult(fields.result);
+  const normalized = interpretPersonaStatus(fields.result);
+
+  return {
+    corrId: fields.corr_id,
+    status: event.status ?? fields.status ?? normalized.status ?? 'unknown',
+    normalizedStatus: normalized.status,
+    statusDetails: truncate(normalized.details, 2000),
+    payloadPreview: payload ? truncate(payload, 2000) : undefined,
+    rawLength: typeof fields.result === 'string' ? fields.result.length : undefined
+  };
 }

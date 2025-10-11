@@ -169,6 +169,7 @@ steps:
     type: PersonaRequestStep
     description: "Request code review from code reviewer persona"
     depends_on: ["qa_request"]
+    condition: "${qa_request_status} == 'pass'"
     config:
       step: "3-code-review"
       persona: "code-reviewer"
@@ -185,7 +186,8 @@ steps:
   - name: security_request
     type: PersonaRequestStep
     description: "Request security review from security reviewer persona"
-    depends_on: ["code_review_request"]
+    depends_on: ["qa_request"]
+    condition: "${qa_request_status} == 'pass'"
     config:
       step: "3-security"
       persona: "security-review"
@@ -203,7 +205,8 @@ steps:
   - name: devops_request
     type: PersonaRequestStep
     description: "Request DevOps review from DevOps persona"
-    depends_on: ["security_request"]
+    depends_on: ["code_review_request", "security_request"]
+    condition: "${qa_request_status} == 'pass'"
     config:
       step: "3-devops"
       persona: "devops"

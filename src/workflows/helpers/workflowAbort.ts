@@ -29,6 +29,11 @@ async function purgeWorkflowRedisQueues(workflowId: string): Promise<{ removed: 
   let removed = 0;
   let acked = 0;
 
+  if (typeof (client as any).xRange !== "function") {
+    logger.warn("workflow redis cleanup skipped: xRange not supported", { workflowId });
+    return { removed, acked };
+  }
+
   try {
     while (true) {
       const entries = await client.xRange(STREAM_NAME, cursor, "+", { COUNT: XRANGE_BATCH_SIZE }).catch(err => {
@@ -61,35 +66,39 @@ async function purgeWorkflowRedisQueues(workflowId: string): Promise<{ removed: 
           const chunk = matchingIds.slice(start, start + chunkSize);
           for (const group of ackGroups) {
             for (const id of chunk) {
-              try {
-                const ackCount = await client.xAck(STREAM_NAME, group, id);
-                if (typeof ackCount === "number") {
-                  acked += ackCount;
+              if (typeof (client as any).xAck === "function") {
+                try {
+                  const ackCount = await client.xAck(STREAM_NAME, group, id);
+                  if (typeof ackCount === "number") {
+                    acked += ackCount;
+                  }
+                } catch (err) {
+                  logger.debug("workflow redis cleanup xAck failed", {
+                    workflowId,
+                    group,
+                    id,
+                    error: err instanceof Error ? err.message : String(err)
+                  });
                 }
-              } catch (err) {
-                logger.debug("workflow redis cleanup xAck failed", {
-                  workflowId,
-                  group,
-                  id,
-                  error: err instanceof Error ? err.message : String(err)
-                });
               }
             }
           }
 
-          try {
-            const deleteCount = await client.xDel(STREAM_NAME, chunk);
-            if (typeof deleteCount === "number") {
-              removed += deleteCount;
-            } else {
-              removed += chunk.length;
+          if (typeof (client as any).xDel === "function") {
+            try {
+              const deleteCount = await client.xDel(STREAM_NAME, chunk);
+              if (typeof deleteCount === "number") {
+                removed += deleteCount;
+              } else {
+                removed += chunk.length;
+              }
+            } catch (err) {
+              logger.warn("workflow redis cleanup xDel failed", {
+                workflowId,
+                count: chunk.length,
+                error: err instanceof Error ? err.message : String(err)
+              });
             }
-          } catch (err) {
-            logger.warn("workflow redis cleanup xDel failed", {
-              workflowId,
-              count: chunk.length,
-              error: err instanceof Error ? err.message : String(err)
-            });
           }
         }
       }
@@ -108,12 +117,63 @@ async function purgeWorkflowRedisQueues(workflowId: string): Promise<{ removed: 
   return { removed, acked };
 }
 
+export async function abortWorkflowWithReason(
+  context: WorkflowContext,
+  reason: string,
+  details: Record<string, any> = {}
+): Promise<{ cleanupResult: { removed: number; acked: number } | null }> {
+  if (context.getVariable("workflowAborted")) {
+    context.logger.debug("workflow abort already recorded", { reason, details });
+    const abortMeta = context.getVariable("workflowAbort");
+    return { cleanupResult: abortMeta?.cleanupResult ?? null };
+  }
+
+  const workflowId = context.workflowId;
+  let cleanupResult: { removed: number; acked: number } | null = null;
+
+  try {
+    const snapshot = context.createDiagnosticSnapshot();
+    context.logger.error("workflow diagnostic snapshot", { reason, snapshot });
+  } catch (err) {
+    context.logger.warn("failed to create diagnostic snapshot", {
+      workflowId,
+      reason,
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+
+  try {
+    cleanupResult = await purgeWorkflowRedisQueues(workflowId);
+    context.logger.warn("cleared pending persona requests after workflow abort", {
+      workflowId,
+      reason,
+      removed: cleanupResult.removed,
+      acked: cleanupResult.acked
+    });
+  } catch (err) {
+    context.logger.error("failed to purge redis queues during workflow abort", {
+      workflowId,
+      reason,
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+
+  context.setVariable("workflowAborted", true);
+  context.setVariable("workflowAbort", {
+    reason,
+    details,
+    cleanupResult,
+    timestamp: new Date().toISOString()
+  });
+
+  return { cleanupResult };
+}
+
 export async function abortWorkflowDueToPushFailure(
   context: WorkflowContext,
   commitResult: Record<string, any>,
   meta: { message: string; paths: string[] }
 ): Promise<void> {
-  const workflowId = context.workflowId;
   const branch = commitResult.branch || context.getVariable("branch") || context.branch;
   const reason = commitResult.reason || "push_failed";
 
@@ -125,32 +185,10 @@ export async function abortWorkflowDueToPushFailure(
     changedPaths: meta.paths
   });
 
-  try {
-    const snapshot = context.createDiagnosticSnapshot();
-    context.logger.error("workflow diagnostic snapshot", { snapshot });
-  } catch (err) {
-    context.logger.warn("failed to create diagnostic snapshot", {
-      workflowId,
-      error: err instanceof Error ? err.message : String(err)
-    });
-  }
-
-  let cleanupResult: { removed: number; acked: number } | null = null;
-  try {
-    cleanupResult = await purgeWorkflowRedisQueues(workflowId);
-    context.logger.warn("cleared pending persona requests after push failure", {
-      workflowId,
-      removed: cleanupResult.removed,
-      acked: cleanupResult.acked
-    });
-  } catch (err) {
-    context.logger.error("failed to purge redis queues after push failure", {
-      workflowId,
-      error: err instanceof Error ? err.message : String(err)
-    });
-  }
-
-  context.setVariable("workflowAborted", true);
+  const { cleanupResult } = await abortWorkflowWithReason(context, reason, {
+    commitResult,
+    meta
+  });
   context.setVariable("pushFailure", {
     commitResult,
     cleanupResult

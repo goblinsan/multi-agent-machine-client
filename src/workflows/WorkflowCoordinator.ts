@@ -9,6 +9,7 @@ import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import { sendPersonaRequest, waitForPersonaCompletion } from "../agents/persona.js";
 import { makeRedis } from "../redisClient.js";
 import { join } from "path";
+import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
 
 /**
  * Enhanced coordinator that uses the new WorkflowEngine for task processing
@@ -308,6 +309,24 @@ export class WorkflowCoordinator {
       context.branch,
       initialVariables
     );
+
+    if (!result.success) {
+      logger.error("Workflow execution failed", {
+        workflowId: context.workflowId,
+        taskId: task?.id,
+        failedStep: result.failedStep,
+        error: result.error?.message
+      });
+
+      if (result.finalContext) {
+        await abortWorkflowWithReason(result.finalContext, "workflow_step_failure", {
+          taskId: task?.id,
+          failedStep: result.failedStep,
+          error: result.error?.message,
+          completedSteps: result.completedSteps
+        });
+      }
+    }
 
     return {
       success: result.success,

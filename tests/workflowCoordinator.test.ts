@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator';
 import { WorkflowEngine } from '../src/workflows/WorkflowEngine';
+import { WorkflowContext } from '../src/workflows/engine/WorkflowContext';
 
 // Mock Redis client to prevent connection attempts during tests  
 vi.mock('../src/redisClient.js', () => ({
@@ -8,6 +9,8 @@ vi.mock('../src/redisClient.js', () => ({
     xGroupCreate: vi.fn().mockResolvedValue(null),
     xReadGroup: vi.fn().mockResolvedValue([]),
     xAck: vi.fn().mockResolvedValue(null),
+    xRange: vi.fn().mockResolvedValue([]),
+    xDel: vi.fn().mockResolvedValue(0),
     disconnect: vi.fn().mockResolvedValue(null),
     quit: vi.fn().mockResolvedValue(null),
     xRevRange: vi.fn().mockResolvedValue([]),
@@ -303,5 +306,65 @@ describe('WorkflowCoordinator Task Processing', () => {
 
     // Business outcome: Workflow execution handling logic completed without hanging
     expect(workflowCompleted).toBe(true);
+  });
+
+  it('records workflow abort metadata when execution fails', async () => {
+    const engine = new WorkflowEngine();
+    const coordinator = new WorkflowCoordinator(engine);
+
+    const workflowDef = {
+      name: 'legacy-compatible-task-flow',
+      description: 'Test workflow',
+      version: '1.0.0',
+      trigger: { condition: "task_type == 'task'" },
+      context: { repo_required: true },
+      steps: []
+    } as any;
+
+    vi.spyOn(engine, 'getWorkflowDefinition').mockImplementation((name: string) =>
+      name === 'legacy-compatible-task-flow' ? workflowDef : undefined
+    );
+    vi.spyOn(engine, 'findWorkflowByCondition').mockReturnValue(workflowDef);
+
+    const finalContext = new WorkflowContext(
+      'wf-failure',
+      'proj-1',
+      '/tmp/repo',
+      'main',
+      workflowDef
+    );
+
+    vi.spyOn(engine, 'executeWorkflowDefinition').mockResolvedValue({
+      success: false,
+      completedSteps: ['checkout_branch'],
+      failedStep: 'context_request',
+      error: new Error('context timeout'),
+      duration: 25,
+      finalContext
+    });
+
+    const result = await (coordinator as any).processTask(
+      {
+        id: 'task-99',
+        name: 'Failing Task',
+        status: 'open',
+        description: 'Trigger failure'
+      },
+      {
+        workflowId: 'wf-top',
+        projectId: 'proj-1',
+        projectName: 'Project',
+        projectSlug: 'project',
+        repoRoot: '/tmp/repo',
+        branch: 'main',
+        remote: null
+      }
+    );
+
+    expect(result.success).toBe(false);
+    expect(finalContext.getVariable('workflowAborted')).toBe(true);
+    const abortMeta = finalContext.getVariable('workflowAbort');
+    expect(abortMeta?.reason).toBe('workflow_step_failure');
+    expect(abortMeta?.details?.failedStep).toBe('context_request');
   });
 });
