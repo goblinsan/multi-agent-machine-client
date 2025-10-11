@@ -128,23 +128,35 @@ async function ensureProjectBase() {
 }
 
 function repoDirectoryFor(remote: string, projectHint?: string | null) {
+  // Always prefer projectHint when available to avoid deep nested paths like PROJECT_BASE/github.com/org/repo
   if (projectHint && projectHint.trim().length) {
     const segments = projectHint
       .split(/[\\/]+/)
       .map(sanitizeSegment)
       .filter(Boolean);
-    if (segments.length === 0) segments.push(cfg.defaultRepoName);
-    return path.join(cfg.projectBase, ...segments);
+    if (segments.length > 0) {
+      return path.join(cfg.projectBase, ...segments);
+    }
   }
 
+  // Fallback: extract project name from remote URL path, but DON'T include hostname
+  // This gives us PROJECT_BASE/project-name instead of PROJECT_BASE/github.com/org/project-name
   const parsed = parseRemote(remote);
   const rel = parsed.path.replace(/\.git$/i, "");
   const pieces = rel
     .split(/[\\/]+/)
     .map(sanitizeSegment)
     .filter(Boolean);
-  if (pieces.length === 0) pieces.push(cfg.defaultRepoName);
-  return path.join(cfg.projectBase, sanitizeSegment(parsed.host), ...pieces);
+  
+  // Use only the last segment (project name) from the remote path
+  // e.g., "goblinsan/project-name" -> use "project-name"
+  if (pieces.length > 0) {
+    const projectName = pieces[pieces.length - 1];
+    return path.join(cfg.projectBase, projectName);
+  }
+  
+  // Last resort fallback
+  return path.join(cfg.projectBase, cfg.defaultRepoName);
 }
 
 function remoteWithCredentials(remote: string): RemoteInfo {

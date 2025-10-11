@@ -232,3 +232,8 @@ steps:
       task_id: "${taskId}"
       project_id: "${projectId}"
       status: "done"
+
+# Workflow timeouts
+timeouts:
+  context_request_timeout: 600000  # 10 minutes for context gathering
+  default_step: 300000  # 5 minutes default

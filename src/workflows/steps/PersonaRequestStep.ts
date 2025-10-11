@@ -51,6 +51,9 @@ export class PersonaRequestStep extends WorkflowStep {
         throw new Error(`Cannot send persona request: no repository remote URL available. Local paths cannot be shared across distributed agents.`);
       }
 
+      // Use the current branch from variables (updated by git operations) or fall back to context.branch
+      const currentBranch = context.getVariable('branch') || context.getVariable('currentBranch') || context.branch;
+      
       const corrId = await sendPersonaRequest(redis, {
         workflowId: context.workflowId,
         toPersona: persona,
@@ -58,7 +61,7 @@ export class PersonaRequestStep extends WorkflowStep {
         intent,
         payload: resolvedPayload,
         repo: repoForPersona,
-        branch: context.branch,
+        branch: currentBranch,
         projectId: context.projectId,
         deadlineSeconds
       });
