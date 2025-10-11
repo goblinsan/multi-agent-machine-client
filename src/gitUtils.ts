@@ -508,6 +508,92 @@ async function hasLocalChanges(repoRoot: string) {
   return stdout.trim().length > 0;
 }
 
+export type WorkingTreeEntry = {
+  status: string;
+  path: string;
+  secondaryPath?: string;
+};
+
+export type WorkingTreeSummary = {
+  dirty: boolean;
+  branch?: string | null;
+  entries: WorkingTreeEntry[];
+  summary: {
+    staged: number;
+    unstaged: number;
+    untracked: number;
+    total: number;
+  };
+  porcelain: string[];
+  error?: string;
+};
+
+export async function describeWorkingTree(repoRoot: string): Promise<WorkingTreeSummary> {
+  try {
+    const status = await runGit(["status", "--porcelain", "--branch"], { cwd: repoRoot });
+    const stdout = status.stdout?.toString?.() ?? "";
+    const lines = stdout.split(/\r?\n/).filter(Boolean);
+
+    let branch: string | null = null;
+    const entries: WorkingTreeEntry[] = [];
+
+    for (const line of lines) {
+      if (line.startsWith("##")) {
+        const branchInfo = line.slice(2).trim();
+        const branchName = branchInfo.split("...")[0]?.trim();
+        branch = branchName || branchInfo || null;
+        continue;
+      }
+
+      const statusCode = line.slice(0, 2);
+      const remainder = line.slice(3);
+      if (!remainder) continue;
+
+      const renameParts = remainder.split(" -> ");
+      const primaryPath = renameParts[0];
+      const secondaryPath = renameParts[1];
+
+      entries.push({
+        status: statusCode,
+        path: primaryPath,
+        secondaryPath
+      });
+    }
+
+    const staged = entries.filter(entry => entry.status[0] !== " " && entry.status[0] !== "?").length;
+    const untracked = entries.filter(entry => entry.status === "??").length;
+    const unstaged = entries.filter(entry => entry.status[1] !== " " && entry.status !== "??").length;
+    const total = entries.length;
+
+    return {
+      dirty: total > 0,
+      branch,
+      entries,
+      summary: {
+        staged,
+        unstaged,
+        untracked,
+        total
+      },
+      porcelain: lines.filter(line => !line.startsWith("##"))
+    };
+  } catch (error) {
+    return {
+      dirty: true,
+      branch: null,
+      entries: [],
+      summary: {
+        staged: 0,
+        unstaged: 0,
+        untracked: 0,
+        total: 0
+      },
+      porcelain: [],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 async function handleCheckoutError(repoRoot: string, branch: string, error: any): Promise<never> {
   if (await hasLocalChanges(repoRoot)) {
     const message = `Cannot checkout ${branch}: uncommitted changes detected in local repository at ${repoRoot}. Commit, stash, or discard the changes and try again.`;

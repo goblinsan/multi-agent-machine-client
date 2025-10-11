@@ -11,7 +11,7 @@ import { QAAnalysisStep } from '../src/workflows/steps/QAAnalysisStep.js';
 import { TaskCreationStep } from '../src/workflows/steps/TaskCreationStep.js';
 import { GitOperationStep } from '../src/workflows/steps/GitOperationStep.js';
 import * as gitUtils from '../src/gitUtils.js';
-import { abortWorkflowDueToPushFailure } from '../src/workflows/helpers/workflowAbort.js';
+import { abortWorkflowDueToPushFailure, abortWorkflowWithReason } from '../src/workflows/helpers/workflowAbort.js';
 
 // Mock external dependencies
 vi.mock('../src/redisClient.js', () => {
@@ -41,7 +41,8 @@ vi.mock('../src/redisClient.js', () => {
 });
 
 vi.mock('../src/workflows/helpers/workflowAbort.js', () => ({
-  abortWorkflowDueToPushFailure: vi.fn().mockResolvedValue(undefined)
+  abortWorkflowDueToPushFailure: vi.fn().mockResolvedValue(undefined),
+  abortWorkflowWithReason: vi.fn().mockResolvedValue({ cleanupResult: { removed: 0, acked: 0 } })
 }));
 
 vi.mock('../src/scanRepo.js', () => ({
@@ -719,6 +720,58 @@ describe('Workflow Steps', () => {
   });
 
   describe('GitOperationStep', () => {
+    it('should abort workflow when working tree is dirty before checkout', async () => {
+      const abortSpy = vi.mocked(abortWorkflowWithReason);
+
+      const describeSpy = vi.spyOn(gitUtils, 'describeWorkingTree').mockResolvedValue({
+        dirty: true,
+        branch: 'feature/dirty',
+        entries: [
+          { status: ' M', path: 'src/app.ts' }
+        ],
+        summary: {
+          staged: 0,
+          unstaged: 1,
+          untracked: 0,
+          total: 1
+        },
+        porcelain: [' M src/app.ts']
+      } as any);
+
+      const checkoutSpy = vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);
+
+      const config = {
+        name: 'checkout-step',
+        type: 'GitOperationStep',
+        config: {
+          operation: 'checkoutBranchFromBase',
+          repoRoot: '/tmp/dirty-repo',
+          baseBranch: 'main',
+          newBranch: 'feature/dirty'
+        }
+      };
+
+      const step = new GitOperationStep(config as any);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      expect(result.error?.message).toContain('uncommitted changes');
+      expect(checkoutSpy).not.toHaveBeenCalled();
+      expect(abortSpy).toHaveBeenCalledTimes(1);
+      expect(abortSpy).toHaveBeenCalledWith(
+        expect.any(WorkflowContext),
+        'dirty_working_tree',
+        expect.objectContaining({
+          repoRoot: '/tmp/dirty-repo',
+          baseBranch: 'main',
+          branch: 'feature/dirty'
+        })
+      );
+
+      describeSpy.mockRestore();
+      checkoutSpy.mockRestore();
+    });
+
     it('should abort workflow when push fails', async () => {
       const commitResult = {
         committed: true,

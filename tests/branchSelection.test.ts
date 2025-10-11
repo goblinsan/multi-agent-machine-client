@@ -51,6 +51,19 @@ describe('Coordinator branch selection', () => {
       remote: 'https://example/repo.git' 
     } as any);
 
+    vi.spyOn(gitUtils, 'describeWorkingTree').mockResolvedValue({
+      dirty: false,
+      branch: 'milestone/milestone',
+      entries: [],
+      summary: {
+        staged: 0,
+        unstaged: 0,
+        untracked: 0,
+        total: 0
+      },
+      porcelain: []
+    } as any);
+
     // Capture arguments to checkout to assert base branch selection
     const checkoutSpy = vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);
     vi.spyOn(gitUtils, 'ensureBranchPublished').mockResolvedValue(undefined as any);

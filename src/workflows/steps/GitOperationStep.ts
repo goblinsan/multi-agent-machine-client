@@ -1,7 +1,7 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
-import { abortWorkflowDueToPushFailure } from '../helpers/workflowAbort.js';
+import { abortWorkflowDueToPushFailure, abortWorkflowWithReason } from '../helpers/workflowAbort.js';
 
 interface GitOperationConfig {
   operation: 'checkoutBranchFromBase' | 'commitAndPushPaths' | 'verifyRemoteBranchHasDiff' | 'ensureBranchPublished';
@@ -49,6 +49,48 @@ export class GitOperationStep extends WorkflowStep {
 
       switch (operation) {
         case 'checkoutBranchFromBase':
+          try {
+            if (typeof gitUtils.describeWorkingTree === 'function') {
+              const workingTree = await gitUtils.describeWorkingTree(repoRoot);
+              if (workingTree.dirty) {
+                const branchInfo = workingTree.branch || branch || newBranch;
+                const detailPreview = workingTree.porcelain.slice(0, 20);
+
+                context.logger.error('Dirty working tree detected before branch checkout', {
+                  workflowId: context.workflowId,
+                  repoRoot,
+                  branch: branchInfo,
+                  baseBranch,
+                  summary: workingTree.summary,
+                  sample: detailPreview
+                });
+
+                await abortWorkflowWithReason(context, 'dirty_working_tree', {
+                  repoRoot,
+                  baseBranch,
+                  branch: branchInfo,
+                  workingTree
+                });
+
+                return {
+                  status: 'failure',
+                  error: new Error(`Workflow aborted: repository at ${repoRoot} has uncommitted changes.`),
+                  data: {
+                    operation,
+                    repoRoot,
+                    workingTree
+                  }
+                } satisfies StepResult;
+              }
+            }
+          } catch (dirtyCheckError: any) {
+            context.logger.warn('Unable to evaluate working tree cleanliness', {
+              workflowId: context.workflowId,
+              repoRoot,
+              error: dirtyCheckError instanceof Error ? dirtyCheckError.message : String(dirtyCheckError)
+            });
+          }
+
           logger.info('Checking out branch from base', {
             repoRoot,
             baseBranch,
