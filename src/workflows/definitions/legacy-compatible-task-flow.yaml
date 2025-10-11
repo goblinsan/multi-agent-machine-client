@@ -28,7 +28,7 @@ steps:
       intent: "context_gathering"
       payload:
         task: "${task}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
         milestone: "${milestone}"
         milestone_name: "${milestone_name}"
@@ -47,7 +47,7 @@ steps:
       payload:
         task: "${task}"
         context: "${context_request_result}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
 
   # Implementation
@@ -62,7 +62,7 @@ steps:
       payload:
         task: "${task}"
         plan: "${planning_loop_plan_result}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
 
   # Apply implementation edits to repository  
@@ -115,7 +115,7 @@ steps:
         task: "${task}"
         plan: "${planning_loop_plan_result}"
         implementation: "${implementation_request_result}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
 
   # QA Failure Coordination - handles all QA failure logic declaratively
@@ -146,7 +146,7 @@ steps:
         task: "${task}"
         qa_result: "${qa_request_result}"
         created_tasks: "${qa_failure_created_tasks}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
 
   # Execute the QA follow-up plan - implementation step
@@ -163,7 +163,7 @@ steps:
         task: "${task}"
         plan: "${qa_created_tasks_result}"
         context: "${context_request_result}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"  # Code Review - depends on git operations being complete
   - name: code_review_request
     type: PersonaRequestStep
@@ -179,7 +179,7 @@ steps:
         plan: "${planning_loop_plan_result}"
         implementation: "${implementation_request_result}"
         qa_result: "${qa_request_result}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
 
   # Security Review - depends on git operations being complete
@@ -198,7 +198,7 @@ steps:
         implementation: "${implementation_request_result}"
         qa_result: "${qa_request_result}"
         code_review_result: "${code_review_request_result}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
 
   # DevOps Review - depends on git operations being complete
@@ -218,7 +218,7 @@ steps:
         qa_result: "${qa_request_result}"
         code_review_result: "${code_review_request_result}"
         security_result: "${security_request_result}"
-        repo: "${repoRoot}"
+        repo: "${repo_remote}"
         project_id: "${projectId}"
 
   # Mark task as done

@@ -18,7 +18,8 @@ vi.mock('../src/logger.js', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
-    error: vi.fn()
+    error: vi.fn(),
+    debug: vi.fn()
   }
 }));
 
@@ -41,6 +42,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       getStepOutput: vi.fn(),
       getVariable: vi.fn(),
       setVariable: vi.fn(),
+      getAllStepOutputs: vi.fn(() => ({})),
       branch: 'test-branch',
       repoRoot: '/test/repo',
       logger: logger

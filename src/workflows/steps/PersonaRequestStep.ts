@@ -36,9 +36,20 @@ export class PersonaRequestStep extends WorkflowStep {
       const resolvedPayload = this.resolvePayloadVariables(payload, context);
       
       // Send persona request with exact step name
-      const repoForPersona = context.getVariable('effective_repo_path')
-        || context.getVariable('repo_remote')
-        || context.repoRoot;
+      // CRITICAL: Always use remote URL for distributed agents, never local path
+      // Each agent will resolve the remote to their local PROJECT_BASE location
+      const repoForPersona = context.getVariable('repo_remote')
+        || context.getVariable('effective_repo_path');
+      
+      if (!repoForPersona) {
+        logger.error('No repository remote URL available for persona request', {
+          workflowId: context.workflowId,
+          persona,
+          step,
+          availableVars: Object.keys(context.getAllVariables())
+        });
+        throw new Error(`Cannot send persona request: no repository remote URL available. Local paths cannot be shared across distributed agents.`);
+      }
 
       const corrId = await sendPersonaRequest(redis, {
         workflowId: context.workflowId,

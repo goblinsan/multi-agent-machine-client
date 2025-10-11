@@ -41,7 +41,13 @@ export class DiffApplyStep extends WorkflowStep {
       // Get diff content from step output or context variable
       const diffContent = this.getDiffContent(context, stepConfig);
       if (!diffContent) {
-        throw new Error('No diff content found in specified source');
+        context.logger.error('CRITICAL: No diff content available to apply', {
+          stepName: this.config.name,
+          sourceOutput: stepConfig.source_output,
+          sourceVariable: stepConfig.source_variable,
+          availableOutputs: Object.keys(context.getAllStepOutputs())
+        });
+        throw new Error('CRITICAL: No diff content found. Implementation step may have failed or returned no changes.');
       }
 
       // Parse the diff content
@@ -219,17 +225,39 @@ export class DiffApplyStep extends WorkflowStep {
     // Try step output first
     if (config.source_output) {
       const output = context.getStepOutput(config.source_output);
+      
+      context.logger.debug('DiffApplyStep: retrieving diff content', {
+        source_output: config.source_output,
+        outputType: typeof output,
+        outputKeys: output && typeof output === 'object' ? Object.keys(output) : undefined
+      });
+      
       if (output) {
         // Handle different output formats
         if (typeof output === 'string') {
           return output;
         } else if (output.diffs || output.code_diffs) {
           return output.diffs || output.code_diffs;
+        } else if (output.implementation_diff) {
+          return output.implementation_diff;
+        } else if (output.diff) {
+          return output.diff;
         } else if (output.result) {
-          return output.result;
+          // result might be a stringified JSON or direct string
+          if (typeof output.result === 'string') {
+            return output.result;
+          } else if (output.result.diffs || output.result.code_diffs) {
+            return output.result.diffs || output.result.code_diffs;
+          }
         } else if (output.output) {
           return output.output;
         }
+        
+        // Log warning if we couldn't find diffs
+        context.logger.warn('DiffApplyStep: could not extract diff content from output', {
+          source_output: config.source_output,
+          outputPreview: JSON.stringify(output).substring(0, 500)
+        });
       }
     }
 

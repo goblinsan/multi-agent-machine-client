@@ -64,13 +64,16 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration
         });
 
+        // Get the remote URL for distributed agent coordination
+        const repoRemote = context.getVariable('repo_remote') || context.getVariable('effective_repo_path');
+        
         const payloadWithContext = {
           ...payload,
           iteration: currentIteration,
           previous_evaluation: evaluationResult,
           is_revision: currentIteration > 1,
           task: context.getVariable('task'),
-          repo: context.repoRoot,
+          repo: repoRemote,
           project_id: context.projectId
         };
 
@@ -80,7 +83,7 @@ export class PlanningLoopStep extends WorkflowStep {
           step: planStep,
           intent: 'planning',
           payload: payloadWithContext,
-          repo: context.repoRoot,
+          repo: repoRemote,
           branch: context.branch,
           projectId: context.projectId,
           deadlineSeconds
@@ -133,12 +136,15 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration
         });
 
+        // Get the remote URL for distributed agent coordination
+        const repoRemote = context.getVariable('repo_remote') || context.getVariable('effective_repo_path');
+        
         const evalPayload = {
           ...payload,
           plan: planResult,
           iteration: currentIteration,
           task: context.getVariable('task'),
-          repo: context.repoRoot,
+          repo: repoRemote,
           project_id: context.projectId
         };
 
@@ -148,7 +154,7 @@ export class PlanningLoopStep extends WorkflowStep {
           step: evaluateStep,
           intent: 'evaluation',
           payload: evalPayload,
-          repo: context.repoRoot,
+          repo: repoRemote,
           branch: context.branch,
           projectId: context.projectId,
           deadlineSeconds
@@ -158,12 +164,16 @@ export class PlanningLoopStep extends WorkflowStep {
 
         const parsedEvaluation = summarizeEvaluationResult(evaluationResult);
 
+        // Parse the actual evaluation status from the result field
+        const evaluationStatusInfo = interpretPersonaStatus(evaluationResult?.fields?.result);
+
         logger.info('Evaluation request completed', {
           workflowId: context.workflowId,
           step: evaluateStep,
           persona: evaluatorPersona,
           iteration: currentIteration,
-          status: evaluationResult?.status || 'unknown'
+          eventStatus: evaluationResult?.fields?.status || 'unknown',
+          interpretedStatus: evaluationStatusInfo.status
         });
 
         if (parsedEvaluation) {
@@ -172,27 +182,30 @@ export class PlanningLoopStep extends WorkflowStep {
             step: evaluateStep,
             persona: evaluatorPersona,
             iteration: currentIteration,
-            evaluation: parsedEvaluation
+            evaluation: parsedEvaluation,
+            interpretedStatus: evaluationStatusInfo.status
           });
         }
 
-        // Check if evaluation passed
-        lastEvaluationPassed = evaluationResult?.status === 'success' || 
-                              evaluationResult?.approved === true ||
-                              evaluationResult?.result === 'approved';
+        // Check if evaluation passed using the interpreted status
+        // The event status is "done" when complete, but we need to check the actual evaluation result
+        lastEvaluationPassed = evaluationStatusInfo.status === 'pass';
 
         if (lastEvaluationPassed) {
           logger.info('Plan evaluation passed, exiting loop', {
             workflowId: context.workflowId,
             iteration: currentIteration,
-            totalIterations: currentIteration
+            totalIterations: currentIteration,
+            evaluationStatus: evaluationStatusInfo.status
           });
           break;
         } else {
-          logger.info('Plan evaluation failed, continuing loop', {
+          logger.info('Plan evaluation failed or unknown, continuing loop', {
             workflowId: context.workflowId,
             iteration: currentIteration,
-            remainingIterations: maxIterations - currentIteration
+            remainingIterations: maxIterations - currentIteration,
+            evaluationStatus: evaluationStatusInfo.status,
+            details: evaluationStatusInfo.details?.substring(0, 200)
           });
         }
 

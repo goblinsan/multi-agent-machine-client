@@ -20,6 +20,7 @@ import { parse as yamlParse } from 'yaml';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
+import { logger } from '../logger.js';
 
 /**
  * YAML workflow definition structure
@@ -322,8 +323,11 @@ export class WorkflowEngine {
       const stepPromise = step.execute(context);
       const result = await Promise.race([stepPromise, timeoutPromise]);
 
-      // Store step outputs
-      if (result.data) {
+      // Store step outputs - prioritize outputs field, fall back to data
+      // Steps like PersonaRequestStep return outputs with the actual result data
+      if (result.outputs) {
+        context.setStepOutput(stepDef.name, result.outputs);
+      } else if (result.data) {
         context.setStepOutput(stepDef.name, result.data);
       }
 
@@ -404,7 +408,16 @@ export class WorkflowEngine {
    */
   private getNestedValue(context: WorkflowContext, path: string): any {
     // Handle special context variables
-    if (path === 'REPO_PATH') return context.repoRoot;
+    // DEPRECATED: REPO_PATH should not be used - use repo_remote instead for distributed systems
+    if (path === 'REPO_PATH') {
+      logger.warn('REPO_PATH is deprecated. Use repo_remote for distributed agent coordination.');
+      return context.repoRoot;
+    }
+    if (path === 'repoRoot') {
+      // When repoRoot is referenced in workflow definitions, redirect to repo_remote for distributed systems
+      logger.warn('repoRoot reference in workflow. Using repo_remote for distributed coordination.');
+      return context.getVariable('repo_remote') || context.repoRoot;
+    }
     if (path === 'REDIS_STREAM_NAME') return context.getVariable('REDIS_STREAM_NAME') || process.env.REDIS_STREAM_NAME || 'workflow-tasks';
     if (path === 'CONSUMER_GROUP') return context.getVariable('CONSUMER_GROUP') || process.env.CONSUMER_GROUP || 'workflow-consumers';
     if (path === 'CONSUMER_ID') return context.getVariable('CONSUMER_ID') || process.env.CONSUMER_ID || 'workflow-engine';

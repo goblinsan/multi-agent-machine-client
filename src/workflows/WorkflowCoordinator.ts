@@ -307,6 +307,15 @@ export class WorkflowCoordinator {
     branch: string;
     remote?: string | null;
   }): Promise<any> {
+    logger.debug('Preparing workflow initial variables', {
+      workflowId: context.workflowId,
+      taskId: task?.id,
+      taskHasMilestone: !!task?.milestone,
+      milestoneId: task?.milestone?.id,
+      milestoneName: task?.milestone?.name,
+      taskKeys: Object.keys(task || {})
+    });
+    
     const initialVariables = {
       task: {
         id: task?.id || task?.key || 'unknown',
@@ -326,19 +335,33 @@ export class WorkflowCoordinator {
       projectId: context.projectId,
       projectName: context.projectName,
       projectSlug: context.projectSlug,
-      // Add milestone information if available
-      milestone: task?.milestone?.name || task?.milestone_name || null,
+      // Add milestone information if available - pass full milestone object and individual fields
+      milestone: task?.milestone || null,
       milestone_name: task?.milestone?.name || task?.milestone_name || null,
       milestoneId: task?.milestone?.id || task?.milestone_id || null,
+      milestone_description: task?.milestone?.description || null,
+      milestone_status: task?.milestone?.status || null,
       // Legacy compatibility variables
       REDIS_STREAM_NAME: process.env.REDIS_STREAM_NAME || 'workflow-tasks',
       CONSUMER_GROUP: process.env.CONSUMER_GROUP || 'workflow-consumers',
       CONSUMER_ID: process.env.CONSUMER_ID || 'workflow-engine',
       // Skip pull task step since we're injecting the task directly
       SKIP_PULL_TASK: true,
-      repo_remote: context.remote || null,
-      effective_repo_path: context.remote || context.repoRoot
+      // CRITICAL: Always use remote URL for distributed systems - never pass local paths
+      // Each agent machine will resolve the remote to their local PROJECT_BASE
+      repo_remote: context.remote,
+      effective_repo_path: context.remote
     };
+    
+    // Validate that we have a remote URL for distributed coordination
+    if (!context.remote) {
+      logger.error('No repository remote URL available for workflow execution', {
+        workflowId: context.workflowId,
+        taskId: task?.id,
+        projectId: context.projectId
+      });
+      throw new Error('Cannot execute workflow: no repository remote URL. Configure the repository URL in the project dashboard.');
+    }
 
     if (cfg.enablePersonaCompatMode) {
       logger.debug('Sending legacy persona compatibility requests', {

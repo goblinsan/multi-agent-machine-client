@@ -391,7 +391,7 @@ describe('WorkflowCoordinator Task Processing', () => {
         projectSlug: 'project',
         repoRoot: '/tmp/repo',
         branch: 'main',
-        remote: null
+        remote: 'https://github.com/test/repo.git'  // Now required for distributed coordination
       }
     );
 
