@@ -8,23 +8,25 @@ context:
   branch_strategy: "feature-branch"
 
 steps:
-  # Git setup - checkout feature branch
+  # Git setup - checkout feature branch based on milestone
   - name: checkout_branch
     type: GitOperationStep
-    description: "Checkout feature branch from base branch"
+    description: "Checkout feature branch from base branch using milestone slug from dashboard"
     config:
       operation: "checkoutBranchFromBase"
       baseBranch: "main"
-      newBranch: "feat/task"
+      # Use milestone slug for branch name - will be dynamically resolved
+      # Falls back to feat/task if milestone_slug is not available
+      newBranch: "${featureBranchName}"
 
   # Context gathering
   - name: context_request
     type: PersonaRequestStep
-    description: "Request context gathering from contextualizer persona"
+    description: "Request context gathering from context persona"
     depends_on: ["checkout_branch"]
     config:
       step: "1-context"
-      persona: "contextualizer"
+      persona: "context"
       intent: "context_gathering"
       payload:
         task: "${task}"

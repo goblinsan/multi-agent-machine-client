@@ -339,8 +339,13 @@ export class WorkflowCoordinator {
       milestone: task?.milestone || null,
       milestone_name: task?.milestone?.name || task?.milestone_name || null,
       milestoneId: task?.milestone?.id || task?.milestone_id || null,
+      milestone_slug: task?.milestone?.slug || task?.milestone_slug || null,
       milestone_description: task?.milestone?.description || null,
       milestone_status: task?.milestone?.status || null,
+      // Task-specific fields for branch naming
+      task_slug: task?.slug || task?.task_slug || null,
+      // Compute feature branch name based on milestone/task slug (using branchUtils logic)
+      featureBranchName: this.computeFeatureBranchName(task, context.projectSlug),
       // Legacy compatibility variables
       REDIS_STREAM_NAME: process.env.REDIS_STREAM_NAME || 'workflow-tasks',
       CONSUMER_GROUP: process.env.CONSUMER_GROUP || 'workflow-consumers',
@@ -719,6 +724,48 @@ export class WorkflowCoordinator {
       logger.error('Failed to get remaining task count', { projectId, error });
       return 0;
     }
+  }
+
+  /**
+   * Compute feature branch name based on task/milestone information
+   * Uses same logic as branchUtils.buildBranchName
+   */
+  private computeFeatureBranchName(task: any, projectSlug: string): string {
+    // Priority:
+    // 1) Explicit milestone.branch
+    // 2) Explicit task.branch
+    // 3) milestone/{milestone_slug} if available
+    // 4) feat/{task_slug} if available
+    // 5) milestone/{projectSlug} as fallback
+    
+    const milestone = task?.milestone;
+    const milestoneSlug = task?.milestone?.slug || task?.milestone_slug || null;
+    const taskSlug = task?.slug || task?.task_slug || null;
+    
+    // Check for explicit branch name from milestone
+    const fromMilestone = milestone?.branch || milestone?.branch_name || milestone?.branchName;
+    if (fromMilestone && typeof fromMilestone === 'string' && fromMilestone.trim()) {
+      return fromMilestone.trim();
+    }
+    
+    // Check for explicit branch name from task
+    const fromTask = task?.branch || task?.branch_name || task?.branchName;
+    if (fromTask && typeof fromTask === 'string' && fromTask.trim()) {
+      return fromTask.trim();
+    }
+    
+    // Use milestone slug if available and not generic
+    if (milestoneSlug && typeof milestoneSlug === 'string' && milestoneSlug.trim() && milestoneSlug !== 'milestone') {
+      return `milestone/${milestoneSlug}`;
+    }
+    
+    // Use task slug if available
+    if (taskSlug && typeof taskSlug === 'string' && taskSlug.trim()) {
+      return `feat/${taskSlug}`;
+    }
+    
+    // Fallback to project-based milestone branch
+    return `milestone/${projectSlug}`;
   }
 }
 

@@ -80,6 +80,7 @@ describe('Coordinator branch selection', () => {
     const [repoRoot, baseBranch, newBranch] = checkoutSpy.mock.calls[0] as any[];
     expect(repoRoot).toBe('/tmp/repo');
     expect(baseBranch).toBe('main'); // Should use remote default, not local branch
-    expect(newBranch).toBe('feat/task');
+    // New behavior: uses milestone/{projectSlug} as fallback when no milestone_slug or task_slug provided
+    expect(newBranch).toBe('milestone/demo-project');
   });
 });
