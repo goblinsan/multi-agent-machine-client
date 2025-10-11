@@ -167,6 +167,7 @@ const personaTimeouts = parsePersonaTimeouts(jsonOr(process.env.PERSONA_TIMEOUTS
 const personaDefaultTimeoutMs = parseDurationMs(process.env.PERSONA_DEFAULT_TIMEOUT_MS || process.env.COORDINATOR_WAIT_TIMEOUT_MS, 600000);
 const personaCodingTimeoutMs = parseDurationMs(process.env.PERSONA_CODING_TIMEOUT_MS, 180000);
 const personaCodingPersonas = splitCsv(process.env.PERSONA_CODING_PERSONAS || "lead-engineer,devops,ui-engineer,qa-engineer,ml-engineer", []);
+const enablePersonaCompatMode = bool(process.env.ENABLE_PERSONA_COMPAT_MODE, false);
 
 
 
@@ -229,6 +230,7 @@ export const cfg = {
   personaDefaultTimeoutMs,
   personaCodingTimeoutMs,
   personaCodingPersonas,
+  enablePersonaCompatMode,
 
   git: {
     defaultBranch: (process.env.GIT_DEFAULT_BRANCH || "main").trim() || "main",

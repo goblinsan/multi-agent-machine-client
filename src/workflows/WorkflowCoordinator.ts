@@ -340,8 +340,19 @@ export class WorkflowCoordinator {
       effective_repo_path: context.remote || context.repoRoot
     };
 
-    // Send persona requests for compatibility with old tests
-  await this.sendPersonaCompatibilityRequests(workflow, task, context);
+    if (cfg.enablePersonaCompatMode) {
+      logger.debug('Sending legacy persona compatibility requests', {
+        workflowId: context.workflowId,
+        taskId: task?.id,
+        mode: 'compat'
+      });
+      await this.sendPersonaCompatibilityRequests(workflow, task, context);
+    } else {
+      logger.debug('Legacy persona compatibility requests disabled', {
+        workflowId: context.workflowId,
+        taskId: task?.id
+      });
+    }
 
     // Create a modified workflow that skips the pull-task step when we have a task
     const modifiedWorkflow = this.createTaskInjectedWorkflow(workflow, task);

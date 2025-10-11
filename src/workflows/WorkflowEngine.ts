@@ -135,7 +135,9 @@ export class WorkflowEngine {
   public async loadWorkflowsFromDirectory(directoryPath: string): Promise<WorkflowDefinition[]> {
     try {
       const files = await readdir(directoryPath);
-      const yamlFiles = files.filter((file: string) => file.endsWith('.yaml') || file.endsWith('.yml'));
+      const yamlFiles = files
+        .filter((file: string) => file.endsWith('.yaml') || file.endsWith('.yml'))
+        .filter((file: string) => !/^test[-_.]/i.test(file));
       
       const definitions: WorkflowDefinition[] = [];
       
