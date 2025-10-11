@@ -11,15 +11,35 @@ function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
 
 async function ensureGroups(r: any) {
+  // Create consumer groups starting from '0' to read all messages in the stream,
+  // not just new ones. This prevents race conditions where messages sent before
+  // the consumer starts reading are missed.
   for (const p of cfg.allowedPersonas) {
-    try { await r.xGroupCreate(cfg.requestStream, groupForPersona(p), "$", { MKSTREAM: true }); } catch {}
+    try { 
+      await r.xGroupCreate(cfg.requestStream, groupForPersona(p), "0", { MKSTREAM: true }); 
+      logger.debug("created consumer group", { stream: cfg.requestStream, group: groupForPersona(p), startFrom: "0" });
+    } catch (e: any) {
+      // Group might already exist, which is fine
+      if (e?.message && !e.message.includes("BUSYGROUP")) {
+        logger.warn("failed to create consumer group", { stream: cfg.requestStream, group: groupForPersona(p), error: e?.message });
+      }
+    }
   }
-  try { await r.xGroupCreate(cfg.eventStream, `${cfg.groupPrefix}:coordinator`, "$", { MKSTREAM: true }); } catch {}
+  try { 
+    await r.xGroupCreate(cfg.eventStream, `${cfg.groupPrefix}:coordinator`, "0", { MKSTREAM: true }); 
+    logger.debug("created coordinator group", { stream: cfg.eventStream, group: `${cfg.groupPrefix}:coordinator`, startFrom: "0" });
+  } catch (e: any) {
+    if (e?.message && !e.message.includes("BUSYGROUP")) {
+      logger.warn("failed to create coordinator group", { stream: cfg.eventStream, group: `${cfg.groupPrefix}:coordinator`, error: e?.message });
+    }
+  }
 }
 
 
 async function readOne(r: any, persona: string) {
-  const res = await r.xReadGroup(groupForPersona(persona), cfg.consumerId, { key: cfg.requestStream, id: ">" }, { COUNT: 1, BLOCK: 200 }).catch(() => null);
+  // Increased BLOCK from 200ms to 5000ms (5 seconds) to reduce polling frequency
+  // and improve message reliability. Redis will return immediately if messages are available.
+  const res = await r.xReadGroup(groupForPersona(persona), cfg.consumerId, { key: cfg.requestStream, id: ">" }, { COUNT: 1, BLOCK: 5000 }).catch(() => null);
   if (!res) return;
   for (const stream of res) {
     for (const msg of stream.messages) {
@@ -40,7 +60,22 @@ async function readOne(r: any, persona: string) {
 
 async function main() {
   if (cfg.allowedPersonas.length === 0) { logger.error("ALLOWED_PERSONAS is empty; nothing to do."); process.exit(1); }
-  const r = await makeRedis(); await ensureGroups(r);
+  
+  // Establish Redis connection and ensure it's ready
+  const r = await makeRedis();
+  
+  // Verify connection with a simple ping
+  try {
+    await r.ping();
+    logger.info("redis connection established", { url: cfg.redisUrl.replace(/:[^:@]+@/, ':***@') });
+  } catch (e: any) {
+    logger.error("redis connection failed", { error: e?.message, url: cfg.redisUrl.replace(/:[^:@]+@/, ':***@') });
+    throw new Error("Failed to establish Redis connection");
+  }
+  
+  // Create consumer groups
+  await ensureGroups(r);
+  
   logger.info("worker ready", {
     personas: cfg.allowedPersonas,
     projectBase: cfg.projectBase,

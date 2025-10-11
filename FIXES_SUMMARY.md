@@ -308,3 +308,18 @@ All critical issues have been resolved. The distributed multi-agent coordination
 5. ✅ Handles critical errors with immediate termination
 
 The system is ready for distributed deployment across multiple machines in the local network.
+
+
+## original prompt:
+
+need help in clearing some errors happening in the project.
+the project coordinates ai persona working together across multiple machines on my local network to code a project that has a plan defined on a project dashboard (also running in the local newtork).  The coordinator delegates through redis where agents on the distributed system listen and reply.
+
+The workflow is sequential and must terminate all loops and activity if a critical error happens in one of the workflow steps.
+
+There are a few major issues occuring:
+
+- The coordinator is passing a repo path to the contexutalizer that is the repo path of its local machine (macbook) the contextualizer obviously cannot see that path - this should never be passed downstream - instead subsequent steps should be able to use the actual repo as stored in the project and use that to either clone or fetch into the correct local location using PROJECT_BASE
+- The implementation-plan -> plan-evaluator loop should exit when the evaluaion Passes or it hits the limit of retries, but i saw a passing eval continue the loop
+- DiffApply actions are not occuring (so subsequent steps have no updates to work on)
+- Information in the project dashbord is not being propagated correctly in the step delegation

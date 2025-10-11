@@ -35,7 +35,9 @@ async function drainStreams(redis: any) {
         }
       }
       
-      // 3. Delete the entire stream
+      // 3. Delete the entire stream (removes all messages)
+      // Note: When workers restart, they'll recreate groups from position "0",
+      // which will be empty after this drain, ensuring a clean state.
       const removed = await redis.del(stream);
       console.log(`Deleted stream ${stream}`, { removed });
       
