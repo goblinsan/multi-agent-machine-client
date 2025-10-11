@@ -102,7 +102,10 @@ export class WorkflowCoordinator {
         iterationCount++;
         
         // Fetch tasks directly from the tasks API instead of project status
-        const currentTasks = await this.fetchProjectTasks(projectId);
+        let currentTasks = await this.fetchProjectTasks(projectId);
+        if (!currentTasks.length) {
+          currentTasks = this.extractTasks(details, projectInfo);
+        }
         const currentPendingTasks = currentTasks.filter(task => this.normalizeTaskStatus(task?.status) !== 'done');
         
         // Debug logging to see extracted tasks

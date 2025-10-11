@@ -2,7 +2,7 @@
 
 ## Overview
 
-The workflow system provides a YAML-based configuration approach for defining multi-agent coordination workflows. It replaces the monolithic coordinator logic with a modular, step-based execution engine that maintains backward compatibility while offering enhanced flexibility and maintainability.
+The workflow system provides a YAML-based configuration approach for defining multi-agent coordination workflows. It is a modular step-based execution engine offering enhanced flexibility and maintainability.
 
 ## Architecture Components
 
@@ -265,25 +265,6 @@ Workflows are stored in the `workflows/` directory:
 - Distributed tracing across persona interactions
 - Dashboard integration for real-time status
 
-## Migration Guide
-
-### Phase 1: Parallel Operation
-1. Deploy WorkflowCoordinator alongside existing coordinator
-2. Route specific task types to new system for testing
-3. Monitor performance and compatibility
-4. Gradually increase coverage
-
-### Phase 2: Full Migration
-1. Convert all task processing to workflow engine
-2. Retire monolithic coordinator logic
-3. Update documentation and training materials
-4. Optimize workflows based on operational experience
-
-### Phase 3: Enhancement
-1. Add new workflow types for specialized use cases
-2. Implement advanced features (parallel processing, dynamic routing)
-3. Integrate with external systems and tools
-4. Optimize performance and resource utilization
 
 ## Best Practices
 

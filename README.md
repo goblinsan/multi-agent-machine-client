@@ -16,7 +16,6 @@ See `.env.example` for config.
 
 - PROJECT_BASE is a parent directory where local repositories are managed. It is not itself a git repo.
 - There is no placeholder repo under PROJECT_BASE (no implicit `active`). Repositories are always resolved from the dashboard (or payload override) and cloned/ensured under PROJECT_BASE.
-- REPO_ROOT and DEFAULT_REPO_NAME are deprecated and ignored. If set, they will be logged as deprecated and not used.
 - For multi-repo workflows, the coordinator resolves the target repository dynamically from the payload (repo_root when it points to an actual git repo, or by cloning from the dashboard’s repository URL using a project name/slug hint).
 
 ## Development
@@ -98,7 +97,6 @@ The multi-agent client now includes a YAML-based workflow system that provides d
 - **Step-based Execution**: Modular workflow steps with dependency management
 - **Error Handling**: Configurable retry policies and graceful error recovery
 - **Conditional Logic**: Dynamic workflow routing based on runtime conditions
-- **Backward Compatibility**: Seamless integration with existing coordinator logic
 
 ### Basic Usage
 

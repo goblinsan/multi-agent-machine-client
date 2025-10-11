@@ -9,10 +9,13 @@ import { TaskUpdateStep } from '../src/workflows/steps/TaskUpdateStep.js';
 import { PlanEvaluationStep } from '../src/workflows/steps/PlanEvaluationStep.js';
 import { QAAnalysisStep } from '../src/workflows/steps/QAAnalysisStep.js';
 import { TaskCreationStep } from '../src/workflows/steps/TaskCreationStep.js';
+import { GitOperationStep } from '../src/workflows/steps/GitOperationStep.js';
+import * as gitUtils from '../src/gitUtils.js';
+import { abortWorkflowDueToPushFailure } from '../src/workflows/helpers/workflowAbort.js';
 
 // Mock external dependencies
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
+vi.mock('../src/redisClient.js', () => {
+  const redisMock = {
     xGroupCreate: vi.fn().mockResolvedValue(null),
     xReadGroup: vi.fn().mockResolvedValue([{
       name: 'test-stream',
@@ -26,8 +29,19 @@ vi.mock('../src/redisClient.js', () => ({
       }]
     }]),
     xAck: vi.fn().mockResolvedValue(null),
+    xRange: vi.fn().mockResolvedValue([]),
+    xDel: vi.fn().mockResolvedValue(0),
+    quit: vi.fn().mockResolvedValue(null),
     disconnect: vi.fn().mockResolvedValue(null)
-  })
+  };
+
+  return {
+    makeRedis: vi.fn().mockResolvedValue(redisMock)
+  };
+});
+
+vi.mock('../src/workflows/helpers/workflowAbort.js', () => ({
+  abortWorkflowDueToPushFailure: vi.fn().mockResolvedValue(undefined)
 }));
 
 vi.mock('../src/scanRepo.js', () => ({
@@ -701,6 +715,47 @@ describe('Workflow Steps', () => {
 
       expect(result.status).toBe('failure');
       expect(result.error?.message).toContain('No QA results found');
+    });
+  });
+
+  describe('GitOperationStep', () => {
+    it('should abort workflow when push fails', async () => {
+      const commitResult = {
+        committed: true,
+        pushed: false,
+        branch: 'feat/agent-edit',
+        reason: 'push_failed'
+      };
+
+      const commitSpy = vi.spyOn(gitUtils, 'commitAndPushPaths').mockResolvedValueOnce(commitResult as any);
+      const abortSpy = vi.mocked(abortWorkflowDueToPushFailure);
+
+      const config = {
+        name: 'commit-step',
+        type: 'GitOperationStep',
+        config: {
+          operation: 'commitAndPushPaths',
+          repoRoot: '/tmp/repo',
+          branch: 'feat/agent-edit',
+          message: 'feat: update',
+          paths: ['src/file.ts']
+        }
+      };
+
+      const step = new GitOperationStep(config as any);
+      const result = await step.execute(context);
+
+      expect(commitSpy).toHaveBeenCalledOnce();
+      expect(result.status).toBe('failure');
+      expect(result.error?.message).toContain('Git push failed');
+      expect(abortSpy).toHaveBeenCalledTimes(1);
+      expect(abortSpy).toHaveBeenCalledWith(
+        expect.any(WorkflowContext),
+        commitResult,
+        expect.objectContaining({ message: 'feat: update', paths: ['src/file.ts'] })
+      );
+
+      commitSpy.mockRestore();
     });
   });
 

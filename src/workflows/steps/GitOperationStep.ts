@@ -1,6 +1,7 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
+import { abortWorkflowDueToPushFailure } from '../helpers/workflowAbort.js';
 
 interface GitOperationConfig {
   operation: 'checkoutBranchFromBase' | 'commitAndPushPaths' | 'verifyRemoteBranchHasDiff' | 'ensureBranchPublished';
@@ -37,7 +38,12 @@ export class GitOperationStep extends WorkflowStep {
       const newBranch = this.resolveVariable(config.newBranch, context) || context.getVariable('newBranch') || context.getVariable('branch') || 'feat/task';
       const branch = this.resolveVariable(config.branch, context) || context.getVariable('branch') || newBranch;
       const message = this.resolveVariable(config.message, context) || 'feat: automated changes';
-      const paths = config.paths || context.getVariable('changedPaths') || [];
+      const rawPaths = config.paths ?? context.getVariable('changedPaths') ?? [];
+      const paths = Array.isArray(rawPaths)
+        ? rawPaths
+        : typeof rawPaths === 'string'
+          ? [rawPaths]
+          : [];
 
       let result: any;
 
@@ -79,6 +85,27 @@ export class GitOperationStep extends WorkflowStep {
           context.setVariable('commitResult', result);
           context.setVariable('committed', result.committed);
           context.setVariable('pushed', result.pushed);
+
+          if ((result?.committed && result?.pushed === false) || result?.reason === 'push_failed') {
+            await abortWorkflowDueToPushFailure(context, result, {
+              message,
+              paths
+            });
+
+            return {
+              status: 'failure',
+              error: new Error(`Git push failed for branch ${branch || 'unknown'}`),
+              data: {
+                operation,
+                result
+              },
+              outputs: {
+                operation,
+                result,
+                commitResult: result
+              }
+            } satisfies StepResult;
+          }
           break;
 
         case 'verifyRemoteBranchHasDiff':
