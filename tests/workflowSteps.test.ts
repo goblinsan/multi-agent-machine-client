@@ -10,8 +10,10 @@ import { PlanEvaluationStep } from '../src/workflows/steps/PlanEvaluationStep.js
 import { QAAnalysisStep } from '../src/workflows/steps/QAAnalysisStep.js';
 import { TaskCreationStep } from '../src/workflows/steps/TaskCreationStep.js';
 import { GitOperationStep } from '../src/workflows/steps/GitOperationStep.js';
+import { PersonaRequestStep } from '../src/workflows/steps/PersonaRequestStep.js';
 import * as gitUtils from '../src/gitUtils.js';
 import { abortWorkflowDueToPushFailure, abortWorkflowWithReason } from '../src/workflows/helpers/workflowAbort.js';
+import { sendPersonaRequest, waitForPersonaCompletion } from '../src/agents/persona.js';
 
 // Mock external dependencies
 vi.mock('../src/redisClient.js', () => {
@@ -43,6 +45,16 @@ vi.mock('../src/redisClient.js', () => {
 vi.mock('../src/workflows/helpers/workflowAbort.js', () => ({
   abortWorkflowDueToPushFailure: vi.fn().mockResolvedValue(undefined),
   abortWorkflowWithReason: vi.fn().mockResolvedValue({ cleanupResult: { removed: 0, acked: 0 } })
+}));
+
+vi.mock('../src/agents/persona.js', () => ({
+  sendPersonaRequest: vi.fn().mockResolvedValue('corr-123'),
+  waitForPersonaCompletion: vi.fn().mockResolvedValue({
+    id: 'event-1',
+    fields: {
+      result: JSON.stringify({ status: 'success', normalizedStatus: 'pass' })
+    }
+  })
 }));
 
 vi.mock('../src/scanRepo.js', () => ({
@@ -86,6 +98,13 @@ describe('Workflow Steps', () => {
       {}
     );
     vi.clearAllMocks();
+    vi.mocked(sendPersonaRequest).mockResolvedValue('corr-123');
+    vi.mocked(waitForPersonaCompletion).mockResolvedValue({
+      id: 'event-1',
+      fields: {
+        result: JSON.stringify({ status: 'success', normalizedStatus: 'pass' })
+      }
+    } as any);
   });
 
   describe('PullTaskStep', () => {
@@ -230,6 +249,42 @@ describe('Workflow Steps', () => {
       expect(diffs).toBeDefined();
       expect(diffs.length).toBe(1);
       expect(diffs[0].parsed.filePath).toBe('test.ts');
+    });
+  });
+
+  describe('PersonaRequestStep', () => {
+    it('sends repo reference using effective_repo_path when available', async () => {
+      context.setVariable('effective_repo_path', 'https://example.com/repo.git');
+      context.setVariable('repo_remote', 'https://example.com/repo.git');
+
+      const config = {
+        name: 'context-request',
+        type: 'PersonaRequestStep',
+        config: {
+          step: '1-context',
+          persona: 'contextualizer',
+          intent: 'context_gathering',
+          payload: {
+            repo_path: '${effective_repo_path}'
+          }
+        },
+        outputs: ['context_request_result']
+      } as any;
+
+      const step = new PersonaRequestStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(sendPersonaRequest).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          workflowId: context.workflowId,
+          repo: 'https://example.com/repo.git'
+        })
+      );
+
+      const resolvedPayload = vi.mocked(sendPersonaRequest).mock.calls[0][1]?.payload;
+      expect(resolvedPayload?.repo_path).toBe('https://example.com/repo.git');
     });
   });
 

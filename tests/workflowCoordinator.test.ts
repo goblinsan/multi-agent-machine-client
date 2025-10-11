@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator';
 import { WorkflowEngine } from '../src/workflows/WorkflowEngine';
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext';
+import * as gitUtils from '../src/gitUtils.js';
 
 // Mock Redis client to prevent connection attempts during tests  
 vi.mock('../src/redisClient.js', () => ({
@@ -306,6 +307,39 @@ describe('WorkflowCoordinator Task Processing', () => {
 
     // Business outcome: Workflow execution handling logic completed without hanging
     expect(workflowCompleted).toBe(true);
+  });
+
+  it('aborts coordinator loop after workflow failure', async () => {
+    const coordinator = new WorkflowCoordinator();
+
+    const fetchTasksSpy = vi.spyOn(coordinator as any, 'fetchProjectTasks').mockResolvedValue([
+      { id: 'task-1', name: 'Task 1', status: 'open' }
+    ]);
+
+    const resolveRepoSpy = vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({
+      repoRoot: '/tmp/repo',
+      branch: 'main',
+      remote: 'https://example/repo.git'
+    } as any);
+
+    const processTaskSpy = vi
+      .spyOn(coordinator as any, 'processTask')
+      .mockResolvedValue({ success: false, failedStep: 'context_request', error: 'context failure' });
+
+    const result = await coordinator.handleCoordinator(
+      {},
+      { workflow_id: 'wf-abort', project_id: 'proj-abort' },
+      { repo: 'https://example/repo.git' }
+    );
+
+    expect(processTaskSpy).toHaveBeenCalledTimes(1);
+    expect(fetchTasksSpy).toHaveBeenCalledTimes(1);
+    expect(result.results[0]?.success).toBe(false);
+    expect(result.results).toHaveLength(1);
+
+    fetchTasksSpy.mockRestore();
+    resolveRepoSpy.mockRestore();
+    processTaskSpy.mockRestore();
   });
 
   it('records workflow abort metadata when execution fails', async () => {

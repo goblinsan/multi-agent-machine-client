@@ -94,10 +94,12 @@ export class WorkflowCoordinator {
         project_slug: projectSlug 
       });
 
-      // Process tasks in a loop until all are complete
-      const results = [];
+    // Process tasks in a loop until all are complete
+    const results = [];
   let iterationCount = 0;
   const maxIterations = this.isTestEnv() ? 5 : 20; // Lower in tests to avoid timeouts
+  let abortedDueToFailure = false;
+  let abortMetadata: { taskId?: string; error?: string; failedStep?: string } | null = null;
       
       while (iterationCount < maxIterations) {
         iterationCount++;
@@ -137,6 +139,7 @@ export class WorkflowCoordinator {
         
         // Process tasks in batches of 3 for efficiency
         const batch = currentPendingTasks.slice(0, 3);
+        let batchFailed = false;
         
         for (const task of batch) {
           try {
@@ -150,8 +153,26 @@ export class WorkflowCoordinator {
               remote: repoResolution.remote || null
             });
             results.push(result);
+
+            if (!result.success) {
+              batchFailed = true;
+              abortedDueToFailure = true;
+              abortMetadata = {
+                taskId: task?.id,
+                error: result.error,
+                failedStep: result.failedStep
+              };
+              logger.error('Aborting coordinator loop due to workflow failure', {
+                workflowId,
+                projectId,
+                taskId: task?.id,
+                failedStep: result.failedStep,
+                error: result.error
+              });
+              break;
+            }
           } catch (error: any) {
-            logger.error(`Failed to process task ${task?.id}`, {
+            logger.error(`Failed to process task ${task?.id}` , {
               workflowId,
               taskId: task?.id,
               error: error.message
@@ -161,7 +182,18 @@ export class WorkflowCoordinator {
               taskId: task?.id,
               error: error.message
             });
+            batchFailed = true;
+            abortedDueToFailure = true;
+            abortMetadata = {
+              taskId: task?.id,
+              error: error.message
+            };
+            break;
           }
+        }
+
+        if (batchFailed) {
+          break;
         }
         
         // Add small delay between iterations to prevent overwhelming the system
@@ -171,12 +203,21 @@ export class WorkflowCoordinator {
       }
       
       // Check if we hit max iterations without completing all tasks
-      if (iterationCount >= maxIterations) {
+      if (!abortedDueToFailure && iterationCount >= maxIterations) {
         logger.warn("Hit maximum iteration limit", {
           workflowId,
           projectId,
           maxIterations,
           remainingTasks: await this.getRemainingTaskCount(projectId)
+        });
+      }
+
+      if (abortedDueToFailure) {
+        logger.error('WorkflowCoordinator aborted early due to workflow failure', {
+          workflowId,
+          projectId,
+          iterationCount,
+          abortMetadata
         });
       }
 
@@ -264,6 +305,7 @@ export class WorkflowCoordinator {
     projectSlug: string;
     repoRoot: string;
     branch: string;
+    remote?: string | null;
   }): Promise<any> {
     const initialVariables = {
       task: {
@@ -293,7 +335,9 @@ export class WorkflowCoordinator {
       CONSUMER_GROUP: process.env.CONSUMER_GROUP || 'workflow-consumers',
       CONSUMER_ID: process.env.CONSUMER_ID || 'workflow-engine',
       // Skip pull task step since we're injecting the task directly
-      SKIP_PULL_TASK: true
+      SKIP_PULL_TASK: true,
+      repo_remote: context.remote || null,
+      effective_repo_path: context.remote || context.repoRoot
     };
 
     // Send persona requests for compatibility with old tests

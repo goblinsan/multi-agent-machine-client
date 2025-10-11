@@ -36,13 +36,17 @@ export class PersonaRequestStep extends WorkflowStep {
       const resolvedPayload = this.resolvePayloadVariables(payload, context);
       
       // Send persona request with exact step name
+      const repoForPersona = context.getVariable('effective_repo_path')
+        || context.getVariable('repo_remote')
+        || context.repoRoot;
+
       const corrId = await sendPersonaRequest(redis, {
         workflowId: context.workflowId,
         toPersona: persona,
         step,
         intent,
         payload: resolvedPayload,
-        repo: context.repoRoot,
+        repo: repoForPersona,
         branch: context.branch,
         projectId: context.projectId,
         deadlineSeconds
