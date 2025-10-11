@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { fetch } from "undici";
 import { cfg } from "../config.js";
 import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
 import { resolveRepoFromPayload } from "../gitUtils.js";
@@ -90,11 +91,18 @@ export class WorkflowCoordinator {
       while (iterationCount < maxIterations) {
         iterationCount++;
         
-        // Re-fetch project status to get current task states
-        const currentProjectInfo = await fetchProjectStatus(projectId);
-        const currentDetails = await fetchProjectStatusDetails(projectId).catch(() => null);
-        const currentTasks = this.extractTasks(currentDetails, currentProjectInfo);
+        // Fetch tasks directly from the tasks API instead of project status
+        const currentTasks = await this.fetchProjectTasks(projectId);
         const currentPendingTasks = currentTasks.filter(task => this.normalizeTaskStatus(task?.status) !== 'done');
+        
+        // Debug logging to see extracted tasks
+        logger.info("Fetched tasks debug", {
+          workflowId,
+          projectId,
+          totalFetchedTasks: currentTasks.length,
+          pendingTasksCount: currentPendingTasks.length,
+          pendingTaskIds: currentPendingTasks.map(t => t?.id).filter(Boolean)
+        });
         
         if (currentPendingTasks.length === 0) {
           logger.info("All tasks completed", { 
@@ -515,6 +523,27 @@ export class WorkflowCoordinator {
       pickRemoteFrom(projectInfo),
       pickRemoteFrom(payload)
     ) || '';
+  }
+
+  /**
+   * Fetch tasks directly from the tasks API for a project
+   */
+  private async fetchProjectTasks(projectId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`${cfg.dashboardBaseUrl.replace(/\/$/, '')}/v1/tasks?project_id=${encodeURIComponent(projectId)}`, {
+        headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Tasks API ${response.status}`);
+      }
+      
+      const tasks = await response.json();
+      return Array.isArray(tasks) ? tasks : [];
+    } catch (error: any) {
+      logger.warn("Fetch project tasks failed", { projectId, error: error.message });
+      return [];
+    }
   }
 
   /**
