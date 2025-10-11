@@ -123,7 +123,8 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
       }
       if (typeof contentToWrite !== 'string') throw new Error("No content available for upsert");
       await upsertFile(full, contentToWrite, maxBytes);
-      changed.push(path.relative(repoRoot, full));
+      // Normalize to POSIX-style separators for stability in tests and logs
+      changed.push(path.relative(repoRoot, full).replace(/\\/g, '/'));
     } else if ((op as any).action === 'delete') {
       const d = op as DeleteOp;
       if (typeof d.path !== 'string') throw new Error('Bad delete op fields');
@@ -131,7 +132,7 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
       // attempt to remove file if exists
       try { await fs.unlink(full); } catch (err) { /* ignore if not exist */ }
       // mark as changed so commit will capture removal
-      changed.push(path.relative(repoRoot, full));
+      changed.push(path.relative(repoRoot, full).replace(/\\/g, '/'));
     } else {
       throw new Error(`Unsupported action: ${(op as any).action}`);
     }

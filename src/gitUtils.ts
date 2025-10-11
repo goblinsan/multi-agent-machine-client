@@ -25,6 +25,10 @@ const execGit = promisify(execFile);
 
 type GitRunOptions = { cwd?: string };
 
+// Allow tests to override how git is executed without relying on spy semantics on ESM exports
+type RunGitImpl = (args: string[], options?: GitRunOptions) => Promise<{ stdout: string; stderr?: string }>;
+let runGitImpl: RunGitImpl | null = null;
+
 type RemoteInfo = {
   remote: string;
   sanitized: string;
@@ -53,7 +57,13 @@ function gitEnv(): NodeJS.ProcessEnv {
 }
 
 export async function runGit(args: string[], options: GitRunOptions = {}) {
+  if (runGitImpl) return runGitImpl(args, options);
   return execGit("git", args, { cwd: options.cwd, env: gitEnv() });
+}
+
+// Test-only hook to override git execution
+export function __setRunGitImplForTests(impl?: RunGitImpl | null) {
+  runGitImpl = impl || null;
 }
 
 function sanitizeSegment(seg: string) {
@@ -63,6 +73,15 @@ function sanitizeSegment(seg: string) {
 function parseRemote(remote: string): ParsedRemote {
   const trimmed = remote.trim();
   if (!trimmed) throw new Error("Remote URL is empty");
+
+  // Guard: reject obvious local filesystem paths (Windows drive letters, UNC, POSIX absolute)
+  // when they do not include a URL scheme. These are not git remotes.
+  const isWindowsDrive = /^[A-Za-z]:[\\\/]/.test(trimmed);
+  const isUnc = /^\\\\/.test(trimmed);
+  const isPosixAbs = /^\//.test(trimmed);
+  if (!trimmed.includes("://") && (isWindowsDrive || isUnc || isPosixAbs)) {
+    throw new Error(`Local path is not a git remote: ${trimmed}`);
+  }
 
   if (!trimmed.includes("://")) {
     const sshMatch = /^(?:[^@]+@)?([^:]+):(.+)$/.exec(trimmed);
@@ -262,9 +281,17 @@ function repoUrlFromPayload(payload: any): string | null {
   if (!payload || typeof payload !== "object") return null;
   const candidates = [payload.repo, payload.repository, payload.git_url, payload.gitUrl, payload.remote];
   for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim().length) {
-      return candidate.trim();
-    }
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (!trimmed.length) continue;
+    // Skip local filesystem-looking paths
+    if (/^(?:[A-Za-z]:[\\\/]|\\\\|\/)/.test(trimmed)) continue;
+    // Only treat as a remote if it parses as an SSH/HTTPS git remote. Ignore local filesystem paths.
+    try {
+      // Will throw for local paths like C:\\... or /Users/...
+      parseRemote(trimmed);
+      return trimmed;
+    } catch {}
   }
   return null;
 }
@@ -284,6 +311,31 @@ export async function resolveRepoFromPayload(payload: any): Promise<RepoResoluti
   const branch = branchFromPayload(payload);
   const remote = repoUrlFromPayload(payload);
   const hint = projectHintFromPayload(payload);
+
+  // Support: if a local repository path is provided via repo/repository fields and it's a git repo, use it
+  const localPathCandidates: Array<string | undefined> = [
+    typeof payload?.repo === 'string' ? payload.repo : undefined,
+    typeof payload?.repository === 'string' ? payload.repository : undefined,
+    typeof payload?.repo_root === 'string' ? payload.repo_root : undefined
+  ];
+  for (const cand of localPathCandidates) {
+    if (!cand || typeof cand !== 'string') continue;
+    const trimmed = cand.trim();
+    if (!trimmed) continue;
+    if (!/^(?:[A-Za-z]:[\\\/]|\\\\|\/)/.test(trimmed)) continue; // not an absolute local path
+    const gitDir = path.join(trimmed, ".git");
+    if (await directoryExists(gitDir).catch(() => false)) {
+      // Avoid mutating the current workspace by default
+      if (!cfg.allowWorkspaceGit && path.resolve(trimmed) === path.resolve(process.cwd())) {
+        if (!remote) {
+          throw new Error("Workspace repo provided but workspace mutations are disabled. Provide a repository remote URL so we can clone into PROJECT_BASE, or set MC_ALLOW_WORKSPACE_GIT=1 to opt-in.");
+        }
+        const ensured = await ensureRepo(remote, branch, hint);
+        return { repoRoot: ensured.repoRoot, branch, remote: ensured.remote, source: "payload_repo" };
+      }
+      return { repoRoot: trimmed, branch, remote: null, source: "payload_repo_root" };
+    }
+  }
 
   // If a repo_root is provided, only use it when it's an actual git repo.
   if (payload && typeof payload.repo_root === "string" && payload.repo_root.trim().length) {

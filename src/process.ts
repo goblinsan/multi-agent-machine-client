@@ -54,12 +54,14 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
         logger.warn("resolve repo from payload failed", { persona, workflowId: msg.workflow_id, error: e?.message || String(e) });
       }
     }
-    let repoRootNormalized = repoInfo ? normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot) : null;
+  // Use the resolved repoRoot directly for filesystem and git operations.
+  // Avoid cross-OS path normalization that could produce invalid paths on Windows.
+  let repoRootNormalized = repoInfo ? repoInfo.repoRoot : null;
     let dashboardUploadEnabled = false;
     const dashboardProject: { id?: string; name?: string; slug?: string } = {};
   if (persona === PERSONAS.CONTEXT && cfg.contextScan && repoInfo && repoRootNormalized) {
       try {
-        const repoRoot = repoRootNormalized;
+          const repoRoot = repoRootNormalized;
         const components = Array.isArray(payloadObj.components) ? payloadObj.components
                           : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
   
@@ -229,7 +231,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       try {
         const fs = await import("fs/promises");
         const pathMod = await import("path");
-        const repoRoot = repoRootNormalized;
+  const repoRoot = repoRootNormalized;
         const summaryPath = pathMod.resolve(repoRoot, ".ma/context/summary.md");
         const content = await fs.readFile(summaryPath, "utf8");
         externalSummary = content;
@@ -426,10 +428,10 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       try {
         if (!repoInfo) {
           repoInfo = await resolveRepoFromPayload(payloadObj);
-          repoRootNormalized = repoInfo ? normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot) : repoRootNormalized;
+          repoRootNormalized = repoInfo ? repoInfo.repoRoot : repoRootNormalized;
         }
         if (repoInfo) {
-          const repoRootForEdits = repoRootNormalized || normalizeRepoPath(repoInfo.repoRoot, cfg.repoRoot);
+          const repoRootForEdits = repoRootNormalized || repoInfo.repoRoot;
           const branchHint = firstString(
             payloadObj.branch,
             payloadObj.branch_name,
