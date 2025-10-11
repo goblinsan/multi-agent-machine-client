@@ -39,7 +39,21 @@ async function ensureGroups(r: any) {
 async function readOne(r: any, persona: string) {
   // Increased BLOCK from 200ms to 5000ms (5 seconds) to reduce polling frequency
   // and improve message reliability. Redis will return immediately if messages are available.
-  const res = await r.xReadGroup(groupForPersona(persona), cfg.consumerId, { key: cfg.requestStream, id: ">" }, { COUNT: 1, BLOCK: 5000 }).catch(() => null);
+  const res = await r.xReadGroup(groupForPersona(persona), cfg.consumerId, { key: cfg.requestStream, id: ">" }, { COUNT: 1, BLOCK: 5000 }).catch(async (e: any) => {
+    // If consumer group doesn't exist (e.g., after --drain-only), recreate it
+    if (e?.message && e.message.includes("NOGROUP")) {
+      logger.info("consumer group missing, recreating", { persona, group: groupForPersona(persona) });
+      try {
+        await r.xGroupCreate(cfg.requestStream, groupForPersona(persona), "0", { MKSTREAM: true });
+        logger.info("consumer group recreated", { persona, group: groupForPersona(persona) });
+        // Retry the read after creating the group
+        return await r.xReadGroup(groupForPersona(persona), cfg.consumerId, { key: cfg.requestStream, id: ">" }, { COUNT: 1, BLOCK: 5000 }).catch(() => null);
+      } catch (createErr: any) {
+        logger.error("failed to recreate consumer group", { persona, error: createErr?.message });
+      }
+    }
+    return null;
+  });
   if (!res) return;
   for (const stream of res) {
     for (const msg of stream.messages) {

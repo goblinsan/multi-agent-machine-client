@@ -3,17 +3,52 @@ import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
 
 function printUsage() {
-  console.error("Usage: npm run coordinator [--drain|--drain-only] <project_id> [repo_url] [base_branch]");
-  console.error("  --drain       Clear request/event streams before dispatching.");
-  console.error("  --drain-only  Clear streams and exit without dispatching a workflow.");
+  console.error("Usage: npm run coordinator [--drain|--drain-only|--nuke] <project_id> [repo_url] [base_branch]");
+  console.error("  --drain       Clear messages from streams before dispatching (preserves consumer groups).");
+  console.error("  --drain-only  Clear messages and exit without dispatching (preserves consumer groups).");
+  console.error("  --nuke        Nuclear option: destroy streams AND consumer groups, then exit.");
+  console.error("");
+  console.error("Examples:");
+  console.error("  npm run coordinator -- --drain-only              # Clear messages, keep groups");
+  console.error("  npm run coordinator -- --nuke                    # Destroy everything");
+  console.error("  npm run coordinator -- PROJECT_ID                # Send coordinator message");
 }
 
+// Clear messages from streams while preserving consumer groups
 async function drainStreams(redis: any) {
   const streams = [cfg.requestStream, cfg.eventStream];
   
   for (const stream of streams) {
     try {
-      console.log(`Draining stream: ${stream}`);
+      console.log(`Draining messages from stream: ${stream}`);
+      
+      // Check if stream exists
+      const len = await redis.xLen(stream).catch(() => 0);
+      if (len === 0) {
+        console.log(`Stream ${stream} is empty or doesn't exist`);
+        continue;
+      }
+      
+      // Delete the stream (removes all messages but not consumer groups)
+      // Consumer groups will remain and can continue working when stream is recreated
+      const removed = await redis.del(stream);
+      console.log(`Deleted stream ${stream} - removed ${len} messages`, { removed });
+      
+    } catch (error) {
+      console.warn(`Failed to drain ${stream}`, error);
+    }
+  }
+  
+  console.log("Stream drain complete - all messages cleared, consumer groups preserved");
+}
+
+// Nuclear option: destroy everything including consumer groups
+async function nukeStreams(redis: any) {
+  const streams = [cfg.requestStream, cfg.eventStream];
+  
+  for (const stream of streams) {
+    try {
+      console.log(`Nuking stream: ${stream}`);
       
       // 1. Get all consumer groups for this stream
       let groups: any[] = [];
@@ -35,14 +70,12 @@ async function drainStreams(redis: any) {
         }
       }
       
-      // 3. Delete the entire stream (removes all messages)
-      // Note: When workers restart, they'll recreate groups from position "0",
-      // which will be empty after this drain, ensuring a clean state.
+      // 3. Delete the entire stream
       const removed = await redis.del(stream);
       console.log(`Deleted stream ${stream}`, { removed });
       
     } catch (error) {
-      console.warn(`Failed to drain ${stream}`, error);
+      console.warn(`Failed to nuke ${stream}`, error);
     }
   }
   
@@ -52,11 +85,9 @@ async function drainStreams(redis: any) {
   for (const persona of personas) {
     const groupName = `${cfg.groupPrefix}:${persona}`;
     try {
-      // Try to destroy persona groups on request stream
       await redis.xGroupDestroy(cfg.requestStream, groupName);
       console.log(`Destroyed persona group: ${groupName}`);
     } catch (error) {
-      // Group might not exist, which is fine
       console.log(`Persona group ${groupName} not found (this is normal)`);
     }
   }
@@ -70,13 +101,15 @@ async function drainStreams(redis: any) {
     console.log(`Coordinator group not found (this is normal)`);
   }
   
-  console.log("Stream drain complete - all streams, groups, and pending messages cleared");
+  console.log("Nuke complete - all streams, groups, and pending messages destroyed");
 }
 
 async function main() {
   const args = process.argv.slice(2);
   let drain = false;
   let drainOnly = false;
+  let nuke = false;
+  let nukeOnly = false;
   const positionals: string[] = [];
 
   for (const arg of args) {
@@ -89,6 +122,11 @@ async function main() {
       drain = true;
       continue;
     }
+    if (arg === "--nuke") {
+      nuke = true;
+      nukeOnly = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       printUsage();
       return;
@@ -98,12 +136,21 @@ async function main() {
 
   const [projectIdArg, repoArg, baseBranchArg] = positionals;
 
-  if (!projectIdArg && !drainOnly) {
+  if (!projectIdArg && !drainOnly && !nukeOnly) {
     printUsage();
     process.exit(1);
   }
 
   const redis = await makeRedis();
+
+  if (nuke) {
+    await nukeStreams(redis);
+    if (nukeOnly) {
+      console.log("Redis streams nuked; exiting (--nuke).");
+      await redis.quit();
+      return;
+    }
+  }
 
   if (drain) {
     await drainStreams(redis);
