@@ -1,74 +1,73 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as gitUtils from '../src/gitUtils.js';
+import { cfg } from '../src/config.js';
+import path from 'path';
 import { makeTempRepo } from './makeTempRepo.js';
 
-// Mock Redis client to prevent connection attempts during tests  
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
-    xGroupCreate: vi.fn().mockResolvedValue(null),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xAck: vi.fn().mockResolvedValue(null),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(null),
-    xRevRange: vi.fn().mockResolvedValue([]),
-    xAdd: vi.fn().mockResolvedValue('test-id'),
-    exists: vi.fn().mockResolvedValue(1)
-  })
-}));
+describe('resolveRepoFromPayload respects PROJECT_BASE and remote URLs', () => {
+  const originalProjectBase = cfg.projectBase;
+  const tmpBase = path.resolve(process.cwd(), 'tmp-project-base-tests');
+  let calls: Array<{ args: string[]; cwd?: string }>;
 
-// Mock dashboard functions to prevent HTTP calls
-vi.mock('../src/dashboard.js', () => ({
-  fetchProjectStatus: vi.fn().mockResolvedValue({
-    id: 'p1',
-    name: 'Demo Project',
-    status: 'active'
-  }),
-  fetchProjectStatusDetails: vi.fn().mockResolvedValue({
-    tasks: [{ id: 'task1', name: 'test task', status: 'open' }],
-    repositories: [{ url: 'https://github.com/example/demo.git' }]
-  })
-}));
-
-// Regression: ensure we don't try to checkout in PROJECT_BASE/active when it's not a repo;
-// we should resolve using a remote and clone under PROJECT_BASE/<slug> before checkout.
-describe('coordinator repo resolution fallback', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    // Point PROJECT_BASE to a temp folder for the duration of this test run
+    (cfg as any).projectBase = tmpBase;
+    (cfg as any).repoRoot = tmpBase;
+    await (await import('fs/promises')).mkdir(tmpBase, { recursive: true });
+    calls = [];
+    gitUtils.__setRunGitImplForTests(async (args, options) => {
+      calls.push({ args: [...args], cwd: options?.cwd });
+      return { stdout: '' } as any;
+    });
   });
 
-  it('re-resolves to remote-backed repo before checkout when config default is not a repo', async () => {
+  afterEach(async () => {
+    (cfg as any).projectBase = originalProjectBase;
+    (cfg as any).repoRoot = originalProjectBase;
+    try { await (await import('fs/promises')).rm(tmpBase, { recursive: true, force: true }); } catch {}
+    gitUtils.__setRunGitImplForTests(null);
+  });
+
+  it('clones HTTPS remote under PROJECT_BASE using repoDirectoryFor', async () => {
+    const payload = {
+      repo: 'https://github.com/goblinsan/machine-client-log-summarizer.git',
+      project_name: 'test-repo'
+    };
+
+    const res = await gitUtils.resolveRepoFromPayload(payload);
+    expect(res.repoRoot).toContain(tmpBase);
+    // Ensure path includes a sanitized project hint
+    expect(res.repoRoot.replace(/\\/g, '/')).toMatch(/test-repo$/);
+
+    // First call should be clone with cwd=PROJECT_BASE
+    const cloneCall = calls.find(c => Array.isArray(c.args) && c.args[0] === 'clone');
+    expect(cloneCall?.cwd).toBe(tmpBase);
+  });
+
+  it('ignores local filesystem paths as repo remotes and uses PROJECT_BASE + remote', async () => {
+    const payload = {
+      // This is a local path-looking string; repoUrlFromPayload should ignore it
+      repo: 'C:/Users/jamescoghlan/code/machine-client-log-summarizer',
+      // Provide the actual remote via repository field
+      repository: 'https://github.com/goblinsan/machine-client-log-summarizer.git',
+      project_name: 'test-repo'
+    };
+
+    const res = await gitUtils.resolveRepoFromPayload(payload);
+    expect(res.repoRoot).toContain(tmpBase);
+    expect(res.repoRoot.replace(/\\/g, '/')).toMatch(/test-repo$/);
+
+    // Ensure no git command tried to use the local path as remote
+    const joined = calls.map(c => c.args.join(' ')).join('\n');
+    expect(joined).not.toContain('C:/Users/jamescoghlan/code/machine-client-log-summarizer');
+  });
+
+  it('uses local repo when payload.repo points to a valid git repo', async () => {
     const tempRepo = await makeTempRepo();
-    let repositoryResolved = false;
-    
-    // Test business outcome: repository resolution should work without hanging
-    const coordinator = new WorkflowCoordinator();
-    
-    try {
-      // SAFETY: Race condition with timeout protection
-      const testPromise = coordinator.handleCoordinator(
-        {}, 
-        { workflow_id: 'wf-repo', project_id: 'p1' }, 
-        { repo: tempRepo }
-      ).then(() => {
-        repositoryResolved = true;
-        return true;
-      }).catch(() => {
-        repositoryResolved = true; // Even failures count as "resolved" (didn't hang)
-        return true;
-      });
 
-      const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - repo resolution hanging')), 3000)
-      );
-
-      await Promise.race([testPromise, timeoutPromise]);
-    } catch (error) {
-      // May fail due to other issues, but we're testing that repo resolution doesn't hang
-      repositoryResolved = true;
-    }
-
-    // Business outcome: Repository resolution logic executed successfully without hanging
-    // This validates that the fallback mechanism works with the new WorkflowEngine architecture
-    expect(repositoryResolved).toBe(true);
+    const res = await gitUtils.resolveRepoFromPayload({ repo: tempRepo });
+    expect(res.repoRoot.replace(/\\/g, '/')).toEqual(tempRepo.replace(/\\/g, '/'));
+    // No clone/fetch invoked by resolveRepoFromPayload when using local repo path
+    expect(calls.find(c => c.args[0] === 'clone' || c.args[0] === 'fetch')).toBeUndefined();
   });
 });
