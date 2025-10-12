@@ -109,6 +109,9 @@ export class DiffApplyStep extends WorkflowStep {
         // Create edit spec JSON for fileops
         const editSpecJson = JSON.stringify(parseResult.editSpec);
         
+        // Get current branch from variables (may have been updated by GitOperationStep)
+        const currentBranch = context.getVariable('branch') || context.branch;
+        
         // Apply the edits
         applyResult = await applyEditOps(editSpecJson, {
           repoRoot: context.repoRoot,
@@ -117,7 +120,7 @@ export class DiffApplyStep extends WorkflowStep {
             '.ts', '.tsx', '.js', '.jsx', '.py', '.md', '.json', 
             '.yml', '.yaml', '.css', '.html', '.sh', '.bat'
           ],
-          branchName: context.branch,
+          branchName: currentBranch,
           commitMessage: stepConfig.commit_message || this.generateCommitMessage(context)
         });
 

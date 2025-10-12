@@ -61,6 +61,7 @@ steps:
       step: "2-implementation"
       persona: "lead-engineer"
       intent: "implementation"
+      # timeout not set - will use persona-specific timeout from PERSONA_TIMEOUTS_JSON env (600s for lead-engineer)
       payload:
         task: "${task}"
         plan: "${planning_loop_plan_result}"
@@ -106,12 +107,12 @@ steps:
   # QA - depends on git operations being complete
   - name: qa_request
     type: PersonaRequestStep
-    description: "Request QA review from QA engineer persona"
+    description: "Request QA review from tester-qa persona"
     depends_on: ["ensure_branch_published"]
     outputs: ["qa_request_result"]
     config:
       step: "3-qa"
-      persona: "qa-engineer"
+      persona: "tester-qa"
       intent: "qa"
       payload:
         task: "${task}"
@@ -161,6 +162,7 @@ steps:
       step: "4-implementation-plan"
       persona: "lead-engineer"
       intent: "implementation"
+      # timeout not set - will use persona-specific timeout from PERSONA_TIMEOUTS_JSON env (600s for lead-engineer)
       payload:
         task: "${task}"
         plan: "${qa_created_tasks_result}"

@@ -20,7 +20,8 @@ interface PersonaRequestConfig {
 export class PersonaRequestStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PersonaRequestConfig;
-    const { step, persona, intent, payload, timeout = 30000, deadlineSeconds = 600 } = config;
+    // Don't default timeout here - let waitForPersonaCompletion use persona-specific timeouts from env
+    const { step, persona, intent, payload, timeout, deadlineSeconds = 600 } = config;
 
     logger.info(`Making persona request`, {
       workflowId: context.workflowId,
@@ -79,9 +80,10 @@ export class PersonaRequestStep extends WorkflowStep {
       await redis.disconnect();
 
       if (!completion) {
+        const timeoutInfo = timeout ? `${timeout}ms` : 'persona default timeout';
         return {
           status: 'failure',
-          error: new Error(`Persona request timed out after ${timeout}ms`),
+          error: new Error(`Persona request timed out after ${timeoutInfo}`),
           data: { step, persona, corrId }
         };
       }
