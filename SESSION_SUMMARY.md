@@ -3,9 +3,27 @@
 **Date**: October 11, 2025  
 **Session Goal**: Fix persistent issues preventing lead-engineer diffs from being applied to files
 
-## Issues Fixed
+## Issues Fixed (4 Major Fixes This Session)
 
-### 0. ✅ QA Iteration Loop Missing (CRITICAL - MAIN ISSUE)
+### 0. ✅ Task Status Updates Missing (CRITICAL)
+**Files**:
+- `src/workflows/definitions/legacy-compatible-task-flow.yaml` (added 3 status steps + failure handling)
+
+**Problem**: Tasks never updated status on dashboard during workflow
+- Remained in initial status throughout execution
+- No visibility into progress or failures
+- Dashboard showed stale data
+
+**Fix**: Added status updates at key stages:
+- **in_progress** - After checkout (work starts)
+- **in_review** - After QA passes (entering reviews)
+- **blocked** - On workflow failure (needs intervention)
+- **done** - After all reviews (already existed)
+
+**Impact**: Dashboard now shows real-time task status  
+**Doc**: `TASK_STATUS_UPDATES.md`
+
+### 1. ✅ QA Iteration Loop Missing (CRITICAL - MAIN ISSUE)
 **Files**: 
 - `src/workflows/steps/QAIterationLoopStep.ts` (new - 400+ lines)
 - `src/workflows/definitions/legacy-compatible-task-flow.yaml` (replaced 6 steps with 1 loop)
@@ -28,7 +46,7 @@
 **Impact**: QA loop now actually loops! Can retry indefinitely until passing  
 **Doc**: `QA_ITERATION_LOOP_IMPLEMENTATION.md`
 
-### 1. ✅ DiffApplyStep Branch Bug (CRITICAL)
+### 2. ✅ DiffApplyStep Branch Bug (CRITICAL)
 **File**: `src/workflows/steps/DiffApplyStep.ts`  
 **Problem**: Diffs were being applied to `main` branch instead of the feature branch  
 **Root Cause**: Used `context.branch` (readonly, never changes) instead of `context.getVariable('branch')` (updated by GitOperationStep)  
@@ -36,14 +54,14 @@
 **Impact**: Diffs now applied to correct branch, so commits succeed  
 **Doc**: `DIFF_APPLY_BRANCH_BUG_FIX.md`
 
-### 2. ✅ QA Persona Name Mismatch
+### 3. ✅ QA Persona Name Mismatch
 **File**: `src/workflows/definitions/legacy-compatible-task-flow.yaml`  
 **Problem**: Workflow used `qa-engineer` but actual persona is `tester-qa`  
 **Fix**: Changed line 115 from `persona: "qa-engineer"` to `persona: "tester-qa"`  
 **Impact**: QA step now finds the correct agent to handle requests  
 **Doc**: `QA_PERSONA_FIX.md`
 
-### 3. ✅ QA Feedback Loop Broken (CRITICAL)
+### 4. ✅ QA Feedback Loop Broken (CRITICAL - REPLACED BY ITERATION LOOP)
 **Files**: 
 - `src/workflows/definitions/legacy-compatible-task-flow.yaml` (added 4 steps)
 - `src/workflows/steps/VariableSetStep.ts` (new)
@@ -155,7 +173,7 @@ Git checkout branch → lead-engineer produces diffs → diffs applied to CORREC
 
 ## Success Metrics
 
-- **Bugs Fixed**: 3 critical, 5 from previous session
+- **Bugs Fixed**: 4 critical this session, 5 from previous session
 - **New Features**: 1 (VariableSetStep)
 - **Test Coverage**: Maintained 100% pass rate
 - **Documentation**: 5 comprehensive docs created

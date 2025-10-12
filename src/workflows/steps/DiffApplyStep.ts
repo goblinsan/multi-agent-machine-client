@@ -245,12 +245,24 @@ export class DiffApplyStep extends WorkflowStep {
           return output.implementation_diff;
         } else if (output.diff) {
           return output.diff;
+        } else if (output.ops && Array.isArray(output.ops)) {
+          // Handle pre-parsed ops structure at top level - convert to synthetic diff format
+          context.logger.info('DiffApplyStep: detected pre-parsed ops structure, converting to diff format', {
+            opsCount: output.ops.length
+          });
+          return this.convertOpsToDiffFormat(output.ops);
         } else if (output.result) {
           // result might be a stringified JSON or direct string
           if (typeof output.result === 'string') {
             return output.result;
           } else if (output.result.diffs || output.result.code_diffs) {
             return output.result.diffs || output.result.code_diffs;
+          } else if (output.result.ops && Array.isArray(output.result.ops)) {
+            // Handle pre-parsed ops structure in result field
+            context.logger.info('DiffApplyStep: detected pre-parsed ops in result field, converting to diff format', {
+              opsCount: output.result.ops.length
+            });
+            return this.convertOpsToDiffFormat(output.result.ops);
           }
         } else if (output.output) {
           return output.output;
@@ -273,6 +285,43 @@ export class DiffApplyStep extends WorkflowStep {
     }
 
     return null;
+  }
+
+  /**
+   * Convert pre-parsed ops array to synthetic diff format
+   * This allows the step to handle both raw diff text and structured ops
+   */
+  private convertOpsToDiffFormat(ops: any[]): string {
+    const diffBlocks: string[] = [];
+    
+    for (const op of ops) {
+      if (op.action === 'upsert' && op.path && op.content !== undefined) {
+        // Create a synthetic unified diff for upsert operations
+        const content = op.content;
+        const lines = content.split('\n');
+        const hunks = lines.map((line: string) => `+${line}`).join('\n');
+        
+        const diffBlock = `\`\`\`diff
+--- a/${op.path}
++++ b/${op.path}
+@@ -0,0 +1,${lines.length} @@
+${hunks}
+\`\`\``;
+        
+        diffBlocks.push(diffBlock);
+      } else if (op.action === 'delete' && op.path) {
+        // Create a synthetic unified diff for delete operations
+        const diffBlock = `\`\`\`diff
+--- a/${op.path}
++++ /dev/null
+@@ -1 +0,0 @@
+\`\`\``;
+        
+        diffBlocks.push(diffBlock);
+      }
+    }
+    
+    return diffBlocks.join('\n\n');
   }
 
   /**

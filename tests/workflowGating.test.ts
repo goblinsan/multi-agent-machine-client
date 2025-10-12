@@ -25,25 +25,36 @@ describe('legacy-compatible workflow gating', () => {
 
   const planningLoopStep = steps['planning_loop'];
   const qaStep = steps['qa_request'];
+  const markInProgressStep = steps['mark_task_in_progress'];
+  const markInReviewStep = steps['mark_task_in_review'];
+  
   expect(planningLoopStep).toBeDefined();
   expect(planningLoopStep?.depends_on).toEqual(['context_request']);
-    const codeReviewStep = steps['code_review_request'];
-    const securityStep = steps['security_request'];
-    const devopsStep = steps['devops_request'];
-    const markDoneStep = steps['mark_task_done'];
+  expect(markInProgressStep).toBeDefined();
+  expect(markInProgressStep?.depends_on).toEqual(['checkout_branch']);
+  
+  const codeReviewStep = steps['code_review_request'];
+  const securityStep = steps['security_request'];
+  const devopsStep = steps['devops_request'];
+  const markDoneStep = steps['mark_task_done'];
 
     expect(qaStep).toBeDefined();
     expect(codeReviewStep).toBeDefined();
     expect(securityStep).toBeDefined();
     expect(devopsStep).toBeDefined();
     expect(markDoneStep).toBeDefined();
+    expect(markInReviewStep).toBeDefined();
 
-    // Code review depends on qa_request AND qa_iteration_loop (which runs if QA initially fails)
-    expect(codeReviewStep?.depends_on).toEqual(['qa_request', 'qa_iteration_loop']);
+    // Mark in review happens when QA passes
+    expect(markInReviewStep?.depends_on).toEqual(['qa_request', 'qa_iteration_loop']);
+    expect(markInReviewStep?.condition).toBe("${qa_request_status} == 'pass'");
+
+    // Code review depends on mark_in_review
+    expect(codeReviewStep?.depends_on).toEqual(['mark_task_in_review']);
     expect(codeReviewStep?.condition).toBe("${qa_request_status} == 'pass'");
 
-    // Security also depends on both QA and potential iteration loop
-    expect(securityStep?.depends_on).toEqual(['qa_request', 'qa_iteration_loop']);
+    // Security also depends on mark_in_review
+    expect(securityStep?.depends_on).toEqual(['mark_task_in_review']);
     expect(securityStep?.condition).toBe("${qa_request_status} == 'pass'");
 
     expect(devopsStep?.depends_on).toEqual(['code_review_request', 'security_request']);

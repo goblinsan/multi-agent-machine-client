@@ -19,11 +19,19 @@ steps:
       # Falls back to feat/task if milestone_slug is not available
       newBranch: "${featureBranchName}"
 
+  # Mark task as in progress immediately after starting
+  - name: mark_task_in_progress
+    type: SimpleTaskStatusStep
+    description: "Mark task as in progress on dashboard"
+    depends_on: ["checkout_branch"]
+    config:
+      status: "in_progress"
+
   # Context gathering
   - name: context_request
     type: PersonaRequestStep
     description: "Request context gathering from context persona"
-    depends_on: ["checkout_branch"]
+    depends_on: ["mark_task_in_progress"]
     config:
       step: "1-context"
       persona: "context"
@@ -148,11 +156,20 @@ steps:
       implementationStep: "qa-fix-implementation"
       qaRetestStep: "qa-retest"
 
+  # Mark task as in review when QA passes and entering review stages
+  - name: mark_task_in_review
+    type: SimpleTaskStatusStep
+    description: "Mark task as in review on dashboard"
+    depends_on: ["qa_request", "qa_iteration_loop"]
+    condition: "${qa_request_status} == 'pass'"
+    config:
+      status: "in_review"
+
   # Code Review - depends on QA passing (either first time or after iteration loop)
   - name: code_review_request
     type: PersonaRequestStep
     description: "Request code review from code reviewer persona"
-    depends_on: ["qa_request", "qa_iteration_loop"]
+    depends_on: ["mark_task_in_review"]
     condition: "${qa_request_status} == 'pass'"
     config:
       step: "3-code-review"
@@ -170,7 +187,7 @@ steps:
   - name: security_request
     type: PersonaRequestStep
     description: "Request security review from security reviewer persona"
-    depends_on: ["qa_request", "qa_iteration_loop"]
+    depends_on: ["mark_task_in_review"]
     condition: "${qa_request_status} == 'pass'"
     config:
       step: "3-security"
@@ -214,6 +231,15 @@ steps:
       task_id: "${taskId}"
       project_id: "${projectId}"
       status: "done"
+
+# Failure handling - mark task as blocked when workflow fails
+failure_handling:
+  on_workflow_failure:
+    - name: mark_task_blocked
+      type: SimpleTaskStatusStep
+      description: "Mark task as blocked when workflow fails"
+      config:
+        status: "blocked"
 
 # Workflow timeouts
 timeouts:
