@@ -66,6 +66,7 @@ export class PlanningLoopStep extends WorkflowStep {
 
         // Get the remote URL for distributed agent coordination
         const repoRemote = context.getVariable('repo_remote') || context.getVariable('effective_repo_path');
+        const currentBranch = context.getCurrentBranch();
         
         const payloadWithContext = {
           ...payload,
@@ -75,7 +76,7 @@ export class PlanningLoopStep extends WorkflowStep {
           is_revision: currentIteration > 1,
           task: context.getVariable('task'),
           repo: repoRemote,
-          branch: context.branch || context.getVariable('branch'),
+          branch: currentBranch,
           project_id: context.projectId
         };
 
@@ -86,7 +87,7 @@ export class PlanningLoopStep extends WorkflowStep {
           intent: 'planning',
           payload: payloadWithContext,
           repo: repoRemote,
-          branch: context.branch || context.getVariable('branch'),
+          branch: currentBranch,
           projectId: context.projectId,
           deadlineSeconds
         });
@@ -140,6 +141,7 @@ export class PlanningLoopStep extends WorkflowStep {
 
         // Get the remote URL for distributed agent coordination
         const repoRemote = context.getVariable('repo_remote') || context.getVariable('effective_repo_path');
+        const currentBranch = context.getCurrentBranch();
         
         const evalPayload = {
           ...payload,
@@ -147,6 +149,7 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration,
           task: context.getVariable('task'),
           repo: repoRemote,
+          branch: currentBranch,
           project_id: context.projectId
         };
 
@@ -157,7 +160,7 @@ export class PlanningLoopStep extends WorkflowStep {
           intent: 'evaluation',
           payload: evalPayload,
           repo: repoRemote,
-          branch: context.branch,
+          branch: currentBranch,
           projectId: context.projectId,
           deadlineSeconds
         });

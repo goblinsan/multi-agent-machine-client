@@ -186,8 +186,7 @@ export class QAIterationLoopStep extends WorkflowStep {
     iteration: number
   ): Promise<any> {
     const corrId = crypto.randomUUID();
-    
-    const branch = context.getVariable('branch') || context.branch;
+    const currentBranch = context.getCurrentBranch();
     
     await sendPersonaRequest(redis, {
       workflowId: context.workflowId,
@@ -202,12 +201,12 @@ export class QAIterationLoopStep extends WorkflowStep {
         previous_attempts: history,
         context: context.getVariable('context_request_result'),
         repo: context.getVariable('repo_remote'),
-        branch,
+        branch: currentBranch,
         project_id: context.getVariable('projectId')
       },
       corrId,
       repo: context.getVariable('repoRoot'),
-      branch,
+      branch: currentBranch,
       projectId: context.getVariable('projectId')
     });
 
@@ -229,6 +228,7 @@ export class QAIterationLoopStep extends WorkflowStep {
     iteration: number
   ): Promise<any> {
     const corrId = crypto.randomUUID();
+    const currentBranch = context.getCurrentBranch();
     
     await sendPersonaRequest(redis, {
       workflowId: context.workflowId,
@@ -239,13 +239,14 @@ export class QAIterationLoopStep extends WorkflowStep {
         task: context.getVariable('task'),
         plan,
         iteration,
+        branch: currentBranch,
         context: context.getVariable('context_request_result'),
         repo: context.getVariable('repo_remote'),
         project_id: context.getVariable('projectId')
       },
       corrId,
       repo: context.getVariable('repoRoot'),
-      branch: context.getVariable('branch') || context.branch,
+      branch: currentBranch,
       projectId: context.getVariable('projectId')
     });
 
@@ -301,7 +302,7 @@ export class QAIterationLoopStep extends WorkflowStep {
     applyResult: any,
     iteration: number
   ): Promise<void> {
-    const currentBranch = context.getVariable('branch') || context.branch;
+    const currentBranch = context.getCurrentBranch();
     
     const commitResult = await commitAndPushPaths({
       repoRoot: context.repoRoot,
@@ -338,6 +339,8 @@ export class QAIterationLoopStep extends WorkflowStep {
     const tddStage = context.getVariable('tdd_stage') || task?.tdd_stage;
     const isFailingTestStage = tddStage === 'write_failing_test' || tddStage === 'failing_test';
     
+    const currentBranch = context.getCurrentBranch();
+    
     await sendPersonaRequest(redis, {
       workflowId: context.workflowId,
       toPersona: PERSONAS.TESTER_QA,
@@ -351,12 +354,13 @@ export class QAIterationLoopStep extends WorkflowStep {
         previous_attempts: previousHistory || [],
         tdd_stage: tddStage,
         is_tdd_failing_test_stage: isFailingTestStage,
+        branch: currentBranch,
         repo: context.getVariable('repo_remote'),
         project_id: context.getVariable('projectId')
       },
       corrId,
       repo: context.getVariable('repoRoot'),
-      branch: context.getVariable('branch') || context.branch,
+      branch: currentBranch,
       projectId: context.getVariable('projectId')
     });
 

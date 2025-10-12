@@ -80,6 +80,15 @@ export class WorkflowContext {
   }
 
   /**
+   * Get the current working branch for persona requests
+   * This method encapsulates the branch resolution logic used across all workflow steps
+   * Priority: 1. branch variable (set by GitOperationStep), 2. currentBranch variable, 3. context branch
+   */
+  getCurrentBranch(): string {
+    return this.getVariable('branch') || this.getVariable('currentBranch') || this.branch;
+  }
+
+  /**
    * Set step output
    */
   setStepOutput(stepName: string, output: any): void {

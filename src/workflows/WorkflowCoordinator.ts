@@ -493,6 +493,7 @@ export class WorkflowCoordinator {
           payload: {
             task,
             repo: repoForPayload,
+            branch: context.getCurrentBranch(),
             project_id: context.projectId,
             project_name: context.projectName,
             milestone: task?.milestone?.name,
@@ -501,7 +502,7 @@ export class WorkflowCoordinator {
             ...mapping.payload
           },
           repo: repoForPayload,
-          branch: context.branch,
+          branch: context.getCurrentBranch(),
           projectId: context.projectId
         });
 

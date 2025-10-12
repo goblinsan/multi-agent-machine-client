@@ -356,6 +356,7 @@ export class QAFailureCoordinationStep extends WorkflowStep {
     
     try {
       const corrId = crypto.randomUUID();
+      const currentBranch = context.getCurrentBranch();
       
       await sendPersonaRequest(redis, {
         workflowId: context.workflowId,
@@ -367,12 +368,13 @@ export class QAFailureCoordinationStep extends WorkflowStep {
           qa_result: qaResult,
           stage: 'qa',
           milestone,
+          branch: currentBranch,
           parent_task: task,
           project_id: context.getVariable('projectId')
         },
         corrId,
         repo: context.getVariable('repoRoot'),
-        branch: context.getVariable('branch'),
+        branch: currentBranch,
         projectId: context.getVariable('projectId')
       });
       
@@ -476,6 +478,7 @@ export class QAFailureCoordinationStep extends WorkflowStep {
   ): Promise<{ status: string; reason?: string }> {
     try {
       const corrId = crypto.randomUUID();
+      const currentBranch = context.getCurrentBranch();
       
       await sendPersonaRequest(redis, {
         workflowId: context.workflowId,
@@ -486,11 +489,12 @@ export class QAFailureCoordinationStep extends WorkflowStep {
           qa_feedback: qaResult,
           plan: plan,
           iteration,
+          branch: currentBranch,
           require_citations: true
         },
         corrId,
         repo: context.getVariable('repoRoot'),
-        branch: context.getVariable('branch'),
+        branch: currentBranch,
         projectId: context.getVariable('projectId')
       });
       
@@ -530,6 +534,7 @@ export class QAFailureCoordinationStep extends WorkflowStep {
   ): Promise<any> {
     try {
       const corrId = crypto.randomUUID();
+      const currentBranch = context.getCurrentBranch();
       
       await sendPersonaRequest(redis, {
         workflowId: context.workflowId,
@@ -541,6 +546,7 @@ export class QAFailureCoordinationStep extends WorkflowStep {
           evaluator_feedback: evalResult,
           previous_plan: currentPlan,
           iteration: iteration + 1,
+          branch: currentBranch,
           revision_guidelines: [
             "Only include steps that directly address evaluator comments and QA failures.",
             "Keep steps small, verifiable, and cite the failing test, error, or acceptance criteria they address.",
@@ -551,7 +557,7 @@ export class QAFailureCoordinationStep extends WorkflowStep {
         },
         corrId,
         repo: context.getVariable('repoRoot'),
-        branch: context.getVariable('branch'),
+        branch: currentBranch,
         projectId: context.getVariable('projectId')
       });
       

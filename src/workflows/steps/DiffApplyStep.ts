@@ -102,15 +102,15 @@ export class DiffApplyStep extends WorkflowStep {
         
         applyResult = {
           changed: parseResult.editSpec.ops.map(op => op.path),
-          branch: context.branch,
+          branch: context.getCurrentBranch(),
           sha: 'dry-run'
         };
       } else {
         // Create edit spec JSON for fileops
         const editSpecJson = JSON.stringify(parseResult.editSpec);
         
-        // Get current branch from variables (may have been updated by GitOperationStep)
-        const currentBranch = context.getVariable('branch') || context.branch;
+        // Get current branch from context (encapsulates branch resolution logic)
+        const currentBranch = context.getCurrentBranch();
         
         // Apply the edits
         applyResult = await applyEditOps(editSpecJson, {
