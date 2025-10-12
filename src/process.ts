@@ -258,7 +258,33 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     const userPayload = msg.payload ? msg.payload : "{}";
     let externalSummary: string | null = null;
     let preferredPaths: string[] = [];
-    if (persona !== "context" && repoInfo && repoRootNormalized) {
+    
+    // First, check if the payload contains a fresh context summary from a recent context persona run
+    // This ensures we use the most up-to-date context rather than reading stale data from disk
+    if (persona !== "context") {
+      try {
+        const contextFromPayload = payloadObj.context?.output || payloadObj.context_summary || payloadObj.context;
+        if (contextFromPayload && typeof contextFromPayload === 'string' && contextFromPayload.length > 100) {
+          externalSummary = contextFromPayload;
+          scanSummaryText = "Context summary provided from recent context scan";
+          preferredPaths = extractMentionedPaths(contextFromPayload);
+          logger.info("Using fresh context summary from payload", { 
+            persona, 
+            workflowId: msg.workflow_id,
+            summaryLength: contextFromPayload.length 
+          });
+        }
+      } catch (e: any) {
+        logger.debug("Unable to extract context from payload, will try disk", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message 
+        });
+      }
+    }
+    
+    // If no fresh context in payload, fall back to reading from disk
+    if (!externalSummary && persona !== "context" && repoInfo && repoRootNormalized) {
       try {
         const fs = await import("fs/promises");
         const pathMod = await import("path");
@@ -268,6 +294,11 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
         externalSummary = content;
         if (!scanSummaryText) scanSummaryText = `Context summary loaded from ${pathMod.relative(repoRoot, summaryPath)}`;
         preferredPaths = extractMentionedPaths(content);
+        logger.debug("Using context summary from disk file", {
+          persona,
+          workflowId: msg.workflow_id,
+          summaryPath: pathMod.relative(repoRoot, summaryPath)
+        });
       } catch (e:any) {
         logger.debug("persona prompt: context summary unavailable", { persona, workflowId: msg.workflow_id, error: e?.message || String(e) });
       }
@@ -275,6 +306,53 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
   
     if (!scanSummaryText && persona !== PERSONAS.CONTEXT && persona !== PERSONAS.COORDINATION) {
       scanSummaryText = "Context summary not available.";
+    }
+  
+    // Load QA results for implementation-planner and plan-evaluator to inform their decisions
+    let qaHistory: string | null = null;
+    if ((persona === PERSONAS.IMPLEMENTATION_PLANNER || persona === PERSONAS.PLAN_EVALUATOR) && repoInfo && repoRootNormalized) {
+      try {
+        const fs = await import("fs/promises");
+        const pathMod = await import("path");
+        const repoRoot = repoRootNormalized;
+        
+        const taskId = firstString(
+          payloadObj.task_id,
+          payloadObj.taskId,
+          payloadObj.task?.id,
+          msg.workflow_id
+        ) || "unknown";
+        
+        const qaLogPath = pathMod.resolve(repoRoot, ".ma/qa", `task-${taskId}-qa.log`);
+        
+        try {
+          const qaContent = await fs.readFile(qaLogPath, "utf8");
+          // Extract only the most recent QA run (last entry in the log)
+          const entries = qaContent.split("=".repeat(80)).filter(e => e.trim());
+          const latestEntry = entries.length > 0 ? entries[entries.length - 1] : qaContent;
+          qaHistory = latestEntry.trim();
+          
+          logger.info("Loaded QA history for persona", {
+            persona,
+            taskId,
+            qaLogPath: pathMod.relative(repoRoot, qaLogPath),
+            workflowId: msg.workflow_id
+          });
+        } catch (readErr: any) {
+          // QA log doesn't exist yet - this is normal for first run
+          logger.debug("QA log not found (first run?)", {
+            persona,
+            taskId,
+            qaLogPath: pathMod.relative(repoRoot, qaLogPath)
+          });
+        }
+      } catch (e: any) {
+        logger.debug("Unable to load QA history", {
+          persona,
+          workflowId: msg.workflow_id,
+          error: e?.message || String(e)
+        });
+      }
     }
   
     const scanSummaryForPrompt = scanArtifacts
@@ -327,6 +405,14 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       }
     } catch (err) {
       // ignore summary fetch failures
+    }
+  
+    // Include QA test results for planners/evaluators to inform their decisions
+    if (qaHistory && qaHistory.length > 0) {
+      messages.push({ 
+        role: 'system', 
+        content: `Latest QA Test Results:\n${clipText(qaHistory, 2000)}\n\nUse this to understand what failed in previous attempts and adjust your plan accordingly.` 
+      });
     }
   
     if (promptFileSnippets.length) {
@@ -489,6 +575,63 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
   
     const result: any = { output: resp.content, model, duration_ms: duration };
     if (editOutcome) result.applied_edits = editOutcome;
+    
+    // Write QA results to task-specific log for tester-qa persona
+    if (persona === PERSONAS.TESTER_QA && repoInfo && repoRootNormalized) {
+      try {
+        const fs = await import("fs/promises");
+        const pathMod = await import("path");
+        const repoRoot = repoRootNormalized;
+        const qaDir = pathMod.resolve(repoRoot, ".ma/qa");
+        await fs.mkdir(qaDir, { recursive: true });
+        
+        const taskId = firstString(
+          payloadObj.task_id,
+          payloadObj.taskId,
+          payloadObj.task?.id,
+          msg.workflow_id
+        ) || "unknown";
+        
+        const qaLogPath = pathMod.resolve(qaDir, `task-${taskId}-qa.log`);
+        
+        // Parse QA response to extract pass/fail status
+        const responseText = resp.content || "";
+        const isPassed = responseText.toLowerCase().includes("pass") && 
+                        !responseText.toLowerCase().includes("fail");
+        const isFailed = responseText.toLowerCase().includes("fail");
+        const status = isPassed && !isFailed ? "PASS" : isFailed ? "FAIL" : "UNKNOWN";
+        
+        const logEntry = [
+          `\n${"=".repeat(80)}`,
+          `QA Test Run - ${new Date().toISOString()}`,
+          `Task ID: ${taskId}`,
+          `Workflow ID: ${msg.workflow_id}`,
+          `Status: ${status}`,
+          `Duration: ${duration}ms`,
+          `${"=".repeat(80)}`,
+          ``,
+          responseText,
+          ``,
+          `${"=".repeat(80)}`,
+          ``
+        ].join("\n");
+        
+        await fs.appendFile(qaLogPath, logEntry, "utf8");
+        logger.info("QA results written to log", { 
+          taskId, 
+          qaLogPath: pathMod.relative(repoRoot, qaLogPath),
+          status,
+          workflowId: msg.workflow_id 
+        });
+      } catch (e: any) {
+        logger.warn("Failed to write QA log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
     logger.info("persona completed", { persona, workflowId: msg.workflow_id, duration_ms: duration });
     await r.xAdd(cfg.eventStream, "*", {
       workflow_id: msg.workflow_id, step: msg.step || "", from_persona: persona,

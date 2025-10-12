@@ -70,12 +70,29 @@ export class PersonaRequestStep extends WorkflowStep {
         attempt++;
         
         if (attempt > 1) {
-          logger.info(`Retrying persona request after timeout`, {
+          // Backoff delay: wait (attempt - 1) minutes before retrying
+          // First retry waits 1 min, second waits 2 min, third waits 3 min, etc.
+          const backoffMinutes = attempt - 1;
+          const backoffMs = backoffMinutes * 60 * 1000;
+          
+          logger.info(`Retrying persona request after timeout with backoff delay`, {
             workflowId: context.workflowId,
             step,
             persona,
             attempt,
-            maxRetries: maxRetries + 1 // +1 because initial attempt + retries
+            maxRetries: maxRetries + 1, // +1 because initial attempt + retries
+            backoffMinutes,
+            backoffMs
+          });
+          
+          // Wait for the backoff period
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          
+          logger.info(`Backoff delay completed, sending retry`, {
+            workflowId: context.workflowId,
+            step,
+            persona,
+            attempt
           });
         }
         

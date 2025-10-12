@@ -23,6 +23,9 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
   beforeEach(() => {
     // Reset all mocks
     vi.clearAllMocks();
+    
+    // Use fake timers to avoid waiting for real backoff delays
+    vi.useFakeTimers();
 
     // Mock Redis client
     mockRedis = {
@@ -44,6 +47,7 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -74,7 +78,13 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      const result = await step.execute(context);
+      // Execute step (it will hit setTimeout for backoff on retry)
+      const executePromise = step.execute(context);
+      
+      // Fast-forward through the 1-minute backoff delay for the first retry
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+      
+      const result = await executePromise;
 
       expect(result.status).toBe('success');
       expect(result.data?.totalAttempts).toBe(2);
@@ -106,7 +116,14 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      const result = await step.execute(context);
+      const executePromise = step.execute(context);
+      
+      // Fast-forward through all backoff delays: 1min, 2min, 3min
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute for first retry
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes for second retry
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000); // 3 minutes for third retry
+      
+      const result = await executePromise;
 
       expect(result.status).toBe('failure');
       expect(result.data?.totalAttempts).toBe(4); // Initial attempt + 3 retries
@@ -175,7 +192,13 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      const result = await step.execute(context);
+      const executePromise = step.execute(context);
+      
+      // Fast-forward through backoff delays: 1min, 2min
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute for first retry
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes for second retry
+      
+      const result = await executePromise;
 
       expect(result.status).toBe('success');
       expect(result.data?.totalAttempts).toBe(3);
@@ -206,7 +229,12 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      const result = await step.execute(context);
+      const executePromise = step.execute(context);
+      
+      // Fast-forward through backoff delay: 1min for the single retry
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+      
+      const result = await executePromise;
 
       expect(result.status).toBe('failure');
       expect(result.data?.totalAttempts).toBe(2); // Initial attempt + 1 retry
@@ -262,7 +290,16 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      const result = await step.execute(context);
+      const executePromise = step.execute(context);
+      
+      // Fast-forward through backoff delays: 1min, 2min, 3min, 4min, 5min
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000); // 3 minutes
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000); // 4 minutes
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000); // 5 minutes
+      
+      const result = await executePromise;
 
       expect(result.status).toBe('failure');
       expect(result.data?.totalAttempts).toBe(6); // Initial attempt + 5 retries
@@ -349,18 +386,44 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      await step.execute(context);
+      const executePromise = step.execute(context);
+      
+      // Fast-forward through backoff delays: 1min, 2min
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes
+      
+      await executePromise;
 
-      // Check that retry logs were created
+      // Check that retry logs with backoff were created
       expect(logger.info).toHaveBeenCalledWith(
-        'Retrying persona request after timeout',
+        'Retrying persona request after timeout with backoff delay',
+        expect.objectContaining({
+          attempt: 2,
+          backoffMinutes: 1,
+          backoffMs: 60000,
+          persona: 'lead-engineer'
+        })
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        'Retrying persona request after timeout with backoff delay',
+        expect.objectContaining({
+          attempt: 3,
+          backoffMinutes: 2,
+          backoffMs: 120000,
+          persona: 'lead-engineer'
+        })
+      );
+
+      // Check that backoff completion logs were created
+      expect(logger.info).toHaveBeenCalledWith(
+        'Backoff delay completed, sending retry',
         expect.objectContaining({
           attempt: 2,
           persona: 'lead-engineer'
         })
       );
       expect(logger.info).toHaveBeenCalledWith(
-        'Retrying persona request after timeout',
+        'Backoff delay completed, sending retry',
         expect.objectContaining({
           attempt: 3,
           persona: 'lead-engineer'
@@ -406,7 +469,12 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      await step.execute(context);
+      const executePromise = step.execute(context);
+      
+      // Fast-forward through backoff delay: 1min for the single retry
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+      
+      await executePromise;
 
       expect(logger.error).toHaveBeenCalledWith(
         'Persona request failed after all retries',
