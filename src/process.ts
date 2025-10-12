@@ -284,11 +284,30 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     }
     
     // If no fresh context in payload, fall back to reading from disk
+    // Pull latest changes first to ensure we have the most recent context and QA logs
     if (!externalSummary && persona !== "context" && repoInfo && repoRootNormalized) {
       try {
+        const repoRoot = repoRootNormalized;
+        
+        // Pull latest changes from remote to get updated context and logs
+        try {
+          await runGit(["pull", "--ff-only"], { cwd: repoRoot });
+          logger.debug("Pulled latest changes before reading context", {
+            persona,
+            workflowId: msg.workflow_id,
+            repoRoot
+          });
+        } catch (pullErr: any) {
+          // Don't fail if pull fails - we'll use what we have
+          logger.debug("Git pull failed, using local context", {
+            persona,
+            workflowId: msg.workflow_id,
+            error: pullErr?.message || String(pullErr)
+          });
+        }
+        
         const fs = await import("fs/promises");
         const pathMod = await import("path");
-  const repoRoot = repoRootNormalized;
         const summaryPath = pathMod.resolve(repoRoot, ".ma/context/summary.md");
         const content = await fs.readFile(summaryPath, "utf8");
         externalSummary = content;
@@ -355,6 +374,80 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       }
     }
   
+    // Load previous planning iterations for implementation-planner to learn from past attempts
+    let planningHistory: string | null = null;
+    if (persona === PERSONAS.IMPLEMENTATION_PLANNER && repoInfo && repoRootNormalized) {
+      try {
+        const fs = await import("fs/promises");
+        const pathMod = await import("path");
+        const repoRoot = repoRootNormalized;
+        
+        // Pull latest changes to get any planning logs from other machines
+        try {
+          await runGit(["pull", "--ff-only"], { cwd: repoRoot });
+          logger.debug("Pulled latest planning logs before reading", {
+            persona,
+            workflowId: msg.workflow_id,
+            repoRoot
+          });
+        } catch (pullErr: any) {
+          // Don't fail if pull fails - we'll use what we have
+          logger.debug("Git pull failed before reading planning log, using local", {
+            persona,
+            workflowId: msg.workflow_id,
+            error: pullErr?.message || String(pullErr)
+          });
+        }
+        
+        const taskId = firstString(
+          payloadObj.task_id,
+          payloadObj.taskId,
+          payloadObj.task?.id,
+          msg.workflow_id
+        ) || "unknown";
+        
+        const planLogPath = pathMod.resolve(repoRoot, ".ma/planning", `task-${taskId}-plan.log`);
+        
+        try {
+          const planContent = await fs.readFile(planLogPath, "utf8");
+          // Get all planning iterations to show evolution of the plan
+          const entries = planContent.split("=".repeat(80)).filter(e => e.trim());
+          
+          if (entries.length > 0) {
+            // If there are multiple iterations, show a summary of all + full text of last
+            if (entries.length > 1) {
+              const summary = `Previous planning iterations: ${entries.length}\n` +
+                `Latest iteration:\n${entries[entries.length - 1]}`;
+              planningHistory = summary.trim();
+            } else {
+              planningHistory = entries[0].trim();
+            }
+            
+            logger.info("Loaded planning history for persona", {
+              persona,
+              taskId,
+              iterations: entries.length,
+              planLogPath: pathMod.relative(repoRoot, planLogPath),
+              workflowId: msg.workflow_id
+            });
+          }
+        } catch (readErr: any) {
+          // Planning log doesn't exist yet - this is normal for first planning run
+          logger.debug("Planning log not found (first planning iteration)", {
+            persona,
+            taskId,
+            planLogPath: pathMod.relative(repoRoot, planLogPath)
+          });
+        }
+      } catch (e: any) {
+        logger.debug("Unable to load planning history", {
+          persona,
+          workflowId: msg.workflow_id,
+          error: e?.message || String(e)
+        });
+      }
+    }
+  
     const scanSummaryForPrompt = scanArtifacts
       ? clipText(scanArtifacts.summaryMd, persona === PERSONAS.CONTEXT ? 8000 : 4000)
       : (externalSummary ? clipText(externalSummary, 4000) : scanSummaryText);
@@ -412,6 +505,14 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       messages.push({ 
         role: 'system', 
         content: `Latest QA Test Results:\n${clipText(qaHistory, 2000)}\n\nUse this to understand what failed in previous attempts and adjust your plan accordingly.` 
+      });
+    }
+  
+    // Include previous planning iterations for planner to refine and improve
+    if (planningHistory && planningHistory.length > 0) {
+      messages.push({
+        role: 'system',
+        content: `Previous Planning Iterations:\n${clipText(planningHistory, 3000)}\n\nYou have created plans before for this task. Review the previous planning attempts above, consider what may have changed (new context, QA results, etc.), and either:\n1. Use the existing plan if it's still valid and complete\n2. Refine and improve the plan based on new information\n3. Create a new plan if requirements have changed significantly\n\nBe clear about whether you're reusing, refining, or replacing the previous plan.`
       });
     }
   
@@ -623,8 +724,116 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
           status,
           workflowId: msg.workflow_id 
         });
+        
+        // Commit and push the QA log so other machines can access it
+        try {
+          const qaLogRel = pathMod.relative(repoRoot, qaLogPath);
+          const commitRes = await commitAndPushPaths({
+            repoRoot,
+            branch: repoInfo.branch || null,
+            message: `qa: test results for task ${taskId} [${status}]`,
+            paths: [qaLogRel]
+          });
+          logger.info("QA log committed and pushed", {
+            taskId,
+            qaLogPath: qaLogRel,
+            status,
+            commitResult: commitRes,
+            workflowId: msg.workflow_id
+          });
+        } catch (commitErr: any) {
+          logger.warn("Failed to commit QA log", {
+            taskId,
+            workflowId: msg.workflow_id,
+            error: commitErr?.message || String(commitErr)
+          });
+        }
       } catch (e: any) {
         logger.warn("Failed to write QA log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
+    // Write planning results to task-specific log for implementation-planner persona
+    if (persona === PERSONAS.IMPLEMENTATION_PLANNER && repoInfo && repoRootNormalized) {
+      try {
+        const fs = await import("fs/promises");
+        const pathMod = await import("path");
+        const repoRoot = repoRootNormalized;
+        const planningDir = pathMod.resolve(repoRoot, ".ma/planning");
+        await fs.mkdir(planningDir, { recursive: true });
+        
+        const taskId = firstString(
+          payloadObj.task_id,
+          payloadObj.taskId,
+          payloadObj.task?.id,
+          msg.workflow_id
+        ) || "unknown";
+        
+        const planLogPath = pathMod.resolve(planningDir, `task-${taskId}-plan.log`);
+        
+        // Parse planning response to extract key information
+        const responseText = resp.content || "";
+        const hasBreakdown = responseText.toLowerCase().includes("breakdown") || 
+                            responseText.toLowerCase().includes("step");
+        const hasRisks = responseText.toLowerCase().includes("risk");
+        
+        // Try to extract iteration number from payload or step name
+        const iteration = payloadObj.iteration || payloadObj.planIteration || "unknown";
+        
+        const logEntry = [
+          `\n${"=".repeat(80)}`,
+          `Planning Iteration - ${new Date().toISOString()}`,
+          `Task ID: ${taskId}`,
+          `Workflow ID: ${msg.workflow_id}`,
+          `Iteration: ${iteration}`,
+          `Has Breakdown: ${hasBreakdown}`,
+          `Has Risks: ${hasRisks}`,
+          `Duration: ${duration}ms`,
+          `${"=".repeat(80)}`,
+          ``,
+          responseText,
+          ``,
+          `${"=".repeat(80)}`,
+          ``
+        ].join("\n");
+        
+        await fs.appendFile(planLogPath, logEntry, "utf8");
+        logger.info("Planning results written to log", { 
+          taskId, 
+          planLogPath: pathMod.relative(repoRoot, planLogPath),
+          iteration,
+          workflowId: msg.workflow_id 
+        });
+        
+        // Commit and push the planning log so other machines can access it
+        try {
+          const planLogRel = pathMod.relative(repoRoot, planLogPath);
+          const commitRes = await commitAndPushPaths({
+            repoRoot,
+            branch: repoInfo.branch || null,
+            message: `plan: iteration ${iteration} for task ${taskId}`,
+            paths: [planLogRel]
+          });
+          logger.info("Planning log committed and pushed", {
+            taskId,
+            planLogPath: planLogRel,
+            iteration,
+            commitResult: commitRes,
+            workflowId: msg.workflow_id
+          });
+        } catch (commitErr: any) {
+          logger.warn("Failed to commit planning log", {
+            taskId,
+            workflowId: msg.workflow_id,
+            error: commitErr?.message || String(commitErr)
+          });
+        }
+      } catch (e: any) {
+        logger.warn("Failed to write planning log", { 
           persona, 
           workflowId: msg.workflow_id, 
           error: e?.message || String(e) 

@@ -5,13 +5,65 @@
 A Redis-based distributed multi-agent coordination system that manages tasks across multiple machines using persona-based workflows with comprehensive TDD-aware coordination.
 
 ### Test Suite Status
-- **123 tests passing** | 3 skipped (126 total)
-- Duration: ~2.7s
+- **134 tests passing** | 3 skipped (137 total)
+- Duration: ~3.1s
 - Framework: Vitest with comprehensive mocks
 
 ---
 
 ## Recent Major Enhancements
+
+### Task Logging and Multi-Machine Synchronization (Oct 12, 2025)
+
+**Problem**: 
+1. QA logs were written but not committed/pushed, so other machines couldn't access them
+2. Planners were reading stale context from disk without pulling latest changes
+3. No planning logs were being tracked per task
+4. Logs accumulated indefinitely without cleanup
+
+**Solution**:
+- ✅ QA logs now committed and pushed automatically after each test run
+- ✅ Planning logs created and pushed for each planning iteration
+- ✅ Git pull before reading context ensures latest data is used
+- ✅ Automatic log cleanup when tasks complete
+- ✅ Task summaries preserved in `.ma/changelog.md`
+- ✅ Supports distributed multi-machine workflows
+
+**Files Modified**:
+- `src/process.ts` - Added QA/planning log writing, git pull before context read, commit/push logic
+- `src/taskLogCleanup.ts` - New module for cleaning up completed task logs
+- `src/workflows/steps/SimpleTaskStatusStep.ts` - Added cleanup trigger on task completion
+- `src/workflows/steps/TaskUpdateStep.ts` - Added cleanup trigger on task completion
+
+**New Features**:
+1. **QA Log Per Task**: `.ma/qa/task-{id}-qa.log` tracks all test runs
+2. **Planning Log Per Task**: `.ma/planning/task-{id}-plan.log` tracks all planning iterations
+3. **Planning History Awareness**: Planner reads previous iterations + QA results before creating new plans
+4. **Git Synchronization**: Automatic pull before read, push after write
+5. **Automatic Cleanup**: Logs removed and summarized when task completes
+6. **Task Changelog**: `.ma/changelog.md` preserves completion summaries
+
+**Log Format**:
+```
+================================================================================
+QA Test Run - 2025-10-12T14:30:00.000Z
+Task ID: task-123
+Status: PASS
+Duration: 5432ms
+================================================================================
+[test results...]
+```
+
+**Multi-Machine Support**:
+- Machine A: Scans context → commits → pushes
+- Machine B: Pulls → reads context + previous plans + QA results → plans → commits planning log → pushes
+- Machine C: Pulls → reads QA history → tests → commits QA log → pushes
+- Machine B (retry): Pulls → reads updated context + previous plan + new QA results → refines plan → commits → pushes
+- Any Machine: Completes task → pulls logs → generates summary → cleans up → commits
+
+**Documentation**: See `docs/TASK_LOGGING.md` for detailed information.
+
+---
 
 ### Context Summary Freshness Fix (Oct 2025)
 

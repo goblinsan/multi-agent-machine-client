@@ -147,6 +147,39 @@ export class TaskUpdateStep extends WorkflowStep {
         }
       };
 
+      // Cleanup task logs if the task is completed
+      if (status && updateType === 'status') {
+        const normalizedStatus = status.toLowerCase();
+        if (['done', 'completed', 'finished', 'closed', 'resolved'].includes(normalizedStatus)) {
+          const repoRoot = context.getVariable('effective_repo_path') || context.getVariable('repo_root');
+          const branch = context.getVariable('branch');
+          const taskTitle = task.title || task.name;
+          
+          if (repoRoot) {
+            try {
+              const { cleanupTaskLogs } = await import('../../taskLogCleanup.js');
+              await cleanupTaskLogs({
+                repoRoot,
+                taskId,
+                taskTitle,
+                branch: branch || null
+              });
+              logger.info('Task logs cleaned up after completion', {
+                taskId,
+                updateType
+              });
+            } catch (cleanupErr: any) {
+              // Don't fail the task update if cleanup fails
+              logger.warn('Task log cleanup failed', {
+                taskId,
+                updateType,
+                error: cleanupErr?.message || String(cleanupErr)
+              });
+            }
+          }
+        }
+      }
+      
       // Set context variables
       context.setVariable('updateResult', updateResult);
       context.setVariable('updated', true);

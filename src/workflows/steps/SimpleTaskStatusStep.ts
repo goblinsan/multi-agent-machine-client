@@ -44,6 +44,37 @@ export class SimpleTaskStatusStep extends WorkflowStep {
       // Call the dashboard function directly (this is what tests expect)
       await updateTaskStatus(taskId, status);
       
+      // Cleanup task logs if the task is completed
+      const normalizedStatus = status.toLowerCase();
+      if (['done', 'completed', 'finished', 'closed', 'resolved'].includes(normalizedStatus)) {
+        const repoRoot = context.getVariable('effective_repo_path') || context.getVariable('repo_root');
+        const branch = context.getVariable('branch');
+        const taskTitle = task.title || task.name;
+        
+        if (repoRoot) {
+          try {
+            const { cleanupTaskLogs } = await import('../../taskLogCleanup.js');
+            await cleanupTaskLogs({
+              repoRoot,
+              taskId,
+              taskTitle,
+              branch: branch || null
+            });
+            logger.info('Task logs cleaned up after completion', {
+              taskId,
+              workflowId: context.workflowId
+            });
+          } catch (cleanupErr: any) {
+            // Don't fail the task update if cleanup fails
+            logger.warn('Task log cleanup failed', {
+              taskId,
+              workflowId: context.workflowId,
+              error: cleanupErr?.message || String(cleanupErr)
+            });
+          }
+        }
+      }
+      
       // Set completion variables in context
       context.setVariable('taskStatus', status);
       context.setVariable('taskCompleted', true);
