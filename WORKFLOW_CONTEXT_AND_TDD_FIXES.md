@@ -17,23 +17,30 @@ Planning personas mentioned missing config files (package.json, tsconfig.json, e
 This meant essential project configuration files were never included in context gathering.
 
 ### Solution
-Updated `SCAN_INCLUDE` default in `src/config.ts` to include:
-- `*.json` - package.json, tsconfig.json, etc.
-- `*.yaml`, `*.yml` - Config files
-- `*.toml` - Config files
-- `*.config.js`, `*.config.ts` - Webpack, Vite, etc.
-- `Makefile`, `Dockerfile` - Build configs
-- `.env.example` - Environment templates
+Simplified `SCAN_INCLUDE` default in `src/config.ts` to scan **everything**:
+- Changed from restrictive whitelist (`src/**,app/**,tests/**,*.json,...`) to `**/*`
+- Now scans all files in the project root and subdirectories
+- No need to enumerate specific config file patterns
 
-Also added common build output directories to `SCAN_EXCLUDE`:
-- `**/build/**`
-- `**/coverage/**`
+Enhanced `SCAN_EXCLUDE` to skip only known dependency/build directories:
+- `**/node_modules/**` - Node.js dependencies
+- `**/.git/**` - Git metadata
+- `**/dist/**`, `**/build/**` - Build outputs
+- `**/coverage/**` - Test coverage reports
+- `**/target/**` - Rust/Java build outputs
+- `**/.next/**`, `**/.nuxt/**` - Framework build caches
+- `**/vendor/**` - PHP/Go dependencies
+- `**/__pycache__/**`, `**/.pytest_cache/**` - Python caches
+- `**/.venv/**`, `**/venv/**` - Python virtual environments
+- `**/.cargo/**`, `**/Cargo.lock` - Rust package cache
 
 ### Impact
-- ✅ Context gathering now includes all project configuration
-- ✅ Planning personas can see package.json dependencies
-- ✅ Implementation personas can reference tsconfig settings
+- ✅ Context gathering now includes **all project files** (not just specific patterns)
+- ✅ Planning personas can see package.json, README.md, and all root config files
+- ✅ Implementation personas can reference tsconfig, Dockerfiles, Makefiles, etc.
 - ✅ QA personas can identify test framework configs
+- ✅ No more "missing file" complaints for files that exist in the project
+- ✅ Simple and maintainable - just exclude dependencies, not enumerate includes
 
 ## Problem 2: QA Iteration Loop Missing Cumulative History
 
@@ -193,11 +200,11 @@ Updated `tester-qa` system prompt in `src/personas.ts`:
 Users can override defaults:
 
 ```bash
-# Context scanning includes
-SCAN_INCLUDE="src/**,app/**,tests/**,*.json,*.yaml,*.yml"
+# Context scanning includes (default: everything)
+SCAN_INCLUDE="**/*"
 
-# Context scanning excludes
-SCAN_EXCLUDE="**/node_modules/**,**/.git/**,**/dist/**,**/build/**"
+# Context scanning excludes (default: dependencies and build outputs)
+SCAN_EXCLUDE="**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/coverage/**,**/target/**,**/.next/**,**/.nuxt/**,**/vendor/**,**/__pycache__/**,**/.pytest_cache/**,**/.venv/**,**/venv/**,**/.cargo/**,**/Cargo.lock"
 
 # Task-level TDD stage
 task.tdd_stage="write_failing_test"  # or "implement", "refactor"

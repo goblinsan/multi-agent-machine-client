@@ -122,6 +122,25 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     const msg = parsed.data;
     if (msg.to_persona !== persona) { await r.xAck(cfg.requestStream, groupForPersona(persona), entryId); return; }
   
+    // Check if this worker can handle this persona (has model mapping or is coordination)
+    if (persona !== PERSONAS.COORDINATION && !cfg.personaModels[persona]) {
+      logger.warn("received request for persona without model mapping - re-queueing", {
+        persona,
+        workflowId: msg.workflow_id,
+        consumerId: cfg.consumerId,
+        availableModels: Object.keys(cfg.personaModels)
+      });
+      
+      // Re-queue the message by adding it back to the stream (another worker should handle it)
+      await r.xAdd(cfg.requestStream, "*", fields).catch((e: any) => {
+        logger.error("failed to re-queue message", { persona, error: e?.message });
+      });
+      
+      // Acknowledge to remove from this consumer's pending list
+      await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
+      return;
+    }
+  
     const payloadObj = (() => { try { return msg.payload ? JSON.parse(msg.payload) : {}; } catch { return {}; } })();
     if (msg.repo && !payloadObj.repo) payloadObj.repo = msg.repo;
     if (msg.branch && !payloadObj.branch) payloadObj.branch = msg.branch;

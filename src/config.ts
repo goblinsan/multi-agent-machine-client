@@ -212,8 +212,8 @@ export const cfg = {
 
   // Context scanner feature flags & defaults
   contextScan: bool(process.env.CONTEXT_SCAN, false),
-  scanInclude: splitCsv(process.env.SCAN_INCLUDE || "src/**,app/**,tests/**,*.json,*.yaml,*.yml,*.toml,*.config.js,*.config.ts,Makefile,Dockerfile,.env.example", []),
-  scanExclude: splitCsv(process.env.SCAN_EXCLUDE || "**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/coverage/**", []),
+  scanInclude: splitCsv(process.env.SCAN_INCLUDE || "**/*", []),
+  scanExclude: splitCsv(process.env.SCAN_EXCLUDE || "**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/coverage/**,**/target/**,**/.next/**,**/.nuxt/**,**/vendor/**,**/__pycache__/**,**/.pytest_cache/**,**/.venv/**,**/venv/**,**/.cargo/**,**/Cargo.lock", []),
   scanMaxFiles: Number(process.env.SCAN_MAX_FILES || 5000),
   scanMaxBytes: Number(process.env.SCAN_MAX_BYTES || 100000000),
   scanMaxDepth: Number(process.env.SCAN_MAX_DEPTH || 12),
@@ -260,3 +260,25 @@ export const cfg = {
   // When true, auto-creating milestones is only permitted for the 'Future Enhancements' milestone
   dashboardAutoCreateFutureEnhancementsOnly: bool(process.env.DASHBOARD_AUTO_CREATE_FUTURE_ENHANCEMENTS_ONLY, true),
 };
+
+// Filter allowedPersonas to only include personas this worker can actually handle
+// Coordination persona doesn't need a model mapping (it's a workflow orchestrator)
+const rawAllowedPersonas = cfg.allowedPersonas;
+cfg.allowedPersonas = cfg.allowedPersonas.filter(persona => {
+  // Coordination persona is special - doesn't use LM Studio
+  if (persona === 'coordination') return true;
+  
+  // All other personas need a model mapping
+  const hasModelMapping = !!cfg.personaModels[persona];
+  
+  if (!hasModelMapping) {
+    console.warn(`[config] Persona '${persona}' in ALLOWED_PERSONAS but no model mapping - will not handle requests for this persona`);
+  }
+  
+  return hasModelMapping;
+});
+
+if (rawAllowedPersonas.length > cfg.allowedPersonas.length) {
+  console.log(`[config] Filtered personas: ${rawAllowedPersonas.length} → ${cfg.allowedPersonas.length} (removed personas without model mappings)`);
+  console.log(`[config] Active personas: ${cfg.allowedPersonas.join(', ')}`);
+}
