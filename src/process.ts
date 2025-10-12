@@ -1003,6 +1003,171 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
   
     const result: any = { output: resp.content, model, duration_ms: duration };
     if (editOutcome) result.applied_edits = editOutcome;
+    
+    // Write QA results to task-specific log for tester-qa persona
+    if (persona === PERSONAS.TESTER_QA && repoInfo && repoRootNormalized) {
+      try {
+        const fs = await import("fs/promises");
+        const pathMod = await import("path");
+        const repoRoot = repoRootNormalized;
+        const qaDir = pathMod.resolve(repoRoot, ".ma/qa");
+        await fs.mkdir(qaDir, { recursive: true });
+        
+        const taskId = firstString(
+          payloadObj.task_id,
+          payloadObj.taskId,
+          payloadObj.task?.id,
+          msg.workflow_id
+        ) || "unknown";
+        
+        const qaLogPath = pathMod.resolve(qaDir, `task-${taskId}-qa.log`);
+        
+        // Parse QA response to extract pass/fail status
+        const responseText = resp.content || "";
+        const isPassed = responseText.toLowerCase().includes("pass") && 
+                        !responseText.toLowerCase().includes("fail");
+        const isFailed = responseText.toLowerCase().includes("fail");
+        const status = isPassed && !isFailed ? "PASS" : isFailed ? "FAIL" : "UNKNOWN";
+        
+        const logEntry = [
+          `\n${"=".repeat(80)}`,
+          `QA Test Run - ${new Date().toISOString()}`,
+          `Task ID: ${taskId}`,
+          `Workflow ID: ${msg.workflow_id}`,
+          `Status: ${status}`,
+          `Duration: ${duration}ms`,
+          `${"=".repeat(80)}`,
+          ``,
+          responseText,
+          ``,
+          `${"=".repeat(80)}`,
+          ``
+        ].join("\n");
+        
+        await fs.appendFile(qaLogPath, logEntry, "utf8");
+        logger.info("QA results written to log", { 
+          taskId, 
+          qaLogPath: pathMod.relative(repoRoot, qaLogPath),
+          status,
+          workflowId: msg.workflow_id 
+        });
+        
+        // Commit and push the QA log so other machines can access it
+        try {
+          const qaLogRel = pathMod.relative(repoRoot, qaLogPath);
+          const commitRes = await commitAndPushPaths({
+            repoRoot,
+            branch: repoInfo.branch || null,
+            message: `qa: test results for task ${taskId} [${status}]`,
+            paths: [qaLogRel]
+          });
+          logger.info("QA log committed and pushed", {
+            taskId,
+            qaLogPath: qaLogRel,
+            status,
+            commitResult: commitRes,
+            workflowId: msg.workflow_id
+          });
+        } catch (commitErr: any) {
+          logger.warn("Failed to commit QA log", {
+            taskId,
+            workflowId: msg.workflow_id,
+            error: commitErr?.message || String(commitErr)
+          });
+        }
+      } catch (e: any) {
+        logger.warn("Failed to write QA log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
+    // Write planning results to task-specific log for implementation-planner persona
+    if (persona === PERSONAS.IMPLEMENTATION_PLANNER && repoInfo && repoRootNormalized) {
+      try {
+        const fs = await import("fs/promises");
+        const pathMod = await import("path");
+        const repoRoot = repoRootNormalized;
+        const planningDir = pathMod.resolve(repoRoot, ".ma/planning");
+        await fs.mkdir(planningDir, { recursive: true });
+        
+        const taskId = firstString(
+          payloadObj.task_id,
+          payloadObj.taskId,
+          payloadObj.task?.id,
+          msg.workflow_id
+        ) || "unknown";
+        
+        const planLogPath = pathMod.resolve(planningDir, `task-${taskId}-plan.log`);
+        
+        // Parse planning response to extract key information
+        const responseText = resp.content || "";
+        const hasBreakdown = responseText.toLowerCase().includes("breakdown") || 
+                            responseText.toLowerCase().includes("step");
+        const hasRisks = responseText.toLowerCase().includes("risk");
+        
+        // Try to extract iteration number from payload or step name
+        const iteration = payloadObj.iteration || payloadObj.planIteration || "unknown";
+        
+        const logEntry = [
+          `\n${"=".repeat(80)}`,
+          `Planning Iteration - ${new Date().toISOString()}`,
+          `Task ID: ${taskId}`,
+          `Workflow ID: ${msg.workflow_id}`,
+          `Iteration: ${iteration}`,
+          `Has Breakdown: ${hasBreakdown}`,
+          `Has Risks: ${hasRisks}`,
+          `Duration: ${duration}ms`,
+          `${"=".repeat(80)}`,
+          ``,
+          responseText,
+          ``,
+          `${"=".repeat(80)}`,
+          ``
+        ].join("\n");
+        
+        await fs.appendFile(planLogPath, logEntry, "utf8");
+        logger.info("Planning results written to log", { 
+          taskId, 
+          planLogPath: pathMod.relative(repoRoot, planLogPath),
+          iteration,
+          workflowId: msg.workflow_id 
+        });
+        
+        // Commit and push the planning log so other machines can access it
+        try {
+          const planLogRel = pathMod.relative(repoRoot, planLogPath);
+          const commitRes = await commitAndPushPaths({
+            repoRoot,
+            branch: repoInfo.branch || null,
+            message: `plan: iteration ${iteration} for task ${taskId}`,
+            paths: [planLogRel]
+          });
+          logger.info("Planning log committed and pushed", {
+            taskId,
+            planLogPath: planLogRel,
+            iteration,
+            commitResult: commitRes,
+            workflowId: msg.workflow_id
+          });
+        } catch (commitErr: any) {
+          logger.warn("Failed to commit planning log", {
+            taskId,
+            workflowId: msg.workflow_id,
+            error: commitErr?.message || String(commitErr)
+          });
+        }
+      } catch (e: any) {
+        logger.warn("Failed to write planning log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
     logger.info("persona completed", { persona, workflowId: msg.workflow_id, duration_ms: duration });
     await r.xAdd(cfg.eventStream, "*", {
       workflow_id: msg.workflow_id, step: msg.step || "", from_persona: persona,
