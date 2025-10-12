@@ -187,6 +187,8 @@ export class QAIterationLoopStep extends WorkflowStep {
   ): Promise<any> {
     const corrId = crypto.randomUUID();
     
+    const branch = context.getVariable('branch') || context.branch;
+    
     await sendPersonaRequest(redis, {
       workflowId: context.workflowId,
       toPersona: PERSONAS.IMPLEMENTATION_PLANNER,
@@ -196,14 +198,16 @@ export class QAIterationLoopStep extends WorkflowStep {
         task: context.getVariable('task'),
         qa_failure: qaResult,
         iteration,
+        planIteration: iteration,
         previous_attempts: history,
         context: context.getVariable('context_request_result'),
         repo: context.getVariable('repo_remote'),
+        branch,
         project_id: context.getVariable('projectId')
       },
       corrId,
       repo: context.getVariable('repoRoot'),
-      branch: context.getVariable('branch') || context.branch,
+      branch,
       projectId: context.getVariable('projectId')
     });
 

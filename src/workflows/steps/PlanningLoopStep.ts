@@ -70,10 +70,12 @@ export class PlanningLoopStep extends WorkflowStep {
         const payloadWithContext = {
           ...payload,
           iteration: currentIteration,
+          planIteration: currentIteration,
           previous_evaluation: evaluationResult,
           is_revision: currentIteration > 1,
           task: context.getVariable('task'),
           repo: repoRemote,
+          branch: context.branch || context.getVariable('branch'),
           project_id: context.projectId
         };
 
@@ -84,7 +86,7 @@ export class PlanningLoopStep extends WorkflowStep {
           intent: 'planning',
           payload: payloadWithContext,
           repo: repoRemote,
-          branch: context.branch,
+          branch: context.branch || context.getVariable('branch'),
           projectId: context.projectId,
           deadlineSeconds
         });
