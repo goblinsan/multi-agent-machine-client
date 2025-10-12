@@ -324,6 +324,18 @@ export class WorkflowEngine {
       
       // Set up timeout
       const timeout = this.getStepTimeout(stepDef, workflowDef);
+      
+      // Log timeout for persona request steps
+      if (stepDef.type === 'PersonaRequestStep') {
+        context.logger.info('Step timeout configured', {
+          workflowId: context.workflowId,
+          step: stepDef.name,
+          persona: stepDef.config.persona,
+          timeoutMs: timeout,
+          timeoutMinutes: (timeout / 60000).toFixed(2)
+        });
+      }
+      
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error(`Step '${stepDef.name}' timed out after ${timeout}ms`)), timeout);
       });
@@ -617,14 +629,18 @@ export class WorkflowEngine {
       const totalPersonaTimeMs = (maxRetries + 1) * personaTimeoutMs;
       const calculatedTimeout = totalPersonaTimeMs + totalBackoffMs + 30000; // +30s buffer
       
-      logger.debug('Calculated PersonaRequestStep timeout', {
+      // Use info level so it's always visible in logs
+      logger.info('Calculated PersonaRequestStep timeout to accommodate retries', {
         step: stepDef.name,
         persona,
         personaTimeoutMs,
+        personaTimeoutMinutes: (personaTimeoutMs / 60000).toFixed(2),
         maxRetries,
         totalBackoffMs,
+        totalBackoffMinutes: (totalBackoffMs / 60000).toFixed(2),
         totalPersonaTimeMs,
-        calculatedTimeout
+        calculatedTimeout,
+        calculatedTimeoutMinutes: (calculatedTimeout / 60000).toFixed(2)
       });
       
       return calculatedTimeout;

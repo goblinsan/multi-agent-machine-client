@@ -166,6 +166,10 @@ const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();
 const gitUserEmail = (process.env.GIT_USER_EMAIL || "machine-client@example.com").trim();
 
 const personaTimeouts = parsePersonaTimeouts(jsonOr(process.env.PERSONA_TIMEOUTS_JSON, {} as Record<string, unknown>));
+// Set default timeout for context persona to 1 minute (60000ms) if not explicitly configured
+if (!personaTimeouts['context']) {
+  personaTimeouts['context'] = 60000;
+}
 const personaDefaultTimeoutMs = parseDurationMs(process.env.PERSONA_DEFAULT_TIMEOUT_MS || process.env.COORDINATOR_WAIT_TIMEOUT_MS, 600000);
 const personaCodingTimeoutMs = parseDurationMs(process.env.PERSONA_CODING_TIMEOUT_MS, 180000);
 const personaCodingPersonas = splitCsv(process.env.PERSONA_CODING_PERSONAS || "lead-engineer,devops,ui-engineer,qa-engineer,ml-engineer", []);
