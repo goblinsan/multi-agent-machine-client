@@ -7,6 +7,7 @@ import { commitAndPushPaths } from '../../gitUtils.js';
 import { makeRedis } from '../../redisClient.js';
 import { PERSONAS } from '../../personaNames.js';
 import { cfg } from '../../config.js';
+import crypto from 'crypto';
 
 interface QAIterationLoopConfig {
   /**
@@ -87,8 +88,8 @@ export class QAIterationLoopStep extends WorkflowStep {
           // 4. Commit changes
           await this.commitChanges(context, applyResult, currentIteration);
           
-          // 5. Retest QA
-          qaResult = await this.retestQA(context, redis, plan, implementation, qaRetestStep, currentIteration);
+          // 5. Retest QA with full history
+          qaResult = await this.retestQA(context, redis, plan, implementation, qaRetestStep, currentIteration, iterationHistory);
           
           // 6. Check if QA passed
           qaPassed = this.parseQAStatus(qaResult) === 'pass';
@@ -323,9 +324,15 @@ export class QAIterationLoopStep extends WorkflowStep {
     plan: any,
     implementation: any,
     stepName: string,
-    iteration: number
+    iteration: number,
+    previousHistory?: any[]
   ): Promise<any> {
     const corrId = crypto.randomUUID();
+    
+    // Detect TDD context
+    const task = context.getVariable('task');
+    const tddStage = context.getVariable('tdd_stage') || task?.tdd_stage;
+    const isFailingTestStage = tddStage === 'write_failing_test' || tddStage === 'failing_test';
     
     await sendPersonaRequest(redis, {
       workflowId: context.workflowId,
@@ -337,6 +344,9 @@ export class QAIterationLoopStep extends WorkflowStep {
         plan,
         implementation,
         iteration,
+        previous_attempts: previousHistory || [],
+        tdd_stage: tddStage,
+        is_tdd_failing_test_stage: isFailingTestStage,
         repo: context.getVariable('repo_remote'),
         project_id: context.getVariable('projectId')
       },
