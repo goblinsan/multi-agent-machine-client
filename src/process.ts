@@ -114,7 +114,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
         const { summarize: summarize2 } = await import("./scanRepo.js");
         const global = summarize2(allFiles);
   
-        // Build scanMd with Alembic awareness
+        // Build scanMd with Alembic awareness and full file tree
         const scanMd = (() => {
           const lines: string[] = [];
           lines.push("# Context Snapshot (Scan)", "", `Repo: ${repoRoot}`, `Generated: ${new Date().toISOString()}`, "", "## Totals");
@@ -127,6 +127,36 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
             for (const f of pc.longest) lines.push(`  - ${f.path} (${f.lines || 0} lines)`);
             lines.push("");
           }
+          
+          // Add complete file tree organized by directory
+          lines.push("## File Tree");
+          lines.push("");
+          
+          // Group files by directory
+          const filesByDir = new Map<string, typeof allFiles>();
+          for (const file of allFiles) {
+            const dirPath = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '.';
+            if (!filesByDir.has(dirPath)) {
+              filesByDir.set(dirPath, []);
+            }
+            filesByDir.get(dirPath)!.push(file);
+          }
+          
+          // Sort directories alphabetically
+          const sortedDirs = Array.from(filesByDir.keys()).sort();
+          
+          for (const dir of sortedDirs) {
+            const files = filesByDir.get(dir)!.sort((a, b) => a.path.localeCompare(b.path));
+            lines.push(`### ${dir === '.' ? 'Root' : dir}`);
+            lines.push("");
+            for (const f of files) {
+              const fileName = f.path.includes('/') ? f.path.substring(f.path.lastIndexOf('/') + 1) : f.path;
+              const sizeInfo = `${f.bytes} bytes${typeof f.lines === 'number' ? `, ${f.lines} lines` : ''}`;
+              lines.push(`- **${fileName}** (${sizeInfo})`);
+            }
+            lines.push("");
+          }
+          
           // Alembic detection
           const alembicFiles = allFiles.filter(f => /(^|\/)alembic(\/|$)/i.test(f.path));
           if (alembicFiles.length) {
@@ -153,6 +183,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
           repo: repoRoot,
           generated_at: new Date().toISOString(),
           totals: global.totals,
+          files: allFiles,  // Include full file list in snapshot
           components: perComp,
           hotspots: { largest_files: global.largest, longest_files: global.longest }
         };

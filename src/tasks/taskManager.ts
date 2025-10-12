@@ -13,21 +13,27 @@ import { randomUUID } from "crypto";
 // the created id by querying the dashboard project status.
 
 const TASK_STATUS_PRIORITY: Record<string, number> = {
-    in_progress: 0,
-    active: 0,
-    doing: 0,
-    working: 0,
+    // Priority order: blocked > in_review > in_progress > open
+    blocked: 0,
+    stuck: 0,
     review: 1,
+    in_review: 1,
+    in_code_review: 1,
+    in_security_review: 1,
     ready: 1,
-    planned: 2,
-    backlog: 2,
-    todo: 2,
-    not_started: 2,
-    blocked: 3,
-    waiting: 3,
-    pending: 3,
-    qa: 3,
-    testing: 3,
+    in_progress: 2,
+    active: 2,
+    doing: 2,
+    working: 2,
+    planned: 3,
+    backlog: 3,
+    todo: 3,
+    not_started: 3,
+    open: 3,
+    waiting: 4,
+    pending: 4,
+    qa: 4,
+    testing: 4,
     done: 5,
     completed: 5,
     complete: 5,
@@ -45,14 +51,16 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
   }
   
   function taskStatusPriority(status: string) {
-    if (!status) return 2;
-    if (status in TASK_STATUS_PRIORITY) return TASK_STATUS_PRIORITY[status];
-    if (status.includes("progress") || status.includes("doing") || status.includes("work")) return 0;
-    if (status.includes("block")) return 3;
-    if (status.includes("review") || status.includes("qa")) return 1;
+    if (!status) return 3;  // Default to "open" priority
+    const normalized = normalizeTaskStatus(status);
+    if (normalized in TASK_STATUS_PRIORITY) return TASK_STATUS_PRIORITY[normalized];
+    // Fallback pattern matching (in priority order)
+    if (status.includes("block") || status.includes("stuck")) return 0;
+    if (status.includes("review")) return 1;
+    if (status.includes("progress") || status.includes("doing") || status.includes("work") || status.includes("active")) return 2;
     if (status.includes("done") || status.includes("complete") || status.includes("closed")) return 5;
     if (status.includes("cancel")) return 6;
-    return 2;
+    return 3;  // Default to "open" priority
   }
   
   function taskDue(value: any): number {

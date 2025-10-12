@@ -18,6 +18,8 @@ import { PlanningLoopStep } from './steps/PlanningLoopStep';
 import { QAFailureCoordinationStep } from './steps/QAFailureCoordinationStep';
 import { QAIterationLoopStep } from './steps/QAIterationLoopStep';
 import { VariableSetStep } from './steps/VariableSetStep';
+import { BlockedTaskAnalysisStep } from './steps/BlockedTaskAnalysisStep';
+import { UnblockAttemptStep } from './steps/UnblockAttemptStep';
 import { parse as yamlParse } from 'yaml';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
@@ -108,6 +110,8 @@ export class WorkflowEngine {
     this.stepRegistry.set('QAFailureCoordinationStep', QAFailureCoordinationStep);
     this.stepRegistry.set('QAIterationLoopStep', QAIterationLoopStep);
     this.stepRegistry.set('VariableSetStep', VariableSetStep);
+    this.stepRegistry.set('BlockedTaskAnalysisStep', BlockedTaskAnalysisStep);
+    this.stepRegistry.set('UnblockAttemptStep', UnblockAttemptStep);
   }
 
   /**

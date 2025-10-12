@@ -1,0 +1,168 @@
+name: "blocked-task-resolution"
+description: "Workflow for analyzing and attempting to unblock blocked tasks"
+version: "1.0.0"
+
+trigger:
+  condition: "status == 'blocked'"
+
+context:
+  repo_required: true
+  max_unblock_attempts: 10  # Configurable via environment or override
+
+variables:
+  max_attempts: "${BLOCKED_MAX_ATTEMPTS || 10}"
+
+steps:
+  # Step 1: Check if max attempts exceeded
+  - name: check_max_attempts
+    type: ConditionalStep
+    description: "Check if max unblock attempts exceeded"
+    config:
+      condition: "(task.blocked_attempt_count || 0) >= (max_attempts)"
+      on_true:
+        - name: mark_permanently_blocked
+          type: SimpleTaskStatusStep
+          description: "Mark task as permanently blocked after max attempts"
+          config:
+            status: "blocked"
+            comment: "Maximum unblock attempts (${max_attempts}) exceeded. Manual intervention required."
+      on_false:
+        - name: continue_unblock_attempt
+          type: NoOpStep
+          description: "Continue with unblock attempt"
+
+  # Step 2: Increment attempt counter
+  - name: increment_attempt_counter
+    type: VariableStep
+    description: "Track number of unblock attempts"
+    depends_on: ["check_max_attempts"]
+    config:
+      set:
+        blocked_attempt_count: "${(task.blocked_attempt_count || 0) + 1}"
+        last_unblock_attempt: "${Date.now()}"
+
+  # Step 3: Mark task as in progress
+  - name: mark_in_progress
+    type: SimpleTaskStatusStep
+    description: "Mark task as in progress during unblock attempt"
+    depends_on: ["increment_attempt_counter"]
+    config:
+      status: "in_progress"
+
+  # Step 4: Analyze why task was blocked
+  - name: analyze_blockage
+    type: BlockedTaskAnalysisStep
+    description: "Analyze why the task was blocked and gather context"
+    depends_on: ["mark_in_progress"]
+    config:
+      task_id: "${taskId}"
+      project_id: "${projectId}"
+      repo_root: "${repo_root}"
+      branch: "${branch}"
+      
+  # Step 5: Request context scan
+  - name: context_request
+    type: PersonaRequestStep
+    description: "Gather current project context"
+    depends_on: ["analyze_blockage"]
+    config:
+      step: "unblock-context"
+      persona: "context"
+      intent: "scan"
+      payload:
+        task: "${task}"
+        blocked_reason: "${blockage_analysis.reason}"
+        previous_attempts: "${blockage_analysis.previous_attempts}"
+        repo: "${repo_remote}"
+        branch: "${branch}"
+        project_id: "${projectId}"
+      timeout: 600000  # 10 minutes
+
+  # Step 6: Request lead engineer to analyze blockage
+  - name: lead_analysis
+    type: PersonaRequestStep
+    description: "Lead engineer analyzes blockage and suggests resolution"
+    depends_on: ["context_request"]
+    config:
+      step: "unblock-analysis"
+      persona: "lead-engineer"
+      intent: "analyze_blockage"
+      payload:
+        task: "${task}"
+        blocked_reason: "${blockage_analysis.reason}"
+        blocked_at_step: "${blockage_analysis.failed_step}"
+        previous_attempts: "${blockage_analysis.previous_attempts}"
+        attempt_number: "${blocked_attempt_count}"
+        max_attempts: "${max_attempts}"
+        context_snapshot: "${context_request.snapshot}"
+        repo: "${repo_remote}"
+        branch: "${branch}"
+        project_id: "${projectId}"
+      timeout: 300000  # 5 minutes
+
+  # Step 7: Attempt to unblock
+  - name: unblock_attempt
+    type: UnblockAttemptStep
+    description: "Execute unblock strategy based on lead engineer analysis"
+    depends_on: ["lead_analysis"]
+    config:
+      task_id: "${taskId}"
+      project_id: "${projectId}"
+      strategy: "${lead_analysis.strategy}"
+      resolution_plan: "${lead_analysis.resolution_plan}"
+      repo_root: "${repo_root}"
+      branch: "${branch}"
+
+  # Step 8: Validate unblock was successful
+  - name: validate_unblock
+    type: PersonaRequestStep
+    description: "QA validates that blockage is resolved"
+    depends_on: ["unblock_attempt"]
+    config:
+      step: "unblock-validation"
+      persona: "tester-qa"
+      intent: "validate_unblock"
+      payload:
+        task: "${task}"
+        unblock_result: "${unblock_attempt.result}"
+        resolution_applied: "${unblock_attempt.resolution}"
+        repo: "${repo_remote}"
+        branch: "${branch}"
+        project_id: "${projectId}"
+      timeout: 300000  # 5 minutes
+
+  # Step 9: Mark task based on validation result
+  - name: mark_task_status
+    type: ConditionalStep
+    description: "Update task status based on validation"
+    depends_on: ["validate_unblock"]
+    config:
+      condition: "validate_unblock.status == 'pass'"
+      on_true:
+        - name: mark_unblocked
+          type: SimpleTaskStatusStep
+          description: "Mark task as open/ready to retry"
+          config:
+            status: "open"
+            comment: "Successfully unblocked after ${blocked_attempt_count} attempt(s)"
+      on_false:
+        - name: mark_still_blocked
+          type: SimpleTaskStatusStep
+          description: "Mark task as still blocked"
+          config:
+            status: "blocked"
+            comment: "Unblock attempt ${blocked_attempt_count} failed. Will retry."
+
+# Failure handling - if unblock workflow itself fails
+failure_handling:
+  on_workflow_failure:
+    - name: mark_unblock_failed
+      type: SimpleTaskStatusStep
+      description: "Mark task as blocked with failure details"
+      config:
+        status: "blocked"
+        comment: "Unblock workflow failed at step: ${failed_step}. Will retry on next iteration."
+
+timeouts:
+  default_step: 300000  # 5 minutes
+  context_request_timeout: 600000  # 10 minutes

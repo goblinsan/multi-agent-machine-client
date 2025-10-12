@@ -1,0 +1,101 @@
+name: "in-review-task-flow"
+description: "Resume workflow for tasks already in review status - skips to review stages"
+version: "1.0.0"
+
+trigger:
+  condition: "status == 'in_review' || status == 'review' || status == 'in-code-review'"
+
+context:
+  repo_required: true
+
+steps:
+  # Step 1: Fetch branch to get latest code
+  - name: checkout_branch
+    type: GitOperationStep
+    description: "Ensure we're on the correct feature branch"
+    config:
+      operation: "checkout"
+      branch: "${branch}"
+
+  # Step 2: Pull latest changes
+  - name: pull_latest
+    type: GitOperationStep
+    description: "Pull latest changes from remote"
+    depends_on: ["checkout_branch"]
+    config:
+      operation: "pull"
+
+  # Step 3: Code Review
+  - name: code_review_request
+    type: PersonaRequestStep
+    description: "Request code review from code reviewer persona"
+    depends_on: ["pull_latest"]
+    config:
+      step: "3-code-review"
+      persona: "code-reviewer"
+      intent: "code_review"
+      payload:
+        task: "${task}"
+        repo: "${repo_remote}"
+        branch: "${branch}"
+        project_id: "${projectId}"
+        resume_review: true
+      timeout: 300000  # 5 minutes
+
+  # Step 4: Security Review (runs in parallel with code review)
+  - name: security_request
+    type: PersonaRequestStep
+    description: "Request security review from security reviewer persona"
+    depends_on: ["pull_latest"]
+    config:
+      step: "3-security"
+      persona: "security-review"
+      intent: "security_review"
+      payload:
+        task: "${task}"
+        code_review_result: "${code_review_request_result}"
+        repo: "${repo_remote}"
+        branch: "${branch}"
+        project_id: "${projectId}"
+        resume_review: true
+      timeout: 300000  # 5 minutes
+
+  # Step 5: DevOps Review
+  - name: devops_request
+    type: PersonaRequestStep
+    description: "Request DevOps review from DevOps persona"
+    depends_on: ["code_review_request", "security_request"]
+    config:
+      step: "3-devops"
+      persona: "devops"
+      intent: "devops_review"
+      payload:
+        task: "${task}"
+        code_review_result: "${code_review_request_result}"
+        security_result: "${security_request_result}"
+        repo: "${repo_remote}"
+        branch: "${branch}"
+        project_id: "${projectId}"
+        resume_review: true
+      timeout: 300000  # 5 minutes
+
+  # Step 6: Mark task as done if all reviews pass
+  - name: mark_task_done
+    type: SimpleTaskStatusStep
+    description: "Mark task as completed on dashboard"
+    depends_on: ["security_request", "devops_request", "code_review_request"]
+    config:
+      status: "done"
+
+# Failure handling - mark task as blocked when review workflow fails
+failure_handling:
+  on_workflow_failure:
+    - name: mark_task_blocked
+      type: SimpleTaskStatusStep
+      description: "Mark task as blocked when review workflow fails"
+      config:
+        status: "blocked"
+        comment: "Review workflow failed at step: ${failed_step}"
+
+timeouts:
+  default_step: 300000  # 5 minutes

@@ -109,7 +109,9 @@ export class WorkflowCoordinator {
         if (!currentTasks.length) {
           currentTasks = this.extractTasks(details, projectInfo);
         }
-        const currentPendingTasks = currentTasks.filter(task => this.normalizeTaskStatus(task?.status) !== 'done');
+        const currentPendingTasks = currentTasks
+          .filter(task => this.normalizeTaskStatus(task?.status) !== 'done')
+          .sort((a, b) => this.compareTaskPriority(a, b));  // Sort by priority
         
         // Debug logging to see extracted tasks
         logger.info("Fetched tasks debug", {
@@ -117,7 +119,8 @@ export class WorkflowCoordinator {
           projectId,
           totalFetchedTasks: currentTasks.length,
           pendingTasksCount: currentPendingTasks.length,
-          pendingTaskIds: currentPendingTasks.map(t => t?.id).filter(Boolean)
+          pendingTaskIds: currentPendingTasks.map(t => t?.id).filter(Boolean),
+          pendingTaskStatuses: currentPendingTasks.map(t => ({ id: t?.id, status: t?.status }))
         });
         
         if (currentPendingTasks.length === 0) {
@@ -261,6 +264,43 @@ export class WorkflowCoordinator {
   }): Promise<any> {
     const taskType = this.determineTaskType(task);
     const scope = this.determineTaskScope(task);
+    const taskStatus = this.normalizeTaskStatus(task?.status);
+    
+    // Check if task is blocked - route to blocked task resolution workflow
+    if (taskStatus === 'blocked' || task?.status?.toLowerCase() === 'blocked') {
+      logger.info('Task is blocked, routing to blocked-task-resolution workflow', {
+        taskId: task?.id,
+        workflowId: context.workflowId,
+        blockedAttemptCount: task?.blocked_attempt_count || 0
+      });
+      
+      const blockedWorkflow = this.engine.getWorkflowDefinition('blocked-task-resolution');
+      if (blockedWorkflow) {
+        return this.executeWorkflow(blockedWorkflow, task, context);
+      } else {
+        logger.warn('blocked-task-resolution workflow not found, falling back to normal processing', {
+          taskId: task?.id
+        });
+      }
+    }
+    
+    // Check if task is in review - route to in-review workflow (skips implementation steps)
+    if (taskStatus === 'in_review' || task?.status?.toLowerCase()?.includes('review')) {
+      logger.info('Task is in review, routing to in-review-task-flow workflow', {
+        taskId: task?.id,
+        workflowId: context.workflowId,
+        status: task?.status
+      });
+      
+      const reviewWorkflow = this.engine.getWorkflowDefinition('in-review-task-flow');
+      if (reviewWorkflow) {
+        return this.executeWorkflow(reviewWorkflow, task, context);
+      } else {
+        logger.warn('in-review-task-flow workflow not found, falling back to normal processing', {
+          taskId: task?.id
+        });
+      }
+    }
     
     // Try to use legacy-compatible workflow for tasks that need test compatibility
     let workflow = this.engine.getWorkflowDefinition('legacy-compatible-task-flow');
@@ -707,7 +747,81 @@ export class WorkflowCoordinator {
       return 'open';
     }
     
+    if (['blocked', 'stuck', 'waiting'].includes(normalized)) {
+      return 'blocked';
+    }
+    
+    if (['review', 'in_review', 'in-review', 'in review'].includes(normalized)) {
+      return 'in_review';
+    }
+    
     return 'unknown';
+  }
+
+  /**
+   * Compare tasks by priority for sorting
+   * Priority order: blocked (0) > in_review (1) > in_progress (2) > open (3)
+   */
+  private compareTaskPriority(a: any, b: any): number {
+    const priorityA = this.getTaskPriority(a);
+    const priorityB = this.getTaskPriority(b);
+    
+    // Lower number = higher priority, so sort ascending
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+    
+    // If same priority, sort by task order/position if available
+    const orderA = a?.order ?? a?.position ?? a?.rank ?? Infinity;
+    const orderB = b?.order ?? b?.position ?? b?.rank ?? Infinity;
+    
+    return orderA - orderB;
+  }
+
+  /**
+   * Get numeric priority for a task status
+   * Lower number = higher priority
+   */
+  private getTaskPriority(task: any): number {
+    const status = task?.status;
+    if (!status) return 3;  // Default to "open" priority
+    
+    const normalized = String(status).toLowerCase().trim().replace(/[^a-z0-9]+/g, '_');
+    
+    // Priority map: blocked > in_review > in_progress > open
+    const priorityMap: Record<string, number> = {
+      blocked: 0,
+      stuck: 0,
+      review: 1,
+      in_review: 1,
+      in_code_review: 1,
+      in_security_review: 1,
+      ready: 1,
+      in_progress: 2,
+      active: 2,
+      doing: 2,
+      working: 2,
+      open: 3,
+      planned: 3,
+      backlog: 3,
+      todo: 3,
+      not_started: 3,
+      waiting: 4,
+      pending: 4,
+      qa: 4,
+      testing: 4
+    };
+    
+    if (normalized in priorityMap) {
+      return priorityMap[normalized];
+    }
+    
+    // Fallback pattern matching
+    if (normalized.includes('block') || normalized.includes('stuck')) return 0;
+    if (normalized.includes('review')) return 1;
+    if (normalized.includes('progress') || normalized.includes('doing') || normalized.includes('work') || normalized.includes('active')) return 2;
+    
+    return 3;  // Default to "open" priority
   }
 
   /**
