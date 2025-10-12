@@ -3,6 +3,7 @@ import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { sendPersonaRequest, waitForPersonaCompletion } from '../../agents/persona.js';
 import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
+import { cfg } from '../../config.js';
 
 interface PersonaRequestConfig {
   step: string;
@@ -11,6 +12,7 @@ interface PersonaRequestConfig {
   payload: Record<string, any>;
   timeout?: number;
   deadlineSeconds?: number;
+  maxRetries?: number;
 }
 
 /**
@@ -22,12 +24,16 @@ export class PersonaRequestStep extends WorkflowStep {
     const config = this.config.config as PersonaRequestConfig;
     // Don't default timeout here - let waitForPersonaCompletion use persona-specific timeouts from env
     const { step, persona, intent, payload, timeout, deadlineSeconds = 600 } = config;
+    
+    // Get max retries from config (per-step override) or use global default
+    const maxRetries = config.maxRetries ?? cfg.personaTimeoutMaxRetries ?? 3;
 
     logger.info(`Making persona request`, {
       workflowId: context.workflowId,
       step,
       persona,
-      intent
+      intent,
+      maxRetries
     });
 
     try {
@@ -55,36 +61,88 @@ export class PersonaRequestStep extends WorkflowStep {
       // Use the current branch from variables (updated by git operations) or fall back to context.branch
       const currentBranch = context.getVariable('branch') || context.getVariable('currentBranch') || context.branch;
       
-      const corrId = await sendPersonaRequest(redis, {
-        workflowId: context.workflowId,
-        toPersona: persona,
-        step,
-        intent,
-        payload: resolvedPayload,
-        repo: repoForPersona,
-        branch: currentBranch,
-        projectId: context.projectId,
-        deadlineSeconds
-      });
+      // Retry loop for timeout handling
+      let lastCorrId = '';
+      let attempt = 0;
+      let completion = null;
+      
+      while (attempt <= maxRetries && !completion) {
+        attempt++;
+        
+        if (attempt > 1) {
+          logger.info(`Retrying persona request after timeout`, {
+            workflowId: context.workflowId,
+            step,
+            persona,
+            attempt,
+            maxRetries: maxRetries + 1 // +1 because initial attempt + retries
+          });
+        }
+        
+        const corrId = await sendPersonaRequest(redis, {
+          workflowId: context.workflowId,
+          toPersona: persona,
+          step,
+          intent,
+          payload: resolvedPayload,
+          repo: repoForPersona,
+          branch: currentBranch,
+          projectId: context.projectId,
+          deadlineSeconds
+        });
 
-      logger.info(`Persona request sent`, {
-        workflowId: context.workflowId,
-        step,
-        persona,
-        corrId
-      });
+        lastCorrId = corrId;
 
-      // Wait for persona completion
-      const completion = await waitForPersonaCompletion(redis, persona, context.workflowId, corrId, timeout);
+        logger.info(`Persona request sent`, {
+          workflowId: context.workflowId,
+          step,
+          persona,
+          corrId,
+          attempt
+        });
+
+        // Wait for persona completion
+        try {
+          completion = await waitForPersonaCompletion(redis, persona, context.workflowId, corrId, timeout);
+        } catch (error: any) {
+          // Check if this is a timeout error
+          if (error.message && error.message.includes('Timed out waiting')) {
+            completion = null;
+            if (attempt <= maxRetries) {
+              const timeoutInfo = timeout ? `${timeout}ms` : 'persona default timeout';
+              logger.warn(`Persona request timed out, will retry`, {
+                workflowId: context.workflowId,
+                step,
+                persona,
+                corrId,
+                attempt,
+                timeoutInfo,
+                remainingRetries: maxRetries - attempt + 1
+              });
+            }
+          } else {
+            // Non-timeout error, rethrow to be caught by outer try-catch
+            throw error;
+          }
+        }
+      }
       
       await redis.disconnect();
 
       if (!completion) {
         const timeoutInfo = timeout ? `${timeout}ms` : 'persona default timeout';
+        const totalAttempts = attempt;
+        logger.error(`Persona request failed after all retries`, {
+          workflowId: context.workflowId,
+          step,
+          persona,
+          totalAttempts,
+          timeoutInfo
+        });
         return {
           status: 'failure',
-          error: new Error(`Persona request timed out after ${timeoutInfo}`),
-          data: { step, persona, corrId }
+          error: new Error(`Persona request timed out after ${totalAttempts} attempts (timeout: ${timeoutInfo})`),
+          data: { step, persona, corrId: lastCorrId, totalAttempts }
         };
       }
 
@@ -95,7 +153,8 @@ export class PersonaRequestStep extends WorkflowStep {
         workflowId: context.workflowId,
         step,
         persona,
-        corrId,
+        corrId: lastCorrId,
+        attempt,
         status: result.status || 'unknown'
       });
 
@@ -107,7 +166,8 @@ export class PersonaRequestStep extends WorkflowStep {
         data: {
           step,
           persona,
-          corrId,
+          corrId: lastCorrId,
+          totalAttempts: attempt,
           result,
           completion
         },
@@ -191,6 +251,10 @@ export class PersonaRequestStep extends WorkflowStep {
 
     if (config.deadlineSeconds !== undefined && (typeof config.deadlineSeconds !== 'number' || config.deadlineSeconds < 0)) {
       errors.push('PersonaRequestStep: deadlineSeconds must be a non-negative number');
+    }
+
+    if (config.maxRetries !== undefined && (typeof config.maxRetries !== 'number' || config.maxRetries < 0)) {
+      errors.push('PersonaRequestStep: maxRetries must be a non-negative number');
     }
 
     return {

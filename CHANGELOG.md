@@ -13,6 +13,54 @@ A Redis-based distributed multi-agent coordination system that manages tasks acr
 
 ## Recent Major Enhancements
 
+### Persona Timeout Retry Mechanism (Oct 2025)
+
+**Problem**: Persona tasks that timed out would fail immediately without retrying, causing transient issues to become permanent failures.
+
+**Solution**:
+- ✅ Added configurable retry mechanism for persona timeout errors
+- ✅ Default: 3 retries per persona request (configurable via `PERSONA_TIMEOUT_MAX_RETRIES`)
+- ✅ Per-step override via `maxRetries` config parameter
+- ✅ Automatic retry on timeout errors with detailed logging
+- ✅ Non-timeout errors fail immediately without retry
+- ✅ 11 comprehensive tests covering all retry scenarios
+
+**Files Modified**:
+- `src/config.ts` - Added `personaTimeoutMaxRetries` configuration
+- `src/workflows/steps/PersonaRequestStep.ts` - Implemented retry loop logic
+
+**Files Created**:
+- `tests/personaTimeoutRetry.test.ts` (415 lines, 11 tests)
+
+**Configuration**:
+```bash
+PERSONA_TIMEOUT_MAX_RETRIES=3  # Default: 3 retries (total 4 attempts)
+```
+
+**Per-Step Override**:
+```yaml
+- name: lead_engineer_request
+  type: persona_request
+  config:
+    persona: lead-engineer
+    step: "3-implement"
+    intent: "implement"
+    maxRetries: 5  # Override default for this step
+    payload:
+      task: "${task_description}"
+```
+
+**Behavior**:
+- Initial attempt + N retries (e.g., default 3 = 4 total attempts)
+- Retries only on timeout errors (errors containing "Timed out waiting")
+- Other errors (Redis connection, etc.) fail immediately
+- Each retry logs attempt number and remaining retries
+- Final failure includes total attempt count
+
+**Impact**: Persona requests are now resilient to transient timeout issues, improving workflow reliability.
+
+---
+
 ### Task Priority & Workflow Routing (Oct 2025)
 
 **Problem**: Tasks were processed in wrong order (in_progress first, blocked last) with no specialized workflows for blocked or in-review tasks.
@@ -198,6 +246,9 @@ BLOCKED_MAX_ATTEMPTS=10
 
 # QA Iteration Loop
 COORDINATOR_MAX_REVISION_ATTEMPTS=unlimited  # or numeric limit
+
+# Persona Timeout Retries
+PERSONA_TIMEOUT_MAX_RETRIES=3  # Default: 3 retries (4 total attempts)
 
 # Project Base
 PROJECT_BASE=/path/to/repos

@@ -118,6 +118,7 @@ const coordinatorMaxRevisionAttempts = parseRevisionLimit(process.env.COORDINATO
 const coordinatorMaxApprovalRetries = parseRevisionLimit(process.env.COORDINATOR_MAX_APPROVAL_RETRIES, 3);
 const planMaxIterationsPerStage = parseRevisionLimit(process.env.PLAN_MAX_ITERATIONS_PER_STAGE, 5);
 const blockedMaxAttempts = parseRevisionLimit(process.env.BLOCKED_MAX_ATTEMPTS, 10);
+const personaTimeoutMaxRetries = parseRevisionLimit(process.env.PERSONA_TIMEOUT_MAX_RETRIES, 3);
 
 // Plan citation/relevance enforcement
 function parseJsonArray(value: string | undefined, fallback: string[]): string[] {
@@ -203,6 +204,7 @@ export const cfg = {
   coordinatorMaxApprovalRetries,
   planMaxIterationsPerStage,
   blockedMaxAttempts,
+  personaTimeoutMaxRetries,
   // Plan citation and relevance budget settings
   planRequireCitations,
   planCitationFields,
