@@ -38,10 +38,12 @@ describe('legacy-compatible workflow gating', () => {
     expect(devopsStep).toBeDefined();
     expect(markDoneStep).toBeDefined();
 
-    expect(codeReviewStep?.depends_on).toEqual(['qa_request']);
+    // Code review depends on qa_request AND qa_iteration_loop (which runs if QA initially fails)
+    expect(codeReviewStep?.depends_on).toEqual(['qa_request', 'qa_iteration_loop']);
     expect(codeReviewStep?.condition).toBe("${qa_request_status} == 'pass'");
 
-    expect(securityStep?.depends_on).toEqual(['qa_request']);
+    // Security also depends on both QA and potential iteration loop
+    expect(securityStep?.depends_on).toEqual(['qa_request', 'qa_iteration_loop']);
     expect(securityStep?.condition).toBe("${qa_request_status} == 'pass'");
 
     expect(devopsStep?.depends_on).toEqual(['code_review_request', 'security_request']);

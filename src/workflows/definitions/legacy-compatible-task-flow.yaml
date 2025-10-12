@@ -135,44 +135,24 @@ steps:
       revisionStep: "qa-plan-revision"
       createdTasksStep: "qa-created-tasks"
 
-  # Handle QA created tasks - triggered when QA fails regardless of task source
-  - name: qa_created_tasks
-    type: PersonaRequestStep
-    description: "Handle QA-created tasks via implementation planner"
-    depends_on: ["qa_request"]
+  # Iterative QA fix loop - keeps trying until QA passes or max iterations reached
+  # Uses COORDINATOR_MAX_REVISION_ATTEMPTS from env (supports "unlimited")
+  - name: qa_iteration_loop
+    type: QAIterationLoopStep
+    description: "Iteratively fix QA failures: plan → implement → apply → commit → retest"
+    depends_on: ["qa_failure_coordination"]
     condition: "${qa_request_status} == 'fail'"
     config:
-      step: "qa-created-tasks"
-      persona: "implementation-planner"
-      intent: "planning"
-      payload:
-        task: "${task}"
-        qa_result: "${qa_request_result}"
-        created_tasks: "${qa_failure_created_tasks}"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"
+      maxIterations: null  # null = unlimited (respects env COORDINATOR_MAX_REVISION_ATTEMPTS)
+      planningStep: "qa-fix-planning"
+      implementationStep: "qa-fix-implementation"
+      qaRetestStep: "qa-retest"
 
-  # Execute the QA follow-up plan - implementation step
-  - name: qa_followup_implementation
-    type: PersonaRequestStep
-    description: "Execute the QA follow-up implementation plan"
-    depends_on: ["qa_created_tasks"]
-    condition: "${qa_request_status} == 'fail'"
-    config:
-      step: "4-implementation-plan"
-      persona: "lead-engineer"
-      intent: "implementation"
-      # timeout not set - will use persona-specific timeout from PERSONA_TIMEOUTS_JSON env (600s for lead-engineer)
-      payload:
-        task: "${task}"
-        plan: "${qa_created_tasks_result}"
-        context: "${context_request_result}"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"  # Code Review - depends on git operations being complete
+  # Code Review - depends on QA passing (either first time or after iteration loop)
   - name: code_review_request
     type: PersonaRequestStep
     description: "Request code review from code reviewer persona"
-    depends_on: ["qa_request"]
+    depends_on: ["qa_request", "qa_iteration_loop"]
     condition: "${qa_request_status} == 'pass'"
     config:
       step: "3-code-review"
@@ -186,11 +166,11 @@ steps:
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
-  # Security Review - depends on git operations being complete
+  # Security Review - depends on QA passing (either first time or after iteration loop)
   - name: security_request
     type: PersonaRequestStep
     description: "Request security review from security reviewer persona"
-    depends_on: ["qa_request"]
+    depends_on: ["qa_request", "qa_iteration_loop"]
     condition: "${qa_request_status} == 'pass'"
     config:
       step: "3-security"

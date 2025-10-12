@@ -16,6 +16,8 @@ import { SimpleTaskStatusStep } from './steps/SimpleTaskStatusStep';
 import { GitOperationStep } from './steps/GitOperationStep';
 import { PlanningLoopStep } from './steps/PlanningLoopStep';
 import { QAFailureCoordinationStep } from './steps/QAFailureCoordinationStep';
+import { QAIterationLoopStep } from './steps/QAIterationLoopStep';
+import { VariableSetStep } from './steps/VariableSetStep';
 import { parse as yamlParse } from 'yaml';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
@@ -104,6 +106,8 @@ export class WorkflowEngine {
     this.stepRegistry.set('GitOperationStep', GitOperationStep);
     this.stepRegistry.set('PlanningLoopStep', PlanningLoopStep);
     this.stepRegistry.set('QAFailureCoordinationStep', QAFailureCoordinationStep);
+    this.stepRegistry.set('QAIterationLoopStep', QAIterationLoopStep);
+    this.stepRegistry.set('VariableSetStep', VariableSetStep);
   }
 
   /**
