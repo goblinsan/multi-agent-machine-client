@@ -81,8 +81,8 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
       // Execute step (it will hit setTimeout for backoff on retry)
       const executePromise = step.execute(context);
       
-      // Fast-forward through the 1-minute backoff delay for the first retry
-      await vi.advanceTimersByTimeAsync(60 * 1000);
+      // Fast-forward through the 30-second backoff delay for the first retry
+      await vi.advanceTimersByTimeAsync(30 * 1000);
       
       const result = await executePromise;
 
@@ -118,10 +118,10 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
 
       const executePromise = step.execute(context);
       
-      // Fast-forward through all backoff delays: 1min, 2min, 3min
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute for first retry
-      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes for second retry
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000); // 3 minutes for third retry
+      // Fast-forward through all backoff delays: 30s, 60s, 90s
+      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds for first retry
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds for second retry
+      await vi.advanceTimersByTimeAsync(90 * 1000); // 90 seconds for third retry
       
       const result = await executePromise;
 
@@ -194,9 +194,9 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
 
       const executePromise = step.execute(context);
       
-      // Fast-forward through backoff delays: 1min, 2min
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute for first retry
-      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes for second retry
+      // Fast-forward through backoff delays: 30s, 60s
+      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds for first retry
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds for second retry
       
       const result = await executePromise;
 
@@ -231,8 +231,8 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
 
       const executePromise = step.execute(context);
       
-      // Fast-forward through backoff delay: 1min for the single retry
-      await vi.advanceTimersByTimeAsync(60 * 1000);
+      // Fast-forward through backoff delay: 30s for the single retry
+      await vi.advanceTimersByTimeAsync(30 * 1000);
       
       const result = await executePromise;
 
@@ -292,12 +292,12 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
 
       const executePromise = step.execute(context);
       
-      // Fast-forward through backoff delays: 1min, 2min, 3min, 4min, 5min
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute
-      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000); // 3 minutes
-      await vi.advanceTimersByTimeAsync(4 * 60 * 1000); // 4 minutes
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000); // 5 minutes
+      // Fast-forward through backoff delays: 30s, 60s, 90s, 120s, 150s
+      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds
+      await vi.advanceTimersByTimeAsync(90 * 1000); // 90 seconds
+      await vi.advanceTimersByTimeAsync(120 * 1000); // 120 seconds
+      await vi.advanceTimersByTimeAsync(150 * 1000); // 150 seconds
       
       const result = await executePromise;
 
@@ -388,9 +388,9 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
 
       const executePromise = step.execute(context);
       
-      // Fast-forward through backoff delays: 1min, 2min
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 1 minute
-      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 minutes
+      // Fast-forward through backoff delays: 30s, 60s
+      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds
+      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds
       
       await executePromise;
 
@@ -399,8 +399,8 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         'Retrying persona request after timeout with backoff delay',
         expect.objectContaining({
           attempt: 2,
-          backoffMinutes: 1,
-          backoffMs: 60000,
+          backoffSeconds: 30,
+          backoffMs: 30000,
           persona: 'lead-engineer'
         })
       );
@@ -408,8 +408,8 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         'Retrying persona request after timeout with backoff delay',
         expect.objectContaining({
           attempt: 3,
-          backoffMinutes: 2,
-          backoffMs: 120000,
+          backoffSeconds: 60,
+          backoffMs: 60000,
           persona: 'lead-engineer'
         })
       );
@@ -471,8 +471,8 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
 
       const executePromise = step.execute(context);
       
-      // Fast-forward through backoff delay: 1min for the single retry
-      await vi.advanceTimersByTimeAsync(60 * 1000);
+      // Fast-forward through backoff delay: 30s for the single retry
+      await vi.advanceTimersByTimeAsync(30 * 1000);
       
       await executePromise;
 

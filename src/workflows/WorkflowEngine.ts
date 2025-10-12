@@ -25,6 +25,7 @@ import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { logger } from '../logger.js';
+import { cfg } from '../config.js';
 
 /**
  * YAML workflow definition structure
@@ -594,6 +595,39 @@ export class WorkflowEngine {
     const stepTimeout = timeouts[`${stepDef.name}_timeout`] || timeouts[`${stepDef.type.toLowerCase()}_step`];
     if (stepTimeout) {
       return stepTimeout;
+    }
+    
+    // For PersonaRequestStep, calculate timeout based on persona config + retries + backoff
+    if (stepDef.type === 'PersonaRequestStep' && stepDef.config.persona) {
+      const persona = String(stepDef.config.persona).toLowerCase();
+      const maxRetries = stepDef.config.maxRetries ?? cfg.personaTimeoutMaxRetries ?? 3;
+      
+      // Get persona-specific timeout or default
+      let personaTimeoutMs = cfg.personaTimeouts[persona];
+      if (!personaTimeoutMs) {
+        // Check if it's a coding persona
+        const isCodingPersona = cfg.personaCodingPersonas.some((p: string) => p.toLowerCase() === persona);
+        personaTimeoutMs = isCodingPersona ? cfg.personaCodingTimeoutMs : cfg.personaDefaultTimeoutMs;
+      }
+      
+      // Calculate total timeout: (maxRetries + 1 initial) * personaTimeout + sum of backoff delays
+      // Backoff delays: 30s, 60s, 90s, ... = 30 * (1 + 2 + 3 + ... + maxRetries)
+      // Sum formula: n * (n + 1) / 2
+      const totalBackoffMs = maxRetries > 0 ? (30 * 1000 * maxRetries * (maxRetries + 1)) / 2 : 0;
+      const totalPersonaTimeMs = (maxRetries + 1) * personaTimeoutMs;
+      const calculatedTimeout = totalPersonaTimeMs + totalBackoffMs + 30000; // +30s buffer
+      
+      logger.debug('Calculated PersonaRequestStep timeout', {
+        step: stepDef.name,
+        persona,
+        personaTimeoutMs,
+        maxRetries,
+        totalBackoffMs,
+        totalPersonaTimeMs,
+        calculatedTimeout
+      });
+      
+      return calculatedTimeout;
     }
     
     // Default timeout
