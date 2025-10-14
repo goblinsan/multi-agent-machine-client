@@ -97,21 +97,27 @@ export class WorkflowCoordinator {
     // Process tasks in a loop until all are complete
     const results = [];
   let iterationCount = 0;
-  const maxIterations = this.isTestEnv() ? 2 : 20; // Lower in tests for faster execution
+  // Safety limit to prevent infinite loops while allowing large projects
+  // Each iteration: fetches fresh tasks → processes 1 task → loops
+  // This allows immediate response to urgent tasks added during processing
+  // Default 500 iterations handles up to 500 tasks (configurable via COORDINATOR_MAX_ITERATIONS)
+  const maxIterations = this.isTestEnv() ? 2 : (cfg.coordinatorMaxIterations ?? 500);
   let abortedDueToFailure = false;
   let abortMetadata: { taskId?: string; error?: string; failedStep?: string } | null = null;
       
       while (iterationCount < maxIterations) {
         iterationCount++;
         
-        // Fetch tasks directly from the tasks API instead of project status
+        // CRITICAL: Fetch fresh tasks from dashboard at each iteration
+        // This allows immediate response to urgent tasks added during processing
+        // (e.g., QA failures, security issues, follow-up tasks)
         let currentTasks = await this.fetchProjectTasks(projectId);
         if (!currentTasks.length) {
           currentTasks = this.extractTasks(details, projectInfo);
         }
         const currentPendingTasks = currentTasks
           .filter(task => this.normalizeTaskStatus(task?.status) !== 'done')
-          .sort((a, b) => this.compareTaskPriority(a, b));  // Sort by priority
+          .sort((a, b) => this.compareTaskPriority(a, b));  // Priority: blocked > in_review > in_progress > open
         
         // Debug logging to see extracted tasks
         logger.info("Fetched tasks debug", {
@@ -140,11 +146,12 @@ export class WorkflowCoordinator {
           pendingTaskIds: currentPendingTasks.map(t => t?.id).filter(Boolean)
         });
         
-        // Process tasks in batches of 3 for efficiency
-        const batch = currentPendingTasks.slice(0, 3);
+        // Process next pending task (tasks are sequential, not parallel)
+        // We refetch tasks each iteration to pick up any new tasks created during processing
+        const task = currentPendingTasks[0];
         let batchFailed = false;
         
-        for (const task of batch) {
+        if (task) {
           try {
             const result = await this.processTask(task, {
               workflowId,
@@ -201,7 +208,7 @@ export class WorkflowCoordinator {
         
         // Add small delay between iterations to prevent overwhelming the system
         // Skip delay in test mode to speed up tests
-        if (!this.isTestEnv() && currentPendingTasks.length > batch.length) {
+        if (!this.isTestEnv() && currentPendingTasks.length > 1) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }

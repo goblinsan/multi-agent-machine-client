@@ -2,12 +2,16 @@ name: "project-loop"
 version: "1.0.0"
 description: "Standard project development workflow with planning, implementation, QA, and governance"
 
+# Note: This workflow processes ONE task at a time. The WorkflowCoordinator loops through
+# all pending dashboard tasks, running this workflow for each until all tasks are done
+# or a critical error aborts the project loop.
+
 variables:
-  max_retries: 3
-  timeout_minutes: 30
-  planning_timeout: 1800
-  implementation_timeout: 3600
-  qa_timeout: 1200
+  # Timeout values for individual persona steps (in seconds)
+  # Each step can have its own timeout and retry configuration
+  planning_timeout: 1800      # 30 minutes for planning
+  implementation_timeout: 3600 # 60 minutes for implementation
+  qa_timeout: 1200            # 20 minutes for QA
 
 steps:
   - id: "planning"
