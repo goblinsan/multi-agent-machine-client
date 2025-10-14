@@ -1,18 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis client to prevent connection attempts during tests  
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
-    xGroupCreate: vi.fn().mockResolvedValue(null),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xAck: vi.fn().mockResolvedValue(null),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(null),
-    xRevRange: vi.fn().mockResolvedValue([]),
-    xAdd: vi.fn().mockResolvedValue('test-id'),
-    exists: vi.fn().mockResolvedValue(1)
-  })
-}));
+// Mock Redis client (uses __mocks__/redisClient.js)
+vi.mock('../src/redisClient.js');
 
 // Minimal test to ensure governance (code-review/security) does not run during TDD failing test stage
 describe('coordinator TDD governance gating', () => {
@@ -33,12 +23,7 @@ describe('coordinator TDD governance gating', () => {
     const governanceHookCalled = vi.fn();
     
     // Act: Run coordinator in TDD write_failing_test mode
-    const coordinator = new coordinatorMod.WorkflowCoordinator();
-    
-    // Mock fetchProjectTasks to prevent slow dashboard API calls
-    vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
-      return [];
-    });
+    const coordinator = createFastCoordinator();
     
     try {
       await coordinator.handleCoordinator(

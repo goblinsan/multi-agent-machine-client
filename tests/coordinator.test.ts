@@ -1,20 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator.js';
 import { makeTempRepo } from './makeTempRepo.js';
+import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis client to prevent connection attempts during tests
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
-    xGroupCreate: vi.fn().mockResolvedValue(null),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xAck: vi.fn().mockResolvedValue(null),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(null),
-    xRevRange: vi.fn().mockResolvedValue([]),
-    xAdd: vi.fn().mockResolvedValue('test-id'),
-    exists: vi.fn().mockResolvedValue(1)
-  })
-}));
+// Mock Redis client (uses __mocks__/redisClient.js)
+vi.mock('../src/redisClient.js');
 
 // Mock dashboard functions to prevent HTTP calls
 vi.mock('../src/dashboard.js', () => ({
@@ -39,7 +29,7 @@ describe('Coordinator QA failure handling', () => {
     let qaCoordinationCompleted = false;
     
     // Test business outcome: QA failure coordination should complete without infinite loops
-    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
+    const coordinator = createFastCoordinator();
     
     try {
       // SAFETY: Race condition with timeout protection
@@ -75,7 +65,7 @@ describe('Coordinator QA failure handling', () => {
     let diffVerificationCompleted = false;
     
     // Test business outcome: Diff verification should complete execution without infinite loops
-    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
+    const coordinator = createFastCoordinator();
     
     try {
       // SAFETY: Race condition with timeout protection

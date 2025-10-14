@@ -1,20 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator.js';
 import { makeTempRepo } from './makeTempRepo.js';
+import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis client to prevent connection timeouts during tests
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
-    xGroupCreate: vi.fn().mockResolvedValue(null),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xAck: vi.fn().mockResolvedValue(null),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(null),
-    xRevRange: vi.fn().mockResolvedValue([]),
-    xAdd: vi.fn().mockResolvedValue('test-id'),
-    exists: vi.fn().mockResolvedValue(1)
-  })
-}));
+// Mock Redis (uses __mocks__/redisClient.js)
+vi.mock('../src/redisClient.js');
 
 // Mock dashboard functions to prevent HTTP calls
 vi.mock('../src/dashboard.js', () => ({
@@ -39,14 +29,9 @@ describe('handleCoordinator with overrides', () => {
     let workflowExecuted = false;
     
     // Mock the coordinator to track execution without getting into DiffApplyStep architecture issues
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = createFastCoordinator();
     
-    // Mock fetchProjectTasks to prevent slow dashboard API calls
-    vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
-      return [];
-    });
-    
-    try{
+    try {
       // Standard handleCoordinator parameters 
       // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
       await coordinator.handleCoordinator(

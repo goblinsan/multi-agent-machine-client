@@ -17,13 +17,8 @@ vi.mock('../src/dashboard.js', () => ({
   createDashboardTask: vi.fn().mockResolvedValue({ id: 'new-task-123', ok: true })
 }));
 
-vi.mock('../src/gitUtils.js', () => ({
-  resolveRepoFromPayload: vi.fn().mockImplementation(async (payload) => ({
-    repoRoot: payload.repo || '/tmp/test-repo',
-    branch: payload.branch || 'main',
-    remote: 'https://example/repo.git'
-  }))
-}));
+// Mock git utils (uses __mocks__/gitUtils.js)
+vi.mock('../src/gitUtils.js');
 
 vi.mock('../src/agents/persona.js', () => ({
   sendPersonaRequest: vi.fn().mockResolvedValue('corr-priority-123'),
@@ -41,21 +36,8 @@ vi.mock('../src/agents/persona.js', () => ({
   })
 }));
 
-vi.mock('../src/redisClient.js', () => {
-  const redisMock = {
-    xAdd: vi.fn().mockResolvedValue('msg-123'),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xGroupCreate: vi.fn().mockRejectedValue(new Error('BUSYGROUP')),
-    xAck: vi.fn().mockResolvedValue(1),
-    xRange: vi.fn().mockResolvedValue([]),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(undefined)
-  };
-
-  return {
-    makeRedis: vi.fn().mockResolvedValue(redisMock)
-  };
-});
+// Mock Redis client (uses __mocks__/redisClient.js)
+vi.mock('../src/redisClient.js');
 
 vi.mock('../src/scanRepo.js', () => ({
   scanRepo: vi.fn().mockResolvedValue([
@@ -70,19 +52,11 @@ vi.mock('../src/process.js', () => ({
   })
 }));
 
+import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// Helper to create a coordinator with fast mocks for integration tests
-function createFastCoordinator() {
-  const coordinator = new WorkflowCoordinator();
-  // Mock fetchProjectTasks to prevent slow dashboard API calls (10+ seconds)
-  vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
-    return [];
-  });
-  return coordinator;
-}
 
 // Helper to set up dynamic task mocking
 function setupDynamicTaskMocking(initialTasks: Array<{ id: string; name: string; status: string; order: number }>) {

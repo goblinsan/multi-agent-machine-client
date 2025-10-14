@@ -7,6 +7,8 @@ import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
+import { publishEvent } from "./redis/eventPublisher.js";
+import { acknowledgeRequest } from "./redis/requestHandlers.js";
 // applyModelGeneratedChanges not exported from implementation stage; omit import
 
 // Lightweight type alias for edit outcome used in this module
@@ -877,18 +879,17 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     }
     
     logger.info("persona completed", { persona, workflowId: msg.workflow_id, taskId: msg.task_id, duration_ms: duration });
-    await r.xAdd(cfg.eventStream, "*", {
-      workflow_id: msg.workflow_id, 
-      task_id: msg.task_id || "",
-      step: msg.step || "", 
-      from_persona: persona,
-      status: "done", 
-      result: JSON.stringify(result), 
-      corr_id: msg.corr_id || "", 
-      ts: new Date().toISOString()
+    await publishEvent(r, {
+      workflowId: msg.workflow_id,
+      taskId: msg.task_id,
+      step: msg.step,
+      fromPersona: persona,
+      status: "done",
+      result,
+      corrId: msg.corr_id
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
-    try { await r.xAck(cfg.requestStream, `${cfg.groupPrefix}:${persona}`, entryId); } catch {}
+    await acknowledgeRequest(r, persona, entryId, true);
   }
 
 export async function processPersona(r: any, persona: string, msg: any, payloadObj: any, entryId: string) {
@@ -1072,16 +1073,15 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
     }
     
     logger.info("persona completed", { persona, workflowId: msg.workflow_id, taskId: msg.task_id, duration_ms: duration });
-    await r.xAdd(cfg.eventStream, "*", {
-      workflow_id: msg.workflow_id,
-      task_id: msg.task_id || "",
-      step: msg.step || "", 
-      from_persona: persona,
-      status: "done", 
-      result: JSON.stringify(result), 
-      corr_id: msg.corr_id || "", 
-      ts: new Date().toISOString()
+    await publishEvent(r, {
+      workflowId: msg.workflow_id,
+      taskId: msg.task_id,
+      step: msg.step,
+      fromPersona: persona,
+      status: "done",
+      result,
+      corrId: msg.corr_id
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
-    try { await r.xAck(cfg.requestStream, `${cfg.groupPrefix}:${persona}`, entryId); } catch {}
+    await acknowledgeRequest(r, persona, entryId, true);
   }

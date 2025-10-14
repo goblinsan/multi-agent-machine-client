@@ -2,19 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupAllMocks, coordinatorMod, TestProject } from './helpers/mockHelpers.js';
 import * as gitUtils from '../src/gitUtils.js';
 
-// Mock Redis client to prevent connection attempts during tests  
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
-    xGroupCreate: vi.fn().mockResolvedValue(null),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xAck: vi.fn().mockResolvedValue(null),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(null),
-    xRevRange: vi.fn().mockResolvedValue([]),
-    xAdd: vi.fn().mockResolvedValue('test-id'),
-    exists: vi.fn().mockResolvedValue(1)
-  })
-}));
+// Mock Redis client (uses __mocks__/redisClient.js)
+vi.mock('../src/redisClient.js');
 
 beforeEach(() => {
   vi.clearAllMocks();

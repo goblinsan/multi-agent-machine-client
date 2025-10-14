@@ -7,8 +7,9 @@ import { PERSONAS } from "./personaNames.js";
 import { handleCoordinator } from "./workflows/WorkflowCoordinator.js";
 import { processContext, processPersona } from "./process.js";
 import { isDuplicateMessage, markMessageProcessed, startMessageTrackingCleanup } from "./messageTracking.js";
+import { publishEvent } from "./redis/eventPublisher.js";
+import { acknowledgeRequest, groupForPersona } from "./redis/requestHandlers.js";
 
-function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
 
 async function ensureGroups(r: any) {
@@ -62,12 +63,15 @@ async function readOne(r: any, persona: string) {
       const fields = msg.message as Record<string, string>;
       processOne(r, persona, id, fields).catch(async (e: any) => {
         logger.error(`worker error`, { persona, error: e, entryId: id });
-        await r.xAdd(cfg.eventStream, "*", {
-          workflow_id: fields?.workflow_id ?? "", step: fields?.step ?? "",
-          from_persona: persona, status: "error", corr_id: fields?.corr_id ?? "",
-          error: String(e?.message || e), ts: nowIso()
+        await publishEvent(r, {
+          workflowId: fields?.workflow_id ?? "",
+          step: fields?.step,
+          fromPersona: persona,
+          status: "error",
+          corrId: fields?.corr_id,
+          error: String(e?.message || e)
         }).catch(()=>{});
-        await r.xAck(cfg.requestStream, groupForPersona(persona), id).catch(()=>{});
+        await acknowledgeRequest(r, persona, id, true);
       });
     }
   }
@@ -122,9 +126,9 @@ async function main() {
 
 async function processOne(r: any, persona: string, entryId: string, fields: Record<string,string>) {
     const parsed = RequestSchema.safeParse(fields);
-    if (!parsed.success) { await r.xAck(cfg.requestStream, groupForPersona(persona), entryId); return; }
+    if (!parsed.success) { await acknowledgeRequest(r, persona, entryId); return; }
     const msg = parsed.data;
-    if (msg.to_persona !== persona) { await r.xAck(cfg.requestStream, groupForPersona(persona), entryId); return; }
+    if (msg.to_persona !== persona) { await acknowledgeRequest(r, persona, entryId); return; }
   
     // Check for duplicate messages
     if (isDuplicateMessage(msg.task_id, msg.corr_id, persona)) {
@@ -136,24 +140,23 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       });
       
       // Send duplicate_response event
-      await r.xAdd(cfg.eventStream, "*", {
-        workflow_id: msg.workflow_id,
-        task_id: msg.task_id || "",
-        step: msg.step || "",
-        from_persona: persona,
+      await publishEvent(r, {
+        workflowId: msg.workflow_id,
+        taskId: msg.task_id,
+        step: msg.step,
+        fromPersona: persona,
         status: "duplicate_response",
-        corr_id: msg.corr_id || "",
-        result: JSON.stringify({
+        corrId: msg.corr_id,
+        result: {
           message: "This request has already been processed by this persona",
           originalTaskId: msg.task_id,
           originalCorrId: msg.corr_id
-        }),
-        ts: nowIso()
+        }
       }).catch((e: any) => {
         logger.error("failed to send duplicate_response event", { error: e?.message });
       });
       
-      await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
+      await acknowledgeRequest(r, persona, entryId);
       return;
     }
   
@@ -172,7 +175,7 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       });
       
       // Acknowledge to remove from this consumer's pending list
-      await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
+      await acknowledgeRequest(r, persona, entryId);
       return;
     }
   

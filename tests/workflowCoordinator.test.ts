@@ -3,22 +3,10 @@ import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator';
 import { WorkflowEngine } from '../src/workflows/WorkflowEngine';
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext';
 import * as gitUtils from '../src/gitUtils.js';
+import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis client to prevent connection attempts during tests  
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
-    xGroupCreate: vi.fn().mockResolvedValue(null),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xAck: vi.fn().mockResolvedValue(null),
-    xRange: vi.fn().mockResolvedValue([]),
-    xDel: vi.fn().mockResolvedValue(0),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(null),
-    xRevRange: vi.fn().mockResolvedValue([]),
-    xAdd: vi.fn().mockResolvedValue('test-id'),
-    exists: vi.fn().mockResolvedValue(1)
-  })
-}));
+// Mock Redis client (uses __mocks__/redisClient.js)
+vi.mock('../src/redisClient.js');
 
 // Mock dashboard functions to prevent HTTP calls
 vi.mock('../src/dashboard.js', () => ({
@@ -245,7 +233,7 @@ describe('WorkflowCoordinator Task Processing', () => {
     let workflowCompleted = false;
 
     // Test business outcome: Task processing workflows complete without hanging
-    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
+    const coordinator = createFastCoordinator();
     
     try {
       // SAFETY: Race condition with timeout protection  
@@ -279,7 +267,7 @@ describe('WorkflowCoordinator Task Processing', () => {
     let workflowCompleted = false;
 
     // Test business outcome: Workflow execution handling completes without hanging
-    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
+    const coordinator = createFastCoordinator();
     
     try {
       // SAFETY: Race condition with timeout protection  
@@ -310,7 +298,7 @@ describe('WorkflowCoordinator Task Processing', () => {
   });
 
   it('aborts coordinator loop after workflow failure', async () => {
-    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
+    const coordinator = createFastCoordinator();
 
     const fetchTasksSpy = vi.spyOn(coordinator as any, 'fetchProjectTasks').mockResolvedValue([
       { id: 'task-1', name: 'Task 1', status: 'open' }

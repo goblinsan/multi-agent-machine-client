@@ -18,6 +18,7 @@ import { PlanningLoopStep } from './steps/PlanningLoopStep';
 import { QAFailureCoordinationStep } from './steps/QAFailureCoordinationStep';
 import { QAIterationLoopStep } from './steps/QAIterationLoopStep';
 import { VariableSetStep } from './steps/VariableSetStep';
+import { personaTimeoutMs } from '../util.js';
 import { BlockedTaskAnalysisStep } from './steps/BlockedTaskAnalysisStep';
 import { UnblockAttemptStep } from './steps/UnblockAttemptStep';
 import { parse as yamlParse } from 'yaml';
@@ -614,27 +615,22 @@ export class WorkflowEngine {
       const persona = String(stepDef.config.persona).toLowerCase();
       const maxRetries = stepDef.config.maxRetries ?? cfg.personaTimeoutMaxRetries ?? 3;
       
-      // Get persona-specific timeout or default
-      let personaTimeoutMs = cfg.personaTimeouts[persona];
-      if (!personaTimeoutMs) {
-        // Check if it's a coding persona
-        const isCodingPersona = cfg.personaCodingPersonas.some((p: string) => p.toLowerCase() === persona);
-        personaTimeoutMs = isCodingPersona ? cfg.personaCodingTimeoutMs : cfg.personaDefaultTimeoutMs;
-      }
+      // Get persona-specific timeout using centralized util function
+      const personaTimeout = personaTimeoutMs(persona, cfg);
       
       // Calculate total timeout: (maxRetries + 1 initial) * personaTimeout + sum of backoff delays
       // Backoff delays: 30s, 60s, 90s, ... = 30 * (1 + 2 + 3 + ... + maxRetries)
       // Sum formula: n * (n + 1) / 2
       const totalBackoffMs = maxRetries > 0 ? (30 * 1000 * maxRetries * (maxRetries + 1)) / 2 : 0;
-      const totalPersonaTimeMs = (maxRetries + 1) * personaTimeoutMs;
+      const totalPersonaTimeMs = (maxRetries + 1) * personaTimeout;
       const calculatedTimeout = totalPersonaTimeMs + totalBackoffMs + 30000; // +30s buffer
       
       // Use info level so it's always visible in logs
       logger.info('Calculated PersonaRequestStep timeout to accommodate retries', {
         step: stepDef.name,
         persona,
-        personaTimeoutMs,
-        personaTimeoutMinutes: (personaTimeoutMs / 60000).toFixed(2),
+        personaTimeoutMs: personaTimeout,
+        personaTimeoutMinutes: (personaTimeout / 60000).toFixed(2),
         maxRetries,
         totalBackoffMs,
         totalBackoffMinutes: (totalBackoffMs / 60000).toFixed(2),

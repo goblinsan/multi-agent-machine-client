@@ -2,19 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator.js';
 import { makeTempRepo } from './makeTempRepo.js';
 
-// Mock Redis client to prevent connection attempts during tests  
-vi.mock('../src/redisClient.js', () => ({
-  makeRedis: vi.fn().mockResolvedValue({
-    xGroupCreate: vi.fn().mockResolvedValue(null),
-    xReadGroup: vi.fn().mockResolvedValue([]),
-    xAck: vi.fn().mockResolvedValue(null),
-    disconnect: vi.fn().mockResolvedValue(null),
-    quit: vi.fn().mockResolvedValue(null),
-    xRevRange: vi.fn().mockResolvedValue([]),
-    xAdd: vi.fn().mockResolvedValue('test-id'),
-    exists: vi.fn().mockResolvedValue(1)
-  })
-}));
+// Mock Redis client (uses __mocks__/redisClient.js)
+vi.mock('../src/redisClient.js');
 
 // Mock dashboard functions to prevent HTTP calls
 vi.mock('../src/dashboard.js', () => ({
@@ -29,15 +18,7 @@ vi.mock('../src/dashboard.js', () => ({
   })
 }));
 
-// Helper to create a coordinator with fast mocks for integration tests
-function createFastCoordinator() {
-  const coordinator = new WorkflowCoordinator();
-  // Mock fetchProjectTasks to prevent slow dashboard API calls (10+ seconds)
-  vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
-    return [];
-  });
-  return coordinator;
-}
+import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
 describe('Coordinator routes approved QA follow-up plan to engineer', () => {
   beforeEach(() => {

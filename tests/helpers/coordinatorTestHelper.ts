@@ -1,7 +1,25 @@
+import { vi } from 'vitest';
+import { WorkflowCoordinator } from '../../src/workflows/WorkflowCoordinator.js';
+
 /**
  * Helper utilities for coordinator integration tests
  * Provides dynamic task status mocking to prevent test hangs
  */
+
+/**
+ * Creates a fast coordinator instance with fetchProjectTasks mocked.
+ * This prevents slow 10+ second timeouts from dashboard API calls during tests.
+ * 
+ * @returns WorkflowCoordinator instance with fast mocks applied
+ */
+export function createFastCoordinator(): WorkflowCoordinator {
+  const coordinator = new WorkflowCoordinator();
+  // Mock fetchProjectTasks to prevent slow dashboard API calls (10+ seconds)
+  vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
+    return [];
+  });
+  return coordinator;
+}
 
 /**
  * Creates a dynamic task status tracking system for coordinator tests.

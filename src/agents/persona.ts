@@ -4,24 +4,7 @@ import { cfg } from "../config.js";
 import { makeRedis } from "../redisClient.js";
 import { logger } from "../logger.js";
 import { PERSONAS } from "../personaNames.js";
-
-
-const PERSONA_WAIT_TIMEOUT_MS = cfg.personaDefaultTimeoutMs;
-const PERSONA_TIMEOUT_OVERRIDES = cfg.personaTimeouts || {};
-const CODING_TIMEOUT_MS = cfg.personaCodingTimeoutMs || 180000;
-const DEFAULT_PERSONA_TIMEOUT_MS = cfg.personaDefaultTimeoutMs || PERSONA_WAIT_TIMEOUT_MS;
-const CODING_PERSONA_SET = new Set((cfg.personaCodingPersonas && cfg.personaCodingPersonas.length
-  ? cfg.personaCodingPersonas
-  : ["lead-engineer", "devops", "ui-engineer", "qa-engineer", "ml-engineer"]
-).map(p => p.trim().toLowerCase()).filter(Boolean));
-
-
-function personaTimeoutMs(persona: string) {
-    const key = (persona || "").toLowerCase();
-    if (key && PERSONA_TIMEOUT_OVERRIDES[key] !== undefined) return PERSONA_TIMEOUT_OVERRIDES[key];
-    if (CODING_PERSONA_SET.has(key)) return CODING_TIMEOUT_MS;
-    return DEFAULT_PERSONA_TIMEOUT_MS;
-  }
+import { personaTimeoutMs } from "../util.js";
 
 type PersonaEvent = { id: string; fields: Record<string, string> };
 
@@ -34,7 +17,7 @@ export async function waitForPersonaCompletion(
 ): Promise<PersonaEvent> {
   const effectiveTimeout = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
     ? timeoutMs
-    : personaTimeoutMs(persona);
+    : personaTimeoutMs(persona, cfg);
   const started = Date.now();
   const eventRedis = await makeRedis();
 
