@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const RequestSchema = z.object({
   workflow_id: z.string(),
+  task_id: z.string().optional(),
   step: z.string().optional(),
   from: z.string(),
   to_persona: z.string(),
@@ -17,9 +18,10 @@ export type RequestMsg = z.infer<typeof RequestSchema>;
 
 export const EventSchema = z.object({
   workflow_id: z.string(),
+  task_id: z.string().optional(),
   step: z.string().optional(),
   from_persona: z.string(),
-  status: z.enum(["done","progress","error","blocked"]),
+  status: z.enum(["done","progress","error","blocked","duplicate_response"]),
   result: z.string().optional(),
   corr_id: z.string().optional(),
   ts: z.string().optional(),

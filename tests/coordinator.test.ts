@@ -39,7 +39,7 @@ describe('Coordinator QA failure handling', () => {
     let qaCoordinationCompleted = false;
     
     // Test business outcome: QA failure coordination should complete without infinite loops
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
     
     try {
       // SAFETY: Race condition with timeout protection
@@ -75,7 +75,7 @@ describe('Coordinator QA failure handling', () => {
     let diffVerificationCompleted = false;
     
     // Test business outcome: Diff verification should complete execution without infinite loops
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
     
     try {
       // SAFETY: Race condition with timeout protection

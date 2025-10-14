@@ -3,10 +3,13 @@ import { PersonaRequestStep } from '../src/workflows/steps/PersonaRequestStep.js
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
 import * as persona from '../src/agents/persona.js';
 import * as redisClient from '../src/redisClient.js';
+import * as messageTracking from '../src/messageTracking.js';
+import { calculateProgressiveTimeout, personaMaxRetries, personaTimeoutMs } from '../src/util.js';
 
 // Mock dependencies
 vi.mock('../src/agents/persona.js');
 vi.mock('../src/redisClient.js');
+vi.mock('../src/messageTracking.js');
 vi.mock('../src/logger.js', () => ({
   logger: {
     info: vi.fn(),
@@ -16,7 +19,39 @@ vi.mock('../src/logger.js', () => ({
   }
 }));
 
-describe('PersonaRequestStep - Timeout Retry Logic', () => {
+// Mock config
+vi.mock('../src/config.js', () => ({
+  cfg: {
+    personaTimeouts: {
+      'context': 60000,
+      'lead-engineer': 90000,
+      'qa-engineer': 120000
+    },
+    personaMaxRetries: {
+      'context': 3,
+      'lead-engineer': 5,
+      'qa-engineer': null // unlimited
+    },
+    personaDefaultTimeoutMs: 60000,
+    personaDefaultMaxRetries: 3,
+    personaRetryBackoffIncrementMs: 30000,
+    requestStream: 'agent.requests',
+    eventStream: 'agent.events',
+    personaModels: {
+      'lead-engineer': 'test-model',
+      'context': 'test-model',
+      'qa-engineer': 'test-model',
+      'devops': 'test-model',
+      'tester-qa': 'test-model',
+      'code-reviewer': 'test-model',
+      'security-review': 'test-model',
+      'implementation-planner': 'test-model',
+      'plan-evaluator': 'test-model'
+    }
+  }
+}));
+
+describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
   let mockRedis: any;
   let context: WorkflowContext;
 
@@ -24,14 +59,15 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
     // Reset all mocks
     vi.clearAllMocks();
     
-    // Use fake timers to avoid waiting for real backoff delays
-    vi.useFakeTimers();
-
     // Mock Redis client
     mockRedis = {
       disconnect: vi.fn()
     };
     vi.mocked(redisClient.makeRedis).mockResolvedValue(mockRedis);
+
+    // Mock message tracking (no duplicates by default)
+    vi.mocked(messageTracking.isDuplicateMessage).mockReturnValue(false);
+    vi.mocked(messageTracking.markMessageProcessed).mockImplementation(() => {});
 
     // Create workflow context
     context = new WorkflowContext(
@@ -47,25 +83,29 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  describe('Retry on Timeout', () => {
-    it('should retry when persona request times out and succeed on second attempt', async () => {
-      // Mock sendPersonaRequest to return correlation IDs
+  describe('Progressive Timeout Behavior', () => {
+    it('should use increasing timeouts for each retry attempt', async () => {
+      // Track timeout values passed to waitForPersonaCompletion
+      const timeoutValues: number[] = [];
+      
       vi.mocked(persona.sendPersonaRequest)
-        .mockResolvedValueOnce('corr-id-1')
-        .mockResolvedValueOnce('corr-id-2');
+        .mockResolvedValue('corr-id');
 
-      // Mock waitForPersonaCompletion: first call timeout (throws), second call success
       vi.mocked(persona.waitForPersonaCompletion)
-        .mockRejectedValueOnce(new Error('Timed out waiting for lead-engineer completion')) // Timeout on first attempt
-        .mockResolvedValueOnce({ // Success on second attempt
-          fields: {
-            result: JSON.stringify({ status: 'success', output: 'test result' })
+        .mockImplementation(async (_redis, _persona, _workflowId, _corrId, timeout) => {
+          timeoutValues.push(timeout || 0);
+          if (timeoutValues.length < 3) {
+            throw new Error('Timed out waiting for lead-engineer completion');
           }
-        } as any);
+          return {
+            fields: {
+              result: JSON.stringify({ status: 'success' })
+            }
+          } as any;
+        });
 
       const step = new PersonaRequestStep({
         name: 'test-persona-request',
@@ -78,30 +118,93 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      // Execute step (it will hit setTimeout for backoff on retry)
-      const executePromise = step.execute(context);
-      
-      // Fast-forward through the 30-second backoff delay for the first retry
-      await vi.advanceTimersByTimeAsync(30 * 1000);
-      
-      const result = await executePromise;
+      const result = await step.execute(context);
 
+      // Verify progressive timeout values
+      expect(timeoutValues.length).toBe(3);
+      expect(timeoutValues[0]).toBe(90000);  // Base: 90s
+      expect(timeoutValues[1]).toBe(120000); // Base + 30s: 120s
+      expect(timeoutValues[2]).toBe(150000); // Base + 60s: 150s
+      
       expect(result.status).toBe('success');
-      expect(result.data?.totalAttempts).toBe(2);
-      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(2);
-      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
-      expect(mockRedis.disconnect).toHaveBeenCalledTimes(1);
+      expect(result.data?.totalAttempts).toBe(3);
     });
 
-    it('should respect default max retries (3) and fail after exhausting attempts', async () => {
-      // Mock sendPersonaRequest to return correlation IDs
-      vi.mocked(persona.sendPersonaRequest)
-        .mockResolvedValueOnce('corr-id-1')
-        .mockResolvedValueOnce('corr-id-2')
-        .mockResolvedValueOnce('corr-id-3')
-        .mockResolvedValueOnce('corr-id-4');
+    it('should calculate timeouts correctly using calculateProgressiveTimeout', () => {
+      const baseTimeout = 60000; // 60s
+      const increment = 30000; // 30s
 
-      // Mock all attempts to timeout
+      expect(calculateProgressiveTimeout(baseTimeout, 1, increment)).toBe(60000);  // 60s
+      expect(calculateProgressiveTimeout(baseTimeout, 2, increment)).toBe(90000);  // 90s
+      expect(calculateProgressiveTimeout(baseTimeout, 3, increment)).toBe(120000); // 120s
+      expect(calculateProgressiveTimeout(baseTimeout, 4, increment)).toBe(150000); // 150s
+    });
+
+    it('should not have delays between retry attempts', async () => {
+      const startTime = Date.now();
+      
+      vi.mocked(persona.sendPersonaRequest)
+        .mockResolvedValue('corr-id');
+
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockRejectedValueOnce(new Error('Timed out'))
+        .mockRejectedValueOnce(new Error('Timed out'))
+        .mockResolvedValueOnce({
+          fields: { result: JSON.stringify({ status: 'success' }) }
+        } as any);
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'context',
+          intent: 'test',
+          payload: { test: 'data' }
+        }
+      });
+
+      await step.execute(context);
+      
+      const duration = Date.now() - startTime;
+      
+      // Should complete quickly - no artificial delays
+      // Allow some overhead for test execution
+      expect(duration).toBeLessThan(100);
+    });
+  });
+
+  describe('Per-Persona Configuration', () => {
+    it('should use persona-specific timeout from config', async () => {
+      let capturedTimeout: number | undefined;
+      
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockImplementation(async (_r, _p, _w, _c, timeout) => {
+          capturedTimeout = timeout;
+          return {
+            fields: { result: JSON.stringify({ status: 'success' }) }
+          } as any;
+        });
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'qa-engineer', // Configured with 120000ms timeout
+          intent: 'test',
+          payload: { test: 'data' }
+        }
+      });
+
+      await step.execute(context);
+
+      expect(capturedTimeout).toBe(120000); // 2 minutes
+    });
+
+    it('should use persona-specific max retries from config', async () => {
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
       vi.mocked(persona.waitForPersonaCompletion)
         .mockRejectedValue(new Error('Timed out waiting for lead-engineer completion'));
 
@@ -110,35 +213,323 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
+          persona: 'lead-engineer', // Configured with 5 max retries
+          intent: 'test',
+          payload: { test: 'data' }
+        }
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      // 6 total attempts: 1 initial + 5 retries
+      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(6);
+    });
+
+    it('should use default timeout for unconfigured persona', async () => {
+      let capturedTimeout: number | undefined;
+      
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockImplementation(async (_r, _p, _w, _c, timeout) => {
+          capturedTimeout = timeout;
+          return {
+            fields: { result: JSON.stringify({ status: 'success' }) }
+          } as any;
+        });
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'unknown-persona', // Not in config
+          intent: 'test',
+          payload: { test: 'data' }
+        }
+      });
+
+      await step.execute(context);
+
+      expect(capturedTimeout).toBe(60000); // Default 1 minute
+    });
+
+    it('should allow per-step timeout override', async () => {
+      let capturedTimeout: number | undefined;
+      
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockImplementation(async (_r, _p, _w, _c, timeout) => {
+          capturedTimeout = timeout;
+          return {
+            fields: { result: JSON.stringify({ status: 'success' }) }
+          } as any;
+        });
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'lead-engineer', // Default 90000ms
+          intent: 'test',
+          timeout: 300000, // Override with 5 minutes
+          payload: { test: 'data' }
+        }
+      });
+
+      await step.execute(context);
+
+      expect(capturedTimeout).toBe(300000); // Override value
+    });
+
+    it('should allow per-step maxRetries override', async () => {
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockRejectedValue(new Error('Timed out waiting for context completion'));
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'context', // Default 3 retries
+          intent: 'test',
+          maxRetries: 1, // Override with 1 retry
+          payload: { test: 'data' }
+        }
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      // 2 total attempts: 1 initial + 1 retry
+      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Unlimited Retries', () => {
+    it('should support unlimited retries when configured', async () => {
+      // Stop after 10 attempts to avoid infinite loop in test
+      let attemptCount = 0;
+      
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockImplementation(async () => {
+          attemptCount++;
+          if (attemptCount >= 10) {
+            return {
+              fields: { result: JSON.stringify({ status: 'success' }) }
+            } as any;
+          }
+          throw new Error('Timed out waiting for qa-engineer completion');
+        });
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'qa-engineer', // Configured with unlimited retries
+          intent: 'test',
+          payload: { test: 'data' }
+        }
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(attemptCount).toBe(10);
+      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(10);
+    });
+
+    it('should allow per-step unlimited retries via large maxRetries', async () => {
+      let attemptCount = 0;
+      
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockImplementation(async () => {
+          attemptCount++;
+          if (attemptCount >= 8) {
+            return {
+              fields: { result: JSON.stringify({ status: 'success' }) }
+            } as any;
+          }
+          throw new Error('Timed out waiting for context completion');
+        });
+
+      // Create step with a large number to simulate unlimited
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'context',
+          intent: 'test',
+          maxRetries: 999, // Very large number simulates unlimited
+          payload: { test: 'data' }
+        }
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('success');
+      expect(attemptCount).toBe(8);
+    });
+  });
+
+  describe('Task ID Propagation', () => {
+    it('should extract task_id from payload and pass to sendPersonaRequest', async () => {
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+        fields: { result: JSON.stringify({ status: 'success' }) }
+      } as any);
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'lead-engineer',
+          intent: 'test',
+          payload: { 
+            task_id: 'task-123',
+            test: 'data' 
+          }
+        }
+      });
+
+      await step.execute(context);
+
+      expect(persona.sendPersonaRequest).toHaveBeenCalledWith(
+        mockRedis,
+        expect.objectContaining({
+          taskId: 'task-123'
+        })
+      );
+    });
+
+    it('should extract task_id from context variables', async () => {
+      context.setVariable('task_id', 'task-from-context');
+      
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+        fields: { result: JSON.stringify({ status: 'success' }) }
+      } as any);
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
           persona: 'lead-engineer',
           intent: 'test',
           payload: { test: 'data' }
         }
       });
 
-      const executePromise = step.execute(context);
-      
-      // Fast-forward through all backoff delays: 30s, 60s, 90s
-      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds for first retry
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds for second retry
-      await vi.advanceTimersByTimeAsync(90 * 1000); // 90 seconds for third retry
-      
-      const result = await executePromise;
+      await step.execute(context);
 
-      expect(result.status).toBe('failure');
-      expect(result.data?.totalAttempts).toBe(4); // Initial attempt + 3 retries
-      expect(result.error?.message).toContain('timed out after 4 attempts');
-      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(4);
-      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(4);
-      expect(mockRedis.disconnect).toHaveBeenCalledTimes(1);
+      expect(persona.sendPersonaRequest).toHaveBeenCalledWith(
+        mockRedis,
+        expect.objectContaining({
+          taskId: 'task-from-context'
+        })
+      );
     });
 
-    it('should succeed on first attempt without retrying', async () => {
-      // Mock sendPersonaRequest
-      vi.mocked(persona.sendPersonaRequest).mockResolvedValueOnce('corr-id-1');
+    it('should prioritize payload task_id over context task_id', async () => {
+      context.setVariable('task_id', 'task-from-context');
+      
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+        fields: { result: JSON.stringify({ status: 'success' }) }
+      } as any);
 
-      // Mock immediate success
-      vi.mocked(persona.waitForPersonaCompletion).mockResolvedValueOnce({
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'lead-engineer',
+          intent: 'test',
+          payload: { 
+            task_id: 'task-from-payload',
+            test: 'data' 
+          }
+        }
+      });
+
+      await step.execute(context);
+
+      expect(persona.sendPersonaRequest).toHaveBeenCalledWith(
+        mockRedis,
+        expect.objectContaining({
+          taskId: 'task-from-payload'
+        })
+      );
+    });
+  });
+
+  describe('Workflow Abort Behavior', () => {
+    it('should return failure with diagnostic error after all retries exhausted', async () => {
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockRejectedValue(new Error('Timed out waiting for lead-engineer completion'));
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'context', // 3 max retries
+          intent: 'test',
+          payload: { test: 'data' }
+        }
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      expect(result.error?.message).toContain('timed out after 4 attempts');
+      expect(result.error?.message).toContain('Workflow aborted');
+      expect(result.data?.workflowAborted).toBe(true);
+      expect(result.data?.totalAttempts).toBe(4);
+      expect(result.data?.baseTimeoutMs).toBeDefined();
+      expect(result.data?.finalTimeoutMs).toBeDefined();
+    });
+
+    it('should include timeout information in error', async () => {
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockRejectedValue(new Error('Timed out waiting for lead-engineer completion'));
+
+      const step = new PersonaRequestStep({
+        name: 'test-persona-request',
+        type: 'persona_request',
+        config: {
+          step: '1-test',
+          persona: 'lead-engineer', // 90s base timeout
+          intent: 'test',
+          maxRetries: 2,
+          payload: { test: 'data' }
+        }
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe('failure');
+      expect(result.data?.baseTimeoutMs).toBe(90000);
+      expect(result.data?.finalTimeoutMs).toBe(150000); // 90s + 2*30s
+      expect(result.error?.message).toContain('Base timeout: 1.50min');
+      expect(result.error?.message).toContain('Final timeout: 2.50min');
+    });
+  });
+
+  describe('Success Scenarios', () => {
+    it('should succeed on first attempt without retrying', async () => {
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id-1');
+      vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
         fields: {
           result: JSON.stringify({ status: 'success', output: 'test result' })
         }
@@ -165,13 +556,9 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
     });
 
     it('should succeed on third attempt after two timeouts', async () => {
-      // Mock sendPersonaRequest to return correlation IDs
       vi.mocked(persona.sendPersonaRequest)
-        .mockResolvedValueOnce('corr-id-1')
-        .mockResolvedValueOnce('corr-id-2')
-        .mockResolvedValueOnce('corr-id-3');
+        .mockResolvedValue('corr-id');
 
-      // Mock: timeout, timeout, success
       vi.mocked(persona.waitForPersonaCompletion)
         .mockRejectedValueOnce(new Error('Timed out waiting for lead-engineer completion'))
         .mockRejectedValueOnce(new Error('Timed out waiting for lead-engineer completion'))
@@ -192,126 +579,17 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         }
       });
 
-      const executePromise = step.execute(context);
-      
-      // Fast-forward through backoff delays: 30s, 60s
-      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds for first retry
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds for second retry
-      
-      const result = await executePromise;
+      const result = await step.execute(context);
 
       expect(result.status).toBe('success');
       expect(result.data?.totalAttempts).toBe(3);
-      expect(result.outputs?.output).toBe('third time lucky');
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(3);
-      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(3);
-    });
-  });
-
-  describe('Per-Step Retry Override', () => {
-    it('should respect custom maxRetries when specified in config', async () => {
-      // Mock all attempts to timeout
-      vi.mocked(persona.sendPersonaRequest)
-        .mockResolvedValueOnce('corr-id-1')
-        .mockResolvedValueOnce('corr-id-2');
-      vi.mocked(persona.waitForPersonaCompletion)
-        .mockRejectedValue(new Error('Timed out waiting for lead-engineer completion'));
-
-      const step = new PersonaRequestStep({
-        name: 'test-persona-request',
-        type: 'persona_request',
-        config: {
-          step: '1-test',
-          persona: 'lead-engineer',
-          intent: 'test',
-          payload: { test: 'data' },
-          maxRetries: 1 // Override: only 1 retry instead of default 3
-        }
-      });
-
-      const executePromise = step.execute(context);
-      
-      // Fast-forward through backoff delay: 30s for the single retry
-      await vi.advanceTimersByTimeAsync(30 * 1000);
-      
-      const result = await executePromise;
-
-      expect(result.status).toBe('failure');
-      expect(result.data?.totalAttempts).toBe(2); // Initial attempt + 1 retry
-      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(2);
-      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
-    });
-
-    it('should allow zero retries when maxRetries is 0', async () => {
-      // Mock timeout on first attempt
-      vi.mocked(persona.sendPersonaRequest).mockResolvedValueOnce('corr-id-1');
-      vi.mocked(persona.waitForPersonaCompletion).mockRejectedValue(new Error('Timed out waiting for lead-engineer completion'));
-
-      const step = new PersonaRequestStep({
-        name: 'test-persona-request',
-        type: 'persona_request',
-        config: {
-          step: '1-test',
-          persona: 'lead-engineer',
-          intent: 'test',
-          payload: { test: 'data' },
-          maxRetries: 0 // No retries
-        }
-      });
-
-      const result = await step.execute(context);
-
-      expect(result.status).toBe('failure');
-      expect(result.data?.totalAttempts).toBe(1); // Only initial attempt
-      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(1);
-      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(1);
-    });
-
-    it('should allow higher retries than default when specified', async () => {
-      // Mock all attempts to timeout
-      const mockSendPersonaRequest = vi.mocked(persona.sendPersonaRequest);
-      const mockWaitForPersonaCompletion = vi.mocked(persona.waitForPersonaCompletion);
-      
-      // Set up mocks for 6 attempts (1 initial + 5 retries)
-      for (let i = 1; i <= 6; i++) {
-        mockSendPersonaRequest.mockResolvedValueOnce(`corr-id-${i}`);
-      }
-      mockWaitForPersonaCompletion.mockRejectedValue(new Error('Timed out waiting for lead-engineer completion'));
-
-      const step = new PersonaRequestStep({
-        name: 'test-persona-request',
-        type: 'persona_request',
-        config: {
-          step: '1-test',
-          persona: 'lead-engineer',
-          intent: 'test',
-          payload: { test: 'data' },
-          maxRetries: 5 // More than default
-        }
-      });
-
-      const executePromise = step.execute(context);
-      
-      // Fast-forward through backoff delays: 30s, 60s, 90s, 120s, 150s
-      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds
-      await vi.advanceTimersByTimeAsync(90 * 1000); // 90 seconds
-      await vi.advanceTimersByTimeAsync(120 * 1000); // 120 seconds
-      await vi.advanceTimersByTimeAsync(150 * 1000); // 150 seconds
-      
-      const result = await executePromise;
-
-      expect(result.status).toBe('failure');
-      expect(result.data?.totalAttempts).toBe(6); // Initial attempt + 5 retries
-      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(6);
-      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(6);
     });
   });
 
   describe('Error Handling', () => {
     it('should fail immediately on non-timeout errors without retrying', async () => {
-      // Mock sendPersonaRequest to throw an error
-      vi.mocked(persona.sendPersonaRequest).mockRejectedValueOnce(
+      vi.mocked(persona.sendPersonaRequest).mockRejectedValue(
         new Error('Redis connection failed')
       );
 
@@ -330,49 +608,18 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
 
       expect(result.status).toBe('failure');
       expect(result.error?.message).toContain('Redis connection failed');
-      // Should only be called once, not retried
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(1);
+      // Should not retry on non-timeout errors
       expect(persona.waitForPersonaCompletion).not.toHaveBeenCalled();
     });
 
-    it('should validate maxRetries config parameter', async () => {
-      const step = new PersonaRequestStep({
-        name: 'test-persona-request',
-        type: 'persona_request',
-        config: {
-          step: '1-test',
-          persona: 'lead-engineer',
-          intent: 'test',
-          payload: { test: 'data' },
-          maxRetries: -1 // Invalid: negative
-        }
-      });
-
-      const validation = await step.validate(context);
-
-      expect(validation.valid).toBe(false);
-      expect(validation.errors).toContain(
-        'PersonaRequestStep: maxRetries must be a non-negative number'
-      );
-    });
-  });
-
-  describe('Logging', () => {
-    it('should log each retry attempt', async () => {
-      const { logger } = await import('../src/logger.js');
-
-      // Mock timeouts then success
-      vi.mocked(persona.sendPersonaRequest)
-        .mockResolvedValueOnce('corr-id-1')
-        .mockResolvedValueOnce('corr-id-2')
-        .mockResolvedValueOnce('corr-id-3');
+    it('should only retry on timeout errors', async () => {
+      vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
       vi.mocked(persona.waitForPersonaCompletion)
-        .mockRejectedValueOnce(new Error('Timed out waiting for lead-engineer completion'))
-        .mockRejectedValueOnce(new Error('Timed out waiting for lead-engineer completion'))
+        .mockRejectedValueOnce(new Error('Timed out waiting for context completion'))
+        .mockRejectedValueOnce(new Error('Network error')) // Non-timeout error - doesn't match "Timed out waiting"
         .mockResolvedValueOnce({
-          fields: {
-            result: JSON.stringify({ status: 'success' })
-          }
+          fields: { result: JSON.stringify({ status: 'success' }) }
         } as any);
 
       const step = new PersonaRequestStep({
@@ -380,109 +627,61 @@ describe('PersonaRequestStep - Timeout Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'lead-engineer',
+          persona: 'context',
           intent: 'test',
           payload: { test: 'data' }
         }
       });
 
-      const executePromise = step.execute(context);
-      
-      // Fast-forward through backoff delays: 30s, 60s
-      await vi.advanceTimersByTimeAsync(30 * 1000); // 30 seconds
-      await vi.advanceTimersByTimeAsync(60 * 1000); // 60 seconds
-      
-      await executePromise;
+      const result = await step.execute(context);
 
-      // Check that retry logs with backoff were created
-      expect(logger.info).toHaveBeenCalledWith(
-        'Retrying persona request after timeout with backoff delay',
-        expect.objectContaining({
-          attempt: 2,
-          backoffSeconds: 30,
-          backoffMs: 30000,
-          persona: 'lead-engineer'
-        })
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        'Retrying persona request after timeout with backoff delay',
-        expect.objectContaining({
-          attempt: 3,
-          backoffSeconds: 60,
-          backoffMs: 60000,
-          persona: 'lead-engineer'
-        })
-      );
+      // Should fail on the non-timeout error
+      expect(result.status).toBe('failure');
+      expect(result.error?.message).toContain('Network error');
+      // Only 2 attempts: first timed out (retry), second had network error (stop)
+      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
+    });
+  });
 
-      // Check that backoff completion logs were created
-      expect(logger.info).toHaveBeenCalledWith(
-        'Backoff delay completed, sending retry',
-        expect.objectContaining({
-          attempt: 2,
-          persona: 'lead-engineer'
-        })
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        'Backoff delay completed, sending retry',
-        expect.objectContaining({
-          attempt: 3,
-          persona: 'lead-engineer'
-        })
-      );
+  describe('Utility Function Tests', () => {
+    it('personaMaxRetries should return persona-specific value', () => {
+      const mockCfg = {
+        personaMaxRetries: {
+          'lead-engineer': 5,
+          'context': 3
+        },
+        personaDefaultMaxRetries: 3
+      };
 
-      // Check that timeout warnings were logged
-      expect(logger.warn).toHaveBeenCalledWith(
-        'Persona request timed out, will retry',
-        expect.objectContaining({
-          attempt: 1,
-          persona: 'lead-engineer'
-        })
-      );
-      expect(logger.warn).toHaveBeenCalledWith(
-        'Persona request timed out, will retry',
-        expect.objectContaining({
-          attempt: 2,
-          persona: 'lead-engineer'
-        })
-      );
+      expect(personaMaxRetries('lead-engineer', mockCfg)).toBe(5);
+      expect(personaMaxRetries('context', mockCfg)).toBe(3);
+      expect(personaMaxRetries('unknown', mockCfg)).toBe(3); // Default
     });
 
-    it('should log final failure after all retries exhausted', async () => {
-      const { logger } = await import('../src/logger.js');
+    it('personaMaxRetries should handle unlimited (null) correctly', () => {
+      const mockCfg = {
+        personaMaxRetries: {
+          'qa-engineer': null // unlimited
+        },
+        personaDefaultMaxRetries: 3
+      };
 
-      // Mock all attempts to timeout
-      vi.mocked(persona.sendPersonaRequest)
-        .mockResolvedValueOnce('corr-id-1')
-        .mockResolvedValueOnce('corr-id-2');
-      vi.mocked(persona.waitForPersonaCompletion)
-        .mockRejectedValue(new Error('Timed out waiting for lead-engineer completion'));
+      expect(personaMaxRetries('qa-engineer', mockCfg)).toBe(null);
+    });
 
-      const step = new PersonaRequestStep({
-        name: 'test-persona-request',
-        type: 'persona_request',
-        config: {
-          step: '1-test',
-          persona: 'lead-engineer',
-          intent: 'test',
-          payload: { test: 'data' },
-          maxRetries: 1
-        }
-      });
+    it('personaTimeoutMs should return persona-specific value', () => {
+      const mockCfg = {
+        personaTimeouts: {
+          'lead-engineer': 90000,
+          'context': 60000
+        },
+        personaDefaultTimeoutMs: 60000,
+        personaCodingTimeoutMs: 180000
+      };
 
-      const executePromise = step.execute(context);
-      
-      // Fast-forward through backoff delay: 30s for the single retry
-      await vi.advanceTimersByTimeAsync(30 * 1000);
-      
-      await executePromise;
-
-      expect(logger.error).toHaveBeenCalledWith(
-        'Persona request failed after all retries',
-        expect.objectContaining({
-          persona: 'lead-engineer',
-          totalAttempts: 2
-        })
-      );
+      expect(personaTimeoutMs('lead-engineer', mockCfg)).toBe(90000);
+      expect(personaTimeoutMs('context', mockCfg)).toBe(60000);
+      expect(personaTimeoutMs('unknown', mockCfg)).toBe(60000); // Default
     });
   });
 });

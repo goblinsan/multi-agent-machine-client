@@ -65,7 +65,6 @@ Key features:
 Integration layer that provides backward compatibility:
 - Wraps WorkflowEngine with existing coordinator API
 - Handles task type detection and workflow selection
-- Preserves all existing functionality while using new engine internally
 - Seamless integration with existing dashboard and git utilities
 
 ## YAML Workflow Definitions

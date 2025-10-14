@@ -4,6 +4,7 @@ import { sendPersonaRequest, waitForPersonaCompletion } from '../../agents/perso
 import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
 import { cfg } from '../../config.js';
+import { personaTimeoutMs, personaMaxRetries, calculateProgressiveTimeout } from '../../util.js';
 
 interface PersonaRequestConfig {
   step: string;
@@ -22,18 +23,30 @@ interface PersonaRequestConfig {
 export class PersonaRequestStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PersonaRequestConfig;
-    // Don't default timeout here - let waitForPersonaCompletion use persona-specific timeouts from env
-    const { step, persona, intent, payload, timeout, deadlineSeconds = 600 } = config;
+    const { step, persona, intent, payload, deadlineSeconds = 600 } = config;
     
-    // Get max retries from config (per-step override) or use global default
-    const maxRetries = config.maxRetries ?? cfg.personaTimeoutMaxRetries ?? 3;
+    // Get base timeout from config or persona-specific configuration
+    const baseTimeoutMs = config.timeout ?? personaTimeoutMs(persona, cfg);
+    
+    // Get max retries from config (per-step override) or persona-specific/global default
+    const configuredMaxRetries = config.maxRetries !== undefined ? config.maxRetries : personaMaxRetries(persona, cfg);
+    // In production, unlimited retries = Number.MAX_SAFE_INTEGER
+    // The hard cap of 100 attempts will still prevent true infinite loops
+    const effectiveMaxRetries = configuredMaxRetries === null 
+      ? Number.MAX_SAFE_INTEGER
+      : configuredMaxRetries;
+    const maxRetries = effectiveMaxRetries;
+    const isUnlimitedRetries = configuredMaxRetries === null;
 
     logger.info(`Making persona request`, {
       workflowId: context.workflowId,
       step,
       persona,
       intent,
-      maxRetries
+      baseTimeoutMs,
+      baseTimeoutSec: (baseTimeoutMs / 1000).toFixed(1),
+      maxRetries: isUnlimitedRetries ? 'unlimited' : maxRetries,
+      backoffIncrementMs: cfg.personaRetryBackoffIncrementMs
     });
 
     try {
@@ -61,40 +74,51 @@ export class PersonaRequestStep extends WorkflowStep {
       // Use the current branch from context (encapsulates branch resolution logic)
       const currentBranch = context.getCurrentBranch();
       
-      // Retry loop for timeout handling
+      // Retry loop for timeout handling with progressive backoff
       let lastCorrId = '';
       let attempt = 0;
       let completion = null;
       
-      while (attempt <= maxRetries && !completion) {
+      // Safety: Hard cap at 100 attempts to prevent infinite loops
+      const HARD_CAP_ATTEMPTS = 100;
+      
+      while ((isUnlimitedRetries || attempt <= maxRetries) && !completion && attempt < HARD_CAP_ATTEMPTS) {
         attempt++;
         
+        // Calculate progressive timeout for this attempt
+        const currentTimeoutMs = calculateProgressiveTimeout(
+          baseTimeoutMs,
+          attempt,
+          cfg.personaRetryBackoffIncrementMs
+        );
+        
         if (attempt > 1) {
-          // Backoff delay: wait (attempt - 1) * 30 seconds before retrying
-          // First retry waits 30s, second waits 60s, third waits 90s, etc.
-          const backoffSeconds = (attempt - 1) * 30;
-          const backoffMs = backoffSeconds * 1000;
-          
-          logger.info(`Retrying persona request after timeout with backoff delay`, {
+          logger.info(`Retrying persona request (progressive timeout)`, {
             workflowId: context.workflowId,
             step,
             persona,
             attempt,
-            maxRetries: maxRetries + 1, // +1 because initial attempt + retries
-            backoffSeconds,
-            backoffMs
+            maxRetries: isUnlimitedRetries ? 'unlimited' : maxRetries,
+            baseTimeoutMs,
+            currentTimeoutMs,
+            currentTimeoutMin: (currentTimeoutMs / 60000).toFixed(2),
+            backoffIncrementMs: cfg.personaRetryBackoffIncrementMs
           });
-          
-          // Wait for the backoff period
-          await new Promise(resolve => setTimeout(resolve, backoffMs));
-          
-          logger.info(`Backoff delay completed, sending retry`, {
+        } else {
+          logger.info(`First attempt with base timeout`, {
             workflowId: context.workflowId,
             step,
             persona,
-            attempt
+            timeoutMs: currentTimeoutMs,
+            timeoutMin: (currentTimeoutMs / 60000).toFixed(2)
           });
         }
+        
+        // Extract task_id from payload or context
+        const taskId = resolvedPayload.task_id 
+          || resolvedPayload.taskId 
+          || context.getVariable('task_id') 
+          || context.getVariable('taskId');
         
         const corrId = await sendPersonaRequest(redis, {
           workflowId: context.workflowId,
@@ -105,6 +129,7 @@ export class PersonaRequestStep extends WorkflowStep {
           repo: repoForPersona,
           branch: currentBranch,
           projectId: context.projectId,
+          taskId,
           deadlineSeconds
         });
 
@@ -115,26 +140,29 @@ export class PersonaRequestStep extends WorkflowStep {
           step,
           persona,
           corrId,
-          attempt
+          attempt,
+          timeoutMs: currentTimeoutMs
         });
 
-        // Wait for persona completion
+        // Wait for persona completion with progressive timeout
         try {
-          completion = await waitForPersonaCompletion(redis, persona, context.workflowId, corrId, timeout);
+          completion = await waitForPersonaCompletion(redis, persona, context.workflowId, corrId, currentTimeoutMs);
         } catch (error: any) {
           // Check if this is a timeout error
           if (error.message && error.message.includes('Timed out waiting')) {
             completion = null;
-            if (attempt <= maxRetries) {
-              const timeoutInfo = timeout ? `${timeout}ms` : 'persona default timeout';
-              logger.warn(`Persona request timed out, will retry`, {
+            if (isUnlimitedRetries || attempt < maxRetries) {
+              logger.warn(`Persona request timed out, will retry with increased timeout`, {
                 workflowId: context.workflowId,
                 step,
                 persona,
                 corrId,
                 attempt,
-                timeoutInfo,
-                remainingRetries: maxRetries - attempt + 1
+                timedOutAtMs: currentTimeoutMs,
+                timedOutAtMin: (currentTimeoutMs / 60000).toFixed(2),
+                nextTimeoutMs: calculateProgressiveTimeout(baseTimeoutMs, attempt + 1, cfg.personaRetryBackoffIncrementMs),
+                nextTimeoutMin: (calculateProgressiveTimeout(baseTimeoutMs, attempt + 1, cfg.personaRetryBackoffIncrementMs) / 60000).toFixed(2),
+                remainingRetries: isUnlimitedRetries ? 'unlimited' : (maxRetries - attempt)
               });
             }
           } else {
@@ -147,19 +175,48 @@ export class PersonaRequestStep extends WorkflowStep {
       await redis.disconnect();
 
       if (!completion) {
-        const timeoutInfo = timeout ? `${timeout}ms` : 'persona default timeout';
         const totalAttempts = attempt;
-        logger.error(`Persona request failed after all retries`, {
+        const finalTimeoutMs = calculateProgressiveTimeout(baseTimeoutMs, attempt, cfg.personaRetryBackoffIncrementMs);
+        const hitHardCap = attempt >= HARD_CAP_ATTEMPTS;
+        
+        // Log detailed diagnostic error for workflow abortion
+        logger.error(`Persona request failed after exhausting all retries - WORKFLOW WILL ABORT`, {
           workflowId: context.workflowId,
           step,
           persona,
           totalAttempts,
-          timeoutInfo
+          baseTimeoutMs,
+          baseTimeoutMin: (baseTimeoutMs / 60000).toFixed(2),
+          finalTimeoutMs,
+          finalTimeoutMin: (finalTimeoutMs / 60000).toFixed(2),
+          maxRetriesConfigured: isUnlimitedRetries ? 'unlimited' : maxRetries,
+          backoffIncrementMs: cfg.personaRetryBackoffIncrementMs,
+          corrId: lastCorrId,
+          hitHardCap,
+          diagnostics: {
+            reason: hitHardCap ? 'Hit hard cap of 100 attempts (safety limit)' : 'All retry attempts exhausted without successful completion',
+            recommendation: 'Check persona availability, LM Studio status, and increase timeout/retries if needed',
+            configKeys: ['PERSONA_TIMEOUTS_JSON', 'PERSONA_MAX_RETRIES_JSON', 'PERSONA_DEFAULT_TIMEOUT_MS', 'PERSONA_DEFAULT_MAX_RETRIES']
+          }
         });
+        
         return {
           status: 'failure',
-          error: new Error(`Persona request timed out after ${totalAttempts} attempts (timeout: ${timeoutInfo})`),
-          data: { step, persona, corrId: lastCorrId, totalAttempts }
+          error: new Error(
+            `Persona '${persona}' request timed out after ${totalAttempts} attempts. ` +
+            `Base timeout: ${(baseTimeoutMs / 60000).toFixed(2)}min, ` +
+            `Final timeout: ${(finalTimeoutMs / 60000).toFixed(2)}min. ` +
+            `Workflow aborted. Check persona availability and configuration.`
+          ),
+          data: { 
+            step, 
+            persona, 
+            corrId: lastCorrId, 
+            totalAttempts,
+            baseTimeoutMs,
+            finalTimeoutMs,
+            workflowAborted: true
+          }
         };
       }
 

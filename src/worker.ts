@@ -6,6 +6,7 @@ import { logger } from "./logger.js";
 import { PERSONAS } from "./personaNames.js";
 import { handleCoordinator } from "./workflows/WorkflowCoordinator.js";
 import { processContext, processPersona } from "./process.js";
+import { isDuplicateMessage, markMessageProcessed, startMessageTrackingCleanup } from "./messageTracking.js";
 
 function groupForPersona(p: string) { return `${cfg.groupPrefix}:${p}`; }
 function nowIso() { return new Date().toISOString(); }
@@ -87,6 +88,9 @@ async function main() {
     throw new Error("Failed to establish Redis connection");
   }
   
+  // Start message tracking cleanup
+  startMessageTrackingCleanup();
+  
   // Create consumer groups
   await ensureGroups(r);
   
@@ -122,6 +126,37 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     const msg = parsed.data;
     if (msg.to_persona !== persona) { await r.xAck(cfg.requestStream, groupForPersona(persona), entryId); return; }
   
+    // Check for duplicate messages
+    if (isDuplicateMessage(msg.task_id, msg.corr_id, persona)) {
+      logger.info("Duplicate message detected, sending duplicate_response", {
+        persona,
+        workflowId: msg.workflow_id,
+        taskId: msg.task_id,
+        corrId: msg.corr_id
+      });
+      
+      // Send duplicate_response event
+      await r.xAdd(cfg.eventStream, "*", {
+        workflow_id: msg.workflow_id,
+        task_id: msg.task_id || "",
+        step: msg.step || "",
+        from_persona: persona,
+        status: "duplicate_response",
+        corr_id: msg.corr_id || "",
+        result: JSON.stringify({
+          message: "This request has already been processed by this persona",
+          originalTaskId: msg.task_id,
+          originalCorrId: msg.corr_id
+        }),
+        ts: nowIso()
+      }).catch((e: any) => {
+        logger.error("failed to send duplicate_response event", { error: e?.message });
+      });
+      
+      await r.xAck(cfg.requestStream, groupForPersona(persona), entryId);
+      return;
+    }
+  
     // Check if this worker can handle this persona (has model mapping or is coordination)
     if (persona !== PERSONAS.COORDINATION && !cfg.personaModels[persona]) {
       logger.warn("received request for persona without model mapping - re-queueing", {
@@ -149,11 +184,15 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     logger.info("processing request", {
       persona,
       workflowId: msg.workflow_id,
+      taskId: msg.task_id,
       intent: msg.intent,
       repo: payloadObj.repo,
       branch: payloadObj.branch,
       projectId: payloadObj.project_id
     });
+  
+    // Mark message as being processed (before actual processing)
+    markMessageProcessed(msg.task_id, msg.corr_id, persona, msg.workflow_id);
   
   if (persona === PERSONAS.COORDINATION) {
     return await handleCoordinator(r, msg, payloadObj);

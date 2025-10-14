@@ -75,9 +75,10 @@ export class DashboardMockHelper {
       return { ...this.project, tasks: openTasks } as any;
     });
 
-    vi.spyOn(dashboard, 'fetchProjectStatusDetails').mockResolvedValue(
-      this.milestones.length > 0 ? { milestones: this.milestones } as any : null as any
-    );
+    vi.spyOn(dashboard, 'fetchProjectStatusDetails').mockImplementation(async () => {
+      // Return fresh milestone data that reflects current task statuses
+      return this.milestones.length > 0 ? { milestones: this.milestones } as any : null as any;
+    });
 
     vi.spyOn(dashboard, 'fetchProjectNextAction').mockResolvedValue({ suggestions: [] } as any);
     vi.spyOn(dashboard, 'fetchProjectMilestones').mockResolvedValue(this.milestones as any);
@@ -175,7 +176,7 @@ export class PersonaMockHelper {
       return corrId;
     });
 
-    vi.spyOn(persona, 'waitForPersonaCompletion').mockImplementation(async (_r: any, toPersona: string, workflowId: string, corrId: string) => {
+    vi.spyOn(persona, 'waitForPersonaCompletion').mockImplementation(async (_r: any, toPersona: string, workflowId: string, corrId: string, _timeoutMs?: number) => {
       const match = sent.find(s => s.corrId === corrId) as any;
       
       if (!match) {

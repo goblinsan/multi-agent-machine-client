@@ -41,7 +41,12 @@ describe('handleCoordinator with overrides', () => {
     // Mock the coordinator to track execution without getting into DiffApplyStep architecture issues
     const coordinator = new WorkflowCoordinator();
     
-    try {
+    // Mock fetchProjectTasks to prevent slow dashboard API calls
+    vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
+      return [];
+    });
+    
+    try{
       // Standard handleCoordinator parameters 
       // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
       await coordinator.handleCoordinator(

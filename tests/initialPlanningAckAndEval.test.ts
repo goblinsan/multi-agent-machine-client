@@ -41,7 +41,7 @@ describe('Initial planning loop evaluates and requests acknowledgement', () => {
     let planningCompleted = false;
     
     // Test business outcome: Planning evaluation should complete without hitting iteration limit
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
     
     try {
       // SAFETY: Race condition with timeout protection

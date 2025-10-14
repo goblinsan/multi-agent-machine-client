@@ -65,7 +65,7 @@ describe('Coordinator commit and push (integration-ish)', () => {
     });
 
     // Test business outcome: Workflow executes without hanging, processes tasks correctly
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
     
     try {
       // SAFETY: Race condition with timeout protection  

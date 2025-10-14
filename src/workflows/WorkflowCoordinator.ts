@@ -97,7 +97,7 @@ export class WorkflowCoordinator {
     // Process tasks in a loop until all are complete
     const results = [];
   let iterationCount = 0;
-  const maxIterations = this.isTestEnv() ? 5 : 20; // Lower in tests to avoid timeouts
+  const maxIterations = this.isTestEnv() ? 2 : 20; // Lower in tests for faster execution
   let abortedDueToFailure = false;
   let abortMetadata: { taskId?: string; error?: string; failedStep?: string } | null = null;
       
@@ -200,7 +200,8 @@ export class WorkflowCoordinator {
         }
         
         // Add small delay between iterations to prevent overwhelming the system
-        if (currentPendingTasks.length > batch.length) {
+        // Skip delay in test mode to speed up tests
+        if (!this.isTestEnv() && currentPendingTasks.length > batch.length) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }

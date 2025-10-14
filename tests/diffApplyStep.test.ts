@@ -43,6 +43,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       getVariable: vi.fn(),
       setVariable: vi.fn(),
       getAllStepOutputs: vi.fn(() => ({})),
+      getCurrentBranch: vi.fn(() => 'test-branch'),
       branch: 'test-branch',
       repoRoot: '/test/repo',
       logger: logger

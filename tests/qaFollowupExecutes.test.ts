@@ -29,6 +29,16 @@ vi.mock('../src/dashboard.js', () => ({
   })
 }));
 
+// Helper to create a coordinator with fast mocks for integration tests
+function createFastCoordinator() {
+  const coordinator = new WorkflowCoordinator();
+  // Mock fetchProjectTasks to prevent slow dashboard API calls (10+ seconds)
+  vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
+    return [];
+  });
+  return coordinator;
+}
+
 describe('Coordinator routes approved QA follow-up plan to engineer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,7 +49,7 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
     let qaFollowupExecuted = false;
     
     // Test business outcome: QA follow-up execution logic should complete without hanging
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = createFastCoordinator();
     
     try {
       // SAFETY: Race condition with timeout protection

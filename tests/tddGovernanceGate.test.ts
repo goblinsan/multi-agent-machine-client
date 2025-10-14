@@ -35,6 +35,11 @@ describe('coordinator TDD governance gating', () => {
     // Act: Run coordinator in TDD write_failing_test mode
     const coordinator = new coordinatorMod.WorkflowCoordinator();
     
+    // Mock fetchProjectTasks to prevent slow dashboard API calls
+    vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
+      return [];
+    });
+    
     try {
       await coordinator.handleCoordinator(
         {},

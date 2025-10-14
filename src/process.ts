@@ -876,10 +876,16 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       }
     }
     
-    logger.info("persona completed", { persona, workflowId: msg.workflow_id, duration_ms: duration });
+    logger.info("persona completed", { persona, workflowId: msg.workflow_id, taskId: msg.task_id, duration_ms: duration });
     await r.xAdd(cfg.eventStream, "*", {
-      workflow_id: msg.workflow_id, step: msg.step || "", from_persona: persona,
-      status: "done", result: JSON.stringify(result), corr_id: msg.corr_id || "", ts: new Date().toISOString()
+      workflow_id: msg.workflow_id, 
+      task_id: msg.task_id || "",
+      step: msg.step || "", 
+      from_persona: persona,
+      status: "done", 
+      result: JSON.stringify(result), 
+      corr_id: msg.corr_id || "", 
+      ts: new Date().toISOString()
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
     try { await r.xAck(cfg.requestStream, `${cfg.groupPrefix}:${persona}`, entryId); } catch {}
@@ -1065,10 +1071,16 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
       }
     }
     
-    logger.info("persona completed", { persona, workflowId: msg.workflow_id, duration_ms: duration });
+    logger.info("persona completed", { persona, workflowId: msg.workflow_id, taskId: msg.task_id, duration_ms: duration });
     await r.xAdd(cfg.eventStream, "*", {
-      workflow_id: msg.workflow_id, step: msg.step || "", from_persona: persona,
-      status: "done", result: JSON.stringify(result), corr_id: msg.corr_id || "", ts: new Date().toISOString()
+      workflow_id: msg.workflow_id,
+      task_id: msg.task_id || "",
+      step: msg.step || "", 
+      from_persona: persona,
+      status: "done", 
+      result: JSON.stringify(result), 
+      corr_id: msg.corr_id || "", 
+      ts: new Date().toISOString()
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
     try { await r.xAck(cfg.requestStream, `${cfg.groupPrefix}:${persona}`, entryId); } catch {}

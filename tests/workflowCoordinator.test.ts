@@ -245,7 +245,7 @@ describe('WorkflowCoordinator Task Processing', () => {
     let workflowCompleted = false;
 
     // Test business outcome: Task processing workflows complete without hanging
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
     
     try {
       // SAFETY: Race condition with timeout protection  
@@ -279,7 +279,7 @@ describe('WorkflowCoordinator Task Processing', () => {
     let workflowCompleted = false;
 
     // Test business outcome: Workflow execution handling completes without hanging
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
     
     try {
       // SAFETY: Race condition with timeout protection  
@@ -310,7 +310,7 @@ describe('WorkflowCoordinator Task Processing', () => {
   });
 
   it('aborts coordinator loop after workflow failure', async () => {
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = new WorkflowCoordinator(); vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([]);
 
     const fetchTasksSpy = vi.spyOn(coordinator as any, 'fetchProjectTasks').mockResolvedValue([
       { id: 'task-1', name: 'Task 1', status: 'open' }

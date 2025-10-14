@@ -123,11 +123,21 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+// Helper to create a coordinator with fast mocks for integration tests
+function createFastCoordinator() {
+  const coordinator = new WorkflowCoordinator();
+  // Mock fetchProjectTasks to prevent slow dashboard API calls (10+ seconds)
+  vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
+    return [];
+  });
+  return coordinator;
+}
+
 describe('Blocked Task Resolution Workflow', () => {
   it('routes blocked tasks to blocked-task-resolution workflow', async () => {
     const tempRepo = await makeTempRepo();
     
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = createFastCoordinator();
     
     try {
       const result = await Promise.race([
@@ -173,7 +183,7 @@ describe('Blocked Task Resolution Workflow', () => {
     });
 
     const tempRepo = await makeTempRepo();
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = createFastCoordinator();
     
     try {
       await Promise.race([
@@ -216,7 +226,7 @@ describe('Blocked Task Resolution Workflow', () => {
     });
 
     const tempRepo = await makeTempRepo();
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = createFastCoordinator();
     
     try {
       const result = await Promise.race([
@@ -244,7 +254,7 @@ describe('Blocked Task Resolution Workflow', () => {
     const { sendPersonaRequest } = await import('../src/agents/persona.js');
     
     const tempRepo = await makeTempRepo();
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = createFastCoordinator();
     
     try {
       await Promise.race([
@@ -282,7 +292,7 @@ describe('Blocked Task Resolution Workflow', () => {
     const { updateTaskStatus } = await import('../src/dashboard.js');
     
     const tempRepo = await makeTempRepo();
-    const coordinator = new WorkflowCoordinator();
+    const coordinator = createFastCoordinator();
     
     try {
       await Promise.race([

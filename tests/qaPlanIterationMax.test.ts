@@ -46,6 +46,11 @@ describe('QA follow-up plan iteration respects max retries and requires ack', ()
 
     const coordinator = new WorkflowCoordinator();
     
+    // Mock fetchProjectTasks to prevent slow dashboard API calls
+    vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
+      return [];
+    });
+    
     try {
       // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
       await coordinator.handleCoordinator(

@@ -75,6 +75,37 @@ function parsePersonaTimeouts(raw: Record<string, unknown>) {
   return out;
 }
 
+function parsePersonaMaxRetries(raw: Record<string, unknown>) {
+  const out: Record<string, number | null> = {};
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (!key || typeof key !== "string") continue;
+    const normalizedKey = key.trim().toLowerCase();
+    if (!normalizedKey.length) continue;
+    
+    // Handle string values like "unlimited", "infinite", etc.
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["unlimited", "infinite", "inf", "none", "no-limit", "nolimit"].includes(normalized)) {
+        out[normalizedKey] = null; // null means unlimited retries
+        continue;
+      }
+      // Try to parse as number
+      const num = Number(normalized);
+      if (Number.isFinite(num) && num >= 0) {
+        out[normalizedKey] = Math.floor(num);
+        continue;
+      }
+    }
+    
+    // Handle numeric values
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      out[normalizedKey] = Math.floor(value);
+      continue;
+    }
+  }
+  return out;
+}
+
 const projectBaseRaw = process.env.PROJECT_BASE || "./repo";
 const projectBase = path.resolve(expandHome(projectBaseRaw)!);
 // DEFAULT_REPO_NAME env is deprecated and ignored, but we still keep a fixed fallback name for path construction utilities
@@ -119,6 +150,9 @@ const coordinatorMaxApprovalRetries = parseRevisionLimit(process.env.COORDINATOR
 const planMaxIterationsPerStage = parseRevisionLimit(process.env.PLAN_MAX_ITERATIONS_PER_STAGE, 5);
 const blockedMaxAttempts = parseRevisionLimit(process.env.BLOCKED_MAX_ATTEMPTS, 10);
 const personaTimeoutMaxRetries = parseRevisionLimit(process.env.PERSONA_TIMEOUT_MAX_RETRIES, 3);
+
+// Default retry backoff increment: 30 seconds
+const personaRetryBackoffIncrementMs = parseDurationMs(process.env.PERSONA_RETRY_BACKOFF_INCREMENT_MS, 30000);
 
 // Plan citation/relevance enforcement
 function parseJsonArray(value: string | undefined, fallback: string[]): string[] {
@@ -165,12 +199,17 @@ const dashboardContextEndpoint = (() => {
 const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();
 const gitUserEmail = (process.env.GIT_USER_EMAIL || "machine-client@example.com").trim();
 
+// Parse per-persona timeout and retry configurations from environment
 const personaTimeouts = parsePersonaTimeouts(jsonOr(process.env.PERSONA_TIMEOUTS_JSON, {} as Record<string, unknown>));
-// Set default timeout for context persona to 1 minute (60000ms) if not explicitly configured
-if (!personaTimeouts['context']) {
-  personaTimeouts['context'] = 60000;
-}
-const personaDefaultTimeoutMs = parseDurationMs(process.env.PERSONA_DEFAULT_TIMEOUT_MS || process.env.COORDINATOR_WAIT_TIMEOUT_MS, 600000);
+const personaMaxRetries = parsePersonaMaxRetries(jsonOr(process.env.PERSONA_MAX_RETRIES_JSON, {} as Record<string, unknown>));
+
+// Default timeout: 1 minute (60000ms)
+const personaDefaultTimeoutMs = parseDurationMs(process.env.PERSONA_DEFAULT_TIMEOUT_MS, 60000);
+
+// Default max retries: 3
+const personaDefaultMaxRetries = parseRevisionLimit(process.env.PERSONA_DEFAULT_MAX_RETRIES, 3);
+
+// Legacy configuration support (deprecated)
 const personaCodingTimeoutMs = parseDurationMs(process.env.PERSONA_CODING_TIMEOUT_MS, 180000);
 const personaCodingPersonas = splitCsv(process.env.PERSONA_CODING_PERSONAS || "lead-engineer,devops,ui-engineer,qa-engineer,ml-engineer", []);
 const enablePersonaCompatMode = bool(process.env.ENABLE_PERSONA_COMPAT_MODE, false);
@@ -208,7 +247,8 @@ export const cfg = {
   coordinatorMaxApprovalRetries,
   planMaxIterationsPerStage,
   blockedMaxAttempts,
-  personaTimeoutMaxRetries,
+  personaTimeoutMaxRetries, // Legacy global default
+  personaRetryBackoffIncrementMs,
   // Plan citation and relevance budget settings
   planRequireCitations,
   planCitationFields,
@@ -235,9 +275,11 @@ export const cfg = {
   summaryMode: (process.env.SUMMARY_MODE || "both").toLowerCase(),
 
   personaTimeouts,
+  personaMaxRetries,
   personaDefaultTimeoutMs,
-  personaCodingTimeoutMs,
-  personaCodingPersonas,
+  personaDefaultMaxRetries,
+  personaCodingTimeoutMs, // Legacy
+  personaCodingPersonas, // Legacy
   enablePersonaCompatMode,
 
   git: {

@@ -124,6 +124,7 @@ export async function sendPersonaRequest(r: any, opts: {
   repo?: string;
   branch?: string;
   projectId?: string;
+  taskId?: string;
 }): Promise<string> {
   const corrId = opts.corrId || randomUUID();
   const entry: Record<string, string> = {
@@ -136,6 +137,7 @@ export async function sendPersonaRequest(r: any, opts: {
     corr_id: corrId,
     deadline_s: String(opts.deadlineSeconds ?? 600)
   };
+  if (opts.taskId) entry.task_id = opts.taskId;
   if (opts.repo) entry.repo = opts.repo;
   if (opts.branch) entry.branch = opts.branch;
   if (opts.projectId) entry.project_id = opts.projectId;
