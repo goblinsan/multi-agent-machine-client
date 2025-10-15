@@ -1,6 +1,6 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { sendPersonaRequest, waitForPersonaCompletion } from '../../agents/persona.js';
+import { sendPersonaRequest, waitForPersonaCompletion, interpretPersonaStatus } from '../../agents/persona.js';
 import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
 import { cfg } from '../../config.js';
@@ -220,8 +220,26 @@ export class PersonaRequestStep extends WorkflowStep {
         };
       }
 
-      // Parse persona response
-      const result = completion.fields?.result ? JSON.parse(completion.fields.result) : {};
+      // Get raw response for status interpretation
+      const rawResponse = completion.fields?.result || '';
+      
+      // Parse persona response (with error handling)
+      let result: any = {};
+      try {
+        result = completion.fields?.result ? JSON.parse(completion.fields.result) : {};
+      } catch (parseError) {
+        logger.warn(`Failed to parse persona response as JSON, using raw response`, {
+          workflowId: context.workflowId,
+          step,
+          persona,
+          error: parseError instanceof Error ? parseError.message : 'Unknown error'
+        });
+        // If JSON parsing fails, use raw response for interpretation
+        result = { raw: rawResponse };
+      }
+      
+      // Interpret the status from the response using proper status interpretation
+      const statusInfo = interpretPersonaStatus(rawResponse);
       
       logger.info(`Persona request completed`, {
         workflowId: context.workflowId,
@@ -229,11 +247,15 @@ export class PersonaRequestStep extends WorkflowStep {
         persona,
         corrId: lastCorrId,
         attempt,
-        status: result.status || 'unknown'
+        status: statusInfo.status,
+        rawStatus: result.status || 'unknown'
       });
 
       // Set output variables in context
       this.setOutputVariables(context, result);
+      
+      // IMPORTANT: Set interpreted status as {step_name}_status for workflow conditions
+      context.setVariable(`${this.config.name}_status`, statusInfo.status);
 
       return {
         status: 'success',

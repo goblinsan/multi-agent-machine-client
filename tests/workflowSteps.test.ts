@@ -54,6 +54,11 @@ vi.mock('../src/agents/persona.js', () => ({
     fields: {
       result: JSON.stringify({ status: 'success', normalizedStatus: 'pass' })
     }
+  }),
+  interpretPersonaStatus: vi.fn().mockReturnValue({
+    status: 'pass',
+    details: '',
+    raw: ''
   })
 }));
 

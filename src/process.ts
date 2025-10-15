@@ -9,6 +9,7 @@ import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBr
 import { logger } from "./logger.js";
 import { publishEvent } from "./redis/eventPublisher.js";
 import { acknowledgeRequest } from "./redis/requestHandlers.js";
+import { interpretPersonaStatus } from "./agents/persona.js";
 // applyModelGeneratedChanges not exported from implementation stage; omit import
 
 // Lightweight type alias for edit outcome used in this module
@@ -138,10 +139,11 @@ async function writeQALog(
   
   const qaLogPath = pathMod.resolve(qaDir, `task-${taskId}-qa.log`);
   
-  // Parse QA response to extract key information
+  // Parse QA response to extract key information using proper status interpretation
   const responseText = resp.content || "";
-  const status = responseText.toLowerCase().includes("pass") ? "PASS" : 
-                responseText.toLowerCase().includes("fail") ? "FAIL" : "UNKNOWN";
+  const statusInfo = interpretPersonaStatus(responseText);
+  const status = statusInfo.status === "pass" ? "PASS" : 
+                 statusInfo.status === "fail" ? "FAIL" : "UNKNOWN";
   
   const qaBranch = payloadObj.branch || repoInfo.branch || "unknown";
   

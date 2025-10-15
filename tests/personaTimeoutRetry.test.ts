@@ -69,6 +69,13 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
     vi.mocked(messageTracking.isDuplicateMessage).mockReturnValue(false);
     vi.mocked(messageTracking.markMessageProcessed).mockImplementation(() => {});
 
+    // Mock interpretPersonaStatus to return proper status interpretation
+    vi.mocked(persona.interpretPersonaStatus).mockReturnValue({
+      status: 'pass',
+      details: '',
+      raw: ''
+    });
+
     // Create workflow context
     context = new WorkflowContext(
       'test-workflow-id',
@@ -101,6 +108,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
             throw new Error('Timed out waiting for lead-engineer completion');
           }
           return {
+            id: 'event-1',
             fields: {
               result: JSON.stringify({ status: 'success' })
             }
@@ -175,7 +183,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
   });
 
   describe('Per-Persona Configuration', () => {
-    it('should use persona-specific timeout from config', async () => {
+    it('should use default timeout for unconfigured persona', async () => {
       let capturedTimeout: number | undefined;
       
       vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
@@ -183,6 +191,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         .mockImplementation(async (_r, _p, _w, _c, timeout) => {
           capturedTimeout = timeout;
           return {
+            id: 'event-1',
             fields: { result: JSON.stringify({ status: 'success' }) }
           } as any;
         });
@@ -226,7 +235,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(6);
     });
 
-    it('should use default timeout for unconfigured persona', async () => {
+    it('should use configured timeout without retry on first attempt', async () => {
       let capturedTimeout: number | undefined;
       
       vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
@@ -234,6 +243,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         .mockImplementation(async (_r, _p, _w, _c, timeout) => {
           capturedTimeout = timeout;
           return {
+            id: 'event-1',
             fields: { result: JSON.stringify({ status: 'success' }) }
           } as any;
         });
@@ -262,6 +272,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         .mockImplementation(async (_r, _p, _w, _c, timeout) => {
           capturedTimeout = timeout;
           return {
+            id: 'event-1',
             fields: { result: JSON.stringify({ status: 'success' }) }
           } as any;
         });
@@ -319,6 +330,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
           attemptCount++;
           if (attemptCount >= 10) {
             return {
+              id: 'event-1',
               fields: { result: JSON.stringify({ status: 'success' }) }
             } as any;
           }
@@ -352,6 +364,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
           attemptCount++;
           if (attemptCount >= 8) {
             return {
+              id: 'event-1',
               fields: { result: JSON.stringify({ status: 'success' }) }
             } as any;
           }
@@ -530,6 +543,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
     it('should succeed on first attempt without retrying', async () => {
       vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id-1');
       vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+        id: 'event-1',
         fields: {
           result: JSON.stringify({ status: 'success', output: 'test result' })
         }
@@ -563,6 +577,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         .mockRejectedValueOnce(new Error('Timed out waiting for lead-engineer completion'))
         .mockRejectedValueOnce(new Error('Timed out waiting for lead-engineer completion'))
         .mockResolvedValueOnce({
+          id: 'event-1',
           fields: {
             result: JSON.stringify({ status: 'success', output: 'third time lucky' })
           }
