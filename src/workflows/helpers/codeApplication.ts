@@ -78,6 +78,18 @@ export async function applyAgentCodeChanges(options: ApplyAgentCodeChangesOption
   });
   const editSpecCandidate = parseOutcome.editSpec && typeof parseOutcome.editSpec === 'object' ? parseOutcome.editSpec : null;
   const editOps = Array.isArray((editSpecCandidate as any)?.ops) ? (editSpecCandidate as any).ops : [];
+  
+  // Log warnings about skipped files
+  const warnings = (editSpecCandidate as any)?.warnings || [];
+  if (warnings.length > 0) {
+    logger.warn('coordinator: skipped files during diff parsing', {
+      workflowId,
+      taskId: taskDescriptor?.id || null,
+      warnings,
+      warningCount: warnings.length
+    });
+  }
+  
   if (!editOps.length) {
     await recordDiagnostic(`coordinator-${phaseKey}-no-ops.json`, {
       workflowId,

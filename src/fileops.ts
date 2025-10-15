@@ -6,7 +6,7 @@ import { cfg } from "./config.js";
 export type Hunk = { oldStart:number, oldCount:number, newStart:number, newCount:number, lines: string[] };
 export type UpsertOp = { action: "upsert"; path: string; content?: string; hunks?: Hunk[] };
 export type DeleteOp = { action: "delete"; path: string };
-export type EditSpec = { ops: Array<UpsertOp | DeleteOp> };
+export type EditSpec = { ops: Array<UpsertOp | DeleteOp>; warnings?: string[] };
 
 export type ApplyOptions = {
   repoRoot: string;
@@ -180,9 +180,11 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
 // This is a best-effort parser: it reconstructs the new file contents by applying
 // hunks and keeping context and added lines while ignoring deletions. It works well
 // for new files and many modification hunks where context lines are present.
-export function parseUnifiedDiffToEditSpec(diffText: string) {
+export function parseUnifiedDiffToEditSpec(diffText: string, opts?: { allowedExts?: string[], warnings?: string[] }) {
+  const allowedExts = opts?.allowedExts ?? [".ts",".tsx",".js",".jsx",".py",".md",".json",".yml",".yaml",".css",".html",".sh",".bat",".scss",".less",".txt",".xml",".properties"];
+  const warnings: string[] = opts?.warnings || [];
   const ops: Array<UpsertOp | DeleteOp> = [];
-  if (!diffText || !diffText.length) return { ops };
+  if (!diffText || !diffText.length) return { ops, warnings };
   // Preprocess: try to extract the inner diff if wrapped in fenced code blocks or HTML
   // Examples handled: ```diff ... ```, ``` ... ```, <pre>...</pre>
   let raw = String(diffText);
@@ -268,6 +270,12 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
       i += 1;
     }
 
+    // Filter out files with disallowed extensions before processing
+    if (!extAllowed(targetPath, allowedExts)) {
+      warnings.push(`Skipped file with disallowed extension: ${targetPath}`);
+      continue;
+    }
+
     // If there are no hunks but there are + lines (new file content), capture them
     if (!hunks.length) {
       const plusLines = lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).map(l => l.slice(1));
@@ -340,6 +348,11 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
           }
           const targetPath = bPath && bPath !== '/dev/null' ? bPath : aPath;
           if (!targetPath) continue;
+          // Filter out files with disallowed extensions in fallback parser too
+          if (!extAllowed(targetPath, allowedExts)) {
+            warnings.push(`Skipped file with disallowed extension (fallback parser): ${targetPath}`);
+            continue;
+          }
           const deleted = bPath === '/dev/null' || (bPath && bPath.endsWith('/dev/null'));
           // collect plus lines (ignore +++ header)
           const plusLines = lines.filter((l: string) => l.startsWith('+') && !l.startsWith('+++')).map(l => l.slice(1));
@@ -352,13 +365,13 @@ export function parseUnifiedDiffToEditSpec(diffText: string) {
           }
         }
       }
-      if (fallbackOps.length) return { ops: fallbackOps } as EditSpec;
+      if (fallbackOps.length) return { ops: fallbackOps, warnings } as EditSpec;
     }
   } catch (err) {
     // swallow fallback errors and return original empty ops
   }
 
-  return { ops } as EditSpec;
+  return { ops, warnings } as EditSpec;
 }
 // Apply hunks to an array of base lines. This is a best-effort but more accurate
 // application: for each hunk we validate context lines around the hunk where possible
