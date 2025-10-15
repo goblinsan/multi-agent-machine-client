@@ -228,7 +228,9 @@ export function findEditSpecCandidate(value: unknown): EditSpecCandidate | null 
     if (Array.isArray(current)) {
       if (isOpArray(current)) return normalizeContainer({ ops: current }, entry.path, "array", current);
       let idx = 0;
-      for (const item of current) {
+      // TypeScript narrowing: current is Array<unknown> at this point
+      const arr = current as unknown[];
+      for (const item of arr) {
         queue.push({ value: item, path: [...entry.path, `[${idx}]`] });
         idx += 1;
       }

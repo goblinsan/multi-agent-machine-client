@@ -21,6 +21,7 @@ import { VariableSetStep } from './steps/VariableSetStep';
 import { personaTimeoutMs } from '../util.js';
 import { BlockedTaskAnalysisStep } from './steps/BlockedTaskAnalysisStep';
 import { UnblockAttemptStep } from './steps/UnblockAttemptStep';
+import { MilestoneStatusCheckStep } from './steps/MilestoneStatusCheckStep';
 import { parse as yamlParse } from 'yaml';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
@@ -114,6 +115,7 @@ export class WorkflowEngine {
     this.stepRegistry.set('VariableSetStep', VariableSetStep);
     this.stepRegistry.set('BlockedTaskAnalysisStep', BlockedTaskAnalysisStep);
     this.stepRegistry.set('UnblockAttemptStep', UnblockAttemptStep);
+    this.stepRegistry.set('MilestoneStatusCheckStep', MilestoneStatusCheckStep);
   }
 
   /**

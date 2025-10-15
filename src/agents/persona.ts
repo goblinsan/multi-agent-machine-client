@@ -166,7 +166,9 @@ type PersonaStatusInfo = {
 
 export function interpretPersonaStatus(output: string | undefined): PersonaStatusInfo {
   const raw = (output || "").trim();
-  const json = extractJsonPayloadFromText(raw);
+  let json = extractJsonPayloadFromText(raw);
+  
+  // First priority: Check if JSON has a direct status field
   if (json && typeof json.status === "string") {
     const statusLower = json.status.trim().toLowerCase();
     let normalized: "pass" | "fail" | "unknown" = "unknown";
@@ -175,13 +177,42 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     const details = typeof json.details === "string" ? json.details : raw || JSON.stringify(json);
     return { status: normalized, details, raw, payload: json };
   }
+  
+  // Second priority: Check if JSON has "output" field (LM Studio wrapper pattern)
+  // Try to extract status from nested output string
+  if (json && typeof json.output === "string") {
+    const innerJson = extractJsonPayloadFromText(json.output);
+    if (innerJson && typeof innerJson.status === "string") {
+      const statusLower = innerJson.status.trim().toLowerCase();
+      let normalized: "pass" | "fail" | "unknown" = "unknown";
+      if (PASS_STATUS_KEYWORDS.has(statusLower)) normalized = "pass";
+      else if (FAIL_STATUS_KEYWORDS.has(statusLower)) normalized = "fail";
+      const details = typeof innerJson.details === "string" ? innerJson.details : json.output;
+      return { status: normalized, details, raw, payload: innerJson };
+    }
+  }
+  
+  // Third priority: Look for explicit JSON-like status declarations in text
+  // This catches patterns like {"status": "pass"} or 'status': 'fail' in text
   if (!raw.length) return { status: "unknown", details: raw, raw };
   const lower = raw.toLowerCase();
-  for (const key of FAIL_STATUS_KEYWORDS) {
-    if (lower.includes(key)) return { status: "fail", details: raw, raw };
+  const jsonStatusMatch = lower.match(/["']status["']\s*:\s*["'](pass|fail|success|error|failed|succeeded|approved|rejected|ok)["']/);
+  if (jsonStatusMatch) {
+    const declaredStatus = jsonStatusMatch[1];
+    const normalized = PASS_STATUS_KEYWORDS.has(declaredStatus) ? "pass" : 
+                       FAIL_STATUS_KEYWORDS.has(declaredStatus) ? "fail" : "unknown";
+    return { status: normalized, details: raw, raw, payload: json };
   }
+  
+  // Fourth priority (fallback): Scan entire text for keywords
+  // IMPORTANT: Check PASS first to avoid false negatives from explanatory text
+  // (e.g., "The plan passes all criteria. If it were to fail, we would...")
   for (const key of PASS_STATUS_KEYWORDS) {
     if (lower.includes(key)) return { status: "pass", details: raw, raw };
   }
+  for (const key of FAIL_STATUS_KEYWORDS) {
+    if (lower.includes(key)) return { status: "fail", details: raw, raw };
+  }
+  
   return { status: "unknown", details: raw, raw, payload: json };
 }

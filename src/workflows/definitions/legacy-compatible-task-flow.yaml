@@ -232,6 +232,34 @@ steps:
       project_id: "${projectId}"
       status: "done"
 
+  # Check milestone completion status
+  - name: check_milestone_completion
+    type: MilestoneStatusCheckStep
+    description: "Check if milestone has remaining incomplete tasks"
+    depends_on: ["mark_task_done"]
+    config:
+      check_type: "incomplete_tasks"
+      include_cancelled: false
+
+  # Send suggested tasks to PM for urgency evaluation if milestone incomplete
+  - name: pm_evaluate_suggestions
+    type: PersonaRequestStep
+    description: "Send suggested tasks to PM for urgency evaluation"
+    depends_on: ["check_milestone_completion"]
+    condition: "${milestone_has_remaining_tasks} == true"
+    config:
+      step: "6-pm-evaluate-suggestions"
+      persona: "project-manager"
+      intent: "evaluate_task_urgency"
+      payload:
+        milestone: "${milestone}"
+        completed_task: "${task}"
+        remaining_tasks: "${check_milestone_completion_remaining_tasks}"
+        suggested_tasks: "${qa_iteration_loop_suggested_tasks}"
+        milestone_completion_percentage: "${milestone_completion_percentage}"
+        repo: "${repo_remote}"
+        project_id: "${projectId}"
+
 # Failure handling - mark task as blocked when workflow fails
 failure_handling:
   on_workflow_failure:

@@ -199,7 +199,8 @@ async function writeQALog(
 export async function processContext(r: any, persona: string, msg: any, payloadObj: any, entryId: string) {
     const model = cfg.personaModels[persona]; if (!model) throw new Error(`No model mapping for '${persona}'`);
     const ctx: any = await fetchContext(msg.workflow_id);
-    const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
+    // Allow custom system prompt via payload, otherwise use default
+    const systemPrompt = payloadObj._system_prompt || SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
     // --- Context scan (pre-model), supports multi-components & Alembic ---
     let scanSummaryText = "";
     let scanArtifacts: null | {
@@ -895,7 +896,8 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
 export async function processPersona(r: any, persona: string, msg: any, payloadObj: any, entryId: string) {
     const model = cfg.personaModels[persona]; if (!model) throw new Error(`No model mapping for '${persona}'`);
     const ctx: any = await fetchContext(msg.workflow_id);
-    const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
+    // Allow custom system prompt via payload, otherwise use default
+    const systemPrompt = payloadObj._system_prompt || SYSTEM_PROMPTS[persona] || `You are the ${persona} agent.`;
     const userPayload = msg.payload ? msg.payload : "{}";
     let externalSummary: string | null = null;
     let preferredPaths: string[] = [];

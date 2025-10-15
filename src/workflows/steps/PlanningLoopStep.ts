@@ -1,6 +1,7 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus } from '../../agents/persona.js';
+import { getContextualPrompt } from '../../personas.context.js';
 import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
 
@@ -143,6 +144,15 @@ export class PlanningLoopStep extends WorkflowStep {
         const repoRemote = context.getVariable('repo_remote') || context.getVariable('effective_repo_path');
         const currentBranch = context.getCurrentBranch();
         
+        // Determine evaluation context based on iteration count and step
+        let evalContext = 'planning'; // default for initial planning loop
+        if (currentIteration > 3) {
+          evalContext = 'revision'; // Be more lenient after multiple iterations
+        }
+        
+        // Get contextual prompt for the evaluator
+        const contextualPrompt = getContextualPrompt(evaluatorPersona, evalContext);
+        
         const evalPayload = {
           ...payload,
           plan: planResult,
@@ -150,7 +160,9 @@ export class PlanningLoopStep extends WorkflowStep {
           task: context.getVariable('task'),
           repo: repoRemote,
           branch: currentBranch,
-          project_id: context.projectId
+          project_id: context.projectId,
+          // Include custom system prompt if available
+          ...(contextualPrompt ? { _system_prompt: contextualPrompt } : {})
         };
 
         const evalCorrId = await sendPersonaRequest(redis, {
