@@ -14,8 +14,9 @@ export async function writeArtifacts(options: {
   apply: boolean;
   branchName: string;
   commitMessage: string;
+  forceCommit?: boolean; // Force commit even if apply is false (for context scans)
 }) {
-  const { repoRoot, artifacts, apply, branchName, commitMessage } = options;
+  const { repoRoot, artifacts, apply, branchName, commitMessage, forceCommit = false } = options;
   const folder = ".ma/context";
   const files = [
     { rel: `${folder}/snapshot.json`, content: JSON.stringify(artifacts.snapshot, null, 2) + "\n" },
@@ -23,7 +24,9 @@ export async function writeArtifacts(options: {
     { rel: `${folder}/summary.md`,    content: artifacts.summaryMd || "# Context Summary\n\n(placeholder)\n" }
   ];
 
-  if (apply) {
+  const shouldCommit = apply || forceCommit;
+  
+  if (shouldCommit) {
     // Commit only snapshot + summary; always write files.ndjson to disk (not committed)
     const commitOps = [files[0], files[2]];
     const editSpec = { ops: commitOps.map(f => ({ action: "upsert", path: f.rel, content: f.content })) };

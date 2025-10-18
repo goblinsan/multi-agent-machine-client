@@ -240,6 +240,38 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
   if (persona === PERSONAS.CONTEXT && cfg.contextScan && repoInfo && repoRootNormalized) {
       try {
           const repoRoot = repoRootNormalized;
+        
+        // Check if we need to rescan by checking if there are new code commits since last context scan
+        const { isLastCommitContextOnly, hasCommitsSinceLastContextScan } = await import("./git/contextCommitCheck.js");
+        const lastCommitIsContextOnly = await isLastCommitContextOnly(repoRoot);
+        const hasNewCommits = await hasCommitsSinceLastContextScan(repoRoot);
+        
+        // Skip scan if the last commit was context-only AND we're at that commit (no new commits since)
+        if (lastCommitIsContextOnly && !hasNewCommits) {
+          scanSummaryText = "No code changes since last context scan - using existing context data";
+          logger.info("context scan skipped: no code changes since last scan", {
+            repoRoot,
+            branch: repoInfo.branch ?? null,
+            workflowId: msg.workflow_id
+          });
+          
+          // Return early - no need to call LLM or commit anything
+          const skipMessage = "Context scan skipped: no code changes detected since last scan. The existing context data is still current.";
+          logger.info("persona completed (early return)", { persona, workflowId: msg.workflow_id, reason: "no_code_changes" });
+          
+          await publishEvent(r, {
+            workflowId: msg.workflow_id,
+            taskId: msg.task_id,
+            step: msg.step,
+            fromPersona: persona,
+            status: "done",
+            result: { output: skipMessage, skipped: true, reason: "no_code_changes" },
+            corrId: msg.corr_id
+          });
+          await acknowledgeRequest(r, persona, entryId, true);
+          return;
+        } else {
+        
         const components = Array.isArray(payloadObj.components) ? payloadObj.components
                           : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
   
@@ -251,7 +283,8 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
           exclude: cfg.scanExclude,
           maxFiles: cfg.scanMaxFiles,
           maxBytes: cfg.scanMaxBytes,
-          maxDepth: cfg.scanMaxDepth
+          maxDepth: cfg.scanMaxDepth,
+          reason: lastCommitIsContextOnly ? 'new_commits_since_context' : 'last_commit_had_code_changes'
         });
   
         const { scanRepo, summarize } = await import("./scanRepo.js");
@@ -372,7 +405,8 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
           artifacts: { snapshot, filesNdjson: ndjson, summaryMd: scanMd },
           apply: cfg.applyEdits && cfg.allowedEditPersonas.includes("context"),
           branchName: `feat/context-${msg.workflow_id}-${(msg.corr_id||"c").slice(0,8)}`,
-          commitMessage: `context: snapshot for ${msg.workflow_id}`
+          commitMessage: `context: snapshot for ${msg.workflow_id}`,
+          forceCommit: true // Always commit and push context scan results in distributed workflow
         });
   
         const pathMod = await import("path");
@@ -422,6 +456,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
           if (projectName) dashboardProject.name = projectName;
           if (projectSlug) dashboardProject.slug = projectSlug;
         }
+        } // end else block for scan check
       } catch (e:any) {
         scanSummaryText = `Context scan failed: ${String(e?.message || e)}`;
         logger.error("context scan failed", { error: e, repo: payloadObj.repo, branch: payloadObj.branch });
