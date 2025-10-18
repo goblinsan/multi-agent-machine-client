@@ -408,6 +408,13 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
           commitMessage: `context: snapshot for ${msg.workflow_id}`,
           forceCommit: true // Always commit and push context scan results in distributed workflow
         });
+        
+        logger.info("context artifacts committed and pushed after scan", {
+          workflowId: msg.workflow_id,
+          applied: writeRes.applied,
+          paths: writeRes.paths,
+          repoRoot
+        });
   
         const pathMod = await import("path");
         const contextFolder = ".ma/context";
@@ -771,12 +778,29 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     // Use persona-specific timeout for LM calls so long-running personas can be configured via env
     const lmTimeoutMs = personaTimeoutMs(persona, cfg);
     logger.debug("calling LM model", { persona, model, timeoutMs: lmTimeoutMs });
-    const resp = await callLMStudio(model, freshMessages, 0.2, { timeoutMs: lmTimeoutMs });
-    const duration = Date.now() - started;
-    const responsePreview = resp.content && resp.content.length > 4000
-      ? resp.content.slice(0, 4000) + "... (truncated)"
-      : resp.content;
-    logger.info("persona response", { persona, workflowId: msg.workflow_id, corrId: msg.corr_id || "", preview: responsePreview });
+    
+    let resp: { content: string };
+    let duration: number;
+    try {
+      resp = await callLMStudio(model, freshMessages, 0.2, { timeoutMs: lmTimeoutMs });
+      duration = Date.now() - started;
+      const responsePreview = resp.content && resp.content.length > 4000
+        ? resp.content.slice(0, 4000) + "... (truncated)"
+        : resp.content;
+      logger.info("persona response", { persona, workflowId: msg.workflow_id, corrId: msg.corr_id || "", preview: responsePreview });
+    } catch (lmError: any) {
+      duration = Date.now() - started;
+      logger.error("LM call failed", { persona, workflowId: msg.workflow_id, error: lmError?.message || String(lmError), duration_ms: duration });
+      
+      // For context persona, if scan artifacts exist, we can still return the scan summary
+      if (persona === PERSONAS.CONTEXT && scanArtifacts) {
+        logger.info("context scan completed but LM failed - returning scan summary", { workflowId: msg.workflow_id });
+        resp = { content: scanArtifacts.summaryMd };
+      } else {
+        // For other personas, re-throw the error
+        throw lmError;
+      }
+    }
   
     // After model call: write/replace summary.md per SUMMARY_MODE
     if (persona === PERSONAS.CONTEXT && scanArtifacts) {

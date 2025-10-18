@@ -10,7 +10,7 @@ The context agent had two issues in distributed multi-machine workflows:
 
 ## Solutions Implemented
 
-### 1. Force Commit for Context Scans
+### 1. Force Commit for Context Scans (Immediate Push)
 
 **File: `src/artifacts.ts`**
 
@@ -29,9 +29,11 @@ export async function writeArtifacts(options: {
 
 When `forceCommit: true`, the function commits and pushes context artifacts via `applyEditOps()` regardless of the `APPLY_EDITS` config setting.
 
+**Critical improvement:** Context scan artifacts are committed and pushed **immediately after scanning**, BEFORE the LLM call. This ensures scan data is available to distributed agents even if the LLM call fails.
+
 **File: `src/process.ts`**
 
-Updated context scan to always commit/push:
+Updated context scan to always commit/push immediately after scanning:
 
 ```typescript
 const writeRes = await writeArtifacts({
@@ -44,7 +46,32 @@ const writeRes = await writeArtifacts({
 });
 ```
 
-### 2. Skip Scan When No Code Changes
+### 2. Graceful LLM Failure Handling
+
+**File: `src/process.ts`**
+
+Added error handling for LLM failures in context scans:
+
+```typescript
+try {
+  resp = await callLMStudio(model, freshMessages, 0.2, { timeoutMs: lmTimeoutMs });
+  // ... log response
+} catch (lmError: any) {
+  logger.error("LM call failed", { persona, workflowId: msg.workflow_id, error: lmError?.message });
+  
+  // For context persona, if scan artifacts exist, we can still return the scan summary
+  if (persona === PERSONAS.CONTEXT && scanArtifacts) {
+    logger.info("context scan completed but LM failed - returning scan summary", { workflowId: msg.workflow_id });
+    resp = { content: scanArtifacts.summaryMd };
+  } else {
+    throw lmError;
+  }
+}
+```
+
+**Key benefit:** If LM Studio is down or the network fails, the context scan data is still committed and pushed. The scan summary (generated from file statistics) is returned instead of failing the entire workflow.
+
+### 3. Skip Scan When No Code Changes
 
 **File: `src/git/contextCommitCheck.ts`** (new)
 
@@ -98,9 +125,11 @@ if (lastCommitIsContextOnly && !hasNewCommits) {
 2. Checks commit history
 3. Detects code changes since last scan
 4. Performs full repository scan
-5. Calls LLM to generate summary
-6. **Commits and pushes** context artifacts (snapshot.json, summary.md) via `applyEditOps()`
-7. Returns context summary
+5. **Commits and pushes** context artifacts (snapshot.json, summary.md) immediately via `applyEditOps()`
+6. Calls LLM to generate enhanced summary
+7. If LLM succeeds: Updates summary.md with model-generated summary and commits again
+8. If LLM fails: Returns scan-based summary (artifacts already pushed in step 5)
+9. Returns context summary to workflow
 
 ### When Scan is Skipped (No Code Changes)
 
@@ -128,10 +157,12 @@ All tests pass successfully.
 ## Benefits
 
 1. **Distributed Workflow Support**: Context scans are now always pushed to remote, ensuring distributed agents can access updated context data
-2. **Performance**: Unnecessary scans are skipped when no code changes have occurred
-3. **Resource Efficiency**: Reduces load on LLM API and git operations
-4. **Clear Feedback**: Users get explicit message when scan is skipped
-5. **Consistency**: Context artifacts are always committed regardless of `APPLY_EDITS` config
+2. **Resilience**: Scan data is committed BEFORE the LLM call, so artifacts are available even if LLM fails
+3. **Performance**: Unnecessary scans are skipped when no code changes have occurred
+4. **Resource Efficiency**: Reduces load on LLM API and git operations
+5. **Clear Feedback**: Users get explicit message when scan is skipped or when LLM fails
+6. **Consistency**: Context artifacts are always committed regardless of `APPLY_EDITS` config
+7. **Graceful Degradation**: LLM failures don't prevent workflow from continuing with scan-based summary
 
 ## Related Files
 
@@ -150,15 +181,29 @@ No new configuration required. The improvements work with existing settings:
 
 ## Example Log Output
 
-### Scan Skipped
+### Scan Skipped (No Code Changes)
 ```
 [info] context scan skipped: no code changes since last scan { repoRoot: '/projects/my-app', branch: 'main', workflowId: 'wf-123' }
 [info] persona completed (early return) { persona: 'context', workflowId: 'wf-123', reason: 'no_code_changes' }
 ```
 
-### Scan Performed
+### Scan Performed Successfully
 ```
 [info] context scan starting { repoRoot: '/projects/my-app', branch: 'main', reason: 'last_commit_had_code_changes' }
 [info] context scan completed { repoRoot: '/projects/my-app', totals: { files: 245, bytes: 1024000 } }
+[info] context artifacts committed and pushed after scan { workflowId: 'wf-123', applied: {...}, paths: ['.ma/context/snapshot.json', '.ma/context/summary.md'] }
+[info] persona response { persona: 'context', workflowId: 'wf-123', preview: '# Project Summary...' }
 [info] context artifacts push result { workflowId: 'wf-123', result: { committed: true, pushed: true } }
 ```
+
+### Scan Performed but LLM Failed
+```
+[info] context scan starting { repoRoot: '/projects/my-app', branch: 'main', reason: 'last_commit_had_code_changes' }
+[info] context scan completed { repoRoot: '/projects/my-app', totals: { files: 245, bytes: 1024000 } }
+[info] context artifacts committed and pushed after scan { workflowId: 'wf-123', applied: {...}, paths: ['.ma/context/snapshot.json', '.ma/context/summary.md'] }
+[error] LM call failed { persona: 'context', workflowId: 'wf-123', error: 'Connection timeout', duration_ms: 30000 }
+[info] context scan completed but LM failed - returning scan summary { workflowId: 'wf-123' }
+[info] persona completed { persona: 'context', workflowId: 'wf-123', duration_ms: 32500 }
+```
+
+**Note:** In the LLM failure case, the scan data is still committed and available to other agents!
