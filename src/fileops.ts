@@ -171,6 +171,40 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
       }
     }
     const sha = (await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })).stdout.trim();
+    
+    // Push changes to remote so distributed agents can see them
+    // Only push if a remote exists (skip for test repos without remotes)
+    try {
+      const remotes = await runGit(["remote"], { cwd: repoRoot });
+      const hasRemote = remotes.stdout.trim().length > 0;
+      
+      if (hasRemote) {
+        await runGit(["push", "origin", branch, "--force"], { cwd: repoRoot });
+      } else {
+        // Log warning that no remote exists (typically only in tests)
+        try {
+          await writeDiagnostic(repoRoot, 'apply-no-remote.json', {
+            branch,
+            sha,
+            changed,
+            note: 'No remote configured - skipping push (test environment?)'
+          });
+        } catch (e) { /* swallow */ }
+      }
+    } catch (pushErr) {
+      // Log push failure but don't fail the operation - caller can retry push
+      try {
+        await writeDiagnostic(repoRoot, 'apply-push-failure.json', {
+          branch,
+          sha,
+          changed,
+          error: String(pushErr)
+        });
+      } catch (e) { /* swallow */ }
+      // Rethrow so workflow knows push failed
+      throw new Error(`Failed to push branch ${branch}: ${pushErr}`);
+    }
+    
     return { changed, branch, sha };
   }
   return { changed: [], branch, sha: "" };

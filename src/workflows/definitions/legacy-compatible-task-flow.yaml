@@ -76,31 +76,22 @@ steps:
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
-  # Apply implementation edits to repository  
+  # Apply implementation edits to repository
+  # NOTE: This step now handles commit AND push internally via applyEditOps
   - name: apply_implementation_edits
     type: DiffApplyStep
-    description: "Parse and apply implementation edits from lead engineer"
+    description: "Parse, apply, commit, and push implementation edits from lead engineer"
     depends_on: ["implementation_request"]
     config:
       source_output: "implementation_request"
       validation: "syntax_check"
       commit_message: "feat: implement ${taskName}"
 
-  # Commit and push changes after implementation
-  - name: commit_implementation
-    type: GitOperationStep
-    description: "Commit and push implementation changes"
-    depends_on: ["apply_implementation_edits"]
-    config:
-      operation: "commitAndPushPaths"
-      message: "feat: implement ${taskName}"
-      paths: ["*"]
-
   # Verify changes were pushed
   - name: verify_diff
     type: GitOperationStep
     description: "Verify remote branch has diff from base"
-    depends_on: ["commit_implementation"]
+    depends_on: ["apply_implementation_edits"]
     config:
       operation: "verifyRemoteBranchHasDiff"
 
