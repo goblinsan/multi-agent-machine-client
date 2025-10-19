@@ -90,8 +90,8 @@ describe('Review Flow Validation', () => {
     const qaIterationLoop = steps['qa_iteration_loop'];
     const markInReview = steps['mark_task_in_review'];
 
-    // QA iteration loop only runs when QA fails
-    expect(qaIterationLoop?.condition).toBe("${qa_request_status} == 'fail'");
+    // QA iteration loop only runs when QA fails or returns unknown status
+    expect(qaIterationLoop?.condition).toBe("${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'");
 
     // mark_in_review should NOT depend on qa_iteration_loop
     // because qa_iteration_loop may be skipped if QA passes first time
