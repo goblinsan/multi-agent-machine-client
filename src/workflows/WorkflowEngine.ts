@@ -530,6 +530,12 @@ export class WorkflowEngine {
     // Check condition
     if (stepDef.condition) {
       const result = this.evaluateSimpleCondition(stepDef.condition, context);
+      logger.debug('Step condition evaluated', {
+        stepName: stepDef.name,
+        condition: stepDef.condition,
+        result,
+        workflowId: context.workflowId
+      });
       return result;
     }
 
@@ -538,33 +544,64 @@ export class WorkflowEngine {
 
   /**
    * Evaluate a simple condition string against context
+   * Supports:
+   * - Single equality: "${var} == 'value'"
+   * - OR conditions: "${var} == 'value1' || ${var} == 'value2'"
+   * - AND conditions: "${var1} == 'value1' && ${var2} == 'value2'"
    */
   private evaluateSimpleCondition(condition: string, context: WorkflowContext): boolean {
     try {
-      // For now, just handle basic variable checks
-      // This could be expanded with a proper expression parser
-      if (condition.includes('==')) {
-        const [left, right] = condition.split('==').map(s => s.trim());
-        
-        // Handle ${variable} syntax in left side
-        let leftVariableName = left.replace(/['"]/g, '');
-        if (leftVariableName.startsWith('${') && leftVariableName.endsWith('}')) {
-          leftVariableName = leftVariableName.slice(2, -1);
-        }
-        
-        const leftValue = this.getNestedValue(context, leftVariableName);
-        const rightValue = right.replace(/['"]/g, '');
-        
-        const result = String(leftValue) === rightValue;
-        
-        return result;
+      // Handle OR conditions (||)
+      if (condition.includes('||')) {
+        const parts = condition.split('||').map(s => s.trim());
+        return parts.some(part => this.evaluateSingleComparison(part, context));
       }
       
-      return true; // Default to true for unhandled conditions
+      // Handle AND conditions (&&)
+      if (condition.includes('&&')) {
+        const parts = condition.split('&&').map(s => s.trim());
+        return parts.every(part => this.evaluateSingleComparison(part, context));
+      }
+      
+      // Single comparison
+      return this.evaluateSingleComparison(condition, context);
     } catch (error: any) {
       console.warn(`Failed to evaluate condition '${condition}': ${error.message}`);
       return false;
     }
+  }
+
+  /**
+   * Evaluate a single comparison expression
+   */
+  private evaluateSingleComparison(condition: string, context: WorkflowContext): boolean {
+    if (condition.includes('==')) {
+      const [left, right] = condition.split('==').map(s => s.trim());
+      
+      // Handle ${variable} syntax in left side
+      let leftVariableName = left.replace(/['"]/g, '');
+      if (leftVariableName.startsWith('${') && leftVariableName.endsWith('}')) {
+        leftVariableName = leftVariableName.slice(2, -1);
+      }
+      
+      const leftValue = this.getNestedValue(context, leftVariableName);
+      const rightValue = right.replace(/['"]/g, '');
+      
+      const result = String(leftValue) === rightValue;
+      
+      logger.debug('Condition comparison', {
+        condition,
+        variableName: leftVariableName,
+        leftValue,
+        rightValue,
+        result,
+        workflowId: context.workflowId
+      });
+      
+      return result;
+    }
+    
+    return true; // Default to true for unhandled conditions
   }
 
   /**
