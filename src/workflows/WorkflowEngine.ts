@@ -18,11 +18,14 @@ import { PlanningLoopStep } from './steps/PlanningLoopStep';
 import { QAFailureCoordinationStep } from './steps/QAFailureCoordinationStep';
 import { QAIterationLoopStep } from './steps/QAIterationLoopStep';
 import { VariableSetStep } from './steps/VariableSetStep';
-import { personaTimeoutMs } from '../util.js';
 import { BlockedTaskAnalysisStep } from './steps/BlockedTaskAnalysisStep';
 import { UnblockAttemptStep } from './steps/UnblockAttemptStep';
 import { MilestoneStatusCheckStep } from './steps/MilestoneStatusCheckStep';
 import { ReviewFailureTasksStep } from './steps/ReviewFailureTasksStep';
+import { SubWorkflowStep } from './steps/SubWorkflowStep';
+import { BulkTaskCreationStep } from './steps/BulkTaskCreationStep';
+import { PMDecisionParserStep } from './steps/PMDecisionParserStep';
+import { personaTimeoutMs } from '../util.js';
 import { parse as yamlParse } from 'yaml';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
@@ -118,6 +121,10 @@ export class WorkflowEngine {
     this.stepRegistry.set('UnblockAttemptStep', UnblockAttemptStep);
     this.stepRegistry.set('MilestoneStatusCheckStep', MilestoneStatusCheckStep);
     this.stepRegistry.set('ReviewFailureTasksStep', ReviewFailureTasksStep);
+    // New sub-workflow support steps
+    this.stepRegistry.set('SubWorkflowStep', SubWorkflowStep);
+    this.stepRegistry.set('BulkTaskCreationStep', BulkTaskCreationStep);
+    this.stepRegistry.set('PMDecisionParserStep', PMDecisionParserStep);
   }
 
   /**
