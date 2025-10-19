@@ -311,6 +311,19 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         return null;
       }
       
+      // Log the raw parsed data before normalization
+      logger.debug('PM decision before normalization', {
+        hasFollowUpTasks: !!parsed.follow_up_tasks,
+        followUpTasksLength: parsed.follow_up_tasks?.length || 0,
+        followUpTasksType: Array.isArray(parsed.follow_up_tasks) ? 'array' : typeof parsed.follow_up_tasks,
+        hasBacklog: !!parsed.backlog,
+        backlogLength: parsed.backlog?.length || 0,
+        hasDecision: !!parsed.decision,
+        decisionValue: parsed.decision,
+        hasStatus: !!parsed.status,
+        statusValue: parsed.status
+      });
+      
       // NORMALIZATION: Handle different PM response formats
       
       // 1. PM sometimes returns "backlog" instead of "follow_up_tasks"
@@ -351,6 +364,15 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         parsed.decision = 'defer';
         logger.debug('Normalized PM decision: defaulted to defer (no decision or status field)');
       }
+      
+      // Log the final normalized data
+      logger.debug('PM decision after normalization', {
+        decision: parsed.decision,
+        hasFollowUpTasks: !!parsed.follow_up_tasks,
+        followUpTasksLength: parsed.follow_up_tasks?.length || 0,
+        hasBacklog: !!parsed.backlog,
+        backlogLength: parsed.backlog?.length || 0
+      });
       
       return parsed;
     } catch (error) {
