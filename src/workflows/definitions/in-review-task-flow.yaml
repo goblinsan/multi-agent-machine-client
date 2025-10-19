@@ -28,6 +28,8 @@ steps:
         branch: "${featureBranchName}"
         project_id: "${projectId}"
         resume_review: true
+        tdd_aware: "${tdd_aware}"
+        tdd_stage: "${tdd_stage}"
       timeout: 300000  # 5 minutes
 
   # Handle code review failures with unified sub-workflow
@@ -74,6 +76,8 @@ steps:
         branch: "${featureBranchName}"
         project_id: "${projectId}"
         resume_review: true
+        tdd_aware: "${tdd_aware}"
+        tdd_stage: "${tdd_stage}"
       timeout: 300000  # 5 minutes
 
   # Handle security review failures with unified sub-workflow

@@ -146,7 +146,7 @@ describe('Review Flow Validation', () => {
     // All should have review_type input
     expect(steps['handle_code_review_failure']?.config?.inputs?.review_type).toBe('code_review');
     expect(steps['handle_security_failure']?.config?.inputs?.review_type).toBe('security_review');
-    expect(steps['handle_devops_failure']?.config?.inputs?.review_type).toBe('devops');
+    expect(steps['handle_devops_failure']?.config?.inputs?.review_type).toBe('devops_review');
   });
 
   it('validates workflow does not have circular dependencies in review flow', async () => {

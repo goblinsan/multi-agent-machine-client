@@ -187,6 +187,8 @@ steps:
         qa_result: "${qa_request_result}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
+        tdd_aware: "${tdd_aware}"
+        tdd_stage: "${tdd_stage}"
 
   # Handle code review failures with PM prioritization and task creation
   - name: handle_code_review_failure
@@ -233,6 +235,8 @@ steps:
         code_review_result: "${code_review_request_result}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
+        tdd_aware: "${tdd_aware}"
+        tdd_stage: "${tdd_stage}"
 
   # Handle security review failures with PM prioritization and task creation
   - name: handle_security_failure
