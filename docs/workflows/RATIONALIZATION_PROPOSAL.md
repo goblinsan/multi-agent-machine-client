@@ -307,7 +307,7 @@ workflows/
   (deleted - directory removed)
 
 src/workflows/definitions/
-  legacy-compatible-task-flow.yaml  (200 lines, primary - refactored)
+  task-flow.yaml                    (200 lines, primary - refactored & renamed)
   project-loop.yaml                 (87 lines, fallback - unchanged)
   in-review-task-flow.yaml          (100 lines, refactored)
   blocked-task-resolution.yaml      (120 lines, refactored)
@@ -568,15 +568,26 @@ Primary workflow: 446 → 200 lines (55% reduction)
 
 ## Open Questions for User Review
 
-### 1. Workflow Naming ✅ ANSWERED
+### 1. Workflow Naming ✅ APPROVED
 **Question:** Should we rename `legacy-compatible-task-flow.yaml` to something clearer?
 
 **Options:**
-  - **Option A:** Keep current name `legacy-compatible-task-flow.yaml` (no changes needed)
-  - **Option B:** Rename to `standard-task-flow.yaml` (removes "legacy" confusion)
-  - **Option C:** Rename to `task-flow.yaml` (simplest)
+  - Option A: Keep current name `legacy-compatible-task-flow.yaml`
+  - Option B: Rename to `standard-task-flow.yaml`
+  - **Option C: Rename to `task-flow.yaml` ✅ SELECTED**
 
-**User Decision Needed:** Please specify preferred name or confirm keep current name
+**User Decision:** "for naming i prefer Option C - task-flow"
+
+**Implementation:**
+- ✅ Rename `legacy-compatible-task-flow.yaml` → `task-flow.yaml`
+- ✅ Update WorkflowCoordinator references
+- ✅ Update documentation
+- ✅ Update any tests that reference the workflow name
+
+**Benefits:**
+- Simplest, most generic name
+- Removes "legacy" confusion
+- Clear primary workflow designation
 
 ### 2. Archive vs Delete ✅ APPROVED
 **Decision:** Delete unused workflows entirely
@@ -671,20 +682,23 @@ For **User Checkpoint #0**, please review and approve:
 - [ ] **Success Metrics:** Code quality, performance, reliability, maintainability
 
 **User Responses Received:**
-- ✅ **Question 1 (Naming):** Needs clarification - options provided
+- ✅ **Question 1 (Naming):** Rename to `task-flow.yaml` (Option C)
 - ✅ **Question 2 (Archive):** Delete unused workflows (no archive)
 - ✅ **Question 3 (Feature Flags):** No feature flags - fall forward approach
 - ✅ **Question 4 (Versioning):** Not needed - milestone branches handle versioning
 - ✅ **Question 5 (Conditional Workflows):** DO NOW - complete consolidation to inform dashboard + test design
 
-**Outstanding Decision:**
-- ❓ **Workflow Naming:** Choose name for `legacy-compatible-task-flow.yaml`
-  - Option A: Keep as-is (`legacy-compatible-task-flow.yaml`)
-  - Option B: Rename to `standard-task-flow.yaml`
-  - Option C: Rename to `task-flow.yaml`
+**All Decisions Made - Ready to Proceed!**
 
-**If Approved:** Proceed to implement complete workflow consolidation (2 weeks, all workflows)  
-**If Changes Needed:** Update proposal based on feedback
+**Approved Actions:**
+- ✅ Rename primary workflow to `task-flow.yaml`
+- ✅ Consolidate 12 workflows → 5 core + 3 sub-workflows
+- ✅ Delete 8 unused workflows (no archive, git history preserves)
+- ✅ 2-week implementation timeline
+- ✅ Fall-forward deployment (no feature flags)
+- ✅ Complete consolidation before dashboard API design
+
+**Next Step:** Mark Phase 0 Day 5 complete, begin implementation Week 2-3
 
 ---
 
