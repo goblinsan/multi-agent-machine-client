@@ -1,25 +1,38 @@
-import Database from 'better-sqlite3';
+import { Database } from 'sql.js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-export function runMigrations(db: Database.Database): void {
+export function runMigrations(db: Database): void {
   // Use the schema from docs/dashboard-api/schema.sql (authoritative)
-  const schemaPath = join(__dirname, '../../../docs/dashboard-api/schema.sql');
-  const schema = readFileSync(schemaPath, 'utf-8');
+  // Path is relative to src/dashboard-backend/src/db/migrations.ts
+  const schemaPath = join(__dirname, '../../../../docs/dashboard-api/schema.sql');
+  let schema = readFileSync(schemaPath, 'utf-8');
+  
+  // sql.js doesn't support WAL mode - remove those pragmas
+  schema = schema.replace(/PRAGMA journal_mode = WAL;/g, '');
+  schema = schema.replace(/PRAGMA synchronous = NORMAL;/g, '');
 
-  db.exec('PRAGMA foreign_keys = ON;');
-  db.exec('BEGIN TRANSACTION');
+  db.run('PRAGMA foreign_keys = ON;');
+  
   try {
+    // Execute schema statements (sql.js exec doesn't support transactions the same way)
     db.exec(schema);
-    db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, version TEXT NOT NULL UNIQUE, description TEXT, applied_at TEXT DEFAULT (datetime('now')));");
+    
+    // Create migrations table
+    db.run(`CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, 
+      version TEXT NOT NULL UNIQUE, 
+      description TEXT, 
+      applied_at TEXT DEFAULT (datetime('now'))
+    )`);
+    
     // Record initial migration if needed
-    const row = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get('1.0.0');
-    if (!row) {
-      db.prepare('INSERT INTO schema_migrations (version, description) VALUES (?, ?)').run('1.0.0', 'Initial schema from docs');
+    const result = db.exec('SELECT version FROM schema_migrations WHERE version = ?', ['1.0.0']);
+    if (!result || result.length === 0 || result[0].values.length === 0) {
+      db.run('INSERT INTO schema_migrations (version, description) VALUES (?, ?)', ['1.0.0', 'Initial schema from docs']);
     }
-    db.exec('COMMIT');
   } catch (err) {
-    db.exec('ROLLBACK');
+    console.error('Migration error:', err);
     throw err;
   }
 }

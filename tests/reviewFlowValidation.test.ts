@@ -15,7 +15,7 @@ describe('Review Flow Validation', () => {
   async function loadWorkflowSteps() {
     const workflowPath = path.resolve(
       process.cwd(),
-      'src/workflows/definitions/legacy-compatible-task-flow.yaml'
+      'src/workflows/definitions/task-flow.yaml'  // Updated from legacy-compatible-task-flow.yaml
     );
     const fileContent = await readFile(workflowPath, 'utf-8');
     const workflow = parse(fileContent) as {
@@ -49,12 +49,12 @@ describe('Review Flow Validation', () => {
     expect(codeReview?.condition).toBeUndefined(); // No condition - always runs after mark_in_review
     expect(codeReview?.outputs).toContain('code_review_request_status');
 
-    // Validate PM handles code review failures
-    const pmCodeReview = steps['pm_prioritize_code_review_failures'];
-    expect(pmCodeReview).toBeDefined();
-    expect(pmCodeReview?.depends_on).toEqual(['code_review_request']);
-    expect(pmCodeReview?.condition).toBe("${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'");
-    expect(pmCodeReview?.config?.intent).toBe('prioritize_code_review_failures');
+    // Validate PM handles code review failures (modern workflow uses SubWorkflowStep)
+    const handleCodeReviewFailure = steps['handle_code_review_failure'];
+    expect(handleCodeReviewFailure).toBeDefined();
+    expect(handleCodeReviewFailure?.depends_on).toEqual(['code_review_request']);
+    expect(handleCodeReviewFailure?.condition).toBe("${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'");
+    expect(handleCodeReviewFailure?.config?.workflow).toBe('review-failure-handling');
 
     // Validate security depends on code review passing
     const security = steps['security_request'];
@@ -63,12 +63,12 @@ describe('Review Flow Validation', () => {
     expect(security?.condition).toBe("${code_review_request_status} == 'pass'");
     expect(security?.outputs).toContain('security_request_status');
 
-    // Validate PM handles security failures
-    const pmSecurity = steps['pm_prioritize_security_failures'];
-    expect(pmSecurity).toBeDefined();
-    expect(pmSecurity?.depends_on).toEqual(['security_request']);
-    expect(pmSecurity?.condition).toBe("${security_request_status} == 'fail' || ${security_request_status} == 'unknown'");
-    expect(pmSecurity?.config?.intent).toBe('prioritize_security_failures');
+    // Validate PM handles security failures (modern workflow uses SubWorkflowStep)
+    const handleSecurityFailure = steps['handle_security_failure'];
+    expect(handleSecurityFailure).toBeDefined();
+    expect(handleSecurityFailure?.depends_on).toEqual(['security_request']);
+    expect(handleSecurityFailure?.condition).toBe("${security_request_status} == 'fail' || ${security_request_status} == 'unknown'");
+    expect(handleSecurityFailure?.config?.workflow).toBe('review-failure-handling');
 
     // Validate devops depends on security passing
     const devops = steps['devops_request'];
@@ -76,27 +76,34 @@ describe('Review Flow Validation', () => {
     expect(devops?.depends_on).toEqual(['security_request']);
     expect(devops?.condition).toBe("${security_request_status} == 'pass'");
 
-    // Validate task marked done only when security passes
+    // Validate PM handles DevOps failures (modern workflow)
+    const handleDevOpsFailure = steps['handle_devops_failure'];
+    expect(handleDevOpsFailure).toBeDefined();
+    expect(handleDevOpsFailure?.depends_on).toEqual(['devops_request']);
+    expect(handleDevOpsFailure?.condition).toBe("${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'");
+    expect(handleDevOpsFailure?.config?.workflow).toBe('review-failure-handling');
+
+    // Validate task marked done only when DevOps passes (modern workflow)
     const markDone = steps['mark_task_done'];
     expect(markDone).toBeDefined();
     expect(markDone?.depends_on).toEqual(['devops_request']);
-    expect(markDone?.condition).toBe("${security_request_status} == 'pass'");
+    expect(markDone?.condition).toBe("${devops_request_status} == 'pass'");
     expect(markDone?.config?.status).toBe('done');
   });
 
-  it('ensures QA iteration loop does not block mark_in_review when skipped', async () => {
+  it('ensures QA failure handling does not block mark_in_review when skipped', async () => {
     const steps = await loadWorkflowSteps();
 
-    const qaIterationLoop = steps['qa_iteration_loop'];
+    const handleQaFailure = steps['handle_qa_failure'];
     const markInReview = steps['mark_task_in_review'];
 
-    // QA iteration loop only runs when QA fails or returns unknown status
-    expect(qaIterationLoop?.condition).toBe("${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'");
+    // QA failure handler only runs when QA fails or returns unknown status
+    expect(handleQaFailure?.condition).toBe("${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'");
 
-    // mark_in_review should NOT depend on qa_iteration_loop
-    // because qa_iteration_loop may be skipped if QA passes first time
+    // mark_in_review should NOT depend on handle_qa_failure
+    // because handle_qa_failure may be skipped if QA passes first time
     expect(markInReview?.depends_on).toEqual(['qa_request']);
-    expect(markInReview?.depends_on).not.toContain('qa_iteration_loop');
+    expect(markInReview?.depends_on).not.toContain('handle_qa_failure');
   });
 
   it('validates review flow is sequential: code review → security → devops → done', async () => {
@@ -118,25 +125,28 @@ describe('Review Flow Validation', () => {
     expect(devops?.depends_on).toEqual(['security_request']);
     expect(devops?.condition).toBe("${security_request_status} == 'pass'");
 
-    // Mark done waits for devops and security to pass
+    // Mark done waits for devops to pass (task-flow.yaml only checks devops since it's the last review)
     expect(markDone?.depends_on).toEqual(['devops_request']);
-    expect(markDone?.condition).toBe("${security_request_status} == 'pass'");
+    expect(markDone?.condition).toBe("${devops_request_status} == 'pass'");
   });
 
-  it('validates PM prioritization steps exist for review failures', async () => {
+  it('validates review failure handling steps exist for all review types', async () => {
     const steps = await loadWorkflowSteps();
 
-    // Both PM prioritization steps should exist
-    expect(steps['pm_prioritize_code_review_failures']).toBeDefined();
-    expect(steps['pm_prioritize_security_failures']).toBeDefined();
+    // All review failure handlers should exist (modern workflow pattern)
+    expect(steps['handle_code_review_failure']).toBeDefined();
+    expect(steps['handle_security_failure']).toBeDefined();
+    expect(steps['handle_devops_failure']).toBeDefined();
 
-    // Both should use project-manager persona
-    expect(steps['pm_prioritize_code_review_failures']?.config?.persona).toBe('project-manager');
-    expect(steps['pm_prioritize_security_failures']?.config?.persona).toBe('project-manager');
+    // All should use SubWorkflowStep calling review-failure-handling
+    expect(steps['handle_code_review_failure']?.config?.workflow).toBe('review-failure-handling');
+    expect(steps['handle_security_failure']?.config?.workflow).toBe('review-failure-handling');
+    expect(steps['handle_devops_failure']?.config?.workflow).toBe('review-failure-handling');
 
-    // Both should have appropriate intents
-    expect(steps['pm_prioritize_code_review_failures']?.config?.intent).toBe('prioritize_code_review_failures');
-    expect(steps['pm_prioritize_security_failures']?.config?.intent).toBe('prioritize_security_failures');
+    // All should have review_type input
+    expect(steps['handle_code_review_failure']?.config?.inputs?.review_type).toBe('code_review');
+    expect(steps['handle_security_failure']?.config?.inputs?.review_type).toBe('security_review');
+    expect(steps['handle_devops_failure']?.config?.inputs?.review_type).toBe('devops');
   });
 
   it('validates workflow does not have circular dependencies in review flow', async () => {

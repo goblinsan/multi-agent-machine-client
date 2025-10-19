@@ -10,9 +10,5 @@ declare module 'fastify' {
   export default fastify;
 }
 
-declare module 'better-sqlite3' {
-  export default function Database(path?: string): any;
-}
-
 // Allow importing JSON schema file paths
 declare module '*.sql';

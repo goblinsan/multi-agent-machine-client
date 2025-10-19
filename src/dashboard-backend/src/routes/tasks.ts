@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getDb } from '../db/connection';
+import { getDb, saveDb } from '../db/connection';
 
 const taskCreateSchema = z.object({
   title: z.string().min(1).max(500),
@@ -17,20 +17,33 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
   // GET list
   fastify.get('/projects/:projectId/tasks', async (request: any, reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
-    const db = getDb();
+    const db = await getDb();
 
-    const tasks = db.prepare('SELECT id, title, status, priority_score, milestone_id, labels FROM tasks WHERE project_id = ? LIMIT 100').all(projectId);
-    tasks.forEach((t: any) => { if (t.labels) t.labels = JSON.parse(t.labels); });
+    const result = db.exec('SELECT id, title, status, priority_score, milestone_id, labels FROM tasks WHERE project_id = ? LIMIT 100', [projectId]);
+    const tasks = result[0] ? result[0].values.map((row: any) => {
+      const [id, title, status, priority_score, milestone_id, labels] = row;
+      return { id, title, status, priority_score, milestone_id, labels: labels ? JSON.parse(labels) : null };
+    }) : [];
+    
     return { data: tasks };
   });
 
   // GET single
   fastify.get('/projects/:projectId/tasks/:taskId', async (request: any, reply: any) => {
     const { projectId, taskId } = request.params as any;
-    const db = getDb();
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND project_id = ?').get(parseInt(taskId), parseInt(projectId));
-    if (!task) return reply.status(404).send({ type: 'https://api.example.com/errors/not-found', title: 'Task Not Found', status: 404, detail: `Task ${taskId} not found` });
+    const db = await getDb();
+    
+    const result = db.exec('SELECT * FROM tasks WHERE id = ? AND project_id = ?', [parseInt(taskId), parseInt(projectId)]);
+    if (!result[0] || result[0].values.length === 0) {
+      return reply.status(404).send({ type: 'https://api.example.com/errors/not-found', title: 'Task Not Found', status: 404, detail: `Task ${taskId} not found` });
+    }
+    
+    const cols = result[0].columns;
+    const row = result[0].values[0];
+    const task: any = {};
+    cols.forEach((col, idx) => { task[col] = row[idx]; });
     if (task.labels) task.labels = JSON.parse(task.labels);
+    
     return task;
   });
 
@@ -41,11 +54,19 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     if (!parse.success) return reply.status(400).send({ type: 'https://api.example.com/errors/validation-error', title: 'Validation Error', status: 400, detail: 'Invalid payload', errors: parse.error.errors });
     const data = parse.data as any;
 
-    const db = getDb();
-    const stmt = db.prepare(`INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const info = stmt.run(projectId, data.title, data.description || null, data.milestone_id || null, data.parent_task_id || null, data.status, data.priority_score || 0, data.external_id || null, data.labels ? JSON.stringify(data.labels) : null);
-    const created = db.prepare('SELECT * FROM tasks WHERE id = ?').get(info.lastInsertRowid);
+    const db = await getDb();
+    db.run(`INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [projectId, data.title, data.description || null, data.milestone_id || null, data.parent_task_id || null, data.status, data.priority_score || 0, data.external_id || null, data.labels ? JSON.stringify(data.labels) : null]);
+    
+    const result = db.exec('SELECT * FROM tasks WHERE id = last_insert_rowid()');
+    saveDb(db);
+    
+    const cols = result[0].columns;
+    const row = result[0].values[0];
+    const created: any = {};
+    cols.forEach((col, idx) => { created[col] = row[idx]; });
     if (created.labels) created.labels = JSON.parse(created.labels);
+    
     return reply.status(201).send(created);
   });
 
@@ -56,22 +77,29 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     if (!Array.isArray(body.tasks) || body.tasks.length === 0) return reply.status(400).send({ type: 'https://api.example.com/errors/validation-error', title: 'Invalid Request', status: 400, detail: 'tasks array required' });
     if (body.tasks.length > 100) return reply.status(400).send({ type: 'https://api.example.com/errors/validation-error', title: 'Batch Too Large', status: 400, detail: 'Max 100 tasks' });
 
-    const db = getDb();
-    const insert = db.prepare('INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    db.exec('BEGIN TRANSACTION');
+    const db = await getDb();
     const created: any[] = [];
+    
     try {
+      db.run('BEGIN TRANSACTION');
       for (const t of body.tasks) {
         const parsed = taskCreateSchema.parse(t);
-        const info = insert.run(projectId, parsed.title, parsed.description || null, parsed.milestone_id || null, parsed.parent_task_id || null, parsed.status, parsed.priority_score || 0, parsed.external_id || null, parsed.labels ? JSON.stringify(parsed.labels) : null);
-        const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(info.lastInsertRowid);
-        if (row.labels) row.labels = JSON.parse(row.labels);
-        created.push(row);
+        db.run('INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [projectId, parsed.title, parsed.description || null, parsed.milestone_id || null, parsed.parent_task_id || null, parsed.status, parsed.priority_score || 0, parsed.external_id || null, parsed.labels ? JSON.stringify(parsed.labels) : null]);
+        
+        const result = db.exec('SELECT * FROM tasks WHERE id = last_insert_rowid()');
+        const cols = result[0].columns;
+        const row = result[0].values[0];
+        const task: any = {};
+        cols.forEach((col, idx) => { task[col] = row[idx]; });
+        if (task.labels) task.labels = JSON.parse(task.labels);
+        created.push(task);
       }
-      db.exec('COMMIT');
+      db.run('COMMIT');
+      saveDb(db);
       return reply.status(201).send({ created, summary: { totalRequested: body.tasks.length, created: created.length } });
     } catch (err) {
-      db.exec('ROLLBACK');
+      db.run('ROLLBACK');
       return reply.status(500).send({ type: 'https://api.example.com/errors/internal-error', title: 'Bulk Failed', status: 500, detail: (err as any).message });
     }
   });
@@ -79,9 +107,12 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
   // PATCH update
   fastify.patch('/projects/:projectId/tasks/:taskId', async (request: any, reply: any) => {
     const { projectId, taskId } = request.params as any;
-    const db = getDb();
-    const existing = db.prepare('SELECT * FROM tasks WHERE id = ? AND project_id = ?').get(parseInt(taskId), parseInt(projectId));
-    if (!existing) return reply.status(404).send({ type: 'https://api.example.com/errors/not-found', title: 'Task Not Found', status: 404 });
+    const db = await getDb();
+    
+    const checkResult = db.exec('SELECT * FROM tasks WHERE id = ? AND project_id = ?', [parseInt(taskId), parseInt(projectId)]);
+    if (!checkResult[0] || checkResult[0].values.length === 0) {
+      return reply.status(404).send({ type: 'https://api.example.com/errors/not-found', title: 'Task Not Found', status: 404 });
+    }
 
     const payload = request.body as any;
     const updates: string[] = [];
@@ -96,10 +127,16 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     updates.push('updated_at = datetime("now")');
     params.push(parseInt(taskId), parseInt(projectId));
 
-    const stmt = db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ? AND project_id = ?`);
-    stmt.run(...params);
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(parseInt(taskId));
+    db.run(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ? AND project_id = ?`, params);
+    saveDb(db);
+    
+    const result = db.exec('SELECT * FROM tasks WHERE id = ?', [parseInt(taskId)]);
+    const cols = result[0].columns;
+    const row = result[0].values[0];
+    const updated: any = {};
+    cols.forEach((col, idx) => { updated[col] = row[idx]; });
     if (updated.labels) updated.labels = JSON.parse(updated.labels);
+    
     return updated;
   });
 }
