@@ -48,13 +48,21 @@ The current workflows directory contains multiple workflow files, some of which 
   - Dashboard task creation is N+1 problem (needs bulk endpoint)
   - Workflow too complex (30 steps, needs decomposition)
 
-- [ ] **Day 2: Pattern Extraction**
-  - [ ] Identify common patterns across workflows
-  - [ ] Document dashboard interaction patterns (task creation, updates, queries)
-  - [ ] Identify review patterns (QA, Code Review, Security)
-  - [ ] Identify coordination patterns (PM evaluation, TDD gates)
-  - **Status:** Not Started
-  - **Deliverable:** `docs/workflows/WORKFLOW_PATTERNS.md`
+- [x] **Day 2: Pattern Extraction**
+  - [x] Identify common patterns across workflows
+  - [x] Document dashboard interaction patterns (task creation, updates, queries)
+  - [x] Identify review patterns (QA, Code Review, Security)
+  - [x] Identify coordination patterns (PM evaluation, TDD gates)
+  - **Status:** ✅ Complete (Oct 19, 2025)
+  - **Deliverable:** `docs/workflows/WORKFLOW_PATTERNS.md` ✅
+  
+  **Key Findings:**
+  - **7 major patterns identified:** Git ops, task status, review execution, review failure handling, planning/implementation, iteration loops, milestone ops
+  - **Review failure handling has 3 implementations:** QAFailureCoordinationStep (embedded PM), ReviewFailureTasksStep (separate PM), copy-paste for security
+  - **530 lines of duplication** in review failure handling (can reduce to 50 lines)
+  - **Dashboard N+1 problem confirmed:** Sequential task creation needs bulk endpoint
+  - **6 dashboard operations documented:** Status updates, task creation, milestone queries, etc.
+  - **PM prompts embedded in YAML:** 450+ lines total, should be externalized
 
 - [ ] **Day 3: Sub-Workflow Design**
   - [ ] Design reusable sub-workflow components
@@ -571,7 +579,7 @@ The dashboard backend **MUST** be a completely independent, self-contained proje
 
 | Phase | Status | Completion |
 |-------|--------|------------|
-| **Phase 0:** Workflow Rationalization | 🚧 In Progress | 20% (Day 1/5 complete) |
+| **Phase 0:** Workflow Rationalization | 🚧 In Progress | 40% (Day 2/5 complete) |
 | **Phase 1:** API Design | ⏳ Not Started | 0% |
 | **Phase 2:** Backend Proof | ⏳ Not Started | 0% |
 | **Phase 3:** Test Rationalization | ⏳ Not Started | 0% |
