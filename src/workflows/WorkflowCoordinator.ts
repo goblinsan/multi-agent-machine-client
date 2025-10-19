@@ -117,7 +117,7 @@ export class WorkflowCoordinator {
         }
         const currentPendingTasks = currentTasks
           .filter(task => this.normalizeTaskStatus(task?.status) !== 'done')
-          .sort((a, b) => this.compareTaskPriority(a, b));  // Priority: blocked > in_review > in_progress > open
+          .sort((a, b) => this.compareTaskPriority(a, b));  // Priority: priority_score (desc) > blocked > in_review > in_progress > open
         
         // Debug logging to see extracted tasks
         logger.info("Fetched tasks debug", {
@@ -772,6 +772,16 @@ export class WorkflowCoordinator {
    * Priority order: blocked (0) > in_review (1) > in_progress (2) > open (3)
    */
   private compareTaskPriority(a: any, b: any): number {
+    // FIRST: Check for explicit priority_score (higher score = higher priority)
+    // This allows urgent follow-up tasks (e.g., priority_score: 1000) to jump ahead
+    const scoreA = a?.priority_score ?? a?.priorityScore ?? 0;
+    const scoreB = b?.priority_score ?? b?.priorityScore ?? 0;
+    
+    if (scoreA !== scoreB) {
+      return scoreB - scoreA;  // Higher score first (descending)
+    }
+    
+    // SECOND: Use status-based priority
     const priorityA = this.getTaskPriority(a);
     const priorityB = this.getTaskPriority(b);
     
@@ -780,7 +790,7 @@ export class WorkflowCoordinator {
       return priorityA - priorityB;
     }
     
-    // If same priority, sort by task order/position if available
+    // THIRD: If same priority, sort by task order/position if available
     const orderA = a?.order ?? a?.position ?? a?.rank ?? Infinity;
     const orderB = b?.order ?? b?.position ?? b?.rank ?? Infinity;
     

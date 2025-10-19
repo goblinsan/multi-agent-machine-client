@@ -168,7 +168,7 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
   const raw = (output || "").trim();
   let json = extractJsonPayloadFromText(raw);
   
-  // First priority: Check if JSON has a direct status field
+  // PRIORITY 1: Explicit JSON status field (REQUIRED for reliable parsing)
   if (json && typeof json.status === "string") {
     const statusLower = json.status.trim().toLowerCase();
     let normalized: "pass" | "fail" | "unknown" = "unknown";
@@ -178,8 +178,7 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     return { status: normalized, details, raw, payload: json };
   }
   
-  // Second priority: Check if JSON has "output" field (LM Studio wrapper pattern)
-  // Try to extract status from nested output string
+  // PRIORITY 2: Check nested output field (LM Studio wrapper pattern)
   if (json && typeof json.output === "string") {
     const innerJson = extractJsonPayloadFromText(json.output);
     if (innerJson && typeof innerJson.status === "string") {
@@ -192,11 +191,22 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     }
   }
   
-  // Third priority: Look for explicit JSON-like status declarations in text
-  // This catches patterns like {"status": "pass"} or 'status': 'fail' in text
+  // PRIORITY 3: Look for explicit status declarations at START of response
+  // Only check first 500 characters to avoid false positives from narrative text
+  // Pattern: "Status: pass" or "Result: fail" at beginning of line
   if (!raw.length) return { status: "unknown", details: raw, raw };
-  const lower = raw.toLowerCase();
-  const jsonStatusMatch = lower.match(/["']status["']\s*:\s*["'](pass|fail|success|error|failed|succeeded|approved|rejected|ok)["']/);
+  const firstPart = raw.substring(0, 500);
+  const statusLineMatch = firstPart.match(/^(?:status|result):\s*(pass|fail|passed|failed|success|error|ok|approved|rejected)/im);
+  if (statusLineMatch) {
+    const declaredStatus = statusLineMatch[1].toLowerCase();
+    const normalized = PASS_STATUS_KEYWORDS.has(declaredStatus) ? "pass" : 
+                       FAIL_STATUS_KEYWORDS.has(declaredStatus) ? "fail" : "unknown";
+    return { status: normalized, details: raw, raw, payload: json };
+  }
+  
+  // PRIORITY 4: Check for explicit JSON-like status declarations in first 500 chars
+  // Pattern: {"status": "pass"} or 'status': 'fail' 
+  const jsonStatusMatch = firstPart.toLowerCase().match(/["']status["']\s*:\s*["'](pass|fail|success|error|failed|succeeded|approved|rejected|ok)["']/);
   if (jsonStatusMatch) {
     const declaredStatus = jsonStatusMatch[1];
     const normalized = PASS_STATUS_KEYWORDS.has(declaredStatus) ? "pass" : 
@@ -204,15 +214,13 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     return { status: normalized, details: raw, raw, payload: json };
   }
   
-  // Fourth priority (fallback): Scan entire text for keywords
-  // IMPORTANT: Check PASS first to avoid false negatives from explanatory text
-  // (e.g., "The plan passes all criteria. If it were to fail, we would...")
-  for (const key of PASS_STATUS_KEYWORDS) {
-    if (lower.includes(key)) return { status: "pass", details: raw, raw };
-  }
-  for (const key of FAIL_STATUS_KEYWORDS) {
-    if (lower.includes(key)) return { status: "fail", details: raw, raw };
-  }
+  // DEFAULT: No clear status found - return UNKNOWN (fail-safe)
+  // DO NOT scan entire text for keywords - prevents false positives from narrative
+  logger.warn('Persona status unclear - no explicit status declaration found', {
+    rawPreview: raw.substring(0, 200),
+    hasJson: !!json,
+    recommendation: 'Persona should return JSON with explicit status field'
+  });
   
   return { status: "unknown", details: raw, raw, payload: json };
 }

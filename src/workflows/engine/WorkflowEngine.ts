@@ -207,7 +207,9 @@ export class WorkflowEngine {
           const result = await this.executeStep(stepConfig, context, options);
           results.push(result);
 
-          if (result.status === 'success') {
+          if (result.status === 'success' || result.status === 'skipped') {
+            // Add both successful and skipped steps to executedSteps
+            // so that dependent steps can proceed
             executedSteps.add(stepConfig.name);
           } else if (result.status === 'failure' && !options.continueOnError) {
             throw new Error(`Step '${stepConfig.name}' failed: ${result.error?.message}`);

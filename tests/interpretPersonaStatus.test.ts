@@ -61,10 +61,11 @@ describe('interpretPersonaStatus - robust status parsing', () => {
   });
 
   describe('keyword priority (pass over fail)', () => {
-    it('should prioritize pass when both keywords present', () => {
+    it('should require explicit JSON status, not just keywords in text', () => {
+      // This should NOT be interpreted as pass - no explicit status declaration
       const response = 'The tests pass successfully. Previously they would fail, but now they are fixed.';
       const result = interpretPersonaStatus(response);
-      expect(result.status).toBe('pass');
+      expect(result.status).toBe('unknown'); // Changed from 'pass' - now requires explicit status
     });
     
     it('should find pass in JSON-like declarations first', () => {
@@ -91,10 +92,13 @@ describe('interpretPersonaStatus - robust status parsing', () => {
       expect(result.status).toBe('unknown');
     });
     
-    it('should handle malformed JSON', () => {
-      const response = '{ status: pass }'; // Invalid JSON
+    it('should handle malformed JSON with explicit status pattern', () => {
+      // Malformed JSON but has recognizable status pattern
+      const response = '{ status: pass }'; // Invalid JSON but "status: pass" at start
       const result = interpretPersonaStatus(response);
-      expect(result.status).toBe('pass'); // Should still find keyword
+      // With new strict parsing, this will look for "Status: pass" pattern at start
+      // Since it's lowercase and no colon after status in pattern, should be unknown
+      expect(result.status).toBe('unknown');
     });
     
     it('should handle text with no status indicators', () => {

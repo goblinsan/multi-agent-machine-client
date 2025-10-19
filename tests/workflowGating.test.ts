@@ -45,25 +45,26 @@ describe('legacy-compatible workflow gating', () => {
     expect(markDoneStep).toBeDefined();
     expect(markInReviewStep).toBeDefined();
 
-    // Mark in review happens when QA passes
-    expect(markInReviewStep?.depends_on).toEqual(['qa_request', 'qa_iteration_loop']);
+    // Mark in review happens when QA passes (depends only on qa_request, not qa_iteration_loop)
+    // qa_iteration_loop may be skipped if QA passes first time, but that's OK because
+    // the workflow engine now treats skipped steps as "executed" for dependency resolution
+    expect(markInReviewStep?.depends_on).toEqual(['qa_request']);
     expect(markInReviewStep?.condition).toBe("${qa_request_status} == 'pass'");
 
-    // Code review depends on mark_in_review
+    // Code review depends on mark_in_review and runs regardless of qa_request_status
+    // (condition was removed since mark_in_review only runs when QA passes)
     expect(codeReviewStep?.depends_on).toEqual(['mark_task_in_review']);
-    expect(codeReviewStep?.condition).toBe("${qa_request_status} == 'pass'");
 
-    // Security also depends on mark_in_review
-    expect(securityStep?.depends_on).toEqual(['mark_task_in_review']);
-    expect(securityStep?.condition).toBe("${qa_request_status} == 'pass'");
+    // Security depends on code review passing
+    expect(securityStep?.depends_on).toEqual(['code_review_request']);
+    expect(securityStep?.condition).toBe("${code_review_request_status} == 'pass'");
 
-    expect(devopsStep?.depends_on).toEqual(['code_review_request', 'security_request']);
-    expect(devopsStep?.condition).toBe("${qa_request_status} == 'pass'");
+    // DevOps depends on security passing
+    expect(devopsStep?.depends_on).toEqual(['security_request']);
+    expect(devopsStep?.condition).toBe("${security_request_status} == 'pass'");
 
-    expect(markDoneStep?.depends_on).toEqual([
-      'security_request',
-      'devops_request',
-      'code_review_request'
-    ]);
+    // Mark done depends on security passing and devops completing
+    expect(markDoneStep?.depends_on).toEqual(['devops_request']);
+    expect(markDoneStep?.condition).toBe("${security_request_status} == 'pass'");
   });
 });

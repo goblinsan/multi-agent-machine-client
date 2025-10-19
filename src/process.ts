@@ -198,6 +198,270 @@ async function writeQALog(
   }
 }
 
+/**
+ * Helper function to write Code Review logs for code-reviewer persona
+ */
+async function writeCodeReviewLog(
+  repoInfo: any,
+  repoRootNormalized: string,
+  payloadObj: any,
+  msg: any,
+  resp: any,
+  duration: number
+) {
+  const fs = await import("fs/promises");
+  const pathMod = await import("path");
+  const repoRoot = repoRootNormalized;
+  const reviewsDir = pathMod.resolve(repoRoot, ".ma/reviews");
+  await fs.mkdir(reviewsDir, { recursive: true });
+  
+  const taskId = firstString(
+    payloadObj.task_id,
+    payloadObj.taskId,
+    payloadObj.task?.id,
+    msg.workflow_id
+  ) || "unknown";
+  
+  const reviewLogPath = pathMod.resolve(reviewsDir, `task-${taskId}-code-review.log`);
+  
+  // Parse code review response to extract key information
+  const responseText = resp.content || "";
+  const statusInfo = interpretPersonaStatus(responseText);
+  const status = statusInfo.status === "pass" ? "PASS" : 
+                 statusInfo.status === "fail" ? "FAIL" : "UNKNOWN";
+  
+  // Try to parse JSON to extract severity-organized findings
+  let findings = { severe: [], high: [], medium: [], low: [] };
+  let summary = "No summary provided";
+  try {
+    const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?\})\s*```/) || 
+                     responseText.match(/(\{[\s\S]*"findings"[\s\S]*\})/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      findings = parsed.findings || findings;
+      summary = parsed.summary || parsed.details || summary;
+    }
+  } catch (e) {
+    logger.debug("Could not parse code review JSON, using raw response", { taskId });
+  }
+  
+  const reviewBranch = payloadObj.branch || repoInfo.branch || "unknown";
+  
+  const logEntry = [
+    `\n${"=".repeat(80)}`,
+    `Code Review - ${new Date().toISOString()}`,
+    `Task ID: ${taskId}`,
+    `Workflow ID: ${msg.workflow_id}`,
+    `Branch: ${reviewBranch}`,
+    `Status: ${status}`,
+    `Duration: ${duration}ms`,
+    `${"=".repeat(80)}`,
+    ``,
+    `SUMMARY: ${summary}`,
+    ``,
+    `FINDINGS BY SEVERITY:`,
+    ``,
+    `SEVERE (${findings.severe?.length || 0}):`,
+    ...(findings.severe || []).map((f: any) => 
+      `  - File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Issue: ${f.issue || f.vulnerability || 'N/A'}\n    Recommendation: ${f.recommendation || f.mitigation || 'N/A'}`
+    ),
+    ``,
+    `HIGH (${findings.high?.length || 0}):`,
+    ...(findings.high || []).map((f: any) => 
+      `  - File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Issue: ${f.issue || f.vulnerability || 'N/A'}\n    Recommendation: ${f.recommendation || f.mitigation || 'N/A'}`
+    ),
+    ``,
+    `MEDIUM (${findings.medium?.length || 0}):`,
+    ...(findings.medium || []).map((f: any) => 
+      `  - File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Issue: ${f.issue || f.vulnerability || 'N/A'}\n    Recommendation: ${f.recommendation || f.mitigation || 'N/A'}`
+    ),
+    ``,
+    `LOW (${findings.low?.length || 0}):`,
+    ...(findings.low || []).map((f: any) => 
+      `  - File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Issue: ${f.issue || f.vulnerability || 'N/A'}\n    Recommendation: ${f.recommendation || f.mitigation || 'N/A'}`
+    ),
+    ``,
+    `${"=".repeat(80)}`,
+    `FULL RESPONSE:`,
+    `${"=".repeat(80)}`,
+    ``,
+    responseText,
+    ``,
+    `${"=".repeat(80)}`,
+    ``
+  ].join("\n");
+  
+  await fs.appendFile(reviewLogPath, logEntry, "utf8");
+  logger.info("Code review results written to log", { 
+    taskId, 
+    reviewLogPath: pathMod.relative(repoRoot, reviewLogPath),
+    branch: reviewBranch,
+    status,
+    severeCnt: findings.severe?.length || 0,
+    highCnt: findings.high?.length || 0,
+    mediumCnt: findings.medium?.length || 0,
+    lowCnt: findings.low?.length || 0,
+    workflowId: msg.workflow_id 
+  });
+  
+  // Commit and push the review log so other machines can access it
+  try {
+    const reviewLogRel = pathMod.relative(repoRoot, reviewLogPath);
+    const commitRes = await commitAndPushPaths({
+      repoRoot,
+      branch: payloadObj.branch || repoInfo.branch || null,
+      message: `code-review: ${status} for task ${taskId} (severe:${findings.severe?.length || 0}, high:${findings.high?.length || 0})`,
+      paths: [reviewLogRel]
+    });
+    logger.info("Code review log committed and pushed", {
+      taskId,
+      reviewLogPath: reviewLogRel,
+      branch: reviewBranch,
+      status,
+      commitResult: commitRes,
+      workflowId: msg.workflow_id
+    });
+  } catch (commitErr: any) {
+    logger.warn("Failed to commit code review log", {
+      taskId,
+      workflowId: msg.workflow_id,
+      error: commitErr?.message || String(commitErr)
+    });
+  }
+}
+
+/**
+ * Helper function to write Security Review logs for security-review persona
+ */
+async function writeSecurityReviewLog(
+  repoInfo: any,
+  repoRootNormalized: string,
+  payloadObj: any,
+  msg: any,
+  resp: any,
+  duration: number
+) {
+  const fs = await import("fs/promises");
+  const pathMod = await import("path");
+  const repoRoot = repoRootNormalized;
+  const reviewsDir = pathMod.resolve(repoRoot, ".ma/reviews");
+  await fs.mkdir(reviewsDir, { recursive: true });
+  
+  const taskId = firstString(
+    payloadObj.task_id,
+    payloadObj.taskId,
+    payloadObj.task?.id,
+    msg.workflow_id
+  ) || "unknown";
+  
+  const securityLogPath = pathMod.resolve(reviewsDir, `task-${taskId}-security-review.log`);
+  
+  // Parse security review response to extract key information
+  const responseText = resp.content || "";
+  const statusInfo = interpretPersonaStatus(responseText);
+  const status = statusInfo.status === "pass" ? "PASS" : 
+                 statusInfo.status === "fail" ? "FAIL" : "UNKNOWN";
+  
+  // Try to parse JSON to extract severity-organized findings
+  let findings = { severe: [], high: [], medium: [], low: [] };
+  let summary = "No summary provided";
+  try {
+    const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?\})\s*```/) || 
+                     responseText.match(/(\{[\s\S]*"findings"[\s\S]*\})/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      findings = parsed.findings || findings;
+      summary = parsed.summary || parsed.details || summary;
+    }
+  } catch (e) {
+    logger.debug("Could not parse security review JSON, using raw response", { taskId });
+  }
+  
+  const securityBranch = payloadObj.branch || repoInfo.branch || "unknown";
+  
+  const logEntry = [
+    `\n${"=".repeat(80)}`,
+    `Security Review - ${new Date().toISOString()}`,
+    `Task ID: ${taskId}`,
+    `Workflow ID: ${msg.workflow_id}`,
+    `Branch: ${securityBranch}`,
+    `Status: ${status}`,
+    `Duration: ${duration}ms`,
+    `${"=".repeat(80)}`,
+    ``,
+    `SUMMARY: ${summary}`,
+    ``,
+    `SECURITY FINDINGS BY SEVERITY:`,
+    ``,
+    `SEVERE (${findings.severe?.length || 0}):`,
+    ...(findings.severe || []).map((f: any) => 
+      `  - Category: ${f.category || 'N/A'}\n    File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Vulnerability: ${f.vulnerability || f.issue || 'N/A'}\n    Impact: ${f.impact || 'N/A'}\n    Mitigation: ${f.mitigation || f.recommendation || 'N/A'}`
+    ),
+    ``,
+    `HIGH (${findings.high?.length || 0}):`,
+    ...(findings.high || []).map((f: any) => 
+      `  - Category: ${f.category || 'N/A'}\n    File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Vulnerability: ${f.vulnerability || f.issue || 'N/A'}\n    Impact: ${f.impact || 'N/A'}\n    Mitigation: ${f.mitigation || f.recommendation || 'N/A'}`
+    ),
+    ``,
+    `MEDIUM (${findings.medium?.length || 0}):`,
+    ...(findings.medium || []).map((f: any) => 
+      `  - Category: ${f.category || 'N/A'}\n    File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Vulnerability: ${f.vulnerability || f.issue || 'N/A'}\n    Impact: ${f.impact || 'N/A'}\n    Mitigation: ${f.mitigation || f.recommendation || 'N/A'}`
+    ),
+    ``,
+    `LOW (${findings.low?.length || 0}):`,
+    ...(findings.low || []).map((f: any) => 
+      `  - Category: ${f.category || 'N/A'}\n    File: ${f.file || 'N/A'}${f.line ? `:${f.line}` : ''}\n    Vulnerability: ${f.vulnerability || f.issue || 'N/A'}\n    Impact: ${f.impact || 'N/A'}\n    Mitigation: ${f.mitigation || f.recommendation || 'N/A'}`
+    ),
+    ``,
+    `${"=".repeat(80)}`,
+    `FULL RESPONSE:`,
+    `${"=".repeat(80)}`,
+    ``,
+    responseText,
+    ``,
+    `${"=".repeat(80)}`,
+    ``
+  ].join("\n");
+  
+  await fs.appendFile(securityLogPath, logEntry, "utf8");
+  logger.info("Security review results written to log", { 
+    taskId, 
+    securityLogPath: pathMod.relative(repoRoot, securityLogPath),
+    branch: securityBranch,
+    status,
+    severeCnt: findings.severe?.length || 0,
+    highCnt: findings.high?.length || 0,
+    mediumCnt: findings.medium?.length || 0,
+    lowCnt: findings.low?.length || 0,
+    workflowId: msg.workflow_id 
+  });
+  
+  // Commit and push the security review log so other machines can access it
+  try {
+    const securityLogRel = pathMod.relative(repoRoot, securityLogPath);
+    const commitRes = await commitAndPushPaths({
+      repoRoot,
+      branch: payloadObj.branch || repoInfo.branch || null,
+      message: `security-review: ${status} for task ${taskId} (severe:${findings.severe?.length || 0}, high:${findings.high?.length || 0})`,
+      paths: [securityLogRel]
+    });
+    logger.info("Security review log committed and pushed", {
+      taskId,
+      securityLogPath: securityLogRel,
+      branch: securityBranch,
+      status,
+      commitResult: commitRes,
+      workflowId: msg.workflow_id
+    });
+  } catch (commitErr: any) {
+    logger.warn("Failed to commit security review log", {
+      taskId,
+      workflowId: msg.workflow_id,
+      error: commitErr?.message || String(commitErr)
+    });
+  }
+}
+
 export async function processContext(r: any, persona: string, msg: any, payloadObj: any, entryId: string) {
     const model = cfg.personaModels[persona]; if (!model) throw new Error(`No model mapping for '${persona}'`);
     const ctx: any = await fetchContext(msg.workflow_id);
@@ -940,6 +1204,32 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       }
     }
     
+    // Write code review results to task-specific log for code-reviewer persona
+    if (persona === PERSONAS.CODE_REVIEWER && repoInfo && repoRootNormalized) {
+      try {
+        await writeCodeReviewLog(repoInfo, repoRootNormalized, payloadObj, msg, resp, duration);
+      } catch (e: any) {
+        logger.warn("Failed to write code review log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
+    // Write security review results to task-specific log for security-review persona
+    if (persona === PERSONAS.SECURITY_REVIEW && repoInfo && repoRootNormalized) {
+      try {
+        await writeSecurityReviewLog(repoInfo, repoRootNormalized, payloadObj, msg, resp, duration);
+      } catch (e: any) {
+        logger.warn("Failed to write security review log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
     logger.info("persona completed", { persona, workflowId: msg.workflow_id, taskId: msg.task_id, duration_ms: duration });
     await publishEvent(r, {
       workflowId: msg.workflow_id,
@@ -1128,6 +1418,32 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
         await writePlanningLog(repoInfo, repoRootNormalized, payloadObj, msg, resp, duration);
       } catch (e: any) {
         logger.warn("Failed to write planning log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
+    // Write code review results to task-specific log for code-reviewer persona
+    if (persona === PERSONAS.CODE_REVIEWER && repoInfo && repoRootNormalized) {
+      try {
+        await writeCodeReviewLog(repoInfo, repoRootNormalized, payloadObj, msg, resp, duration);
+      } catch (e: any) {
+        logger.warn("Failed to write code review log", { 
+          persona, 
+          workflowId: msg.workflow_id, 
+          error: e?.message || String(e) 
+        });
+      }
+    }
+    
+    // Write security review results to task-specific log for security-review persona
+    if (persona === PERSONAS.SECURITY_REVIEW && repoInfo && repoRootNormalized) {
+      try {
+        await writeSecurityReviewLog(repoInfo, repoRootNormalized, payloadObj, msg, resp, duration);
+      } catch (e: any) {
+        logger.warn("Failed to write security review log", { 
           persona, 
           workflowId: msg.workflow_id, 
           error: e?.message || String(e) 

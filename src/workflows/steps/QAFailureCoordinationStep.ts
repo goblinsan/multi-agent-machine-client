@@ -42,6 +42,18 @@ interface QAFailureCoordinationConfig {
    * @default "qa-created-tasks"
    */
   createdTasksStep?: string;
+  
+  /**
+   * Priority score for urgent QA failures (critical test failures, blocking bugs)
+   * @default 1200
+   */
+  urgentPriorityScore?: number;
+  
+  /**
+   * Priority score for deferred QA improvements
+   * @default 50
+   */
+  deferredPriorityScore?: number;
 }
 
 /**
@@ -63,7 +75,9 @@ export class QAFailureCoordinationStep extends WorkflowStep {
       tddAware = true,
       evaluationStep = "evaluate-qa-plan",
       revisionStep = "qa-plan-revision", 
-      createdTasksStep = "qa-created-tasks"
+      createdTasksStep = "qa-created-tasks",
+      urgentPriorityScore = 1200,
+      deferredPriorityScore = 50
     } = config;
     
     try {
@@ -135,7 +149,7 @@ export class QAFailureCoordinationStep extends WorkflowStep {
       
       if (shouldCreateNewTasks) {
         // Create new tasks for QA failures
-        createdTasks = await this.createQAFailureTasks(context, redis, qaResult, qaStatus);
+        createdTasks = await this.createQAFailureTasks(context, redis, qaResult, qaStatus, urgentPriorityScore, deferredPriorityScore);
         
         if (createdTasks.length > 0) {
           // Forward created tasks to implementation planner
@@ -279,15 +293,39 @@ export class QAFailureCoordinationStep extends WorkflowStep {
     return Boolean(hasSuggestedTasks || hasDetailedFailures);
   }
   
+  /**
+   * Determine if a QA failure is urgent based on the failure characteristics
+   * Currently defaults to urgent for all failures, but can be enhanced to check:
+   * - Test type (integration vs unit)
+   * - Number of failures
+   * - Failure severity indicators
+   * - TDD context
+   */
+  private isUrgentQAFailure(qaResult: any, qaStatus: { status: string; details?: string; tasks?: any[] }): boolean {
+    // For now, treat all QA failures as urgent since they block progress
+    // Future enhancement: parse qaResult to determine severity
+    // Examples:
+    // - Critical integration test failures: urgent
+    // - Minor flaky test failures: deferred
+    // - TDD expected failures: deferred
+    return true;
+  }
+  
   private async createQAFailureTasks(
     context: WorkflowContext,
     redis: any,
     qaResult: any,
-    qaStatus: { status: string; details?: string; tasks?: any[] }
+    qaStatus: { status: string; details?: string; tasks?: any[] },
+    urgentPriorityScore: number,
+    deferredPriorityScore: number
   ): Promise<any[]> {
     const task = context.getVariable('task');
     const projectId = context.getVariable('projectId');
     const milestone = context.getVariable('milestone');
+    
+    // Determine if this is an urgent QA failure
+    const isUrgent = this.isUrgentQAFailure(qaResult, qaStatus);
+    const priorityScore = isUrgent ? urgentPriorityScore : deferredPriorityScore;
     
     // Extract or generate suggested tasks from QA failure
     let suggestedTasks = qaStatus.tasks || [];
@@ -298,12 +336,20 @@ export class QAFailureCoordinationStep extends WorkflowStep {
       suggestedTasks = [{
         title,
         description: qaStatus.details.slice(0, 5000),
-        schedule: 'urgent',
+        schedule: isUrgent ? 'urgent' : 'medium',
+        priority_score: priorityScore,
         assigneePersona: 'implementation-planner',
         stage: 'qa',
         parent_task_id: task?.id || task?.external_id
       }];
     }
+    
+    // Add priority_score to existing suggested tasks if not already set
+    suggestedTasks = suggestedTasks.map(t => ({
+      ...t,
+      priority_score: t.priority_score ?? priorityScore,
+      schedule: t.schedule ?? (isUrgent ? 'urgent' : 'medium')
+    }));
     
     if (!suggestedTasks.length) {
       logger.info('No tasks to create for QA failure', { workflowId: context.workflowId });

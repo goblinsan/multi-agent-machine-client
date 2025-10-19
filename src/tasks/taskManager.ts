@@ -347,7 +347,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
         title,
         description,
         effortEstimate: 3,
-        priorityScore: task.defaultPriority ?? 5,
+        priorityScore: task.priority_score ?? task.defaultPriority ?? 5,
         assigneePersona: task.assigneePersona,
         externalId,
         attachments,
