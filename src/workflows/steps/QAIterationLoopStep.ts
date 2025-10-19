@@ -1,12 +1,13 @@
 import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from '../../agents/persona.js';
+import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus } from '../../agents/persona.js';
 import { applyEditOps } from '../../fileops.js';
 import { DiffParser } from '../../agents/parsers/DiffParser.js';
 import { commitAndPushPaths } from '../../gitUtils.js';
 import { makeRedis } from '../../redisClient.js';
 import { PERSONAS } from '../../personaNames.js';
 import { cfg } from '../../config.js';
+import { logger } from '../../logger.js';
 import crypto from 'crypto';
 
 interface QAIterationLoopConfig {
@@ -376,18 +377,16 @@ export class QAIterationLoopStep extends WorkflowStep {
 
   private parseQAStatus(qaResult: any): string {
     try {
-      if (typeof qaResult === 'string') {
-        const parsed = JSON.parse(qaResult);
-        return parsed.status || 'unknown';
-      }
-      
-      if (typeof qaResult === 'object') {
-        const payload = qaResult.payload || qaResult;
-        return payload.status || qaResult.status || 'unknown';
-      }
-      
-      return 'unknown';
+      // QA result is the raw output from parseEventResult (contains both parsed and raw data)
+      // Use the same interpretation logic as PersonaRequestStep for consistency
+      const rawOutput = qaResult?.output || (typeof qaResult === 'string' ? qaResult : JSON.stringify(qaResult));
+      const statusInfo = interpretPersonaStatus(rawOutput);
+      return statusInfo.status;
     } catch (error) {
+      logger.warn('Failed to parse QA status, defaulting to unknown', {
+        stepName: this.config.name,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       return 'unknown';
     }
   }
