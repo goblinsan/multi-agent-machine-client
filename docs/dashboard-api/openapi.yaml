@@ -1,0 +1,1074 @@
+openapi: 3.0.3
+info:
+  title: Multi-Agent Machine Client - Dashboard API
+  version: 1.0.0
+  description: |
+    Dashboard API optimized for YAML workflow execution.
+    
+    **Design Principles:**
+    - Workflow-first: API designed for how YAML workflows actually work
+    - Batch operations: Bulk endpoints to avoid N+1 queries
+    - Query optimization: Optimized for common workflow access patterns
+    - No legacy cruft: Clean API designed from workflow requirements
+    
+    **Key Features:**
+    - Bulk task creation with duplicate detection
+    - Milestone-scoped queries
+    - Priority-based task sorting
+    - Fast status updates
+    - WorkflowCoordinator optimized endpoints
+    
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development server
+  - url: http://localhost:3000/api/v1
+    description: Production server (placeholder)
+
+tags:
+  - name: Tasks
+    description: Task operations (create, update, query, bulk operations)
+  - name: Milestones
+    description: Milestone operations (details, task lists, completion tracking)
+  - name: Projects
+    description: Project operations (details, status, workflow coordination)
+  - name: Repositories
+    description: Repository operations (git remote management)
+
+paths:
+  # Task Operations
+  /projects/{projectId}/tasks:
+    get:
+      tags: [Tasks]
+      summary: List tasks in project
+      description: |
+        Query tasks with filtering, sorting, and field selection.
+        Optimized for WorkflowCoordinator priority queue and duplicate detection.
+        
+        **Use Cases:**
+        - WorkflowCoordinator: Get tasks sorted by priority
+        - Duplicate detection: Query tasks in milestone
+        - Milestone completion: Count incomplete tasks
+        
+      operationId: listTasks
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: status
+          in: query
+          description: Filter by status (comma-separated, supports negation with !)
+          schema:
+            type: string
+            example: "open,in_progress,blocked"
+          examples:
+            activeOnly:
+              value: "open,in_progress,blocked,in_review"
+              summary: Active tasks only
+            excludeDone:
+              value: "!done,!archived"
+              summary: Exclude completed tasks
+        - name: milestone_id
+          in: query
+          description: Filter by milestone ID
+          schema:
+            type: string
+        - name: priority_min
+          in: query
+          description: Minimum priority score
+          schema:
+            type: integer
+            minimum: 0
+        - name: labels
+          in: query
+          description: Filter by labels (comma-separated, AND logic)
+          schema:
+            type: string
+            example: "hotfix,urgent"
+        - name: sort
+          in: query
+          description: Sort fields (comma-separated, use :desc for descending)
+          schema:
+            type: string
+            default: "priority_score:desc,created_at:asc"
+            example: "priority_score:desc,created_at:asc"
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Pagination offset
+          schema:
+            type: integer
+            default: 0
+        - name: fields
+          in: query
+          description: Fields to include (comma-separated, for performance)
+          schema:
+            type: string
+            example: "id,title,status,priority_score"
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+              examples:
+                priorityQueue:
+                  summary: WorkflowCoordinator priority queue
+                  value:
+                    tasks:
+                      - id: "task-001"
+                        title: "Fix critical security vulnerability"
+                        status: "open"
+                        priority_score: 2000
+                        labels: ["hotfix", "security"]
+                        created_at: "2025-10-19T10:00:00Z"
+                      - id: "task-002"
+                        title: "Code review follow-up: memory leak"
+                        status: "open"
+                        priority_score: 1500
+                        milestone_id: "milestone-001"
+                        parent_task_id: "task-000"
+                        created_at: "2025-10-19T09:30:00Z"
+                    pagination:
+                      total: 2
+                      limit: 100
+                      offset: 0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    post:
+      tags: [Tasks]
+      summary: Create a single task
+      description: Create one task. For multiple tasks, use POST /tasks:bulk instead.
+      operationId: createTask
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+            example:
+              title: "Fix memory leak in event handler"
+              description: "Code review found memory leak when removing event listeners"
+              priority_score: 1000
+              status: "open"
+              milestone_id: "milestone-001"
+              parent_task_id: "task-456"
+              labels: ["code-quality", "urgent"]
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  
+  /projects/{projectId}/tasks:bulk:
+    post:
+      tags: [Tasks]
+      summary: Create multiple tasks (bulk operation)
+      description: |
+        Create multiple tasks in a single request with optional duplicate detection.
+        
+        **Performance:** <100ms for 20 tasks, <500ms for 100 tasks
+        
+        **Duplicate Detection Strategies:**
+        - `title`: Match by LOWER(title) across all milestones
+        - `title_and_milestone`: Match by LOWER(title) + milestone_id (recommended)
+        - `external_id`: Match by exact external_id
+        - `none`: No duplicate detection (always create)
+        
+        **Use Cases:**
+        - Review failure task creation (PM evaluation → bulk create)
+        - Importing tasks from external systems
+        - Batch task initialization
+        
+      operationId: createTasksBulk
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tasks
+              properties:
+                tasks:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TaskCreate'
+                  minItems: 1
+                  maxItems: 100
+                options:
+                  type: object
+                  properties:
+                    duplicate_detection:
+                      type: object
+                      properties:
+                        strategy:
+                          type: string
+                          enum: [title, title_and_milestone, external_id, none]
+                          default: title_and_milestone
+                        action:
+                          type: string
+                          enum: [skip, error]
+                          default: skip
+                          description: |
+                            - skip: Skip duplicate, return in duplicates array
+                            - error: Fail entire request on first duplicate
+                    return_duplicates:
+                      type: boolean
+                      default: true
+                      description: Include duplicate details in response
+            example:
+              tasks:
+                - title: "Fix memory leak in event handler"
+                  description: "Code review found memory leak..."
+                  priority_score: 1000
+                  status: "open"
+                  milestone_id: "milestone-001"
+                  parent_task_id: "task-456"
+                  external_id: "code-review-finding-1"
+                - title: "Add error handling to API calls"
+                  description: "Security review found missing error handling..."
+                  priority_score: 1500
+                  status: "open"
+                  milestone_id: "milestone-001"
+                  parent_task_id: "task-456"
+                  external_id: "security-review-finding-2"
+              options:
+                duplicate_detection:
+                  strategy: "title_and_milestone"
+                  action: "skip"
+                return_duplicates: true
+      responses:
+        '201':
+          description: Tasks created (some may be duplicates)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  duplicates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                        duplicate_of_id:
+                          type: string
+                        reason:
+                          type: string
+                        match_strategy:
+                          type: string
+                  summary:
+                    type: object
+                    properties:
+                      total_requested:
+                        type: integer
+                      created:
+                        type: integer
+                      duplicates:
+                        type: integer
+                      skipped:
+                        type: integer
+                      errors:
+                        type: integer
+              example:
+                created:
+                  - id: "task-789"
+                    title: "Fix memory leak in event handler"
+                    status: "open"
+                    priority_score: 1000
+                    milestone_id: "milestone-001"
+                    created_at: "2025-10-19T10:30:00Z"
+                duplicates:
+                  - title: "Add error handling to API calls"
+                    duplicate_of_id: "task-999"
+                    reason: "Matching title in same milestone"
+                    match_strategy: "title_and_milestone"
+                summary:
+                  total_requested: 2
+                  created: 1
+                  duplicates: 1
+                  skipped: 0
+                  errors: 0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Duplicate detected (when action=error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /projects/{projectId}/tasks/{taskId}:
+    get:
+      tags: [Tasks]
+      summary: Get task details
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    patch:
+      tags: [Tasks]
+      summary: Update task (partial update)
+      description: |
+        Update task fields. Commonly used for status transitions.
+        
+        **Performance:** <10ms per update
+        
+        **Use Cases:**
+        - mark_task_in_progress: { status: "in_progress" }
+        - mark_task_in_review: { status: "in_review" }
+        - mark_task_blocked: { status: "blocked", comment: "..." }
+        - mark_task_done: { status: "done" }
+        
+      operationId: updateTask
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+            examples:
+              markInProgress:
+                summary: Mark task in progress
+                value:
+                  status: "in_progress"
+              markBlocked:
+                summary: Mark task blocked with comment
+                value:
+                  status: "blocked"
+                  comment: "Code review failed - urgent follow-up tasks created"
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # Milestone Operations
+  /projects/{projectId}/milestones:
+    get:
+      tags: [Milestones]
+      summary: List milestones in project
+      operationId: listMilestones
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, archived]
+      responses:
+        '200':
+          description: List of milestones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  milestones:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Milestone'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{projectId}/milestones/{milestoneId}:
+    get:
+      tags: [Milestones]
+      summary: Get milestone details
+      description: |
+        Get milestone metadata with computed fields (completion_percentage).
+        
+        **Performance:** <10ms
+        
+      operationId: getMilestone
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/MilestoneId'
+      responses:
+        '200':
+          description: Milestone details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Milestone'
+              example:
+                id: "milestone-001"
+                project_id: "project-123"
+                name: "MVP Release"
+                slug: "mvp-release"
+                description: "Minimum viable product features"
+                status: "active"
+                total_tasks: 50
+                completed_tasks: 35
+                completion_percentage: 70
+                created_at: "2025-10-01T00:00:00Z"
+                updated_at: "2025-10-19T10:00:00Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{projectId}/milestones/{milestoneId}/tasks:
+    get:
+      tags: [Milestones]
+      summary: List tasks in milestone
+      description: |
+        Query tasks within a milestone with filtering and sorting.
+        
+        **Use Cases:**
+        - Duplicate detection: Get existing tasks in milestone
+        - Milestone completion: Count incomplete tasks
+        - Context queries: Get tasks for specific milestone
+        
+        **Performance:** <50ms for 100 tasks
+        
+      operationId: listMilestoneTasks
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/MilestoneId'
+        - name: status
+          in: query
+          description: Filter by status (supports negation with !)
+          schema:
+            type: string
+            example: "!done,!archived"
+        - name: fields
+          in: query
+          description: Fields to include (for performance)
+          schema:
+            type: string
+            example: "id,title,status,external_id"
+      responses:
+        '200':
+          description: List of tasks in milestone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  total:
+                    type: integer
+                    description: Total count (useful for completion percentage)
+              example:
+                tasks:
+                  - id: "task-001"
+                    title: "Implement user authentication"
+                    status: "in_progress"
+                    milestone_slug: "mvp-release"
+                  - id: "task-002"
+                    title: "Add error logging"
+                    status: "blocked"
+                    milestone_slug: "mvp-release"
+                total: 2
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Project Operations
+  /projects/{projectId}:
+    get:
+      tags: [Projects]
+      summary: Get project details
+      operationId: getProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{projectId}/status:
+    get:
+      tags: [Projects]
+      summary: Get project status for workflow coordination
+      description: |
+        Optimized endpoint for WorkflowCoordinator.
+        Returns project details, tasks (sorted by priority), repositories, and milestones.
+        
+        **Performance:** <100ms for 1000 tasks
+        
+        **Use Case:** WorkflowCoordinator.handleCoordinator() pre-workflow execution
+        
+      operationId: getProjectStatus
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: include_tasks
+          in: query
+          description: Include tasks in response
+          schema:
+            type: boolean
+            default: true
+        - name: task_status
+          in: query
+          description: Filter tasks by status
+          schema:
+            type: string
+            example: "open,in_progress,blocked,in_review"
+        - name: task_limit
+          in: query
+          description: Maximum tasks to return
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Project status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                    description: Tasks sorted by priority (descending)
+                  repositories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Repository'
+                  milestones:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Milestone'
+              example:
+                project:
+                  id: "project-123"
+                  name: "Multi-Agent Client"
+                  slug: "multi-agent-client"
+                tasks:
+                  - id: "task-001"
+                    title: "Fix critical bug"
+                    status: "open"
+                    priority_score: 2000
+                    labels: ["hotfix"]
+                  - id: "task-002"
+                    title: "Implement feature"
+                    status: "in_progress"
+                    priority_score: 1000
+                repositories:
+                  - id: "repo-001"
+                    url: "https://github.com/example/repo.git"
+                    default_branch: "main"
+                milestones:
+                  - id: "milestone-001"
+                    name: "MVP Release"
+                    slug: "mvp-release"
+                    status: "active"
+                    completion_percentage: 70
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Repository Operations
+  /projects/{projectId}/repositories:
+    get:
+      tags: [Repositories]
+      summary: List repositories
+      operationId: listRepositories
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repositories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Repository'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Project ID
+      schema:
+        type: string
+        example: "project-123"
+    
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      description: Task ID
+      schema:
+        type: string
+        example: "task-456"
+    
+    MilestoneId:
+      name: milestoneId
+      in: path
+      required: true
+      description: Milestone ID
+      schema:
+        type: string
+        example: "milestone-789"
+
+  schemas:
+    Task:
+      type: object
+      required:
+        - id
+        - project_id
+        - title
+        - status
+        - priority_score
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: Unique task identifier
+          example: "task-001"
+        project_id:
+          type: string
+          description: Parent project ID
+          example: "project-123"
+        external_id:
+          type: string
+          description: External identifier for duplicate detection
+          example: "code-review-finding-1"
+          nullable: true
+        title:
+          type: string
+          description: Task title
+          minLength: 1
+          maxLength: 500
+          example: "Fix memory leak in event handler"
+        description:
+          type: string
+          description: Detailed task description
+          nullable: true
+          example: "Code review found memory leak when removing event listeners..."
+        milestone_id:
+          type: string
+          description: Associated milestone ID
+          nullable: true
+          example: "milestone-001"
+        milestone_slug:
+          type: string
+          description: Milestone slug (denormalized for queries)
+          nullable: true
+          example: "mvp-release"
+        parent_task_id:
+          type: string
+          description: Parent task ID (for follow-up tasks)
+          nullable: true
+          example: "task-456"
+        status:
+          type: string
+          enum: [open, in_progress, in_review, blocked, done, archived]
+          description: Current task status
+          example: "open"
+        priority_score:
+          type: integer
+          description: Priority score (higher = more urgent)
+          minimum: 0
+          maximum: 10000
+          example: 1000
+        labels:
+          type: array
+          items:
+            type: string
+          description: Task labels
+          example: ["hotfix", "urgent"]
+        blocked_attempt_count:
+          type: integer
+          description: Number of unblock attempts (blocked-task-resolution)
+          nullable: true
+          example: 2
+        last_unblock_attempt:
+          type: string
+          format: date-time
+          description: Timestamp of last unblock attempt
+          nullable: true
+        review_status:
+          type: object
+          description: Review status tracking
+          nullable: true
+          properties:
+            qa:
+              type: string
+              enum: [pass, fail, unknown]
+            code_review:
+              type: string
+              enum: [pass, fail, unknown]
+            security_review:
+              type: string
+              enum: [pass, fail, unknown]
+            devops_review:
+              type: string
+              enum: [pass, fail, unknown]
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2025-10-19T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2025-10-19T10:30:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          description: Completion timestamp
+          nullable: true
+
+    TaskCreate:
+      type: object
+      required:
+        - title
+        - status
+        - priority_score
+      properties:
+        external_id:
+          type: string
+          description: External identifier for duplicate detection
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+        milestone_id:
+          type: string
+        parent_task_id:
+          type: string
+        status:
+          type: string
+          enum: [open, in_progress, in_review, blocked, done, archived]
+          default: open
+        priority_score:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 500
+        labels:
+          type: array
+          items:
+            type: string
+
+    TaskUpdate:
+      type: object
+      description: Partial task update (only specified fields are updated)
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+        status:
+          type: string
+          enum: [open, in_progress, in_review, blocked, done, archived]
+        priority_score:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        milestone_id:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        blocked_attempt_count:
+          type: integer
+        last_unblock_attempt:
+          type: string
+          format: date-time
+        comment:
+          type: string
+          description: Optional comment for audit trail (not persisted in task)
+
+    Milestone:
+      type: object
+      required:
+        - id
+        - project_id
+        - name
+        - slug
+        - status
+        - total_tasks
+        - completed_tasks
+        - completion_percentage
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          example: "milestone-001"
+        project_id:
+          type: string
+          example: "project-123"
+        name:
+          type: string
+          example: "MVP Release"
+        slug:
+          type: string
+          description: URL-safe identifier (for branch naming)
+          example: "mvp-release"
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, completed, archived]
+          example: "active"
+        total_tasks:
+          type: integer
+          description: Total number of tasks in milestone
+          example: 50
+        completed_tasks:
+          type: integer
+          description: Number of completed tasks
+          example: 35
+        completion_percentage:
+          type: integer
+          description: Completion percentage (0-100)
+          minimum: 0
+          maximum: 100
+          example: 70
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          example: "project-123"
+        name:
+          type: string
+          example: "Multi-Agent Client"
+        slug:
+          type: string
+          description: URL-safe identifier
+          example: "multi-agent-client"
+        description:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Repository:
+      type: object
+      required:
+        - id
+        - project_id
+        - url
+        - default_branch
+        - created_at
+      properties:
+        id:
+          type: string
+          example: "repo-001"
+        project_id:
+          type: string
+          example: "project-123"
+        url:
+          type: string
+          description: Git remote URL
+          example: "https://github.com/example/repo.git"
+        default_branch:
+          type: string
+          description: Default branch name
+          default: "main"
+          example: "main"
+        created_at:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of results
+        limit:
+          type: integer
+          description: Maximum results per page
+        offset:
+          type: integer
+          description: Current offset
+
+    Error:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          description: URI reference identifying the problem type
+          example: "https://api.example.com/errors/validation-error"
+        title:
+          type: string
+          description: Short, human-readable summary
+          example: "Validation Error"
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        detail:
+          type: string
+          description: Human-readable explanation
+          example: "The 'title' field is required"
+        instance:
+          type: string
+          description: URI reference identifying the specific occurrence
+          example: "/projects/project-123/tasks"
+        errors:
+          type: array
+          description: Detailed validation errors
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: "title"
+              message:
+                type: string
+                example: "Field is required"
+              code:
+                type: string
+                example: "required"
+
+  responses:
+    BadRequest:
+      description: Bad request (validation error)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: "https://api.example.com/errors/validation-error"
+            title: "Validation Error"
+            status: 400
+            detail: "Request validation failed"
+            errors:
+              - field: "title"
+                message: "Field is required"
+                code: "required"
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: "https://api.example.com/errors/not-found"
+            title: "Not Found"
+            status: 404
+            detail: "The requested resource was not found"
+    
+    Conflict:
+      description: Conflict (duplicate resource)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: "https://api.example.com/errors/conflict"
+            title: "Conflict"
+            status: 409
+            detail: "A task with this title already exists in the milestone"
+
+security: []
