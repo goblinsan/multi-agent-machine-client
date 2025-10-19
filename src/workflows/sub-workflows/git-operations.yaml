@@ -15,65 +15,46 @@ context:
 # inputs:
 #   repo: string (required)
 #   branch: string (required)
-#   operation: string (required) - commit | push | create_pr | commit_and_push
-#   commit_message: string (optional, required if operation includes commit)
-#   pr_title: string (optional, required if operation == create_pr)
-#   pr_body: string (optional)
+#   operation: string (required) - commitAndPushPaths | ensureBranchPublished
+#   commit_message: string (optional, required if operation == commitAndPushPaths)
+#   paths: array<string> (optional) - specific files to commit, defaults to all changes
+#   pr_title: string (optional) - for future PR creation support
+#   pr_body: string (optional) - for future PR creation support
 #   target_branch: string (optional) - defaults to main/master
-#   files: array<string> (optional) - specific files to commit, defaults to all changes
 
 # Steps
 steps:
-  # Step 1: Git commit (if requested)
-  - name: git_commit
-    type: GitCommitStep
-    description: "Commit changes to current branch"
-    condition: "operation == 'commit' || operation == 'commit_and_push'"
+  # Step 1: Git commit and push (if requested)
+  - name: commit_and_push
+    type: GitOperationStep
+    description: "Commit and push changes to branch"
+    condition: "operation == 'commitAndPushPaths'"
     config:
-      repo: "${repo}"
+      operation: "commitAndPushPaths"
+      repoRoot: "${repo}"
       branch: "${branch}"
       message: "${commit_message}"
-      files: "${files || []}"
-      add_all: "${files.length == 0}"
+      paths: "${paths || []}"
     outputs:
-      - commit_sha
-      - files_committed
+      - commit_result
 
-  # Step 2: Git push (if requested)
-  - name: git_push
-    type: GitPushStep
-    description: "Push branch to remote"
-    depends_on: ["git_commit"]
-    condition: "operation == 'push' || operation == 'commit_and_push'"
+  # Step 2: Ensure branch published (if requested)
+  - name: ensure_published
+    type: GitOperationStep
+    description: "Ensure branch is published to remote"
+    condition: "operation == 'ensureBranchPublished'"
     config:
-      repo: "${repo}"
+      operation: "ensureBranchPublished"
+      repoRoot: "${repo}"
       branch: "${branch}"
-      force: false
     outputs:
-      - push_success
-      - remote_ref
-
-  # Step 3: Create PR (if requested)
-  - name: create_pr
-    type: GitHubPRStep
-    description: "Create pull request on GitHub"
-    depends_on: ["git_push"]
-    condition: "operation == 'create_pr'"
-    config:
-      repo: "${repo}"
-      head_branch: "${branch}"
-      base_branch: "${target_branch || 'main'}"
-      title: "${pr_title}"
-      body: "${pr_body || ''}"
-      draft: false
-    outputs:
-      - pr_number
-      - pr_url
+      - publish_result
 
 # Output mappings
 outputs:
-  commit_sha: "${commit_sha}"
-  files_committed: "${files_committed || 0}"
-  push_success: "${push_success || false}"
-  pr_number: "${pr_number}"
-  pr_url: "${pr_url}"
+  commit_result: "${commit_result}"
+  publish_result: "${publish_result}"
+  success: "${commit_result.success || publish_result.success || false}"
+
+# NOTE: PR creation not yet supported - requires GitHub API integration
+# This will be added in a future iteration when dashboard has PR creation endpoint
