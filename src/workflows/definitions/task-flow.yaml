@@ -1,12 +1,20 @@
 name: "task-flow"
-description: "Consolidated task processing workflow with sub-workflow composition (Phase 0 migration complete)"
-version: "2.0.0"
-# MIGRATION NOTE: This workflow replaces legacy-compatible-task-flow.yaml
-# Changes in v2.0.0:
-# - Renamed from legacy-compatible-task-flow → task-flow
-# - Code review failure handling uses review-failure-handling sub-workflow
-# - Security review failure handling uses review-failure-handling sub-workflow
-# - 70% code reduction through sub-workflow reuse
+description: "Consolidated task processing workflow with unified review feedback loops and TDD awareness"
+version: "3.0.0"
+# MIGRATION HISTORY:
+# v1.0.0 - legacy-compatible-task-flow (original)
+# v2.0.0 - Code review + security review use review-failure-handling sub-workflow
+# v3.0.0 - QA review also uses review-failure-handling (removed QAIterationLoopStep)
+#        - ALL reviews now use unified feedback loop pattern
+#        - TDD awareness added to all review types
+#        - Duplicate task detection enabled (PM checks existing tasks)
+#
+# ARCHITECTURE (v3.0.0):
+# - Unified review pattern: QA, code review, security review all use same sub-workflow
+# - PM evaluates ALL review failures and decides: retry, create tasks, or defer
+# - No iterative retry loops - PM makes one-time decision per review failure
+# - TDD-aware: PM knows if task is implementing failing test (affects QA/code/security decisions)
+# - Duplicate detection: PM sees existing tasks to prevent duplicate task creation
 trigger:
   condition: "task_type == 'task' || task_type == 'feature'"
 context:
@@ -114,7 +122,7 @@ steps:
     type: PersonaRequestStep
     description: "Request QA review from tester-qa persona"
     depends_on: ["ensure_branch_published"]
-    outputs: ["qa_request_result"]
+    outputs: ["qa_request_result", "qa_request_status"]
     config:
       step: "3-qa"
       persona: "tester-qa"
@@ -126,36 +134,34 @@ steps:
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
-  # QA Failure Coordination - handles all QA failure logic declaratively
-  - name: qa_failure_coordination
-    type: QAFailureCoordinationStep
-    description: "Coordinate QA failures with plan revision and task creation"
+  # Handle QA failures with unified review-failure-handling sub-workflow
+  # NOTE: existing_tasks will be populated by dashboard integration in future
+  - name: handle_qa_failure
+    type: SubWorkflowStep
+    description: "PM prioritization and bulk task creation for QA failures (unified pattern)"
     depends_on: ["qa_request"]
     condition: "${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'"
     config:
-      maxPlanRevisions: 5
-      taskCreationStrategy: "auto"
-      tddAware: true
-      evaluationStep: "evaluate-qa-plan"
-      revisionStep: "qa-plan-revision"
-      createdTasksStep: "qa-created-tasks"
-      urgentPriorityScore: 1200  # QA failures prioritized between code review (1000) and security (1500)
-      deferredPriorityScore: 50  # Non-urgent QA improvements go to backlog
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "qa"
+        review_result: "${qa_request_result}"
+        review_status: "${qa_request_status}"
+        milestone_context: "${milestone}"
+        task: "${task}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 1200  # QA failures prioritized between code review (1000) and security (1500)
+          deferred: 50
+        config:
+          block_original_task: true
+        project_id: "${projectId}"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
 
-  # Iterative QA fix loop - keeps trying until QA passes or max iterations reached
-  # Uses COORDINATOR_MAX_REVISION_ATTEMPTS from env (supports "unlimited")
-  - name: qa_iteration_loop
-    type: QAIterationLoopStep
-    description: "Iteratively fix QA failures: plan → implement → apply → commit → retest"
-    depends_on: ["qa_failure_coordination"]
-    condition: "${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'"
-    config:
-      maxIterations: null  # null = unlimited (respects env COORDINATOR_MAX_REVISION_ATTEMPTS)
-      planningStep: "qa-fix-planning"
-      implementationStep: "qa-fix-implementation"
-      qaRetestStep: "qa-retest"
-
-  # Mark task as in review when QA passes (either first time or after iteration loop)
+  # Mark task as in review when QA passes
   - name: mark_task_in_review
     type: SimpleTaskStatusStep
     description: "Mark task as in review on dashboard when QA passes"
@@ -204,6 +210,9 @@ steps:
           block_original_task: true
         project_id: "${projectId}"
         repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
 
   # Security Review - evaluates security vulnerabilities and risks
   - name: security_request
@@ -247,6 +256,9 @@ steps:
           block_original_task: true
         project_id: "${projectId}"
         repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
 
   # DevOps Review - evaluates deployment and operational concerns
   - name: devops_request

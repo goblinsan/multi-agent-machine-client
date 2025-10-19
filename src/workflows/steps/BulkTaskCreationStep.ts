@@ -14,6 +14,20 @@ interface TaskToCreate {
   external_id?: string;
   assignee_persona?: string;
   metadata?: Record<string, any>;
+  is_duplicate?: boolean;
+  duplicate_of_task_id?: string | null;
+  skip_reason?: string;
+}
+
+/**
+ * Existing task from dashboard (for duplicate detection)
+ */
+interface ExistingTask {
+  id: string;
+  title: string;
+  status: string;
+  milestone_slug?: string;
+  external_id?: string;
 }
 
 /**
@@ -36,6 +50,9 @@ interface BulkTaskCreationConfig {
     create_milestone_if_missing?: boolean;
     upsert_by_external_id?: boolean;
     external_id_template?: string;
+    check_duplicates?: boolean;
+    existing_tasks?: ExistingTask[];
+    duplicate_match_strategy?: 'title' | 'title_and_milestone' | 'external_id';
   };
 }
 
@@ -47,6 +64,7 @@ interface BulkCreationResult {
   urgent_tasks_created: number;
   deferred_tasks_created: number;
   task_ids: string[];
+  duplicate_task_ids: string[];
   skipped_duplicates: number;
   errors: string[];
 }
@@ -124,6 +142,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
             urgent_tasks_created: 0,
             deferred_tasks_created: 0,
             task_ids: [],
+            duplicate_task_ids: [],
             skipped_duplicates: 0
           },
           outputs: {
@@ -131,6 +150,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
             urgent_tasks_created: 0,
             deferred_tasks_created: 0,
             task_ids: [],
+            duplicate_task_ids: [],
             skipped_duplicates: 0
           },
           metrics: {
@@ -174,6 +194,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
           urgent_tasks_created: result.urgent_tasks_created,
           deferred_tasks_created: result.deferred_tasks_created,
           task_ids: result.task_ids,
+          duplicate_task_ids: result.duplicate_task_ids,
           skipped_duplicates: result.skipped_duplicates
         },
         metrics: {
@@ -201,6 +222,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
 
   /**
    * Enrich tasks with priority scores, milestone assignments, etc.
+   * Also performs duplicate detection if configured
    */
   private enrichTasks(config: BulkTaskCreationConfig): TaskToCreate[] {
     const enriched: TaskToCreate[] = [];
@@ -212,11 +234,40 @@ export class BulkTaskCreationStep extends WorkflowStep {
     };
 
     for (const task of config.tasks) {
+      // Skip if already marked as duplicate by PM
+      if (task.is_duplicate === true) {
+        logger.info('Skipping duplicate task (marked by PM)', {
+          title: task.title,
+          duplicateOf: task.duplicate_of_task_id
+        });
+        continue;
+      }
+
       const enrichedTask: any = { ...task };
 
       // Add title prefix if configured
       if (config.title_prefix) {
         enrichedTask.title = `${config.title_prefix}: ${task.title}`;
+      }
+
+      // Check for duplicates in existing tasks
+      if (config.options?.check_duplicates && config.options.existing_tasks) {
+        const duplicate = this.findDuplicate(
+          enrichedTask,
+          config.options.existing_tasks,
+          config.options.duplicate_match_strategy || 'title_and_milestone'
+        );
+        
+        if (duplicate) {
+          logger.info('Duplicate task detected', {
+            title: enrichedTask.title,
+            duplicateOf: duplicate.id
+          });
+          enrichedTask.is_duplicate = true;
+          enrichedTask.duplicate_of_task_id = duplicate.id;
+          enrichedTask.skip_reason = `Duplicate of existing task #${duplicate.id}`;
+          continue; // Skip this task
+        }
       }
 
       // Map priority string to score
@@ -259,6 +310,44 @@ export class BulkTaskCreationStep extends WorkflowStep {
   }
 
   /**
+   * Find duplicate task in existing tasks list
+   */
+  private findDuplicate(
+    task: TaskToCreate,
+    existingTasks: ExistingTask[],
+    strategy: 'title' | 'title_and_milestone' | 'external_id'
+  ): ExistingTask | null {
+    const normalizeTitle = (title: string) => title.toLowerCase().trim();
+
+    for (const existing of existingTasks) {
+      switch (strategy) {
+        case 'external_id':
+          if (task.external_id && existing.external_id === task.external_id) {
+            return existing;
+          }
+          break;
+
+        case 'title':
+          if (normalizeTitle(existing.title) === normalizeTitle(task.title)) {
+            return existing;
+          }
+          break;
+
+        case 'title_and_milestone':
+          if (
+            normalizeTitle(existing.title) === normalizeTitle(task.title) &&
+            existing.milestone_slug === task.milestone_slug
+          ) {
+            return existing;
+          }
+          break;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Generate external ID from template
    */
   private generateExternalId(template: string, task: TaskToCreate): string {
@@ -278,18 +367,24 @@ export class BulkTaskCreationStep extends WorkflowStep {
    * Create tasks via dashboard API (bulk endpoint)
    * 
    * TODO: This is a placeholder - implement actual dashboard bulk API call
-   * For now, falls back to sequential creation
+   * For now, falls back to sequential creation with duplicate tracking
    */
   private async createTasksViaDashboard(
     projectId: string,
     tasks: TaskToCreate[],
-    options: { create_milestone_if_missing?: boolean; upsert_by_external_id?: boolean }
+    options: { 
+      create_milestone_if_missing?: boolean; 
+      upsert_by_external_id?: boolean;
+      check_duplicates?: boolean;
+      existing_tasks?: ExistingTask[];
+    }
   ): Promise<BulkCreationResult> {
     const result: BulkCreationResult = {
       tasks_created: 0,
       urgent_tasks_created: 0,
       deferred_tasks_created: 0,
       task_ids: [],
+      duplicate_task_ids: [],
       skipped_duplicates: 0,
       errors: []
     };
@@ -298,12 +393,27 @@ export class BulkTaskCreationStep extends WorkflowStep {
     // For now, this is a placeholder that would need dashboard integration
     logger.warn('BulkTaskCreationStep: Dashboard bulk endpoint not yet implemented, using placeholder', {
       projectId,
-      taskCount: tasks.length
+      taskCount: tasks.length,
+      duplicateCheckEnabled: options.check_duplicates || false
     });
 
     // Placeholder logic - in real implementation, would call dashboard API
     for (const task of tasks) {
       try {
+        // Skip duplicates (already filtered in enrichTasks, but double-check)
+        if (task.is_duplicate) {
+          result.skipped_duplicates++;
+          if (task.duplicate_of_task_id) {
+            result.duplicate_task_ids.push(task.duplicate_of_task_id);
+          }
+          logger.info('Skipping duplicate task', {
+            title: task.title,
+            duplicateOf: task.duplicate_of_task_id,
+            reason: task.skip_reason
+          });
+          continue;
+        }
+
         // Simulate successful creation
         const taskId = `task-${Date.now()}-${Math.random().toString(36).substring(7)}`;
         result.task_ids.push(taskId);
@@ -320,7 +430,8 @@ export class BulkTaskCreationStep extends WorkflowStep {
           taskId,
           title: task.title,
           priority: task.priority,
-          milestone: task.milestone_slug
+          milestone: task.milestone_slug,
+          external_id: task.external_id
         });
 
       } catch (error: any) {

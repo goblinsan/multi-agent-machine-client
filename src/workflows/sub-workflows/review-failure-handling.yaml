@@ -1,6 +1,13 @@
 name: "review-failure-handling"
-version: "1.0.0"
-description: "Unified review failure coordination with PM prioritization and bulk task creation"
+version: "2.0.0"
+description: "Unified review failure coordination with PM prioritization, duplicate detection, and bulk task creation"
+
+# ARCHITECTURE CHANGE (v2.0.0):
+# - Now handles ALL review types uniformly (qa, code_review, security_review, devops_review)
+# - QA failures use same pattern as code/security (removed iterative retry loop)
+# - PM evaluates ALL review failures and decides: retry immediately, create tasks, or defer
+# - Duplicate task detection prevents creating tasks that already exist
+# - TDD-aware for all review types (not just QA)
 
 # Trigger condition (always run when called as sub-workflow)
 trigger:
@@ -23,6 +30,9 @@ context:
 #   config: object (optional) - Configuration options
 #   project_id: string (required)
 #   repo: string (required)
+#   tdd_aware: boolean (optional) - Whether task is implementing a failing test (TDD workflow)
+#   tdd_stage: string (optional) - Current TDD stage (write_failing_test | failing_test | implementation | passing_test)
+#   existing_tasks: array (optional) - List of existing tasks on dashboard for duplicate detection
 
 # Steps
 steps:
@@ -58,6 +68,9 @@ steps:
         milestone: "${milestone_context}"
         project_id: "${project_id}"
         repo: "${repo}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: "${existing_tasks || []}"
     outputs:
       - pm_decision
 
@@ -77,10 +90,10 @@ steps:
       - deferred_issues
       - follow_up_tasks
 
-  # Step 4: Create tasks in bulk
+  # Step 4: Create tasks in bulk (with duplicate detection)
   - name: create_tasks_bulk
     type: BulkTaskCreationStep
-    description: "Create all follow-up tasks in single bulk operation"
+    description: "Create all follow-up tasks in single bulk operation with duplicate detection"
     depends_on: ["parse_pm_decision"]
     condition: "follow_up_tasks.length > 0"
     config:
@@ -102,12 +115,16 @@ steps:
         create_milestone_if_missing: true
         upsert_by_external_id: true
         external_id_template: "${review_type}-${task.id}-${task.title_slug}"
+        check_duplicates: true
+        existing_tasks: "${existing_tasks || []}"
+        duplicate_match_strategy: "title_and_milestone"
     outputs:
       - tasks_created
       - urgent_tasks_created
       - deferred_tasks_created
       - task_ids
       - skipped_duplicates
+      - duplicate_task_ids
 
   # Step 5: Mark original task as blocked (if configured)
   - name: mark_original_blocked
@@ -130,5 +147,7 @@ outputs:
   urgent_tasks_created: "${create_tasks_bulk.urgent_tasks_created || 0}"
   deferred_tasks_created: "${create_tasks_bulk.deferred_tasks_created || 0}"
   task_ids: "${create_tasks_bulk.task_ids || []}"
+  duplicate_task_ids: "${create_tasks_bulk.duplicate_task_ids || []}"
   pm_decision: "${pm_evaluation.pm_decision}"
   original_task_blocked: "${mark_original_blocked.original_task_blocked || false}"
+  skipped_duplicates: "${create_tasks_bulk.skipped_duplicates || 0}"
