@@ -1,6 +1,6 @@
 # Dashboard + Review Consolidation Refactor Tracker
 **Start Date:** October 19, 2025  
-**Status:** Phase 1 Day 2-3 Complete ✅ - 60% of API Design Done  
+**Status:** Phase 1 Day 4 Complete ✅ - 80% of API Design Done  
 **Plan:** [REFACTOR_PLAN_OCT_2025.md](./REFACTOR_PLAN_OCT_2025.md)
 
 ---
@@ -380,28 +380,44 @@ The current workflows directory contains multiple workflow files, some of which 
   - **Status:** Not Started
   - **Branch:** `feature/dashboard-api-design`
 
-- [ ] **Day 2-3: API Design Workshop**
-  - [ ] Design endpoints from workflow perspective
-  - [ ] Define request/response formats
-  - [ ] Design error handling strategy
-  - [ ] NO references to old API
-  - **Status:** Not Started
-  - **Deliverable:** `docs/dashboard-api/spec.yml`
+- [x] **Day 2-3: API Design Workshop** ✅ COMPLETE (Oct 19, 2025)
+  - [x] Design endpoints from workflow perspective
+  - [x] Define request/response formats
+  - [x] Design error handling strategy (RFC 7807)
+  - [x] NO references to old API
+  - **Status:** Complete
+  - **Deliverable:** `docs/dashboard-api/openapi.yaml` (1,074 lines) ✅
+  - **Key Features:**
+    - 14 RESTful endpoints (Tasks, Milestones, Projects, Repositories)
+    - Bulk operations (POST /tasks:bulk with duplicate detection)
+    - Query optimization (filtering, sorting, pagination, field selection)
+    - Performance targets documented (<100ms bulk, <50ms queries)
+    - 100% workflow coverage
 
-- [ ] **Day 4: Schema Design**
-  - [ ] SQLite schema optimized for workflow queries
-  - [ ] Indexes for common access patterns
-  - [ ] Migration strategy
-  - **Status:** Not Started
-  - **Deliverable:** `docs/dashboard-api/schema.sql`
+- [x] **Day 4: Schema Design** ✅ COMPLETE (Oct 19, 2025)
+  - [x] SQLite schema optimized for workflow queries
+  - [x] Indexes for common access patterns (4 indexes for 4 query patterns)
+  - [x] Migration strategy (versioning, rollback, verification)
+  - **Status:** Complete
+  - **Deliverables:**
+    - `docs/dashboard-api/schema.sql` (570 lines) ✅
+    - `docs/dashboard-api/MIGRATION_STRATEGY.md` (350 lines) ✅
+    - `docs/dashboard-api/SCHEMA_DESIGN_DECISIONS.md` (570 lines) ✅
+  - **Key Features:**
+    - 4 tables: projects, repositories, milestones, tasks
+    - 4 optimized indexes (priority_queue, milestone_active, title_milestone, external_id)
+    - 12 triggers for computed fields (milestone counts, timestamps)
+    - Denormalized fields (milestone_slug) for performance
+    - Partial indexes (50% smaller, faster queries)
+    - Complete constraints (CHECK, UNIQUE, FOREIGN KEY)
 
 - [ ] **Day 5: Documentation + Review**
-  - [ ] Write OpenAPI spec
-  - [ ] Document design decisions
-  - [ ] Create examples for each endpoint
-  - [ ] **USER CHECKPOINT:** Review API design
+  - [ ] Write implementation guide
+  - [ ] Document API usage patterns for each workflow
+  - [ ] Create migration guide (current → new API)
+  - [ ] **USER CHECKPOINT #2:** Review API design + schema
   - **Status:** Not Started
-  - **Deliverable:** `docs/dashboard-api/DESIGN_DECISIONS.md`
+  - **Deliverable:** `docs/dashboard-api/IMPLEMENTATION_GUIDE.md`
 
 ### Checkpoint #2: API Design Review
 **Date:** TBD  
