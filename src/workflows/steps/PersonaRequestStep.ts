@@ -239,7 +239,41 @@ export class PersonaRequestStep extends WorkflowStep {
       }
       
       // Interpret the status from the response using proper status interpretation
-      const statusInfo = interpretPersonaStatus(rawResponse);
+      let statusInfo = interpretPersonaStatus(rawResponse);
+      
+      // SPECIAL VALIDATION: QA must execute tests to pass
+      // If QA returns "pass" but 0 tests were executed, override to "fail"
+      if (persona === 'tester-qa' && statusInfo.status === 'pass') {
+        const rawLower = rawResponse.toLowerCase();
+        // Check for patterns indicating no tests were executed
+        const noTestsPatterns = [
+          /0\s+passed,\s+0\s+failed/i,
+          /no tests.*present/i,
+          /no tests.*found/i,
+          /nothing to execute/i,
+          /0\s+tests?\s+(?:executed|run)/i
+        ];
+        
+        const hasNoTests = noTestsPatterns.some(pattern => pattern.test(rawResponse));
+        
+        if (hasNoTests) {
+          logger.warn('QA reported pass but no tests were executed - overriding to fail', {
+            workflowId: context.workflowId,
+            step,
+            persona,
+            corrId: lastCorrId,
+            originalStatus: statusInfo.status,
+            responsePreview: rawResponse.substring(0, 300)
+          });
+          
+          statusInfo = {
+            status: 'fail',
+            details: 'QA validation failed: No tests were executed. Cannot verify code correctness without running tests.',
+            raw: statusInfo.raw,
+            payload: statusInfo.payload
+          };
+        }
+      }
       
       logger.info(`Persona request completed`, {
         workflowId: context.workflowId,
