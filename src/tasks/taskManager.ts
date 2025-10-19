@@ -337,6 +337,21 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       // If creating QA follow-ups, request initial_status=in_progress so they're visible immediately
       const createOptions: Record<string, any> = { create_milestone_if_missing: cfg.dashboardCreateMilestoneIfMissing };
       if (options.stage === 'qa') createOptions.initial_status = 'in_progress';
+      
+      // IMPORTANT: If we couldn't resolve a milestone ID and are using a slug,
+      // we MUST set create_milestone_if_missing=true to avoid 422 errors from the dashboard.
+      // This happens when:
+      // 1. We default to 'future-enhancements' for backlog tasks
+      // 2. The milestone doesn't exist yet in the project
+      // 3. The dashboard API requires the milestone to exist OR create_milestone_if_missing=true
+      if (!resolvedMilestoneId && resolvedMilestoneSlug) {
+        createOptions.create_milestone_if_missing = true;
+        logger.debug('Milestone not resolved to ID, enabling auto-create', {
+          stage: options.stage,
+          milestoneSlug: resolvedMilestoneSlug,
+          projectId: options.projectId
+        });
+      }
 
       const body = await createDashboardTask({
         projectId: options.projectId || undefined,
