@@ -1282,6 +1282,18 @@ grep -r "stage.*helper" src/workflows/
 
 ## Next Steps (Ready to Execute)
 
+### Development Standards
+
+**Commit Message Style:**
+- Single line, concise (50-72 characters max)
+- Format: `type(scope): brief description`
+- Types: feat, fix, refactor, test, docs, chore, perf
+- Examples:
+  - `feat(dashboard): add bulk task creation endpoint`
+  - `fix(workflow): resolve milestone resolution bug`
+  - `refactor(review): consolidate failure handling`
+- NO multi-line commits, bullet points, or verbose explanations
+
 ### Immediate Actions
 
 1. **USER APPROVAL:** Review and approve this plan

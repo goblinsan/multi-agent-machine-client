@@ -535,6 +535,28 @@ The dashboard backend **MUST** be a completely independent, self-contained proje
 - **User Checkpoints:** Increased from 5 to 8 (added 3 for workflow/API phases)
 - **Status:** Ready to start Phase 0
 
+### Oct 19, 2025 - Self-Contained Architecture Emphasis
+- **Decision:** Dashboard backend must be completely self-contained
+- **Requirement:** Can be extracted to separate repo with zero effort
+- **Requirement:** HTTP boundary only, no direct imports from parent
+
+---
+
+## Development Standards
+
+### Commit Messages
+- **Style:** Single line, concise (50-72 characters max)
+- **Format:** `type(scope): brief description`
+- **Examples:**
+  - `feat(dashboard): add bulk task creation endpoint`
+  - `fix(workflow): resolve milestone resolution bug`
+  - `refactor(review): consolidate failure handling`
+  - `test(behavior): add PM decision parsing tests`
+  - `docs(tracker): update Phase 2 progress`
+- **Types:** feat, fix, refactor, test, docs, chore, perf
+- **No:** Multi-line commits, bullet points in commit message, verbose explanations
+- **Why:** Clean git history, easier to scan, better for tools/scripts
+
 ---
 
 ## Quick Status
