@@ -281,12 +281,38 @@ steps:
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
-  # Mark task as done only when security review passes
+  # Handle DevOps review failures with unified review-failure-handling sub-workflow
+  - name: handle_devops_failure
+    type: SubWorkflowStep
+    description: "PM prioritization and bulk task creation for DevOps failures"
+    depends_on: ["devops_request"]
+    condition: "${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'"
+    config:
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "devops_review"
+        review_result: "${devops_request_result}"
+        review_status: "${devops_request_status}"
+        milestone_context: "${milestone}"
+        task: "${task}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 1100  # DevOps between QA (1200) and code review (1000)
+          deferred: 50
+        config:
+          block_original_task: true
+        project_id: "${projectId}"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
+
+  # Mark task as done only when all reviews pass (DevOps is last)
   - name: mark_task_done
     type: SimpleTaskStatusStep
     description: "Mark task as completed on dashboard when all reviews pass"
     depends_on: ["devops_request"]
-    condition: "${security_request_status} == 'pass'"
+    condition: "${devops_request_status} == 'pass'"
     config:
       task_id: "${taskId}"
       project_id: "${projectId}"
