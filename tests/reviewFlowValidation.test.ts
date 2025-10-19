@@ -53,7 +53,7 @@ describe('Review Flow Validation', () => {
     const pmCodeReview = steps['pm_prioritize_code_review_failures'];
     expect(pmCodeReview).toBeDefined();
     expect(pmCodeReview?.depends_on).toEqual(['code_review_request']);
-    expect(pmCodeReview?.condition).toBe("${code_review_request_status} == 'fail'");
+    expect(pmCodeReview?.condition).toBe("${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'");
     expect(pmCodeReview?.config?.intent).toBe('prioritize_code_review_failures');
 
     // Validate security depends on code review passing
@@ -67,7 +67,7 @@ describe('Review Flow Validation', () => {
     const pmSecurity = steps['pm_prioritize_security_failures'];
     expect(pmSecurity).toBeDefined();
     expect(pmSecurity?.depends_on).toEqual(['security_request']);
-    expect(pmSecurity?.condition).toBe("${security_request_status} == 'fail'");
+    expect(pmSecurity?.condition).toBe("${security_request_status} == 'fail' || ${security_request_status} == 'unknown'");
     expect(pmSecurity?.config?.intent).toBe('prioritize_security_failures');
 
     // Validate devops depends on security passing

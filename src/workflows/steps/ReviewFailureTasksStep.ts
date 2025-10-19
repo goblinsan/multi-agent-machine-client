@@ -311,13 +311,45 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         return null;
       }
       
-      // Normalize: PM sometimes returns "backlog" instead of "follow_up_tasks"
-      // Map backlog array to follow_up_tasks for consistency
-      if (!parsed.follow_up_tasks && parsed.backlog && Array.isArray(parsed.backlog)) {
+      // NORMALIZATION: Handle different PM response formats
+      
+      // 1. PM sometimes returns "backlog" instead of "follow_up_tasks"
+      // Map backlog to follow_up_tasks if follow_up_tasks is missing or empty
+      if ((!parsed.follow_up_tasks || parsed.follow_up_tasks.length === 0) && 
+          parsed.backlog && 
+          Array.isArray(parsed.backlog) && 
+          parsed.backlog.length > 0) {
         parsed.follow_up_tasks = parsed.backlog;
         logger.debug('Normalized PM decision: mapped backlog to follow_up_tasks', {
           tasksCount: parsed.backlog.length
         });
+      }
+      
+      // 2. PM sometimes returns "status" field instead of "decision" field
+      // Map "status" to "decision" for consistency
+      // If status is "pass", we interpret it as "defer" (PM approved but wants backlog tasks)
+      // If status is "fail", we interpret it as "immediate_fix"
+      if (!parsed.decision && parsed.status) {
+        const status = String(parsed.status).toLowerCase();
+        if (status === 'pass' || status === 'approved' || status === 'defer') {
+          parsed.decision = 'defer';
+        } else if (status === 'fail' || status === 'failed' || status === 'reject' || status === 'immediate_fix') {
+          parsed.decision = 'immediate_fix';
+        } else {
+          // Unknown status, default to defer with backlog tasks
+          parsed.decision = 'defer';
+        }
+        
+        logger.debug('Normalized PM decision: mapped status to decision', {
+          originalStatus: parsed.status,
+          mappedDecision: parsed.decision
+        });
+      }
+      
+      // 3. Ensure we have a decision field (fallback to 'defer' if missing)
+      if (!parsed.decision) {
+        parsed.decision = 'defer';
+        logger.debug('Normalized PM decision: defaulted to defer (no decision or status field)');
       }
       
       return parsed;

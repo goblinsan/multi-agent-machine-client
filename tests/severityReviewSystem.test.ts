@@ -446,9 +446,9 @@ describe('Severity-Based Review System', () => {
       const pmCodeReview = steps['pm_prioritize_code_review_failures'];
       const pmSecurity = steps['pm_prioritize_security_failures'];
       
-      // PM steps should only run when reviews fail
-      expect(pmCodeReview?.condition).toBe("${code_review_request_status} == 'fail'");
-      expect(pmSecurity?.condition).toBe("${security_request_status} == 'fail'");
+      // PM steps should only run when reviews fail (or unknown status)
+      expect(pmCodeReview?.condition).toBe("${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'");
+      expect(pmSecurity?.condition).toBe("${security_request_status} == 'fail' || ${security_request_status} == 'unknown'");
       
       // PM steps should depend on their respective review steps
       expect(pmCodeReview?.depends_on).toEqual(['code_review_request']);

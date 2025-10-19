@@ -181,7 +181,7 @@ steps:
     type: PersonaRequestStep
     description: "PM evaluates code review failures and prioritizes follow-up work"
     depends_on: ["code_review_request"]
-    condition: "${code_review_request_status} == 'fail'"
+    condition: "${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'"
     outputs: ["pm_code_review_decision"]
     config:
       step: "4.5-pm-code-review-prioritization"
@@ -282,7 +282,7 @@ steps:
     type: PersonaRequestStep
     description: "PM evaluates security review failures and prioritizes follow-up work"
     depends_on: ["security_request"]
-    condition: "${security_request_status} == 'fail'"
+    condition: "${security_request_status} == 'fail' || ${security_request_status} == 'unknown'"
     outputs: ["pm_security_decision"]
     config:
       step: "5.5-pm-security-prioritization"
