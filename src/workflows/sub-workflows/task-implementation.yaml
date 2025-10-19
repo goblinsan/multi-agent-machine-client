@@ -1,0 +1,118 @@
+name: "task-implementation"
+version: "1.0.0"
+description: "Standard task implementation workflow with developer persona coordination"
+
+# Trigger condition
+trigger:
+  condition: "true"
+
+# Context requirements
+context:
+  repo_required: true
+  branch_strategy: "inherit"
+
+# Input schema
+# inputs:
+#   task: object (required) - Task to implement
+#   project_id: string (required)
+#   repo: string (required)
+#   milestone_context: object (required)
+#   tdd_aware: boolean (optional)
+#   tdd_stage: string (optional)
+#   parent_branch: string (optional)
+
+# Steps
+steps:
+  # Step 1: Determine TDD stage for this task
+  - name: determine_tdd_stage
+    type: VariableResolutionStep
+    description: "Resolve TDD stage from task metadata or default"
+    config:
+      variables:
+        current_tdd_stage: "${task.metadata.tdd_stage || tdd_stage || 'implementation'}"
+        is_tdd_aware: "${tdd_aware || false}"
+    outputs:
+      - current_tdd_stage
+      - is_tdd_aware
+
+  # Step 2: Developer implements the task
+  - name: developer_implementation
+    type: PersonaRequestStep
+    description: "Developer implements the task (TDD-aware)"
+    depends_on: ["determine_tdd_stage"]
+    config:
+      step: "implementation"
+      persona: "developer"
+      intent: "implement_task"
+      prompt_template: "prompts/developer-implementation.txt"
+      payload:
+        task: "${task}"
+        milestone: "${milestone_context}"
+        project_id: "${project_id}"
+        repo: "${repo}"
+        tdd_stage: "${current_tdd_stage}"
+        tdd_aware: "${is_tdd_aware}"
+    outputs:
+      - implementation_result
+      - changes_made
+      - commit_sha
+
+  # Step 3: Parse implementation result
+  - name: parse_implementation
+    type: ConditionalStep
+    description: "Check if implementation succeeded"
+    depends_on: ["developer_implementation"]
+    config:
+      condition: "implementation_result.status == 'success'"
+      on_true:
+        action: "set_variable"
+        variable: "implementation_success"
+        value: true
+      on_false:
+        action: "set_variable"
+        variable: "implementation_success"
+        value: false
+    outputs:
+      - implementation_success
+
+  # Step 4: Update task status (if success)
+  - name: update_task_status
+    type: SimpleTaskStatusStep
+    description: "Mark task as in-review or complete based on config"
+    depends_on: ["parse_implementation"]
+    condition: "implementation_success == true"
+    config:
+      status: "${config.post_implementation_status || 'in-review'}"
+      comment: "Implementation complete - ${changes_made.files_changed || 0} files changed"
+      task_id: "${task.id}"
+      project_id: "${project_id}"
+      metadata:
+        commit_sha: "${commit_sha}"
+        tdd_stage: "${current_tdd_stage}"
+    outputs:
+      - task_updated
+
+  # Step 5: Handle implementation failure
+  - name: handle_failure
+    type: ConditionalStep
+    description: "Log failure and optionally create follow-up task"
+    depends_on: ["parse_implementation"]
+    condition: "implementation_success == false"
+    config:
+      condition: "config.create_failure_task == true"
+      on_true:
+        action: "log_and_continue"
+        message: "Implementation failed - follow-up task creation handled by caller"
+      on_false:
+        action: "log_error"
+        message: "Implementation failed - no follow-up configured"
+    outputs:
+      - failure_handled
+
+# Output mappings
+outputs:
+  implementation_success: "${implementation_success || false}"
+  commit_sha: "${commit_sha}"
+  changes_made: "${changes_made}"
+  task_updated: "${task_updated || false}"
+  tdd_stage: "${current_tdd_stage}"

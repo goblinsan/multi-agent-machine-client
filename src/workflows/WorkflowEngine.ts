@@ -25,6 +25,7 @@ import { ReviewFailureTasksStep } from './steps/ReviewFailureTasksStep';
 import { SubWorkflowStep } from './steps/SubWorkflowStep';
 import { BulkTaskCreationStep } from './steps/BulkTaskCreationStep';
 import { PMDecisionParserStep } from './steps/PMDecisionParserStep';
+import { VariableResolutionStep } from './steps/VariableResolutionStep';
 import { personaTimeoutMs } from '../util.js';
 import { parse as yamlParse } from 'yaml';
 import { readFile, readdir } from 'fs/promises';
@@ -125,6 +126,7 @@ export class WorkflowEngine {
     this.stepRegistry.set('SubWorkflowStep', SubWorkflowStep);
     this.stepRegistry.set('BulkTaskCreationStep', BulkTaskCreationStep);
     this.stepRegistry.set('PMDecisionParserStep', PMDecisionParserStep);
+    this.stepRegistry.set('VariableResolutionStep', VariableResolutionStep);
   }
 
   /**

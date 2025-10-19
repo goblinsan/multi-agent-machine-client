@@ -1,0 +1,134 @@
+name: "review-failure-handling"
+version: "1.0.0"
+description: "Unified review failure coordination with PM prioritization and bulk task creation"
+
+# Trigger condition (always run when called as sub-workflow)
+trigger:
+  condition: "true"
+
+# Context requirements
+context:
+  repo_required: false
+  branch_strategy: "inherit"
+
+# Input schema (documented for reference, validated by SubWorkflowStep)
+# inputs:
+#   review_type: string (required) - qa | code_review | security_review | devops_review
+#   review_result: object (required) - Full review result output
+#   review_status: string (required) - pass | fail | unknown
+#   milestone_context: object (required) - Current milestone information
+#   task: object (required) - Current task being processed
+#   parent_task_id: string (optional) - ID of parent task for urgent subtasks
+#   priority_scores: object (required) - urgent and deferred priority scores
+#   config: object (optional) - Configuration options
+#   project_id: string (required)
+#   repo: string (required)
+
+# Steps
+steps:
+  # Step 1: Check TDD awareness (skip task creation during failing test stage)
+  - name: check_tdd_gate
+    type: ConditionalStep
+    description: "Skip task creation if in TDD failing test stage"
+    config:
+      condition: "tdd_aware == true && (tdd_stage == 'write_failing_test' || tdd_stage == 'failing_test')"
+      on_true:
+        action: "skip_remaining"
+        message: "Skipping task creation: TDD failing test stage"
+      on_false:
+        action: "continue"
+    outputs:
+      - should_skip
+
+  # Step 2: PM evaluates failures and decides priority
+  - name: pm_evaluation
+    type: PersonaRequestStep
+    description: "PM evaluates review failures and prioritizes follow-up work"
+    depends_on: ["check_tdd_gate"]
+    config:
+      step: "pm-review-prioritization"
+      persona: "project-manager"
+      intent: "prioritize_review_failures"
+      prompt_template: "prompts/pm-review-prioritization.txt"
+      payload:
+        review_type: "${review_type}"
+        review_result: "${review_result}"
+        review_status: "${review_status}"
+        task: "${task}"
+        milestone: "${milestone_context}"
+        project_id: "${project_id}"
+        repo: "${repo}"
+    outputs:
+      - pm_decision
+
+  # Step 3: Parse PM decision and normalize format
+  - name: parse_pm_decision
+    type: PMDecisionParserStep
+    description: "Parse and normalize PM decision (handles multiple formats)"
+    depends_on: ["pm_evaluation"]
+    config:
+      input: "${pm_evaluation}"
+      normalize: true
+      review_type: "${review_type}"
+    outputs:
+      - decision
+      - reasoning
+      - immediate_issues
+      - deferred_issues
+      - follow_up_tasks
+
+  # Step 4: Create tasks in bulk
+  - name: create_tasks_bulk
+    type: BulkTaskCreationStep
+    description: "Create all follow-up tasks in single bulk operation"
+    depends_on: ["parse_pm_decision"]
+    condition: "follow_up_tasks.length > 0"
+    config:
+      project_id: "${project_id}"
+      tasks: "${follow_up_tasks}"
+      priority_mapping:
+        critical: "${priority_scores.urgent}"
+        high: "${priority_scores.urgent}"
+        medium: "${priority_scores.deferred}"
+        low: "${priority_scores.deferred}"
+      milestone_strategy:
+        urgent: "${milestone_context.id}"
+        deferred: "${config.backlog_milestone_slug || 'future-enhancements'}"
+      parent_task_mapping:
+        urgent: "${parent_task_id}"
+        deferred: null
+      title_prefix: "${review_type.toUpperCase()}"
+      options:
+        create_milestone_if_missing: true
+        upsert_by_external_id: true
+        external_id_template: "${review_type}-${task.id}-${task.title_slug}"
+    outputs:
+      - tasks_created
+      - urgent_tasks_created
+      - deferred_tasks_created
+      - task_ids
+      - skipped_duplicates
+
+  # Step 5: Mark original task as blocked (if configured)
+  - name: mark_original_blocked
+    type: SimpleTaskStatusStep
+    description: "Mark original task as blocked to prevent loop"
+    depends_on: ["create_tasks_bulk"]
+    condition: "config.block_original_task == true && urgent_tasks_created > 0"
+    config:
+      status: "blocked"
+      comment: "${review_type} failed - ${urgent_tasks_created} urgent tasks created"
+      task_id: "${task.id}"
+      project_id: "${project_id}"
+    outputs:
+      - original_task_blocked
+
+# Output mappings (returned to parent workflow)
+# These are accessed via context.getVariable() in parent
+outputs:
+  tasks_created: "${create_tasks_bulk.tasks_created || 0}"
+  urgent_tasks_created: "${create_tasks_bulk.urgent_tasks_created || 0}"
+  deferred_tasks_created: "${create_tasks_bulk.deferred_tasks_created || 0}"
+  task_ids: "${create_tasks_bulk.task_ids || []}"
+  pm_decision: "${pm_evaluation.pm_decision}"
+  original_task_blocked: "${mark_original_blocked.original_task_blocked || false}"
