@@ -323,8 +323,32 @@ export async function createDashboardTask(input: CreateTaskInput): Promise<Creat
   else if (input.milestoneSlug) {
     // Always send milestone_slug when provided so the server can resolve it; auto-create is controlled separately via options
     body.milestone_slug = input.milestoneSlug;
+    
+    // IMPORTANT: If we couldn't resolve milestone_slug to an ID, we MUST enable create_milestone_if_missing
+    // to avoid 422 "Unknown milestone_slug" errors from the dashboard API.
+    // This happens when:
+    // 1. Using 'future-enhancements' for backlog tasks on first use
+    // 2. The milestone doesn't exist yet in the project
+    // 3. The dashboard API requires EITHER the milestone exists OR create_milestone_if_missing=true
+    if (!input.options) {
+      body.options = { create_milestone_if_missing: true };
+      logger.debug('Milestone not resolved to ID, enabling auto-create', {
+        milestoneSlug: input.milestoneSlug,
+        projectId: input.projectId
+      });
+    } else if (!input.options.create_milestone_if_missing) {
+      // Caller provided options but didn't set create_milestone_if_missing
+      // Override to true since we're using an unresolved slug
+      body.options = { ...input.options, create_milestone_if_missing: true };
+      logger.debug('Milestone not resolved to ID, overriding create_milestone_if_missing to true', {
+        milestoneSlug: input.milestoneSlug,
+        projectId: input.projectId,
+        originalValue: input.options.create_milestone_if_missing
+      });
+    }
+    
     // Optionally log if auto-create would be blocked by policy; server may still accept existing slug
-    if (input.options && input.options.create_milestone_if_missing) {
+    if (body.options && body.options.create_milestone_if_missing) {
       const norm = (input.milestoneSlug || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       const allowOnlyFuture = (typeof cfg.dashboardAutoCreateFutureEnhancementsOnly === 'boolean') ? cfg.dashboardAutoCreateFutureEnhancementsOnly : true;
       if (allowOnlyFuture && !(norm === 'future-enhancements' || norm === 'future-enhancement' || norm === 'future_enhancements' || norm === 'future')) {
