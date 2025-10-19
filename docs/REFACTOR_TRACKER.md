@@ -19,16 +19,96 @@ This tracker monitors progress on the two-part refactor:
 
 ---
 
+## Phase 0: Workflow Rationalization (PREREQUISITE)
+**Timeline:** Week 1 (Oct 19 - Oct 25, 2025)  
+**Goal:** Analyze and rationalize YAML workflows, establish reusable patterns
+
+### Background
+The current workflows directory contains multiple workflow files, some of which are unused or legacy. The main driver is `legacy-compatible-task-flow`, but the workflow structure needs rationalization to:
+1. Identify which workflows are actually in use
+2. Decompose workflows into reusable sub-workflow patterns
+3. Ensure consistency across workflow implementations
+4. Remove/archive unused workflows
+
+### Tasks
+
+- [ ] **Day 1: Workflow Inventory & Analysis**
+  - [ ] List all workflow files in `workflows/` directory
+  - [ ] Identify which workflows are actively used in production
+  - [ ] Document `legacy-compatible-task-flow` structure and usage
+  - [ ] Map workflow dependencies and relationships
+  - **Status:** Not Started
+  - **Deliverable:** `docs/workflows/WORKFLOW_INVENTORY.md`
+
+- [ ] **Day 2: Pattern Extraction**
+  - [ ] Identify common patterns across workflows
+  - [ ] Document dashboard interaction patterns (task creation, updates, queries)
+  - [ ] Identify review patterns (QA, Code Review, Security)
+  - [ ] Identify coordination patterns (PM evaluation, TDD gates)
+  - **Status:** Not Started
+  - **Deliverable:** `docs/workflows/WORKFLOW_PATTERNS.md`
+
+- [ ] **Day 3: Sub-Workflow Design**
+  - [ ] Design reusable sub-workflow components
+  - [ ] Define sub-workflow interfaces (inputs/outputs)
+  - [ ] Map how sub-workflows compose into full workflows
+  - [ ] Identify opportunities for standardization
+  - **Status:** Not Started
+  - **Deliverable:** `docs/workflows/SUB_WORKFLOW_DESIGN.md`
+
+- [ ] **Day 4: Rationalization Proposal**
+  - [ ] Recommend which workflows to keep/archive/delete
+  - [ ] Recommend how to decompose `legacy-compatible-task-flow`
+  - [ ] Propose sub-workflow structure for reuse
+  - [ ] Document migration path from current to proposed
+  - **Status:** Not Started
+  - **Deliverable:** `docs/workflows/RATIONALIZATION_PROPOSAL.md`
+
+- [ ] **Day 5: User Review & Approval**
+  - [ ] **USER CHECKPOINT #0:** Review workflow rationalization proposal
+  - [ ] Validate assumptions about workflow usage
+  - [ ] Approve sub-workflow decomposition strategy
+  - [ ] Confirm dashboard interaction patterns
+  - **Status:** Not Started
+
+### Checkpoint #0: Workflow Rationalization Review
+**Date:** TBD  
+**Status:** ⏳ Pending
+
+**Review Questions:**
+- [ ] Are the identified workflows correct (used vs unused)?
+- [ ] Does the sub-workflow decomposition make sense?
+- [ ] Are there any missing patterns we should standardize?
+- [ ] Should we keep backward compatibility with old workflows?
+- [ ] What's the priority order for workflow migration?
+
+**Decisions Needed:**
+- [ ] Which workflows to archive/delete
+- [ ] Sub-workflow naming conventions
+- [ ] Workflow versioning strategy (if needed)
+- [ ] Timeline for migrating existing workflow instances
+
+**Approval:** ❌ Not Yet Approved
+
+**Blockers:** None - ready to start
+
+---
+
 ## Phase 1: Dashboard API Design
-**Timeline:** Week 1-2 (Oct 19 - Nov 1, 2025)  
-**Goal:** Design clean API optimized for YAML workflows
+**Timeline:** Week 2-3 (Oct 26 - Nov 8, 2025)  
+**Goal:** Design clean API optimized for YAML workflows (using rationalized workflow patterns)
+
+### Prerequisites
+- ✅ Phase 0 complete (workflow rationalization approved)
+- ✅ Sub-workflow patterns documented
+- ✅ Dashboard interaction patterns identified
 
 ### Tasks
 - [ ] **Day 1: Requirements Gathering**
-  - [ ] Review all YAML workflows (feature.yml, hotfix.yml, project-loop.yml)
-  - [ ] Document every dashboard interaction pattern
+  - [ ] Use rationalized workflow patterns from Phase 0
+  - [ ] Document every dashboard interaction pattern (from approved patterns)
   - [ ] Identify common operations (create task, bulk sync, query status)
-  - [ ] Define success criteria
+  - [ ] Define success criteria based on actual workflow usage
   - **Status:** Not Started
   - **Branch:** `feature/dashboard-api-design`
 
@@ -55,12 +135,13 @@ This tracker monitors progress on the two-part refactor:
   - **Status:** Not Started
   - **Deliverable:** `docs/dashboard-api/DESIGN_DECISIONS.md`
 
-### Checkpoint #0: API Design Review
+### Checkpoint #1: API Design Review
 **Date:** TBD  
 **Status:** ⏳ Pending
 
 **Review Questions:**
-- [ ] Does API match how YAML workflows actually work?
+- [ ] Does API match how rationalized YAML workflows work?
+- [ ] Does API support all sub-workflow patterns?
 - [ ] Are there any missing operations?
 - [ ] Is error handling clear and actionable?
 - [ ] Are request/response formats intuitive?
@@ -70,7 +151,7 @@ This tracker monitors progress on the two-part refactor:
 ---
 
 ## Phase 2: Dashboard Backend Proof
-**Timeline:** Week 2 (Nov 2 - Nov 8, 2025)  
+**Timeline:** Week 3 (Nov 9 - Nov 15, 2025)  
 **Goal:** Minimal implementation to validate API design
 
 ### Tasks
@@ -92,7 +173,7 @@ This tracker monitors progress on the two-part refactor:
   - [ ] **USER CHECKPOINT:** Validate API behavior
   - **Status:** Not Started
 
-### Checkpoint #0.5: API Behavior Validation
+### Checkpoint #2: API Behavior Validation
 **Date:** TBD  
 **Status:** ⏳ Pending
 
@@ -101,10 +182,10 @@ This tracker monitors progress on the two-part refactor:
 ---
 
 ## Phase 3: Test Rationalization
-**Timeline:** Weeks 3-5 (Nov 9 - Nov 29, 2025)  
+**Timeline:** Weeks 4-6 (Nov 16 - Dec 6, 2025)  
 **Goal:** Extract and validate business intent from existing tests
 
-### Week 3: Test Groups 1-3
+### Week 4: Test Groups 1-3
 
 #### Test Group 1: Review Trigger Logic
 **Files Analyzed:**
@@ -121,7 +202,7 @@ This tracker monitors progress on the two-part refactor:
 - [ ] Should TDD stage block task creation for all review types?
 - [ ] Are there other trigger conditions we're missing?
 
-**USER CHECKPOINT #1**  
+**USER CHECKPOINT #3**  
 **Date:** TBD  
 **Approval:** ❌ Not Yet Approved
 
@@ -142,7 +223,7 @@ This tracker monitors progress on the two-part refactor:
 - [ ] Are there any PM responses that should BLOCK task creation?
 - [ ] Should PM provide reasoning/context with decisions?
 
-**USER CHECKPOINT #2**  
+**USER CHECKPOINT #4**  
 **Date:** TBD  
 **Approval:** ❌ Not Yet Approved
 
@@ -164,13 +245,13 @@ This tracker monitors progress on the two-part refactor:
 - [ ] How should we handle subtasks vs top-level tasks?
 - [ ] Should title prefix be configurable per workflow?
 
-**USER CHECKPOINT #3**  
+**USER CHECKPOINT #5**  
 **Date:** TBD  
 **Approval:** ❌ Not Yet Approved
 
 ---
 
-### Week 4: Test Groups 4-5
+### Week 5: Test Groups 4-5
 
 #### Test Group 4: Error Handling & Edge Cases
 **Files Analyzed:**
@@ -187,7 +268,7 @@ This tracker monitors progress on the two-part refactor:
 - [ ] Should partial failure (some tasks created) be treated as success?
 - [ ] How should we handle duplicate task creation attempts?
 
-**USER CHECKPOINT #4**  
+**USER CHECKPOINT #6**  
 **Date:** TBD  
 **Approval:** ❌ Not Yet Approved
 
@@ -208,13 +289,13 @@ This tracker monitors progress on the two-part refactor:
 - [ ] Should severity (critical/high/medium/low) map differently per review type?
 - [ ] Should iteration limits vary by review type?
 
-**USER CHECKPOINT #5**  
+**USER CHECKPOINT #7**  
 **Date:** TBD  
 **Approval:** ❌ Not Yet Approved
 
 ---
 
-### Week 5: Consolidated Behavior Tests
+### Week 6: Consolidated Behavior Tests
 
 **Tasks:**
 - [ ] Write `tests/behavior/reviewTriggers.test.ts`
@@ -228,14 +309,14 @@ This tracker monitors progress on the two-part refactor:
 - [ ] Old integration tests still pass (current implementation)
 - [ ] All scenarios from old tests captured in new tests
 
-**FINAL USER CHECKPOINT: Test Rationalization Complete**  
+**USER CHECKPOINT #8: Test Rationalization Complete**  
 **Date:** TBD  
 **Approval:** ❌ Not Yet Approved
 
 ---
 
 ## Phase 4: Service Implementation
-**Timeline:** Week 6 (Nov 30 - Dec 6, 2025)  
+**Timeline:** Week 7 (Dec 7 - Dec 13, 2025)  
 **Goal:** Implement ReviewFailureService with validated behavior
 
 ### Tasks
@@ -267,7 +348,7 @@ This tracker monitors progress on the two-part refactor:
 ---
 
 ## Phase 5: Step Refactoring
-**Timeline:** Week 7 (Dec 7 - Dec 13, 2025)  
+**Timeline:** Week 8 (Dec 14 - Dec 20, 2025)  
 **Goal:** Refactor workflow steps to use ReviewFailureService + new API
 
 ### Tasks
@@ -299,14 +380,15 @@ This tracker monitors progress on the two-part refactor:
 ---
 
 ## Phase 6: Cleanup & Deployment
-**Timeline:** Week 8 (Dec 14 - Dec 20, 2025)  
-**Goal:** Clean up old code, simplify YAML, deploy to production
+**Timeline:** Week 9 (Dec 21 - Dec 27, 2025)  
+**Goal:** Clean up old code, migrate to rationalized workflows, deploy to production
 
 ### Tasks
-- [ ] **Day 1-2: YAML Simplification**
-  - [ ] Update `workflows/feature.yml`
-  - [ ] Update `workflows/hotfix.yml`
-  - [ ] Update `workflows/project-loop.yml`
+- [ ] **Day 1-2: Workflow Migration**
+  - [ ] Migrate `legacy-compatible-task-flow` to rationalized sub-workflow structure
+  - [ ] Implement approved sub-workflow patterns
+  - [ ] Update workflow composition (sub-workflow reuse)
+  - [ ] Archive/delete unused workflows (per Phase 0 decisions)
   - [ ] Remove legacy step references
   - [ ] Standardize review patterns
   - **Status:** Not Started
@@ -341,7 +423,7 @@ This tracker monitors progress on the two-part refactor:
 ---
 
 ## Phase 7: Complete Dashboard Backend
-**Timeline:** Week 9 (Dec 21 - Dec 27, 2025)  
+**Timeline:** Week 10 (Dec 28, 2025 - Jan 3, 2026)  
 **Goal:** Finish remaining dashboard endpoints, full production validation
 
 ### Tasks
@@ -399,12 +481,21 @@ This tracker monitors progress on the two-part refactor:
 
 ## Notes & Decisions
 
-### Oct 19, 2025
+### Oct 19, 2025 - Initial Planning
 - **Decision:** API design first, ignore legacy completely
 - **Decision:** Test rationalization with user validation at EVERY checkpoint
 - **Decision:** No refactoring until all 5 test groups validated
 - **Reason:** Previous tactical fixes (milestone bugs) showed need for systemic solution
-- **Approval:** Refactor plan approved, ready to start Phase 1
+- **Approval:** Refactor plan approved
+
+### Oct 19, 2025 - Workflow Rationalization Added
+- **Decision:** Add Phase 0 for workflow rationalization BEFORE API design
+- **Reason:** feature.yml, hotfix.yml, project-loop.yml are unused/legacy
+- **Key Point:** `legacy-compatible-task-flow` is the main driver
+- **Goal:** Decompose workflows into reusable sub-workflow patterns
+- **Timeline:** Extended from 9 weeks to 10 weeks
+- **User Checkpoints:** Increased from 5 to 8 (added 3 for workflow/API phases)
+- **Status:** Ready to start Phase 0
 
 ---
 
@@ -412,6 +503,7 @@ This tracker monitors progress on the two-part refactor:
 
 | Phase | Status | Completion |
 |-------|--------|------------|
+| **Phase 0:** Workflow Rationalization | ⏳ Not Started | 0% |
 | **Phase 1:** API Design | ⏳ Not Started | 0% |
 | **Phase 2:** Backend Proof | ⏳ Not Started | 0% |
 | **Phase 3:** Test Rationalization | ⏳ Not Started | 0% |
@@ -420,7 +512,7 @@ This tracker monitors progress on the two-part refactor:
 | **Phase 6:** Cleanup & Deploy | ⏳ Not Started | 0% |
 | **Phase 7:** Complete Backend | ⏳ Not Started | 0% |
 
-**Overall Progress:** 0% (0/7 phases complete)
+**Overall Progress:** 0% (0/8 phases complete)
 
 ---
 

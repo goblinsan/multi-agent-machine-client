@@ -13,11 +13,12 @@
 3. Test suite is tightly coupled to implementation details, obscuring business intent
 
 **Strategic Approach:**
-1. **Design new dashboard API** optimized for YAML workflows (ignore legacy API)
-2. **Rationalize tests FIRST** with user validation of business intent at each step
-3. **Refactor with new API** once test intentions are validated and consolidated
+1. **Rationalize workflows FIRST** - identify usage, extract patterns, enforce sub-workflow reuse
+2. **Design new dashboard API** optimized for rationalized YAML workflows (ignore legacy API)
+3. **Rationalize tests** with user validation of business intent at each step
+4. **Refactor with new API** once test intentions are validated and consolidated
 
-**Timeline:** 5-6 weeks  
+**Timeline:** 10 weeks (1 week workflow rationalization + original 9 weeks)  
 **Risk:** Low (clean slate design, test-validated behavior, user checkpoints)  
 **ROI:** High (eliminates entire class of production bugs, clear business logic)
 
@@ -1143,37 +1144,46 @@ grep -r "stage.*helper" src/workflows/
 
 ## Recommended Execution Order (REVISED)
 
-**Phase 1: Dashboard API Design** (Week 1-2, ~10 hours)
-- Design API from workflow perspective (ignore legacy)
+**Phase 0: Workflow Rationalization** (Week 1, ~20 hours) **← NEW PREREQUISITE**
+- Inventory all workflows, identify which are used
+- Extract common patterns (review failures, task creation, etc.)
+- Design sub-workflow components for reuse
+- Propose rationalization strategy
+- USER CHECKPOINT #0: Validate workflow assumptions
+
+**Phase 1: Dashboard API Design** (Week 2-3, ~10 hours)
+- Design API from rationalized workflow perspective (ignore legacy)
 - Create OpenAPI spec + examples
 - Minimal implementation proof (3-4 endpoints)
-- USER CHECKPOINT: Validate API design
+- USER CHECKPOINT #1: Validate API design
 
-**Phase 2: Test Rationalization** (Week 3-5, ~60 hours)
+**Phase 2: Test Rationalization** (Week 4-6, ~60 hours)
 - Extract business intent from existing tests
-- 5 USER CHECKPOINTS (one per test group)
+- USER CHECKPOINTS #3-7 (one per test group)
 - Write consolidated behavior tests
-- Final USER CHECKPOINT before refactor
+- USER CHECKPOINT #8 before refactor
 
-**Phase 3: Refactor with New API** (Week 6-7, ~40 hours)
+**Phase 3: Refactor with New API** (Week 7-8, ~40 hours)
 - Implement ReviewFailureService
 - Refactor workflow steps to use service + new API
 - Update behavior tests to pass
 - Delete old integration tests
 
-**Phase 4: Complete Dashboard Backend** (Week 8-9, ~30 hours)
+**Phase 4: Complete Dashboard Backend & Workflow Migration** (Week 9-10, ~40 hours)
 - Finish remaining dashboard endpoints
+- Migrate to rationalized sub-workflow structure
 - Production deployment
 - Monitoring + validation
 
-**Total Timeline:** 9 weeks (conservative, with user validation gates)
+**Total Timeline:** 10 weeks (conservative, with user validation gates)
 
 **Why This Order:**
-1. ✅ **API design first** - establishes target architecture
-2. ✅ **Tests validate assumptions** - no surprises during refactor
-3. ✅ **User checkpoints** - ensure we're solving right problems
-4. ✅ **Clean implementation** - tests guide refactor, not vice versa
-5. ✅ **Low risk** - validated behavior before any changes
+1. ✅ **Workflow rationalization first** - establishes what we're actually building for
+2. ✅ **API design based on real patterns** - not guessing at requirements
+3. ✅ **Tests validate assumptions** - no surprises during refactor
+4. ✅ **User checkpoints** - ensure we're solving right problems
+5. ✅ **Clean implementation** - tests guide refactor, not vice versa
+6. ✅ **Low risk** - validated behavior before any changes
 
 ---
 
