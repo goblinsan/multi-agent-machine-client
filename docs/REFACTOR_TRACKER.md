@@ -315,9 +315,36 @@ The current workflows directory contains multiple workflow files, some of which 
 
 ## Phase 1: Dashboard API Design
 **Timeline:** Week 4-5 (Nov 9 - Nov 22, 2025)  
-**Goal:** Design clean API optimized for YAML workflows (using rationalized workflow patterns)
+**Goal:** Design clean API optimized for YAML workflows (using rationalized workflow patterns)  
+**Status:** Day 1 Complete ✅ (Requirements Gathering)
 
 ### Prerequisites
+- ✅ Phase 0 complete (workflow rationalization approved)
+- ✅ Week 1 complete (sub-workflow infrastructure)
+- ✅ Week 2 Days 1-5 complete (conditional workflows + hotfix)
+- ✅ Sub-workflow patterns documented
+- ✅ Dashboard interaction patterns identified
+
+### Tasks
+- [x] **Day 1: Requirements Gathering** (Oct 19, 2025) ✅
+  - [x] Use rationalized workflow patterns from Phase 0
+  - [x] Document every dashboard interaction pattern (from approved patterns)
+  - [x] Identify common operations (create task, bulk sync, query status)
+  - [x] Define success criteria based on actual workflow usage
+  - **Status:** ✅ Complete
+  - **Branch:** main
+  - **Deliverable:** `docs/dashboard-api/REQUIREMENTS.md` ✅ (643 lines)
+  - **Commit:** b76bb32
+  
+  **Key Requirements Identified:**
+  - **6 core operations:** Task status updates, bulk task creation, query existing tasks, milestone checks, milestone details, project status
+  - **Bulk task creation:** Single endpoint for N tasks (fixes N+1 problem)
+  - **Duplicate detection:** 3 strategies (title, title+milestone, external_id)
+  - **Performance targets:** <100ms for 20 tasks, <50ms for queries
+  - **Data models:** Task, Milestone, Project, Repository
+  - **Query patterns:** 4 optimized patterns with required indexes
+
+- [ ] **Day 2-3: API Design Workshop** (Nov 9-10)
 - ✅ Phase 0 complete (workflow rationalization approved)
 - ✅ Week 1 complete (sub-workflow infrastructure)
 - ⏳ Week 2 pending (conditional workflows + cleanup)
