@@ -254,9 +254,11 @@ export class ReviewFailureTasksStep extends WorkflowStep {
    */
   private parsePMDecision(rawDecision: any): any {
     try {
+      let parsed: any = null;
+      
       // If it's already an object, use it
       if (typeof rawDecision === 'object' && rawDecision !== null) {
-        return rawDecision;
+        parsed = rawDecision;
       }
       
       // If it's a string, try to parse as JSON
@@ -270,14 +272,27 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         // Try to find JSON object in the string
         const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          // Try parsing the whole string
+          parsed = JSON.parse(jsonStr);
         }
-        
-        // Try parsing the whole string
-        return JSON.parse(jsonStr);
       }
       
-      return null;
+      if (!parsed) {
+        return null;
+      }
+      
+      // Normalize: PM sometimes returns "backlog" instead of "follow_up_tasks"
+      // Map backlog array to follow_up_tasks for consistency
+      if (!parsed.follow_up_tasks && parsed.backlog && Array.isArray(parsed.backlog)) {
+        parsed.follow_up_tasks = parsed.backlog;
+        logger.debug('Normalized PM decision: mapped backlog to follow_up_tasks', {
+          tasksCount: parsed.backlog.length
+        });
+      }
+      
+      return parsed;
     } catch (error) {
       logger.warn('Failed to parse PM decision JSON', {
         error: String(error),
