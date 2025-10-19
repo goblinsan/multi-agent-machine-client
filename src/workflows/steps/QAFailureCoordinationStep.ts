@@ -1,7 +1,7 @@
 import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { createDashboardTaskEntriesWithSummarizer } from '../../tasks/taskManager.js';
-import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from '../../agents/persona.js';
+import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus } from '../../agents/persona.js';
 import { makeRedis } from '../../redisClient.js';
 import { PERSONAS } from '../../personaNames.js';
 import { logger } from '../../logger.js';
@@ -213,28 +213,28 @@ export class QAFailureCoordinationStep extends WorkflowStep {
 
   private parseQAStatus(qaResult: any): { status: string; details?: string; tasks?: any[] } {
     try {
-      if (typeof qaResult === 'string') {
-        const parsed = JSON.parse(qaResult);
-        return {
-          status: parsed.status || 'unknown',
-          details: parsed.details || parsed.message || qaResult,
-          tasks: parsed.tasks || []
-        };
-      }
+      // Use the same interpretation logic as PersonaRequestStep for consistency
+      // QA result can be:
+      // 1. Raw string output from persona
+      // 2. Parsed object with 'output' field from parseEventResult
+      // 3. Already parsed status object
+      const rawOutput = qaResult?.output || (typeof qaResult === 'string' ? qaResult : JSON.stringify(qaResult));
+      const statusInfo = interpretPersonaStatus(rawOutput);
       
-      if (typeof qaResult === 'object') {
-        const payload = qaResult.payload || qaResult;
-        return {
-          status: payload.status || qaResult.status || 'unknown',
-          details: payload.details || payload.message || JSON.stringify(payload),
-          tasks: payload.tasks || qaResult.tasks || []
-        };
-      }
+      // Extract tasks if present in the payload
+      const tasks = statusInfo.payload?.tasks || statusInfo.payload?.suggested_tasks || [];
       
-      return { status: 'unknown', details: String(qaResult) };
+      return {
+        status: statusInfo.status,
+        details: statusInfo.details,
+        tasks
+      };
     } catch (error) {
-      logger.warn('Failed to parse QA result', { qaResult, error });
-      return { status: 'fail', details: String(qaResult) };
+      logger.warn('Failed to parse QA result, defaulting to fail status', { 
+        workflowId: this.config.name,
+        error: error instanceof Error ? error.message : String(error) 
+      });
+      return { status: 'fail', details: String(qaResult), tasks: [] };
     }
   }
   
