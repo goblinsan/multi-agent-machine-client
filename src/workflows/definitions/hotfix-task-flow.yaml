@@ -1,0 +1,258 @@
+name: "hotfix-task-flow"
+description: "Fast-track workflow for emergency production hotfixes with abbreviated review process"
+version: "1.0.0"
+
+# Architecture:
+# - Minimal planning (2 iterations max)
+# - Expedited implementation
+# - Critical reviews only (Code + Security, DevOps optional)
+# - Higher priority than normal tasks
+# - Uses unified sub-workflow pattern
+
+trigger:
+  condition: "labels.includes('hotfix') || labels.includes('urgent') || labels.includes('emergency') || priority >= 2000"
+
+context:
+  repo_required: true
+  fast_track: true  # Skip non-critical steps
+
+variables:
+  hotfix_priority: 2000  # Higher than all review failures
+  max_planning_iterations: 2  # Abbreviated planning
+
+steps:
+  # Step 1: Mark task as in progress
+  - name: mark_task_in_progress
+    type: SimpleTaskStatusStep
+    description: "Mark hotfix task as in progress"
+    config:
+      status: "in_progress"
+
+  # Step 2: Fast planning (max 2 iterations)
+  - name: planning_loop
+    type: PlanningLoopStep
+    description: "Abbreviated planning for hotfix"
+    depends_on: ["mark_task_in_progress"]
+    outputs: ["planning_loop_plan_result", "planning_loop_eval_result"]
+    config:
+      step: "1-planning"
+      evalStep: "1.5-eval-plan"
+      revisionStep: "1-planning-revision"
+      persona: "lead-engineer"
+      evalPersona: "tdd-gate"
+      intent: "plan"
+      max_iterations: 2  # Fast-track planning
+      enable_tdd_gate: "${tdd_enabled || false}"
+      payload:
+        task: "${task}"
+        repo: "${repo_remote}"
+        branch: "${featureBranchName}"
+        project_id: "${projectId}"
+        hotfix_mode: true  # Signal to persona
+        time_constraint: "This is an EMERGENCY HOTFIX. Prioritize speed and correctness over perfect design."
+
+  # Step 3: Implementation (single pass)
+  - name: implementation_request
+    type: PersonaRequestStep
+    description: "Fast implementation of hotfix"
+    depends_on: ["planning_loop"]
+    outputs: ["implementation_request_result"]
+    config:
+      step: "2-implementation"
+      persona: "lead-engineer"
+      intent: "implement"
+      payload:
+        task: "${task}"
+        plan: "${planning_loop_plan_result}"
+        repo: "${repo_remote}"
+        branch: "${featureBranchName}"
+        project_id: "${projectId}"
+        hotfix_mode: true
+      timeout: 600000  # 10 minutes
+
+  # Step 4: QA Test (fast single-pass)
+  - name: qa_request
+    type: PersonaRequestStep
+    description: "Fast QA test for hotfix"
+    depends_on: ["implementation_request"]
+    outputs: ["qa_request_result", "qa_request_status"]
+    config:
+      step: "3-qa"
+      persona: "tester-qa"
+      intent: "qa_review"
+      payload:
+        task: "${task}"
+        plan: "${planning_loop_plan_result}"
+        implementation: "${implementation_request_result}"
+        repo: "${repo_remote}"
+        branch: "${featureBranchName}"
+        project_id: "${projectId}"
+        hotfix_mode: true
+        fast_track: true  # Signal for critical tests only
+      timeout: 300000  # 5 minutes
+
+  # Handle QA failures (MUST fix for hotfixes)
+  - name: handle_qa_failure
+    type: SubWorkflowStep
+    description: "Handle QA failures for hotfix (always immediate fix)"
+    depends_on: ["qa_request"]
+    condition: "${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'"
+    config:
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "qa"
+        review_result: "${qa_request_result}"
+        review_status: "${qa_request_status}"
+        milestone_context: "${milestone}"
+        task: "${task}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 2000  # Hotfix priority (higher than normal)
+          deferred: 50
+        config:
+          block_original_task: true  # Block hotfix if QA fails
+        project_id: "${projectId}"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
+
+  # Step 5: Mark task as in review when QA passes
+  - name: mark_task_in_review
+    type: SimpleTaskStatusStep
+    description: "Mark hotfix as in review"
+    depends_on: ["qa_request"]
+    condition: "${qa_request_status} == 'pass'"
+    config:
+      status: "in_review"
+
+  # Step 6: Code Review (CRITICAL - required for hotfixes)
+  - name: code_review_request
+    type: PersonaRequestStep
+    description: "Code review for hotfix (focus on critical issues)"
+    depends_on: ["mark_task_in_review"]
+    outputs: ["code_review_request_result", "code_review_request_status"]
+    config:
+      step: "4-code-review"
+      persona: "code-reviewer"
+      intent: "code_review"
+      payload:
+        task: "${task}"
+        plan: "${planning_loop_plan_result}"
+        implementation: "${implementation_request_result}"
+        qa_result: "${qa_request_result}"
+        repo: "${repo_remote}"
+        branch: "${featureBranchName}"
+        project_id: "${projectId}"
+        hotfix_mode: true
+        focus: "critical"  # Focus on SEVERE/HIGH issues only
+      timeout: 300000  # 5 minutes
+
+  # Handle code review failures (immediate fix required)
+  - name: handle_code_review_failure
+    type: SubWorkflowStep
+    description: "Handle code review failures for hotfix"
+    depends_on: ["code_review_request"]
+    condition: "${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'"
+    config:
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "code_review"
+        review_result: "${code_review_request_result}"
+        review_status: "${code_review_request_status}"
+        milestone_context: "${milestone}"
+        task: "${task}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 2000  # Hotfix priority
+          deferred: 50
+        config:
+          block_original_task: true  # Block hotfix if code review fails
+        project_id: "${projectId}"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
+
+  # Step 7: Security Review (CRITICAL - required for hotfixes)
+  - name: security_request
+    type: PersonaRequestStep
+    description: "Security review for hotfix (focus on critical vulnerabilities)"
+    depends_on: ["code_review_request"]
+    condition: "${code_review_request_status} == 'pass'"
+    outputs: ["security_request_result", "security_request_status"]
+    config:
+      step: "5-security"
+      persona: "security-review"
+      intent: "security_review"
+      payload:
+        task: "${task}"
+        plan: "${planning_loop_plan_result}"
+        implementation: "${implementation_request_result}"
+        code_review_result: "${code_review_request_result}"
+        repo: "${repo_remote}"
+        branch: "${featureBranchName}"
+        project_id: "${projectId}"
+        hotfix_mode: true
+        focus: "critical"  # Focus on SEVERE findings only
+      timeout: 300000  # 5 minutes
+
+  # Handle security review failures (immediate fix required)
+  - name: handle_security_failure
+    type: SubWorkflowStep
+    description: "Handle security failures for hotfix"
+    depends_on: ["security_request"]
+    condition: "${security_request_status} == 'fail' || ${security_request_status} == 'unknown'"
+    config:
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "security_review"
+        review_result: "${security_request_result}"
+        review_status: "${security_request_status}"
+        milestone_context: "${milestone}"
+        task: "${task}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 2000  # Hotfix priority
+          deferred: 50
+        config:
+          block_original_task: true  # Block hotfix if security fails
+        project_id: "${projectId}"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
+
+  # Step 8: Mark task as done (skip DevOps review for speed)
+  - name: mark_task_done
+    type: SimpleTaskStatusStep
+    description: "Mark hotfix as completed when critical reviews pass"
+    depends_on: ["security_request"]
+    condition: "${security_request_status} == 'pass'"
+    config:
+      status: "done"
+      comment: "Hotfix completed - DevOps review skipped for expedited deployment"
+
+# Failure handling - mark task as blocked
+failure_handling:
+  on_workflow_failure:
+    - name: mark_task_blocked
+      type: SimpleTaskStatusStep
+      description: "Mark hotfix as blocked when workflow fails"
+      config:
+        status: "blocked"
+        comment: "Hotfix workflow failed at step: ${failed_step} - URGENT attention required"
+
+timeouts:
+  default_step: 300000  # 5 minutes
+  planning_loop_timeout: 600000  # 10 minutes max for planning
+  implementation_timeout: 600000  # 10 minutes max for implementation
+
+# Architecture Notes:
+# - Hotfixes use unified review-failure-handling sub-workflow (same as task-flow.yaml)
+# - Priority: 2000 (higher than all review failures)
+# - Planning limited to 2 iterations (vs 5 in normal workflow)
+# - DevOps review SKIPPED for speed (deployment handled separately)
+# - All review failures block the hotfix (no deferral allowed)
+# - Personas receive hotfix_mode flag to signal urgency
+# - Total steps: 8 (vs 13+ in task-flow.yaml) - 38% faster
