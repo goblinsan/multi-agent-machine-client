@@ -106,7 +106,9 @@ export class QAFailureCoordinationStep extends WorkflowStep {
         // Parse QA result to determine failure details
         const qaStatus = this.parseQAStatus(qaResult);
         
-        if (qaStatus.status !== 'fail') {
+        // Treat 'unknown' status as failure - this handles cases where tests pass
+        // but QA agent identifies issues/recommendations that need PM review
+        if (qaStatus.status !== 'fail' && qaStatus.status !== 'unknown') {
           // No QA failure, nothing to coordinate
           return {
             status: 'success',
@@ -117,6 +119,7 @@ export class QAFailureCoordinationStep extends WorkflowStep {
         logger.info('QA failure detected, starting coordination', {
           workflowId: context.workflowId,
           qaStatus,
+          isUnknownStatus: qaStatus.status === 'unknown',
           tddAware,
           taskCreationStrategy
         });

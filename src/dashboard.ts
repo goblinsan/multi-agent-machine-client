@@ -549,3 +549,35 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
     return { ok: false, status: 0, body: null, error: e };
   }
 }
+
+/**
+ * Fetch all tasks for a project
+ * @param projectId The project ID to fetch tasks for
+ * @returns Array of tasks, or empty array on error
+ */
+export async function fetchProjectTasks(projectId: string): Promise<any[]> {
+  if (!cfg.dashboardBaseUrl) {
+    logger.warn("fetchProjectTasks skipped: dashboard base URL not configured");
+    return [];
+  }
+  
+  try {
+    const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
+    const url = `${base}/v1/tasks?project_id=${encodeURIComponent(projectId)}`;
+    
+    const res = await fetch(url, {
+      headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
+    });
+    
+    if (!res.ok) {
+      logger.warn("fetchProjectTasks non-ok", { projectId, status: res.status });
+      return [];
+    }
+    
+    const tasks = await res.json();
+    return Array.isArray(tasks) ? tasks : [];
+  } catch (e) {
+    logger.warn("fetchProjectTasks exception", { projectId, error: (e as Error).message });
+    return [];
+  }
+}

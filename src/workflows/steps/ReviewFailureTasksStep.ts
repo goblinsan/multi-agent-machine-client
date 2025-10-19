@@ -1,7 +1,7 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
-import { createDashboardTask } from '../../dashboard.js';
+import { createDashboardTask, fetchProjectTasks } from '../../dashboard.js';
 
 /**
  * Configuration for ReviewFailureTasksStep
@@ -128,9 +128,17 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         followUpTasksCount: pmDecision.follow_up_tasks?.length || 0
       });
       
+      // Fetch existing tasks for duplicate detection
+      const existingTasks = await fetchProjectTasks(projectId);
+      logger.debug('Fetched existing tasks for duplicate detection', {
+        stepName: this.config.name,
+        existingTasksCount: existingTasks.length
+      });
+      
       // Create tasks
       let urgentTasksCreated = 0;
       let deferredTasksCreated = 0;
+      let skippedDuplicates = 0;
       
       // Create urgent/immediate fix tasks
       if (pmDecision.follow_up_tasks && pmDecision.follow_up_tasks.length > 0) {
@@ -149,6 +157,17 @@ export class ReviewFailureTasksStep extends WorkflowStep {
               config.reviewType,
               parentTaskId
             );
+            
+            // Check for duplicate tasks
+            if (this.isDuplicateTask(followUpTask, existingTasks, taskTitle)) {
+              skippedDuplicates++;
+              logger.info('Skipping duplicate task', {
+                stepName: this.config.name,
+                title: taskTitle,
+                originalTitle: followUpTask.title
+              });
+              continue;
+            }
             
             // Urgent tasks go to the same milestone, deferred tasks go to backlog
             const targetMilestoneId = isUrgent ? milestoneId : null;
@@ -215,6 +234,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         totalTasksCreated,
         urgentTasksCreated,
         deferredTasksCreated,
+        skippedDuplicates,
         pmDecision: pmDecision.decision
       });
       
@@ -224,6 +244,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
           tasks_created: totalTasksCreated,
           urgent_tasks_created: urgentTasksCreated,
           deferred_tasks_created: deferredTasksCreated,
+          skipped_duplicates: skippedDuplicates,
           pm_decision: pmDecision.decision,
           has_urgent_tasks: urgentTasksCreated > 0
         },
@@ -300,6 +321,78 @@ export class ReviewFailureTasksStep extends WorkflowStep {
       });
       return null;
     }
+  }
+  
+  /**
+   * Check if a task is a duplicate of an existing task
+   * Compares normalized title and description keywords
+   */
+  private isDuplicateTask(followUpTask: any, existingTasks: any[], formattedTitle: string): boolean {
+    if (!followUpTask || !existingTasks || existingTasks.length === 0) {
+      return false;
+    }
+    
+    // Normalize titles for comparison (remove prefixes, emojis, brackets)
+    const normalizeTitle = (title: string): string => {
+      return title
+        .toLowerCase()
+        .replace(/🚨|📋|⚠️|✅/g, '') // Remove emojis
+        .replace(/\[.*?\]/g, '') // Remove [Code Review] etc
+        .replace(/urgent/gi, '') // Remove urgent markers
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim();
+    };
+    
+    const normalizedNewTitle = normalizeTitle(followUpTask.title);
+    const normalizedFormattedTitle = normalizeTitle(formattedTitle);
+    
+    // Extract key phrases from description (words 5+ chars)
+    const extractKeyPhrases = (text: string): Set<string> => {
+      if (!text) return new Set();
+      return new Set(
+        text
+          .toLowerCase()
+          .match(/\b\w{5,}\b/g) || []
+      );
+    };
+    
+    const newKeyPhrases = extractKeyPhrases(followUpTask.description || '');
+    
+    for (const existingTask of existingTasks) {
+      const existingTitle = existingTask.title || '';
+      const normalizedExistingTitle = normalizeTitle(existingTitle);
+      
+      // Title similarity check
+      const titleMatch = 
+        normalizedExistingTitle.includes(normalizedNewTitle) ||
+        normalizedNewTitle.includes(normalizedExistingTitle) ||
+        normalizedExistingTitle === normalizedFormattedTitle;
+      
+      if (titleMatch) {
+        // If titles match closely, check description overlap
+        const existingKeyPhrases = extractKeyPhrases(existingTask.description || '');
+        const overlapCount = [...newKeyPhrases].filter(phrase => 
+          existingKeyPhrases.has(phrase)
+        ).length;
+        
+        // If >50% of key phrases overlap, consider it a duplicate
+        const overlapRatio = newKeyPhrases.size > 0 
+          ? overlapCount / newKeyPhrases.size 
+          : 0;
+        
+        if (overlapRatio > 0.5) {
+          logger.debug('Duplicate task detected', {
+            newTitle: followUpTask.title,
+            existingTitle: existingTask.title,
+            overlapRatio,
+            existingTaskId: existingTask.id
+          });
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
   
   /**
