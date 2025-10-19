@@ -125,7 +125,7 @@ steps:
     type: QAFailureCoordinationStep
     description: "Coordinate QA failures with plan revision and task creation"
     depends_on: ["qa_request"]
-    condition: "${qa_request_status} == 'fail'"
+    condition: "${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'"
     config:
       maxPlanRevisions: 5
       taskCreationStrategy: "auto"
@@ -142,7 +142,7 @@ steps:
     type: QAIterationLoopStep
     description: "Iteratively fix QA failures: plan → implement → apply → commit → retest"
     depends_on: ["qa_failure_coordination"]
-    condition: "${qa_request_status} == 'fail'"
+    condition: "${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'"
     config:
       maxIterations: null  # null = unlimited (respects env COORDINATOR_MAX_REVISION_ATTEMPTS)
       planningStep: "qa-fix-planning"
