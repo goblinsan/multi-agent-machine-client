@@ -182,80 +182,66 @@
 ### Phase 2: Migrate legacy-compatible-task-flow (Week 2)
 **Goal:** Refactor primary workflow to use sub-workflows
 
-**Step 2.1: Feature Flag Setup (Day 1)**
-- [ ] Add `use_sub_workflows` feature flag to config
-- [ ] Default: `false` (use current implementation)
-- [ ] Can toggle per-environment or per-task
-- **Risk:** Low - Just configuration
-- **Benefit:** Zero-downtime rollback if issues found
+**Revised Strategy (No Feature Flags):**
 
-**Step 2.2: Create v2.0 Workflow (Day 1-2)**
-- [ ] Copy `legacy-compatible-task-flow.yaml` → `legacy-compatible-task-flow-v2.yaml`
+**Step 2.1: Development Testing (Day 1-2)**
+- [ ] Create refactored workflow in development branch
 - [ ] Replace review failure steps with sub-workflow calls
 - [ ] Replace implementation steps with task-implementation sub-workflow
 - [ ] Replace git steps with git-operations sub-workflow
-- [ ] Keep all other steps identical
-- **Risk:** Low - Side-by-side implementation
-- **Testing:** Can test v2 without affecting v1
+- [ ] Run full test suite in development
+- [ ] Manual testing of all review paths (QA, code, security)
+- **Risk:** Medium - Need comprehensive testing
+- **Success Criteria:** All tests pass, manual testing successful
 
-**Step 2.3: Parallel Testing (Day 2-3)**
-- [ ] Deploy v2 with feature flag OFF
-- [ ] Run integration tests against v2
-- [ ] Compare v1 vs v2 outputs for same tasks
-- [ ] Verify all personas, reviews, status updates work
-- **Risk:** Medium - Need to ensure parity
-- **Success Criteria:** 100% feature parity with v1
+**Step 2.2: Integration Testing (Day 2-3)**
+- [ ] Deploy to staging/test environment
+- [ ] Run against real Redis streams (test data)
+- [ ] Test all persona interactions
+- [ ] Test all review failure scenarios
+- [ ] Verify bulk task creation works
+- [ ] Compare outputs with production behavior
+- **Risk:** Medium - Need environment parity
+- **Success Criteria:** 100% feature parity with production
 
-**Step 2.4: Canary Rollout (Day 3-4)**
-- [ ] Enable feature flag for 10% of tasks
-- [ ] Monitor task completion, errors, timing
-- [ ] Compare metrics: v1 vs v2
-- [ ] If issues: disable flag, debug, fix
-- [ ] If success: increase to 50%, then 100%
-- **Risk:** Low - Can rollback instantly
-- **Monitoring:** Task success rate, review pass rate, timing
-
-**Step 2.5: Full Migration (Day 4-5)**
-- [ ] Enable feature flag for 100% of tasks
+**Step 2.3: Production Deployment (Day 3-4)**
+- [ ] Schedule deployment during low-activity period
+- [ ] Deploy sub-workflows first (unused initially, safe)
+- [ ] Deploy refactored workflow + new step types
+- [ ] Monitor first 10 tasks closely
 - [ ] Monitor for 24 hours
-- [ ] If stable: rename v2 → v1, archive old v1
-- [ ] Remove feature flag code
-- [ ] Update documentation
-- **Risk:** Low - Already validated at 100%
-- **Rollback:** Keep old v1 in archive for 1 week
+- **Risk:** Medium - Direct production deployment
+- **Mitigation:** Deploy during low activity, close monitoring
+- **Rollback:** Git revert ready (~5 min)
+
+**Step 2.4: Monitoring & Validation (Day 4-5)**
+- [ ] Compare metrics: task timing, success rate, API calls
+- [ ] Verify bulk task creation working (fewer dashboard calls)
+- [ ] Check for any error patterns
+- [ ] Validate PM decisions match previous behavior
+- [ ] Confirm all review types working
+- **Risk:** Low - Just monitoring
+- **Success Criteria:** Metrics match or improve vs baseline
 
 **Deliverable:** Primary workflow using sub-workflows, 55% smaller, 100% feature parity
 
 ---
 
-### Phase 3: Migrate Other Workflows (Optional, Post-Approval)
+### Phase 3: Migrate Other Workflows (DEFERRED per user decision)
 **Goal:** Apply sub-workflow pattern to conditional workflows
 
-This phase can be done later (after Phase 0-2 complete) or in parallel with dashboard work.
+**User Decision:** Defer until after dashboard redesign complete
 
-**Step 3.1: Refactor in-review-task-flow.yaml**
-- Use review-failure-handling sub-workflow
-- Reduce from 195 → ~100 lines
-- Timeline: 2 days
+This phase moved to post-Phase 7 (after complete dashboard backend):
+- Refactor in-review-task-flow.yaml (195 → ~100 lines)
+- Refactor blocked-task-resolution.yaml (215 → ~120 lines)  
+- Create hotfix-task-flow.yaml (~80 lines)
+- Timeline: 1 week after dashboard complete
 
-**Step 3.2: Refactor blocked-task-resolution.yaml**
-- Use task-implementation sub-workflow
-- Reduce from 215 → ~120 lines
-- Timeline: 2 days
-
-**Step 3.3: Create hotfix-task-flow.yaml**
-- New workflow for expedited fixes
-- Uses all 3 sub-workflows
-- ~80 lines
-- Timeline: 2 days
-
-**Step 3.4: Archive Unused Workflows**
-- Move 5 files to `/src/workflows/archive/`
-- Delete 3 files from `/workflows/`
-- Update documentation
-- Timeline: 1 day
-
-**Total Timeline:** 1 week (can be deferred)
+**Rationale:**
+- Conditional workflows rarely used (<1% of tasks)
+- Focus on critical path (dashboard redesign)
+- Can apply dashboard learnings when implementing later
 
 ---
 
@@ -285,33 +271,35 @@ Total: 12 workflows, ~1,840 lines
 ### After
 ```
 workflows/
-  (empty - delete directory)
+  (deleted - directory removed)
 
 src/workflows/definitions/
   legacy-compatible-task-flow.yaml  (200 lines, primary - refactored)
   project-loop.yaml                 (87 lines, fallback - unchanged)
-  in-review-task-flow.yaml          (100 lines, refactored)
-  blocked-task-resolution.yaml      (120 lines, refactored)
-  hotfix-task-flow.yaml             (80 lines, new)
+  in-review-task-flow.yaml          (195 lines, deferred - unchanged for now)
+  blocked-task-resolution.yaml      (215 lines, deferred - unchanged for now)
 
 src/workflows/sub-workflows/
   review-failure-handling.yaml      (50 lines, new)
   task-implementation.yaml          (60 lines, new)
   git-operations.yaml               (30 lines, new)
 
-src/workflows/archive/
-  legacy-compatible-task-flow-v1.yaml.bak  (446 lines, backup)
-  code-review-followup.yaml                (150 lines, unused)
-  qa-iteration.yaml                        (100 lines, unused)
-  security-hardening.yaml                  (120 lines, unused)
-  feature.yaml                             (108 lines, duplicate)
-  hotfix.yaml                              (62 lines, duplicate)
-
 prompts/
   pm-review-prioritization.txt      (new, externalized prompt)
 
-Total: 5 core workflows + 3 sub-workflows = 8 active files, ~727 lines
-Reduction: 1,840 → 727 lines (60% reduction)
+Deleted (no archive):
+  /workflows/feature.yml            (108 lines)
+  /workflows/hotfix.yml             (62 lines)
+  /workflows/project-loop.yml       (87 lines)
+  definitions/code-review-followup.yaml  (150 lines)
+  definitions/qa-iteration.yaml          (100 lines)
+  definitions/security-hardening.yaml    (120 lines)
+  definitions/feature.yaml               (108 lines)
+  definitions/hotfix.yaml                (62 lines)
+
+Total: 4 core workflows + 3 sub-workflows = 7 active files, ~787 lines
+Deleted: 8 workflows, 797 lines
+Reduction: Primary workflow 446 → 200 lines (55% reduction)
 ```
 
 ---
@@ -355,32 +343,40 @@ Reduction: 1,840 → 727 lines (60% reduction)
 
 ## Rollback Strategy
 
-### Instant Rollback (Feature Flag)
-- **If:** Issues found during canary rollout
-- **Action:** Set `use_sub_workflows: false` in config
-- **Time:** <1 minute
-- **Impact:** Zero - reverts to v1 workflow
-- **Risk:** None - v1 remains unchanged
-
-### Full Rollback (Git Revert)
-- **If:** Critical issues after full migration
+### Git Revert (Primary Method)
+- **If:** Critical issues after deployment
 - **Action:** `git revert <commit>` to restore old workflow files
-- **Time:** ~5 minutes
+- **Time:** ~5 minutes (includes redeploy)
 - **Impact:** Reverts to pre-sub-workflow state
-- **Risk:** Low - clean git history
+- **Risk:** Low - clean git history, tested approach
 
-### Partial Rollback (Per-Workflow)
-- **If:** One workflow has issues, others work
-- **Action:** Revert specific workflow file, keep sub-workflows
-- **Time:** ~2 minutes
-- **Impact:** Isolated to affected workflow
-- **Risk:** None - sub-workflows independent
+### Partial Rollback (Per-Step)
+- **If:** One sub-workflow has issues, others work
+- **Action:** 
+  1. Inline problematic sub-workflow steps back into main workflow
+  2. Deploy fix
+  3. Debug sub-workflow offline
+- **Time:** ~15 minutes
+- **Impact:** Isolated to affected pattern
+- **Risk:** Low - can mix inline and sub-workflow approaches
+
+### Emergency Hotfix
+- **If:** Unable to revert cleanly
+- **Action:**
+  1. Restore specific workflow file from git history
+  2. Disable problematic step types temporarily
+  3. Deploy minimal working version
+- **Time:** ~10 minutes
+- **Impact:** May lose some sub-workflow benefits temporarily
+- **Risk:** Medium - requires manual intervention
 
 ### Data Rollback
 - **Not Needed:** No database schema changes
 - **Not Needed:** No task data format changes
 - **Not Needed:** No milestone changes
 - Sub-workflows only change execution flow, not data
+
+**Note:** No feature flags needed per user preference (fall-forward approach)
 
 ---
 
@@ -534,35 +530,91 @@ Reduction: 1,840 → 727 lines (60% reduction)
 
 ## Open Questions for User Review
 
-### 1. Workflow Naming
-- Keep `legacy-compatible-task-flow` name or rename?
-  - **Option A:** Keep name (easy migration, but "legacy" is confusing)
-  - **Option B:** Rename to `standard-task-flow` (clearer, but requires updates)
-  - **Recommendation:** Keep name until Phase 6 cleanup
+### 1. Workflow Naming ✅ ANSWERED
+**Question:** Should we rename `legacy-compatible-task-flow.yaml` to something clearer?
 
-### 2. Archive vs Delete
-- Move unused workflows to archive or delete entirely?
-  - **Option A:** Archive (can reference later, but clutters repo)
-  - **Option B:** Delete (clean, but loses history - though git preserves)
-  - **Recommendation:** Archive for 1 release cycle, then delete
+**Options:**
+  - **Option A:** Keep current name `legacy-compatible-task-flow.yaml` (no changes needed)
+  - **Option B:** Rename to `standard-task-flow.yaml` (removes "legacy" confusion)
+  - **Option C:** Rename to `task-flow.yaml` (simplest)
 
-### 3. Feature Flag Duration
-- How long to keep `use_sub_workflows` flag?
-  - **Option A:** Remove after 1 week of stable v2 (fast cleanup)
-  - **Option B:** Keep for 1 release cycle (safer rollback)
-  - **Recommendation:** Keep for 2 weeks, remove in Phase 0 final cleanup
+**User Decision Needed:** Please specify preferred name or confirm keep current name
 
-### 4. Sub-Workflow Versioning
-- Should sub-workflows have version numbers?
-  - **Option A:** No versioning (simpler, assume always compatible)
-  - **Option B:** Version sub-workflows (explicit compatibility, more complex)
-  - **Recommendation:** Start without, add later if needed
+### 2. Archive vs Delete ✅ APPROVED
+**Decision:** Delete unused workflows entirely
 
-### 5. Phase 3 Priority
-- Should we migrate conditional workflows immediately or defer?
-  - **Option A:** Do Phase 3 immediately (complete consolidation)
-  - **Option B:** Defer Phase 3 to after dashboard work (focus on critical path)
-  - **Recommendation:** Defer - conditional workflows used <1% of time
+**User Response:** "delete unused"
+
+**Implementation:**
+- ✅ Delete `/workflows/` directory entirely (3 files: feature.yml, hotfix.yml, project-loop.yml)
+- ✅ Delete from `/src/workflows/definitions/`: 
+  - code-review-followup.yaml
+  - qa-iteration.yaml  
+  - security-hardening.yaml
+  - feature.yaml (duplicate)
+  - hotfix.yaml (duplicate)
+- ✅ Keep backup in git history (can recover if needed)
+- ❌ No archive directory needed
+
+### 3. Feature Flag Duration ✅ APPROVED - NO FEATURE FLAGS
+**Decision:** Fall-forward approach, no feature flags needed
+
+**User Response:** "no need for feature flags - fall forward approach"
+
+**Revised Strategy:**
+- ✅ Direct replacement of workflow files (no v1/v2 parallel)
+- ✅ Comprehensive testing in development before deployment
+- ✅ Deploy sub-workflows + refactored workflows together
+- ✅ Rollback via git revert if critical issues found
+- ❌ No feature flag configuration
+- ❌ No canary rollout complexity
+
+**Benefits:**
+- Simpler implementation (no conditional logic)
+- Faster deployment (no gradual rollout)
+- Cleaner codebase (no feature flag code)
+
+**Risk Mitigation:**
+- Extensive testing in dev environment before production
+- Deploy during low-activity period
+- Monitor closely for first 24 hours
+- Git revert ready if needed (~5 min rollback)
+
+### 4. Sub-Workflow Versioning ✅ CLARIFIED
+**Question Clarification:** Do individual sub-workflow YAML files need version fields?
+
+**User Response:** "not sure what this question is for. versions are captured at the milestone branch level. completed milestones should create versioned merges"
+
+**Understanding:**
+- Workflow versioning is NOT needed (milestone branches handle versioning)
+- Sub-workflows are implementation details, not release artifacts
+- Git history + milestone branches provide sufficient version control
+
+**Decision:**
+- ❌ No version fields in sub-workflow YAML files
+- ✅ Rely on git commits + milestone branches for versioning
+- ✅ Sub-workflows evolve with codebase (backward compatibility maintained)
+
+### 5. Phase 3 Priority ✅ APPROVED - DEFER
+**Decision:** Defer Phase 3 until after dashboard redesign
+
+**User Response:** "Phase can be deferred until after dashboard redesign"
+
+**Implementation:**
+- ✅ Focus on primary workflow only (legacy-compatible-task-flow)
+- ✅ Defer conditional workflow refactoring (in-review-task-flow, blocked-task-resolution)
+- ✅ Defer hotfix-task-flow creation
+- ✅ Phase 3 becomes post-dashboard cleanup task
+
+**Revised Timeline:**
+- Phase 0-2: Workflow rationalization (primary workflow only)
+- Phase 1-7: Dashboard redesign (API, backend, test rationalization, review consolidation)
+- Phase 3 (deferred): Migrate conditional workflows after dashboard complete
+
+**Benefits:**
+- Faster path to dashboard work (critical path)
+- Conditional workflows rarely used (<1% of tasks)
+- Can apply dashboard learnings to Phase 3 later
 
 ---
 
@@ -570,19 +622,30 @@ Reduction: 1,840 → 727 lines (60% reduction)
 
 For **User Checkpoint #0**, please review and approve:
 
-- [ ] **Workflow Consolidation:** 12 → 5 core + 3 sub-workflows
-- [ ] **Code Reduction:** 60% reduction (1,840 → 727 lines)
-- [ ] **File Structure:** Delete /workflows, create /sub-workflows, archive unused
-- [ ] **Migration Strategy:** 2-week timeline with feature flag + canary
+- [ ] **Workflow Consolidation:** 12 → 4 core + 3 sub-workflows (Phase 3 deferred)
+- [ ] **Code Reduction:** Primary workflow 55% reduction (446 → 200 lines)
+- [ ] **File Deletions:** Delete /workflows directory + 5 unused files (no archive)
+- [ ] **Migration Strategy:** 2-week timeline with fall-forward approach (no feature flags)
 - [ ] **Sub-Workflow Designs:** review-failure-handling, task-implementation, git-operations
 - [ ] **Breaking Changes:** Internal only (no user-facing changes)
 - [ ] **Risk Assessment:** Medium risk items acceptable with mitigations
 - [ ] **Success Metrics:** Code quality, performance, reliability, maintainability
-- [ ] **Open Questions:** Decisions on naming, archiving, versioning
 
-**If Approved:** Proceed to implement sub-workflows (Phase 1)  
-**If Changes Needed:** Update proposal based on feedback  
-**If Rejected:** Provide alternative approach or defer rationalization
+**User Responses Received:**
+- ✅ **Question 1 (Naming):** Needs clarification - options provided
+- ✅ **Question 2 (Archive):** Delete unused workflows (no archive)
+- ✅ **Question 3 (Feature Flags):** No feature flags - fall forward approach
+- ✅ **Question 4 (Versioning):** Not needed - milestone branches handle versioning
+- ✅ **Question 5 (Phase 3):** Defer until after dashboard redesign
+
+**Outstanding Decision:**
+- ❓ **Workflow Naming:** Choose name for `legacy-compatible-task-flow.yaml`
+  - Option A: Keep as-is (`legacy-compatible-task-flow.yaml`)
+  - Option B: Rename to `standard-task-flow.yaml`
+  - Option C: Rename to `task-flow.yaml`
+
+**If Approved:** Proceed to implement sub-workflows (Week 2-3, parallel with Phase 1 API design)  
+**If Changes Needed:** Update proposal based on feedback
 
 ---
 
