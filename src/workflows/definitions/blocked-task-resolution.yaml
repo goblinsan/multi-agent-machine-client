@@ -1,6 +1,10 @@
 name: "blocked-task-resolution"
 description: "Workflow for analyzing and attempting to unblock blocked tasks"
-version: "1.0.0"
+version: "2.0.0"
+
+# Migration History:
+# - v1.0.0: Initial version
+# - v2.0.0: Added TDD awareness for test-driven development context
 
 trigger:
   condition: "status == 'blocked'"
@@ -11,6 +15,8 @@ context:
 
 variables:
   max_attempts: "${BLOCKED_MAX_ATTEMPTS || 10}"
+  tdd_aware: "${tdd_aware || false}"
+  tdd_stage: "${tdd_stage || 'implementation'}"
 
 steps:
   # Step 1: Check if max attempts exceeded
@@ -98,6 +104,19 @@ steps:
         repo: "${repo_remote}"
         branch: "${branch}"
         project_id: "${projectId}"
+        tdd_aware: "${tdd_aware}"
+        tdd_stage: "${tdd_stage}"
+        tdd_context: |
+          TDD Context: ${tdd_aware ? 'This task is part of a test-driven development workflow' : 'Not TDD-aware'}
+          ${tdd_aware ? 'TDD Stage: ' + tdd_stage : ''}
+          
+          TDD Stage Meanings:
+          - write_failing_test: Writing test that should fail
+          - failing_test: Test exists and is failing (EXPECTED during TDD)
+          - implementation: Implementing code to make test pass
+          - passing_test: Test is passing, refactoring may be in progress
+          
+          ${tdd_aware && tdd_stage === 'failing_test' ? '⚠️ CAUTION: Failing tests may be EXPECTED at this stage. Verify if blockage is legitimate.' : ''}
       timeout: 300000  # 5 minutes
 
   # Step 7: Attempt to unblock
@@ -166,3 +185,9 @@ failure_handling:
 timeouts:
   default_step: 300000  # 5 minutes
   context_request_timeout: 600000  # 10 minutes
+
+# Architecture Notes:
+# - v2.0.0 adds TDD awareness (tdd_aware, tdd_stage variables)
+# - Lead engineer receives TDD context to understand if failing tests are expected
+# - Unblock validation context includes TDD stage information
+# - Does not use review-failure-handling sub-workflow (unblocking is domain-specific)

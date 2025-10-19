@@ -1,6 +1,10 @@
 name: "in-review-task-flow"
 description: "Resume workflow for tasks already in review status - skips to review stages"
-version: "1.0.0"
+version: "2.0.0"
+
+# Migration History:
+# - v1.0.0: Initial version with inline PM evaluation + ReviewFailureTasksStep
+# - v2.0.0: Migrated to use review-failure-handling sub-workflow (unified pattern)
 
 trigger:
   condition: "status == 'in_review' || status == 'review' || status == 'in-code-review'"
@@ -26,86 +30,31 @@ steps:
         resume_review: true
       timeout: 300000  # 5 minutes
 
-  # PM prioritizes code review failures
-  - name: pm_prioritize_code_review_failures
-    type: PersonaRequestStep
-    description: "PM evaluates code review failures and prioritizes follow-up work"
+  # Handle code review failures with unified sub-workflow
+  - name: handle_code_review_failure
+    type: SubWorkflowStep
+    description: "PM prioritization and bulk task creation for code review failures"
     depends_on: ["code_review_request"]
-    condition: "${code_review_request_status} == 'fail'"
-    outputs: ["pm_code_review_decision"]
+    condition: "${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'"
     config:
-      step: "4.5-pm-code-review-prioritization"
-      persona: "project-manager"
-      intent: "prioritize_code_review_failures"
-      payload:
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "code_review"
+        review_result: "${code_review_request_result}"
+        review_status: "${code_review_request_status}"
+        milestone_context: "${milestone}"
         task: "${task}"
-        milestone: "${milestone}"
-        milestone_name: "${milestone_name}"
-        milestone_description: "${milestone_description}"
-        milestone_status: "${milestone_status}"
-        code_review_result: "${code_review_request_result}"
-        code_review_status: "${code_review_request_status}"
-        milestone_completion_percentage: "${milestone_completion_percentage}"
-        repo: "${repo_remote}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 1000
+          deferred: 50
+        config:
+          block_original_task: true
         project_id: "${projectId}"
-        context_for_pm: |
-          You are evaluating code review failures for a task in the ${milestone_name} milestone.
-          
-          The code review results include severity-rated findings stored in .ma/reviews/task-{id}-code-review.log
-          
-          SEVERITY LEVELS EXPLAINED:
-          - SEVERE: Blocking issues (compile errors, critical bugs, broken functionality) - MUST fix immediately
-          - HIGH: Significant problems (major tech debt, performance issues, maintainability concerns) - Should fix before merge
-          - MEDIUM: Code smells (minor violations, style issues, small refactors) - Can often defer to future tasks
-          - LOW: Suggestions (refactoring opportunities, nice-to-haves) - Defer to backlog
-          
-          PROJECT STAGE CONTEXT:
-          - Milestone: ${milestone_name}
-          - Completion: ${milestone_completion_percentage}%
-          - Status: ${milestone_status}
-          
-          DECISION FRAMEWORK:
-          1. Review the code_review_result JSON (contains findings.severe, findings.high, findings.medium, findings.low arrays)
-          2. ALWAYS require immediate fix if SEVERE or HIGH findings exist
-          3. For MEDIUM findings:
-             - Early stage (<50% milestone complete) OR MVP/POC: Can defer to backlog
-             - Production/beta stage (>50% complete): Should fix before merge
-          4. For LOW findings: Always defer to backlog as future improvements
-          
-          YOUR RESPONSE (JSON):
-          {
-            "decision": "defer" | "immediate_fix",
-            "reasoning": "Explain why (include severity counts)",
-            "immediate_issues": ["List of SEVERE and HIGH findings requiring immediate fix"],
-            "deferred_issues": ["List of MEDIUM/LOW findings to add to backlog"],
-            "follow_up_tasks": [{"title": "...", "description": "...", "priority": "low|medium|high"}]
-          }
-          
-          If SEVERE or HIGH findings exist, decision MUST be "immediate_fix".
-          If only MEDIUM/LOW findings exist, decision can be "defer" with backlog tasks created.
-
-  # Create follow-up tasks from PM decision
-  - name: create_code_review_followup_tasks
-    type: ReviewFailureTasksStep
-    description: "Create urgent follow-up tasks for code review failures"
-    depends_on: ["pm_prioritize_code_review_failures"]
-    outputs: ["code_review_tasks_created", "code_review_urgent_tasks_created"]
-    config:
-      pmDecisionVariable: "pm_code_review_decision"
-      reviewType: "code_review"
-      urgentPriorityScore: 1000
-      deferredPriorityScore: 50
-      createDeferredTasks: true
-      backlogMilestoneSlug: "future-enhancements"
-
-  # Mark task as blocked when code review fails - prevents loop
-  - name: mark_task_needs_rework
-    type: SimpleTaskStatusStep
-    description: "Mark original task as needs_rework to exit review loop"
-    depends_on: ["create_code_review_followup_tasks"]
-    config:
-      status: "blocked"
-      comment: "Code review failed - urgent follow-up tasks created"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
 
   # Step 2: Security Review (waits for code review to pass)
   - name: security_request
@@ -127,99 +76,31 @@ steps:
         resume_review: true
       timeout: 300000  # 5 minutes
 
-  # PM prioritizes security review failures
-  - name: pm_prioritize_security_failures
-    type: PersonaRequestStep
-    description: "PM evaluates security review failures and prioritizes follow-up work"
+  # Handle security review failures with unified sub-workflow
+  - name: handle_security_failure
+    type: SubWorkflowStep
+    description: "PM prioritization and bulk task creation for security review failures"
     depends_on: ["security_request"]
-    condition: "${security_request_status} == 'fail'"
-    outputs: ["pm_security_decision"]
+    condition: "${security_request_status} == 'fail' || ${security_request_status} == 'unknown'"
     config:
-      step: "5.5-pm-security-prioritization"
-      persona: "project-manager"
-      intent: "prioritize_security_failures"
-      payload:
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "security_review"
+        review_result: "${security_request_result}"
+        review_status: "${security_request_status}"
+        milestone_context: "${milestone}"
         task: "${task}"
-        milestone: "${milestone}"
-        milestone_name: "${milestone_name}"
-        milestone_description: "${milestone_description}"
-        milestone_status: "${milestone_status}"
-        security_result: "${security_request_result}"
-        security_status: "${security_request_status}"
-        code_review_result: "${code_review_request_result}"
-        milestone_completion_percentage: "${milestone_completion_percentage}"
-        repo: "${repo_remote}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 1500  # Security critical
+          deferred: 50
+        config:
+          block_original_task: true
         project_id: "${projectId}"
-        context_for_pm: |
-          You are evaluating security review failures for a task in the ${milestone_name} milestone.
-          
-          The security review results include severity-rated findings stored in .ma/reviews/task-{id}-security-review.log
-          
-          SEVERITY LEVELS EXPLAINED:
-          - SEVERE: Critical vulnerabilities (RCE, auth bypass, data exposure, SQL injection) - MUST fix immediately regardless of project stage
-          - HIGH: Significant security risks (known CVEs, weak crypto, XSS, CSRF) - Should fix before merge
-          - MEDIUM: Security concerns (missing security headers, outdated deps without known exploits) - Stage-dependent
-          - LOW: Security improvements (hardening opportunities, defense-in-depth enhancements) - Defer to backlog
-          
-          PROJECT STAGE CONTEXT:
-          - Milestone: ${milestone_name}
-          - Completion: ${milestone_completion_percentage}%
-          - Status: ${milestone_status}
-          
-          STAGE DETECTION GUIDANCE:
-          Analyze milestone_name for stage indicators:
-          - EARLY STAGE: Keywords like "MVP", "POC", "prototype", "initial", "foundation"
-          - BETA STAGE: Keywords like "beta", "testing", "pre-release", "RC"
-          - PRODUCTION STAGE: Keywords like "production", "release", "v1.0", "GA", "launch"
-          
-          DECISION FRAMEWORK:
-          1. Review the security_result JSON (contains findings.severe, findings.high, findings.medium, findings.low arrays)
-          2. ALWAYS require immediate fix if SEVERE findings exist (ANY stage)
-          3. For HIGH findings:
-             - Production/Beta: MUST fix immediately
-             - Early stage: Should fix, but can defer if blocking development
-          4. For MEDIUM findings:
-             - Production: Should fix before merge
-             - Beta: Can defer non-critical items
-             - Early stage: Defer to backlog, focus on functionality first
-          5. For LOW findings: Always defer to backlog as future improvements
-          
-          YOUR RESPONSE (JSON):
-          {
-            "decision": "defer" | "immediate_fix",
-            "reasoning": "Explain why (include severity counts and detected stage)",
-            "detected_stage": "early|beta|production",
-            "immediate_issues": ["List of SEVERE/HIGH findings requiring immediate fix"],
-            "deferred_issues": ["List of MEDIUM/LOW findings to add to backlog"],
-            "follow_up_tasks": [{"title": "...", "description": "...", "priority": "low|medium|high|critical"}]
-          }
-          
-          If SEVERE findings exist, decision MUST be "immediate_fix" (regardless of stage).
-          If HIGH findings exist in production/beta, decision MUST be "immediate_fix".
-          If only MEDIUM/LOW findings exist, decision can be "defer" with backlog tasks created.
-
-  # Create follow-up tasks from security PM decision
-  - name: create_security_review_followup_tasks
-    type: ReviewFailureTasksStep
-    description: "Create urgent follow-up tasks for security review failures"
-    depends_on: ["pm_prioritize_security_failures"]
-    outputs: ["security_review_tasks_created", "security_review_urgent_tasks_created"]
-    config:
-      pmDecisionVariable: "pm_security_decision"
-      reviewType: "security_review"
-      urgentPriorityScore: 1500
-      deferredPriorityScore: 50
-      createDeferredTasks: true
-      backlogMilestoneSlug: "future-enhancements"
-
-  # Mark task as blocked when security review fails - prevents loop
-  - name: mark_task_security_blocked
-    type: SimpleTaskStatusStep
-    description: "Mark original task as blocked due to security issues"
-    depends_on: ["create_security_review_followup_tasks"]
-    config:
-      status: "blocked"
-      comment: "Security review failed - urgent follow-up tasks created"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
 
   # Step 3: DevOps Review
   - name: devops_request
@@ -242,12 +123,38 @@ steps:
         resume_review: true
       timeout: 300000  # 5 minutes
 
-  # Step 4: Mark task as done only when security review passes
+  # Handle DevOps review failures with unified sub-workflow
+  - name: handle_devops_failure
+    type: SubWorkflowStep
+    description: "PM prioritization and bulk task creation for DevOps review failures"
+    depends_on: ["devops_request"]
+    condition: "${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'"
+    config:
+      workflow: "review-failure-handling"
+      inputs:
+        review_type: "devops_review"
+        review_result: "${devops_request_result}"
+        review_status: "${devops_request_status}"
+        milestone_context: "${milestone}"
+        task: "${task}"
+        parent_task_id: "${taskId}"
+        priority_scores:
+          urgent: 1100  # DevOps between QA and code review
+          deferred: 50
+        config:
+          block_original_task: true
+        project_id: "${projectId}"
+        repo: "${repo_remote}"
+        tdd_aware: "${tdd_aware || false}"
+        tdd_stage: "${tdd_stage || 'implementation'}"
+        existing_tasks: []  # TODO: Populate from dashboard query
+
+  # Step 4: Mark task as done only when all reviews pass
   - name: mark_task_done
     type: SimpleTaskStatusStep
     description: "Mark task as completed on dashboard when all reviews pass"
     depends_on: ["devops_request"]
-    condition: "${security_request_status} == 'pass'"
+    condition: "${security_request_status} == 'pass' && ${devops_request_status} == 'pass'"
     config:
       status: "done"
 
@@ -263,3 +170,9 @@ failure_handling:
 
 timeouts:
   default_step: 300000  # 5 minutes
+
+# Architecture Notes:
+# - v2.0.0 migrates to use review-failure-handling sub-workflow (unified with task-flow.yaml)
+# - All reviews now pass TDD awareness flags
+# - Duplicate detection supported via existing_tasks (TODO: dashboard query)
+# - Reduced from 266 → ~160 lines (39% reduction)
