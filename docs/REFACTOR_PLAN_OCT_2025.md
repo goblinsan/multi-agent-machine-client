@@ -38,6 +38,7 @@
 **Design Philosophy:**
 - ✅ **Ignore legacy API** - fresh start, no backward compatibility
 - ✅ **YAML workflow first** - API designed for how workflows actually work
+- ✅ **Self-contained project** - can run standalone, extract to separate repo easily
 - ✅ **Simplicity over flexibility** - support what we need, nothing more
 - ✅ **Fast by default** - bulk operations, minimal round-trips
 - ✅ **Debuggable** - SQL queries, full logs, local control
@@ -180,35 +181,115 @@ POST /api/v1/projects/:id:sync
 #### Project Structure
 
 ```
-src/dashboard-backend/
-├── index.ts              # Server entry, process lifecycle
-├── app.ts                # Fastify app configuration
-├── config.ts             # Environment variables
+src/dashboard-backend/              # Self-contained project root
+├── package.json                    # Independent dependencies
+├── tsconfig.json                   # Own TypeScript config
+├── README.md                       # Setup and usage docs
+├── .env.example                    # Configuration template
+│
+├── index.ts                        # Server entry, process lifecycle
+├── app.ts                          # Fastify app configuration
+├── config.ts                       # Environment variables
 │
 ├── db/
-│   ├── schema.ts         # TypeScript interfaces
-│   ├── migrations.ts     # Schema versioning
-│   └── client.ts         # SQLite connection, queries
+│   ├── schema.ts                   # TypeScript interfaces
+│   ├── migrations.ts               # Schema versioning
+│   └── client.ts                   # SQLite connection, queries
 │
 ├── routes/
-│   ├── projects.ts       # GET/POST/PATCH /projects
-│   ├── milestones.ts     # Milestone CRUD
-│   ├── tasks.ts          # Task CRUD + bulk
-│   └── sync.ts           # POST /:id:sync endpoint
+│   ├── projects.ts                 # GET/POST/PATCH /projects
+│   ├── milestones.ts               # Milestone CRUD
+│   ├── tasks.ts                    # Task CRUD + bulk
+│   └── sync.ts                     # POST /:id:sync endpoint
 │
 ├── services/
-│   ├── ProjectService.ts  # Business logic
+│   ├── ProjectService.ts           # Business logic
 │   ├── MilestoneService.ts
 │   └── TaskService.ts
 │
 ├── validators/
-│   └── schemas.ts        # Fastify JSON schemas for validation
+│   └── schemas.ts                  # Fastify JSON schemas for validation
 │
 └── __tests__/
-    ├── api.test.ts       # Integration tests (hit real DB)
-    ├── services.test.ts  # Unit tests (mocked DB)
-    └── load.test.ts      # Performance tests
+    ├── api.test.ts                 # Integration tests (hit real DB)
+    ├── services.test.ts            # Unit tests (mocked DB)
+    └── load.test.ts                # Performance tests
 ```
+
+**Critical: Self-Contained Architecture**
+
+The dashboard backend MUST be completely independent:
+
+1. **No imports from parent project:**
+   ```typescript
+   // ❌ NEVER do this in dashboard backend
+   import { logger } from '../../logger.js';
+   import { makeRedis } from '../../redisClient.js';
+   
+   // ✅ Dashboard backend has own implementations
+   import { logger } from './utils/logger.js';
+   // Dashboard backend doesn't use Redis
+   ```
+
+2. **Independent package.json:**
+   ```json
+   {
+     "name": "@multi-agent/dashboard-backend",
+     "version": "1.0.0",
+     "type": "module",
+     "scripts": {
+       "dev": "tsx watch index.ts",
+       "build": "tsc",
+       "test": "vitest",
+       "start": "node dist/index.js"
+     },
+     "dependencies": {
+       "fastify": "^4.0.0",
+       "better-sqlite3": "^9.0.0"
+     }
+   }
+   ```
+
+3. **Can run standalone:**
+   ```bash
+   cd src/dashboard-backend
+   npm install
+   npm run dev
+   # Server starts on port 8080, no dependency on parent project
+   ```
+
+4. **Clean HTTP boundary:**
+   ```typescript
+   // Main project talks to dashboard backend via HTTP only
+   // src/adapters/dashboardClient.ts (in MAIN project)
+   export async function createTask(task: TaskInput) {
+     const response = await fetch('http://localhost:8080/api/v1/tasks', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify(task)
+     });
+     return response.json();
+   }
+   ```
+
+5. **Extraction ready:**
+   ```bash
+   # To extract to separate repo:
+   cp -r src/dashboard-backend ../dashboard-server
+   cd ../dashboard-server
+   npm install
+   npm run dev
+   # Works immediately, zero changes needed
+   ```
+
+**Benefits:**
+- ✅ Clear separation of concerns
+- ✅ Can be developed/tested independently
+- ✅ Different teams can work on each project
+- ✅ Can deploy as microservice later
+- ✅ Easier to reason about (bounded context)
+- ✅ No risk of circular dependencies
+- ✅ Can have different release cadence
 
 ### Implementation Plan
 
@@ -238,21 +319,33 @@ Day 5: Documentation + Review
   - USER CHECKPOINT: Review API design
 ```
 
-**Phase 2: Minimal Implementation (Week 2)**
+**Phase 2: Minimal Implementation (Week 3)**
 ```
-Day 1-2: Core Backend
+Day 1: Project Setup (Self-Contained)
+  - Create dashboard-backend/ as independent project
+  - Setup package.json, tsconfig.json, README.md
+  - Verify can build/run standalone
+  - NO imports from parent project
+
+Day 2: Core Backend
   - Setup SQLite + Fastify
   - Implement 3-4 critical endpoints
   - Basic validation, error handling
 
-Day 3-4: Integration Proof
+Day 3: Integration Layer
+  - Create HTTP client adapter in main project
+  - Clean HTTP boundary (no direct imports)
+  - Test communication between projects
+
+Day 4: Integration Proof
   - Create simple test workflow
   - Verify API works for real workflow case
   - Measure performance (bulk operations)
 
-Day 5: Refinement
+Day 5: Refinement & Verification
+  - Verify project can be copied and run independently
   - Address any design issues discovered
-  - USER CHECKPOINT: Validate API behavior
+  - USER CHECKPOINT: Validate API behavior + architecture
 ```
 
 **Phase 3: Held until tests rationalized**

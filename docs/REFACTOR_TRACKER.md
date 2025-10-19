@@ -152,30 +152,66 @@ The current workflows directory contains multiple workflow files, some of which 
 
 ## Phase 2: Dashboard Backend Proof
 **Timeline:** Week 3 (Nov 9 - Nov 15, 2025)  
-**Goal:** Minimal implementation to validate API design
+**Goal:** Minimal self-contained implementation to validate API design
+
+### Critical Requirement: Self-Contained Project
+The dashboard backend **MUST** be a completely independent, self-contained project:
+- ✅ Separate directory structure (can run standalone)
+- ✅ Own package.json with independent dependencies
+- ✅ Own TypeScript configuration
+- ✅ Can be extracted to separate repository with zero effort
+- ✅ No imports from parent project (clean API boundary)
+- ✅ Own test suite (unit + integration tests)
+- ✅ Own build process (independent compilation)
+- ✅ Own documentation (README, API docs)
 
 ### Tasks
-- [ ] **Day 1-2: Core Backend**
+- [ ] **Day 1: Project Structure**
+  - [ ] Create `src/dashboard-backend/` as self-contained project
+  - [ ] Setup independent package.json (separate dependencies)
+  - [ ] Setup tsconfig.json for dashboard backend only
+  - [ ] Create README.md with setup/run instructions
+  - [ ] Verify can build/run independently
+  - **Status:** Not Started
+  - **Branch:** `feature/dashboard-backend-proof`
+  - **Deliverable:** Self-contained project that runs standalone
+
+- [ ] **Day 2: Core Backend**
   - [ ] Setup SQLite + Fastify
   - [ ] Implement 3-4 critical endpoints
   - [ ] Basic validation, error handling
+  - [ ] NO imports from parent ../workflows, ../tasks, etc.
   - **Status:** Not Started
-  - **Branch:** `feature/dashboard-backend-proof`
 
-- [ ] **Day 3-4: Integration Proof**
-  - [ ] Create simple test workflow
+- [ ] **Day 3: Integration Layer**
+  - [ ] Create thin adapter in main project to call dashboard backend
+  - [ ] Dashboard backend exposes HTTP API only
+  - [ ] Test HTTP client from main project
+  - [ ] Verify clean separation (HTTP boundary only)
+  - **Status:** Not Started
+
+- [ ] **Day 4: Integration Proof**
+  - [ ] Create simple test workflow using adapter
   - [ ] Verify API works for real workflow case
   - [ ] Measure performance (bulk operations)
   - **Status:** Not Started
 
-- [ ] **Day 5: Refinement**
+- [ ] **Day 5: Refinement & Review**
+  - [ ] Verify project can be copied to new directory and run
   - [ ] Address any design issues discovered
-  - [ ] **USER CHECKPOINT:** Validate API behavior
+  - [ ] **USER CHECKPOINT:** Validate API behavior + self-contained architecture
   - **Status:** Not Started
 
 ### Checkpoint #2: API Behavior Validation
 **Date:** TBD  
 **Status:** ⏳ Pending
+
+**Review Questions:**
+- [ ] Does dashboard backend run as standalone project?
+- [ ] Can it be extracted to separate repo with zero changes?
+- [ ] Is API boundary clean (HTTP only, no direct imports)?
+- [ ] Does API work for real workflow scenarios?
+- [ ] Is performance acceptable for bulk operations?
 
 **Approval:** ❌ Not Yet Approved
 
@@ -451,11 +487,13 @@ The current workflows directory contains multiple workflow files, some of which 
 ## Success Criteria Tracking
 
 ### Dashboard Backend
+- [ ] Dashboard backend is self-contained project (can run standalone)
+- [ ] Clean HTTP API boundary (no direct imports from main project)
 - [ ] All 264+ existing tests pass with new backend
 - [ ] Load test: 1000 tasks created in <1 second
 - [ ] Zero 422 "Unknown milestone" errors in production
 - [ ] Bulk sync endpoint reduces API calls by 90%+
-- [ ] Dashboard backend can be extracted to separate repo
+- [ ] Dashboard backend can be extracted to separate repo with zero effort
 
 ### Review Consolidation
 - [ ] Single ReviewFailureService used by all review types
