@@ -227,21 +227,54 @@
 
 ---
 
-### Phase 3: Migrate Other Workflows (DEFERRED per user decision)
-**Goal:** Apply sub-workflow pattern to conditional workflows
+### Phase 3: Migrate Conditional Workflows (Week 2, Days 6-10)
+**Goal:** Apply sub-workflow pattern to all remaining workflows
 
-**User Decision:** Defer until after dashboard redesign complete
+**User Decision:** Complete workflow consolidation NOW (informs dashboard + test design)
 
-This phase moved to post-Phase 7 (after complete dashboard backend):
-- Refactor in-review-task-flow.yaml (195 → ~100 lines)
-- Refactor blocked-task-resolution.yaml (215 → ~120 lines)  
-- Create hotfix-task-flow.yaml (~80 lines)
-- Timeline: 1 week after dashboard complete
+**Step 3.1: Refactor in-review-task-flow.yaml (Day 6-7)**
+- [ ] Use review-failure-handling sub-workflow for all review types
+- [ ] Simplify logic (task already in review, just needs review coordination)
+- [ ] Reduce from 195 → ~100 lines
+- [ ] Test with tasks in "in_review" status
+- **Risk:** Low - straightforward sub-workflow usage
+- **Timeline:** 2 days
 
-**Rationale:**
-- Conditional workflows rarely used (<1% of tasks)
-- Focus on critical path (dashboard redesign)
-- Can apply dashboard learnings when implementing later
+**Step 3.2: Refactor blocked-task-resolution.yaml (Day 7-8)**
+- [ ] Use task-implementation sub-workflow
+- [ ] Focus on unblocking logic + re-implementation
+- [ ] Reduce from 215 → ~120 lines
+- [ ] Test with blocked tasks
+- **Risk:** Low - similar to primary workflow
+- **Timeline:** 2 days
+
+**Step 3.3: Create hotfix-task-flow.yaml (Day 8-9)**
+- [ ] New workflow for expedited fixes
+- [ ] Uses all 3 sub-workflows (git, implementation, review-failure)
+- [ ] Minimal planning (fast-track approach)
+- [ ] Expedited review process
+- [ ] ~80 lines total
+- [ ] Test with hotfix scenario
+- **Risk:** Low - composition of existing patterns
+- **Timeline:** 2 days
+
+**Step 3.4: Delete Unused Workflows (Day 9)**
+- [ ] Delete `/workflows/` directory entirely
+- [ ] Delete 5 unused files from `/src/workflows/definitions/`
+- [ ] Update WorkflowCoordinator if needed (remove references)
+- [ ] Update documentation
+- **Risk:** Very Low - already confirmed unused
+- **Timeline:** 1 day
+
+**Step 3.5: Integration Testing (Day 10)**
+- [ ] Test all workflow paths in development
+- [ ] Verify workflow selection logic works
+- [ ] Test all sub-workflow combinations
+- [ ] Document workflow selection criteria
+- **Risk:** Low - validation step
+- **Timeline:** 1 day
+
+**Deliverable:** Complete workflow architecture (5 core + 3 sub-workflows), ready for production
 
 ---
 
@@ -276,8 +309,9 @@ workflows/
 src/workflows/definitions/
   legacy-compatible-task-flow.yaml  (200 lines, primary - refactored)
   project-loop.yaml                 (87 lines, fallback - unchanged)
-  in-review-task-flow.yaml          (195 lines, deferred - unchanged for now)
-  blocked-task-resolution.yaml      (215 lines, deferred - unchanged for now)
+  in-review-task-flow.yaml          (100 lines, refactored)
+  blocked-task-resolution.yaml      (120 lines, refactored)
+  hotfix-task-flow.yaml             (80 lines, new)
 
 src/workflows/sub-workflows/
   review-failure-handling.yaml      (50 lines, new)
@@ -297,9 +331,10 @@ Deleted (no archive):
   definitions/feature.yaml               (108 lines)
   definitions/hotfix.yaml                (62 lines)
 
-Total: 4 core workflows + 3 sub-workflows = 7 active files, ~787 lines
+Total: 5 core workflows + 3 sub-workflows = 8 active files, ~727 lines
 Deleted: 8 workflows, 797 lines
-Reduction: Primary workflow 446 → 200 lines (55% reduction)
+Reduction: 1,840 → 727 lines (60% reduction overall)
+Primary workflow: 446 → 200 lines (55% reduction)
 ```
 
 ---
@@ -459,22 +494,25 @@ Reduction: Primary workflow 446 → 200 lines (55% reduction)
 
 ## Timeline Summary
 
-### Phase 1: Implement Sub-Workflows (Week 1)
+### Week 1: Implement Sub-Workflows (Days 1-5)
 - Days 1-2: SubWorkflowStep + support steps
-- Days 3-4: Create sub-workflow YAML files
+- Days 3-4: Create sub-workflow YAML files + PM prompt template
 - Days 4-5: Integration tests
 
-### Phase 2: Migrate Primary Workflow (Week 2)
-- Day 1: Feature flag + v2 creation
-- Days 2-3: Parallel testing + canary rollout
-- Days 4-5: Full migration + monitoring
+### Week 2: Migrate All Workflows (Days 6-10)
+- Days 6-7: Migrate primary workflow (legacy-compatible-task-flow)
+- Days 7-8: Migrate conditional workflows (in-review, blocked-task-resolution)
+- Days 8-9: Create hotfix-task-flow
+- Day 9: Delete unused workflows + cleanup
+- Day 10: Full integration testing + production deployment
 
-### Phase 3: Other Workflows (Optional, Week 3)
-- Days 1-2: in-review-task-flow
-- Days 3-4: blocked-task-resolution + hotfix
-- Day 5: Cleanup and archive
+**Total Timeline:** 2 weeks for complete workflow consolidation
 
-**Total Timeline:** 2 weeks (required), 3 weeks (complete)
+**Benefits of Complete Consolidation:**
+- ✅ Informs dashboard API design (all patterns known)
+- ✅ Informs test rationalization (complete business logic mapped)
+- ✅ Single effort (no revisiting workflows later)
+- ✅ Consistent architecture across all workflows
 
 ---
 
@@ -595,26 +633,27 @@ Reduction: Primary workflow 446 → 200 lines (55% reduction)
 - ✅ Rely on git commits + milestone branches for versioning
 - ✅ Sub-workflows evolve with codebase (backward compatibility maintained)
 
-### 5. Phase 3 Priority ✅ APPROVED - DEFER
-**Decision:** Defer Phase 3 until after dashboard redesign
+### 5. Conditional Workflow Migration ✅ APPROVED - DO NOW
+**Decision:** Migrate ALL workflows now (complete consolidation)
 
-**User Response:** "Phase can be deferred until after dashboard redesign"
+**User Response:** "i want complete workflow consolidation now to clarify the intent of the architecture for the dashboard redesign and test rationalization"
 
 **Implementation:**
-- ✅ Focus on primary workflow only (legacy-compatible-task-flow)
-- ✅ Defer conditional workflow refactoring (in-review-task-flow, blocked-task-resolution)
-- ✅ Defer hotfix-task-flow creation
-- ✅ Phase 3 becomes post-dashboard cleanup task
+- ✅ Migrate primary workflow (legacy-compatible-task-flow)
+- ✅ Migrate conditional workflows (in-review-task-flow, blocked-task-resolution)
+- ✅ Create hotfix-task-flow
+- ✅ Complete consolidation before dashboard API design
 
-**Revised Timeline:**
-- Phase 0-2: Workflow rationalization (primary workflow only)
-- Phase 1-7: Dashboard redesign (API, backend, test rationalization, review consolidation)
-- Phase 3 (deferred): Migrate conditional workflows after dashboard complete
+**Timeline:**
+- Week 1: Sub-workflows + primary workflow
+- Week 2: Conditional workflows + hotfix workflow + cleanup
+- Total: 2 weeks for complete workflow architecture
 
 **Benefits:**
-- Faster path to dashboard work (critical path)
-- Conditional workflows rarely used (<1% of tasks)
-- Can apply dashboard learnings to Phase 3 later
+- Complete workflow architecture informs dashboard API design
+- Clear patterns for test rationalization
+- Single consolidated effort (no revisiting later)
+- All workflows use same sub-workflow patterns
 
 ---
 
@@ -636,7 +675,7 @@ For **User Checkpoint #0**, please review and approve:
 - ✅ **Question 2 (Archive):** Delete unused workflows (no archive)
 - ✅ **Question 3 (Feature Flags):** No feature flags - fall forward approach
 - ✅ **Question 4 (Versioning):** Not needed - milestone branches handle versioning
-- ✅ **Question 5 (Phase 3):** Defer until after dashboard redesign
+- ✅ **Question 5 (Conditional Workflows):** DO NOW - complete consolidation to inform dashboard + test design
 
 **Outstanding Decision:**
 - ❓ **Workflow Naming:** Choose name for `legacy-compatible-task-flow.yaml`
@@ -644,7 +683,7 @@ For **User Checkpoint #0**, please review and approve:
   - Option B: Rename to `standard-task-flow.yaml`
   - Option C: Rename to `task-flow.yaml`
 
-**If Approved:** Proceed to implement sub-workflows (Week 2-3, parallel with Phase 1 API design)  
+**If Approved:** Proceed to implement complete workflow consolidation (2 weeks, all workflows)  
 **If Changes Needed:** Update proposal based on feedback
 
 ---
@@ -658,9 +697,17 @@ For **User Checkpoint #0**, please review and approve:
 5. 🎯 **User Checkpoint #1** - Review dashboard API design
 
 **Timeline Alignment:**
-- Phase 0 complete: Oct 25, 2025 (end of Week 1)
-- Phase 1 API design: Oct 26 - Nov 8 (Week 2-3)
-- Sub-workflow implementation: Nov 2-15 (parallel with API design)
-- Workflow migration: Nov 9-22 (after API design approved)
+- Phase 0 complete: Oct 25, 2025 (end of Week 1) ✅
+- **Workflow consolidation (complete): Nov 2-15, 2025 (2 weeks)**
+- Phase 1 API design: Nov 16-29 (Week 4-5) - informed by complete workflow architecture
+- Phase 2 Dashboard backend proof: Nov 30 - Dec 6 (Week 6)
+- Phase 3 Test rationalization: Dec 7-20 (Week 7-8) - informed by complete workflow patterns
 
-This ensures dashboard API requirements drive both API design AND workflow implementation.
+**Critical Path Updated:**
+Workflow consolidation FIRST → then dashboard API design → then test rationalization
+
+This ensures:
+1. Complete workflow patterns inform dashboard API requirements
+2. Complete workflow architecture informs test business logic mapping
+3. Single consolidated effort (no revisiting workflows)
+4. Clear architectural intent for all downstream work
