@@ -277,9 +277,16 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     try {
       let parsed: any = null;
       
-      // If it's already an object, use it
+      // If it's already an object, check if it has a 'raw' field (from PersonaRequestStep JSON.parse failure)
       if (typeof rawDecision === 'object' && rawDecision !== null) {
-        parsed = rawDecision;
+        if (rawDecision.raw && typeof rawDecision.raw === 'string') {
+          // PersonaRequestStep failed to parse, stored as { raw: "..." }
+          // Try to parse the raw field
+          rawDecision = rawDecision.raw;
+        } else {
+          // Already a proper object, use it
+          parsed = rawDecision;
+        }
       }
       
       // If it's a string, try to parse as JSON
