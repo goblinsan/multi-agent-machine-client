@@ -159,7 +159,14 @@ paths:
     post:
       tags: [Tasks]
       summary: Create a single task
-      description: Create one task. For multiple tasks, use POST /tasks:bulk instead.
+      description: |
+        Create one task with optional idempotent behavior via external_id.
+        
+        **Idempotency:** If external_id is provided and a task with that external_id
+        already exists in the project, returns the existing task (200 OK) instead of
+        creating a duplicate. This enables safe workflow re-runs.
+        
+        For creating multiple tasks efficiently, use POST /tasks:bulk instead.
       operationId: createTask
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -178,8 +185,16 @@ paths:
               parent_task_id: "task-456"
               labels: ["code-quality", "urgent"]
       responses:
+        '200':
+          description: |
+            Task already exists (idempotent response).
+            Returned when external_id is provided and matches an existing task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
         '201':
-          description: Task created
+          description: Task created successfully
           content:
             application/json:
               schema:
@@ -188,28 +203,29 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
   
   /projects/{projectId}/tasks:bulk:
     post:
       tags: [Tasks]
       summary: Create multiple tasks (bulk operation)
       description: |
-        Create multiple tasks in a single request with optional duplicate detection.
+        Create multiple tasks in a single request with optional duplicate detection and idempotency.
         
         **Performance:** <100ms for 20 tasks, <500ms for 100 tasks
         
+        **Idempotency:** Tasks with external_id will be checked for duplicates first.
+        If a task with matching external_id exists, it will be returned instead of creating a duplicate.
+        
         **Duplicate Detection Strategies:**
+        - `external_id`: Match by exact external_id (recommended for idempotent workflows)
         - `title`: Match by LOWER(title) across all milestones
-        - `title_and_milestone`: Match by LOWER(title) + milestone_id (recommended)
-        - `external_id`: Match by exact external_id
+        - `title_and_milestone`: Match by LOWER(title) + milestone_id
         - `none`: No duplicate detection (always create)
         
         **Use Cases:**
-        - Review failure task creation (PM evaluation → bulk create)
+        - Review failure task creation with idempotent workflow re-runs
         - Importing tasks from external systems
-        - Batch task initialization
+        - Batch task initialization with duplicate prevention
         
       operationId: createTasksBulk
       parameters:
@@ -703,8 +719,13 @@ components:
           example: "project-123"
         external_id:
           type: string
-          description: External identifier for duplicate detection
-          example: "code-review-finding-1"
+          description: |
+            External identifier for idempotent task creation and duplicate detection.
+            When provided, acts as a unique key - attempting to create a task with
+            an existing external_id will return the existing task (200 OK) instead
+            of creating a duplicate (idempotent upsert behavior).
+            Format: typically `workflow_run_id:step_name:task_index` for workflow-generated tasks.
+          example: "wf-abc123:create_qa_tasks:0"
           nullable: true
         title:
           type: string
@@ -801,7 +822,12 @@ components:
       properties:
         external_id:
           type: string
-          description: External identifier for duplicate detection
+          description: |
+            Optional external identifier for idempotent task creation.
+            If provided and a task with this external_id already exists,
+            the API will return the existing task (200 OK) instead of
+            creating a duplicate. UNIQUE constraint enforced at database level.
+          example: "wf-abc123:create_qa_tasks:0"
         title:
           type: string
           minLength: 1

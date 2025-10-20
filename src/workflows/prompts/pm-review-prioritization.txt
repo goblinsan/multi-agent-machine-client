@@ -60,56 +60,71 @@ The following tasks already exist on the dashboard. **DO NOT create duplicate ta
 
 Analyze these review failures and decide:
 
-1. **Priority Classification:** Which issues are urgent (block current milestone) vs deferred (backlog)?
+1. **Priority Classification:** Which issues are urgent (block current milestone) vs deferred (future milestone)?
 2. **Task Breakdown:** Create specific, actionable follow-up tasks
 3. **Reasoning:** Explain your prioritization decisions
 
+## Priority Level Guidelines
+
+- **critical:** Blocks all work (security vulnerabilities, system crashes, data loss)
+  - → Assigned to **immediate** milestone (priority score: 1500)
+- **high:** Blocks current milestone (test failures, broken functionality, integration issues)
+  - → Assigned to **immediate** milestone (priority score: 1200 for QA, 1000 for others)
+- **medium:** Important but can wait for next iteration (technical debt, minor bugs, optimizations)
+  - → Assigned to **deferred** milestone (priority score: 800)
+- **low:** Nice to have, future enhancement (code style, documentation, minor improvements)
+  - → Assigned to **deferred** milestone (priority score: 50)
+
 ## Output Format
 
-Provide your response as a JSON object:
+Provide your response as a JSON object with **ONLY** the `follow_up_tasks` array. The `backlog` field is **DEPRECATED** and should NOT be used.
 
 ```json
 {
-  "decision": "urgent" | "deferred" | "mixed",
+  "decision": "immediate_fix" | "defer",
   "reasoning": "Brief explanation of your prioritization strategy",
   "immediate_issues": [
-    {
-      "description": "Issue that blocks current milestone",
-      "category": "bug | test_failure | security | performance | other",
-      "severity": "critical | high | medium | low"
-    }
+    "Issue 1 that blocks current milestone",
+    "Issue 2 that blocks current milestone"
   ],
   "deferred_issues": [
-    {
-      "description": "Issue that can be addressed later",
-      "category": "technical_debt | enhancement | optimization | other",
-      "severity": "medium | low"
-    }
+    "Issue 1 that can be addressed later",
+    "Issue 2 that can be addressed later"
   ],
   "follow_up_tasks": [
     {
       "title": "Specific task title",
-      "description": "Detailed task description",
+      "description": "Detailed task description with context",
       "priority": "critical | high | medium | low",
-      "category": "urgent | deferred",
-      "estimated_effort": "small | medium | large"
+      "estimated_effort": "small | medium | large",
+      "is_duplicate": false,
+      "duplicate_of_task_id": null,
+      "skip_reason": null
     }
   ]
 }
 ```
 
+**IMPORTANT:**
+- Use **ONLY** `follow_up_tasks` array (not `backlog`)
+- Set `priority` based on severity guidelines above
+- `critical` and `high` priority tasks → immediate milestone
+- `medium` and `low` priority tasks → deferred milestone
+- The system automatically routes tasks to correct milestones based on priority
+
 ## Guidelines
 
-- **Urgent issues** block the current milestone and must be fixed now
-- **Deferred issues** are important but can wait for a future milestone
+- **Immediate issues (critical/high):** Block the current milestone and must be fixed now
+  - Security vulnerabilities, system crashes, data loss (critical)
+  - Test failures, broken core functionality, integration issues (high)
+- **Deferred issues (medium/low):** Important but can wait for a future milestone
+  - Technical debt, minor bugs, optimizations (medium)
+  - Code style, documentation, nice-to-have features (low)
 - Break down complex failures into specific, actionable tasks
 - Include enough detail so the developer knows exactly what to fix
 - Consider the milestone timeline and project priorities
-- Security issues are almost always urgent
-- Test failures may be urgent or deferred depending on criticality
-- Code quality issues are usually deferred unless they impact functionality
 - **TDD workflows:** If task is in failing_test stage, test failures may be EXPECTED - evaluate if review failure is due to intentional failing test vs actual bugs
-- **Duplicate prevention:** Check existing_tasks list before creating new tasks - reference existing tasks instead of creating duplicates
+- **Duplicate prevention:** Check existing_tasks list before creating new tasks - mark `is_duplicate: true` and set `duplicate_of_task_id` if task already exists
 
 ## Output Format
 

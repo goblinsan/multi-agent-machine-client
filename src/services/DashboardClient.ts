@@ -37,19 +37,19 @@ export interface TaskCreateInput {
   title: string;
   description?: string;
   status?: 'open' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'archived';
-  priority?: number;
+  priority_score?: number;  // Changed from 'priority' to match dashboard backend
   milestone_id?: number;
   parent_task_id?: number;
   external_id?: string;
   labels?: string[];
-  assignee_persona?: string;
+  assignee_persona?: string;  // Note: Dashboard backend doesn't have this field yet
 }
 
 export interface TaskUpdateInput {
   title?: string;
   description?: string;
   status?: 'open' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'archived';
-  priority?: number;
+  priority_score?: number;  // Changed from 'priority' to match dashboard backend
   milestone_id?: number;
   parent_task_id?: number;
   labels?: string[];
@@ -65,9 +65,15 @@ export interface BulkTaskCreateInput {
 
 export interface BulkTaskCreateResponse {
   created: Task[];
+  skipped?: Array<{
+    task: Task;
+    reason: string;
+    external_id: string;
+  }>;
   summary: {
     totalRequested: number;
     created: number;
+    skipped?: number;
   };
 }
 

@@ -16,6 +16,12 @@ interface PMDecision {
     description: string;
     priority: 'critical' | 'high' | 'medium' | 'low';
   }>;
+  // Legacy field (deprecated - consolidated into follow_up_tasks)
+  backlog?: Array<{
+    title: string;
+    description: string;
+    priority: 'critical' | 'high' | 'medium' | 'low';
+  }>;
 }
 
 /**
@@ -25,6 +31,7 @@ interface PMDecisionParserConfig {
   input: any;         // PM persona output (can be various formats)
   normalize: boolean; // Whether to normalize to standard format
   review_type?: string; // Type of review for context (qa, code_review, security, etc.)
+  parent_milestone_id?: number; // Parent milestone ID for validation (optional)
 }
 
 /**
@@ -39,6 +46,22 @@ interface PMDecisionParserConfig {
  * - Text response with structured sections
  * - Legacy formats from different PM prompts
  * 
+ * **Backlog Deprecation (Production Bug Fix):**
+ * - PM used to return both `backlog` and `follow_up_tasks` fields
+ * - This caused 0 tasks to be created (architectural bug)
+ * - Now merges `backlog` into `follow_up_tasks` with warning log
+ * - PM prompts should be updated to use only `follow_up_tasks`
+ * 
+ * **Priority Validation:**
+ * - QA urgent tasks: priority 1200 (critical/high)
+ * - Code/Security/DevOps urgent tasks: priority 1000 (critical/high)
+ * - All deferred tasks: priority 50 (medium/low)
+ * 
+ * **Milestone Routing:**
+ * - Urgent tasks (critical/high): link to parent milestone (immediate)
+ * - Deferred tasks (medium/low): link to backlog milestone (future)
+ * - Missing parent milestone: handled in BulkTaskCreationStep
+ * 
  * Example usage in YAML:
  * ```yaml
  * - name: parse_pm_decision
@@ -47,6 +70,7 @@ interface PMDecisionParserConfig {
  *     input: "${pm_evaluation}"
  *     normalize: true
  *     review_type: "qa"
+ *     parent_milestone_id: "${milestone.id}"
  *   outputs:
  *     decision: decision
  *     follow_up_tasks: follow_up_tasks
@@ -116,12 +140,7 @@ export class PMDecisionParserStep extends WorkflowStep {
         status: 'success',
         data: { parsed_decision: decision },
         outputs: {
-          decision: decision.decision,
-          reasoning: decision.reasoning,
-          immediate_issues: decision.immediate_issues,
-          deferred_issues: decision.deferred_issues,
-          follow_up_tasks: decision.follow_up_tasks,
-          detected_stage: decision.detected_stage
+          pm_decision: decision  // Output the complete decision object
         },
         metrics: {
           duration_ms: Date.now() - startTime
@@ -210,6 +229,24 @@ export class PMDecisionParserStep extends WorkflowStep {
       decisionObj = input.output;
     }
 
+    // Handle backlog deprecation (production bug fix)
+    let followUpTasks = [];
+    if (Array.isArray(decisionObj.follow_up_tasks)) {
+      followUpTasks = decisionObj.follow_up_tasks;
+    }
+    
+    // Check for deprecated 'backlog' field
+    if (Array.isArray(decisionObj.backlog)) {
+      logger.warn('PM returned deprecated "backlog" field - merging into follow_up_tasks', {
+        backlogCount: decisionObj.backlog.length,
+        followUpTasksCount: followUpTasks.length,
+        reviewType
+      });
+      
+      // Merge backlog into follow_up_tasks (production bug fix)
+      followUpTasks = [...followUpTasks, ...decisionObj.backlog];
+    }
+
     const decision: PMDecision = {
       decision: decisionObj.decision === 'defer' ? 'defer' : 'immediate_fix',
       reasoning: decisionObj.reasoning || '',
@@ -219,13 +256,11 @@ export class PMDecisionParserStep extends WorkflowStep {
       deferred_issues: Array.isArray(decisionObj.deferred_issues)
         ? decisionObj.deferred_issues
         : [],
-      follow_up_tasks: Array.isArray(decisionObj.follow_up_tasks)
-        ? decisionObj.follow_up_tasks.map((task: any) => ({
-            title: task.title || '',
-            description: task.description || '',
-            priority: this.normalizePriority(task.priority)
-          }))
-        : []
+      follow_up_tasks: followUpTasks.map((task: any) => ({
+        title: task.title || '',
+        description: task.description || '',
+        priority: this.normalizePriority(task.priority)
+      }))
     };
 
     // Extract detected stage for security reviews
@@ -253,11 +288,39 @@ export class PMDecisionParserStep extends WorkflowStep {
     decision.deferred_issues = decision.deferred_issues || [];
     decision.follow_up_tasks = decision.follow_up_tasks || [];
 
-    // Normalize task priorities
-    decision.follow_up_tasks = decision.follow_up_tasks.map(task => ({
-      ...task,
-      priority: this.normalizePriority(task.priority)
-    }));
+    // Validate immediate_fix decision has follow-up tasks
+    if (decision.decision === 'immediate_fix' && decision.follow_up_tasks.length === 0) {
+      logger.warn('PM decision is immediate_fix but no follow_up_tasks provided - defaulting to defer', {
+        reviewType,
+        immediateIssues: decision.immediate_issues.length,
+        deferredIssues: decision.deferred_issues.length
+      });
+      decision.decision = 'defer';
+    }
+
+    // Normalize task priorities and add validation
+    decision.follow_up_tasks = decision.follow_up_tasks.map(task => {
+      const normalizedPriority = this.normalizePriority(task.priority);
+      
+      // Log priority validation (QA=1200, others=1000 for urgent)
+      if (reviewType === 'qa' && (normalizedPriority === 'critical' || normalizedPriority === 'high')) {
+        logger.debug('QA review urgent task will receive priority 1200', {
+          taskTitle: task.title,
+          priority: normalizedPriority
+        });
+      } else if (normalizedPriority === 'critical' || normalizedPriority === 'high') {
+        logger.debug('Review urgent task will receive priority 1000', {
+          reviewType,
+          taskTitle: task.title,
+          priority: normalizedPriority
+        });
+      }
+      
+      return {
+        ...task,
+        priority: normalizedPriority
+      };
+    });
 
     // Apply review-type-specific logic
     if (reviewType === 'security_review' && !decision.detected_stage) {

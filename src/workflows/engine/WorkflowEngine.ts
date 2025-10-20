@@ -207,6 +207,18 @@ export class WorkflowEngine {
           const result = await this.executeStep(stepConfig, context, options);
           results.push(result);
 
+          // Check for workflow abort signal
+          const abortRequested = context.getVariable('workflow_abort_requested');
+          if (abortRequested === true) {
+            const abortReason = context.getVariable('workflow_abort_reason') || 'Unknown reason';
+            logger.error('Workflow abort requested', {
+              workflowId: context.workflowId,
+              step: stepConfig.name,
+              reason: abortReason
+            });
+            throw new Error(`Workflow aborted: ${abortReason}`);
+          }
+
           if (result.status === 'success' || result.status === 'skipped') {
             // Add both successful and skipped steps to executedSteps
             // so that dependent steps can proceed

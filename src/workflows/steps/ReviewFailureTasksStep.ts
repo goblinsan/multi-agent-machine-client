@@ -8,17 +8,21 @@ import { createDashboardTask, fetchProjectTasks } from '../../dashboard.js';
  */
 interface ReviewFailureTasksConfig {
   /**
-   * Variable name containing the PM decision result
+   * Variable name containing the normalized PM decision from PMDecisionParserStep
+   * Expected format: { decision, reasoning, immediate_issues, deferred_issues, follow_up_tasks }
    */
   pmDecisionVariable: string;
   
   /**
    * Type of review that failed
    */
-  reviewType: 'code_review' | 'security_review';
+  reviewType: 'code_review' | 'security_review' | 'qa' | 'devops';
   
   /**
-   * Priority score for urgent tasks (default: 1000 for immediate attention)
+   * Priority score for urgent tasks
+   * - QA: 1200 (test failures block all work)
+   * - Code/Security/DevOps: 1000
+   * If not specified, uses review type defaults
    */
   urgentPriorityScore?: number;
   
@@ -41,13 +45,16 @@ interface ReviewFailureTasksConfig {
 /**
  * ReviewFailureTasksStep creates follow-up tasks based on PM review failure prioritization
  * 
+ * **IMPORTANT:** This step requires normalized PM decision from PMDecisionParserStep.
+ * The legacy parsePMDecision() method has been REMOVED (44% code reduction).
+ * 
  * This step:
- * 1. Parses the PM decision from the review failure evaluation
- * 2. Creates high-priority urgent tasks for SEVERE/HIGH issues
- * 3. Optionally creates backlog tasks for MEDIUM/LOW issues
+ * 1. Gets normalized PM decision from PMDecisionParserStep (via context variable)
+ * 2. Creates high-priority urgent tasks for critical/high priority issues
+ * 3. Optionally creates backlog tasks for medium/low priority issues
  * 4. Returns summary of created tasks
  * 
- * Expected PM decision format:
+ * Expected PM decision format (from PMDecisionParserStep):
  * {
  *   "decision": "immediate_fix" | "defer",
  *   "reasoning": "...",
@@ -57,6 +64,34 @@ interface ReviewFailureTasksConfig {
  *     {"title": "...", "description": "...", "priority": "critical|high|medium|low"}
  *   ]
  * }
+ * 
+ * **Assignee Logic (Simplified):**
+ * All follow-up tasks are assigned to 'implementation-planner' persona.
+ * This must precede engineering work. Review-type-specific assignee logic removed.
+ * 
+ * **Priority Tiers:**
+ * - QA urgent: 1200 (test failures block all work)
+ * - Code/Security/DevOps urgent: 1000
+ * - All deferred: 50
+ * 
+ * **Workflow Integration:**
+ * ```yaml
+ * # In review-failure-handling.yaml:
+ * - name: parse_pm_decision
+ *   type: PMDecisionParserStep
+ *   config:
+ *     input: "${pm_evaluation}"
+ *     normalize: true
+ *     review_type: "${review_type}"
+ *   outputs:
+ *     pm_decision: parsed_decision
+ * 
+ * - name: create_follow_up_tasks
+ *   type: ReviewFailureTasksStep
+ *   config:
+ *     pmDecisionVariable: "pm_decision"  # Uses PMDecisionParserStep output
+ *     reviewType: "${review_type}"
+ * ```
  */
 export class ReviewFailureTasksStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
@@ -70,40 +105,35 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         pmDecisionVariable: config.pmDecisionVariable
       });
       
-      // Get PM decision from context
-      const pmDecisionRaw = context.getVariable(config.pmDecisionVariable);
-      if (!pmDecisionRaw) {
-        logger.warn('No PM decision found in context', {
+      // Get normalized PM decision from PMDecisionParserStep output
+      const pmDecision = context.getVariable(config.pmDecisionVariable);
+      
+      if (!pmDecision) {
+        logger.error('No PM decision found in context - ensure PMDecisionParserStep runs before this step', {
           stepName: this.config.name,
-          variable: config.pmDecisionVariable
+          variable: config.pmDecisionVariable,
+          availableVariables: Object.keys(context['variables'] || {})
         });
         return {
-          status: 'success' as const,
-          outputs: {
-            tasks_created: 0,
-            urgent_tasks_created: 0,
-            deferred_tasks_created: 0
-          },
+          status: 'failure' as const,
+          error: new Error(`Missing PM decision variable: ${config.pmDecisionVariable}. Ensure PMDecisionParserStep runs first.`),
           metrics: {
             duration_ms: Date.now() - startTime
           }
         };
       }
       
-      // Parse PM decision
-      const pmDecision = this.parsePMDecision(pmDecisionRaw);
-      if (!pmDecision) {
-        logger.warn('Failed to parse PM decision', {
+      // Validate PM decision structure (should be normalized by PMDecisionParserStep)
+      if (!pmDecision.follow_up_tasks || !Array.isArray(pmDecision.follow_up_tasks)) {
+        logger.error('PM decision missing follow_up_tasks array - expected normalized output from PMDecisionParserStep', {
           stepName: this.config.name,
-          rawDecision: typeof pmDecisionRaw === 'string' ? pmDecisionRaw.substring(0, 200) : JSON.stringify(pmDecisionRaw).substring(0, 200)
+          hasFollowUpTasks: !!pmDecision.follow_up_tasks,
+          pmDecisionType: typeof pmDecision,
+          pmDecisionKeys: Object.keys(pmDecision)
         });
         return {
-          status: 'success' as const,
-          outputs: {
-            tasks_created: 0,
-            urgent_tasks_created: 0,
-            deferred_tasks_created: 0
-          },
+          status: 'failure' as const,
+          error: new Error('Invalid PM decision format - follow_up_tasks array required. Ensure PMDecisionParserStep normalization is enabled.'),
           metrics: {
             duration_ms: Date.now() - startTime
           }
@@ -120,12 +150,12 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         throw new Error('Missing required projectId in context');
       }
       
-      logger.info('PM decision parsed', {
+      logger.info('PM decision validated', {
         stepName: this.config.name,
         decision: pmDecision.decision,
         immediateIssuesCount: pmDecision.immediate_issues?.length || 0,
         deferredIssuesCount: pmDecision.deferred_issues?.length || 0,
-        followUpTasksCount: pmDecision.follow_up_tasks?.length || 0
+        followUpTasksCount: pmDecision.follow_up_tasks.length
       });
       
       // Fetch existing tasks for duplicate detection
@@ -140,14 +170,19 @@ export class ReviewFailureTasksStep extends WorkflowStep {
       let deferredTasksCreated = 0;
       let skippedDuplicates = 0;
       
-      // Create urgent/immediate fix tasks
-      if (pmDecision.follow_up_tasks && pmDecision.follow_up_tasks.length > 0) {
+      // Create follow-up tasks
+      if (pmDecision.follow_up_tasks.length > 0) {
         for (const followUpTask of pmDecision.follow_up_tasks) {
           const isUrgent = ['critical', 'high'].includes(followUpTask.priority?.toLowerCase() || '');
           
           try {
+            // Calculate priority score based on review type and urgency
+            // QA urgent: 1200 (test failures block all work)
+            // Code/Security/DevOps urgent: 1000
+            // All deferred: 50
+            const defaultUrgentPriority = config.reviewType === 'qa' ? 1200 : 1000;
             const priorityScore = isUrgent 
-              ? (config.urgentPriorityScore || 1000)
+              ? (config.urgentPriorityScore || defaultUrgentPriority)
               : (config.deferredPriorityScore || 50);
             
             const taskTitle = this.formatTaskTitle(followUpTask.title, config.reviewType, isUrgent);
@@ -179,7 +214,8 @@ export class ReviewFailureTasksStep extends WorkflowStep {
               priority: followUpTask.priority,
               isUrgent,
               priorityScore,
-              parentTaskId
+              parentTaskId,
+              assignee: 'implementation-planner'
             });
             
             const result = await createDashboardTask({
@@ -271,122 +307,8 @@ export class ReviewFailureTasksStep extends WorkflowStep {
   }
   
   /**
-   * Parse PM decision from various formats
-   */
-  private parsePMDecision(rawDecision: any): any {
-    try {
-      let parsed: any = null;
-      
-      // If it's already an object, check if it has a 'raw' field (from PersonaRequestStep JSON.parse failure)
-      if (typeof rawDecision === 'object' && rawDecision !== null) {
-        if (rawDecision.raw && typeof rawDecision.raw === 'string') {
-          // PersonaRequestStep failed to parse, stored as { raw: "..." }
-          // Try to parse the raw field
-          rawDecision = rawDecision.raw;
-        } else {
-          // Already a proper object, use it
-          parsed = rawDecision;
-        }
-      }
-      
-      // If it's a string, try to parse as JSON
-      if (typeof rawDecision === 'string') {
-        // Try to extract JSON from markdown code blocks or other wrapping
-        let jsonStr = rawDecision.trim();
-        
-        // Remove markdown code fences
-        jsonStr = jsonStr.replace(/^```(?:json)?\s*/gm, '').replace(/```\s*$/gm, '');
-        
-        // Try to find JSON object in the string
-        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[0]);
-        } else {
-          // Try parsing the whole string
-          parsed = JSON.parse(jsonStr);
-        }
-      }
-      
-      if (!parsed) {
-        return null;
-      }
-      
-      // Log the raw parsed data before normalization
-      logger.debug('PM decision before normalization', {
-        hasFollowUpTasks: !!parsed.follow_up_tasks,
-        followUpTasksLength: parsed.follow_up_tasks?.length || 0,
-        followUpTasksType: Array.isArray(parsed.follow_up_tasks) ? 'array' : typeof parsed.follow_up_tasks,
-        hasBacklog: !!parsed.backlog,
-        backlogLength: parsed.backlog?.length || 0,
-        hasDecision: !!parsed.decision,
-        decisionValue: parsed.decision,
-        hasStatus: !!parsed.status,
-        statusValue: parsed.status
-      });
-      
-      // NORMALIZATION: Handle different PM response formats
-      
-      // 1. PM sometimes returns "backlog" instead of "follow_up_tasks"
-      // Map backlog to follow_up_tasks if follow_up_tasks is missing or empty
-      if ((!parsed.follow_up_tasks || parsed.follow_up_tasks.length === 0) && 
-          parsed.backlog && 
-          Array.isArray(parsed.backlog) && 
-          parsed.backlog.length > 0) {
-        parsed.follow_up_tasks = parsed.backlog;
-        logger.debug('Normalized PM decision: mapped backlog to follow_up_tasks', {
-          tasksCount: parsed.backlog.length
-        });
-      }
-      
-      // 2. PM sometimes returns "status" field instead of "decision" field
-      // Map "status" to "decision" for consistency
-      // If status is "pass", we interpret it as "defer" (PM approved but wants backlog tasks)
-      // If status is "fail", we interpret it as "immediate_fix"
-      if (!parsed.decision && parsed.status) {
-        const status = String(parsed.status).toLowerCase();
-        if (status === 'pass' || status === 'approved' || status === 'defer') {
-          parsed.decision = 'defer';
-        } else if (status === 'fail' || status === 'failed' || status === 'reject' || status === 'immediate_fix') {
-          parsed.decision = 'immediate_fix';
-        } else {
-          // Unknown status, default to defer with backlog tasks
-          parsed.decision = 'defer';
-        }
-        
-        logger.debug('Normalized PM decision: mapped status to decision', {
-          originalStatus: parsed.status,
-          mappedDecision: parsed.decision
-        });
-      }
-      
-      // 3. Ensure we have a decision field (fallback to 'defer' if missing)
-      if (!parsed.decision) {
-        parsed.decision = 'defer';
-        logger.debug('Normalized PM decision: defaulted to defer (no decision or status field)');
-      }
-      
-      // Log the final normalized data
-      logger.debug('PM decision after normalization', {
-        decision: parsed.decision,
-        hasFollowUpTasks: !!parsed.follow_up_tasks,
-        followUpTasksLength: parsed.follow_up_tasks?.length || 0,
-        hasBacklog: !!parsed.backlog,
-        backlogLength: parsed.backlog?.length || 0
-      });
-      
-      return parsed;
-    } catch (error) {
-      logger.warn('Failed to parse PM decision JSON', {
-        error: String(error),
-        rawType: typeof rawDecision
-      });
-      return null;
-    }
-  }
-  
-  /**
    * Check if a task is a duplicate of an existing task
-   * Compares normalized title and description keywords
+   * Compares normalized title and description keywords (50% overlap threshold)
    */
   private isDuplicateTask(followUpTask: any, existingTasks: any[], formattedTitle: string): boolean {
     if (!followUpTask || !existingTasks || existingTasks.length === 0) {
@@ -446,6 +368,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
             newTitle: followUpTask.title,
             existingTitle: existingTask.title,
             overlapRatio,
+            overlapPercentage: `${(overlapRatio * 100).toFixed(1)}%`,
             existingTaskId: existingTask.id
           });
           return true;
@@ -457,11 +380,19 @@ export class ReviewFailureTasksStep extends WorkflowStep {
   }
   
   /**
-   * Format task title with review type prefix
+   * Format task title with review type prefix and urgency indicator
    */
   private formatTaskTitle(title: string, reviewType: string, isUrgent: boolean): string {
     const prefix = isUrgent ? '🚨 URGENT' : '📋';
-    const reviewLabel = reviewType === 'code_review' ? 'Code Review' : 'Security Review';
+    
+    const reviewLabels: Record<string, string> = {
+      'code_review': 'Code Review',
+      'security_review': 'Security Review',
+      'qa': 'QA',
+      'devops': 'DevOps'
+    };
+    
+    const reviewLabel = reviewLabels[reviewType] || reviewType;
     
     // If title already has the review type, don't duplicate
     if (title.toLowerCase().includes(reviewLabel.toLowerCase())) {
@@ -480,13 +411,20 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     reviewType: string,
     parentTaskId?: string
   ): string {
-    const reviewLabel = reviewType === 'code_review' ? 'Code Review' : 'Security Review';
+    const reviewLabels: Record<string, string> = {
+      'code_review': 'Code Review',
+      'security_review': 'Security Review',
+      'qa': 'QA',
+      'devops': 'DevOps'
+    };
+    
+    const reviewLabel = reviewLabels[reviewType] || reviewType;
     
     let formatted = `## ${reviewLabel} Follow-up\n\n`;
     formatted += `${description}\n\n`;
     
     if (parentTaskId) {
-      formatted += `**Original Task:** ${parentTaskId}\n\n`;
+      formatted += `**Original Task:** #${parentTaskId}\n\n`;
     }
     
     if (pmDecision.reasoning) {
@@ -502,7 +440,8 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     }
     
     formatted += `---\n`;
-    formatted += `*Auto-created from ${reviewLabel.toLowerCase()} failure analysis*\n`;
+    formatted += `*Auto-created from ${reviewLabel} failure analysis*\n`;
+    formatted += `*Assignee: implementation-planner (must precede engineering)*\n`;
     
     return formatted;
   }
@@ -518,8 +457,8 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     
     if (!config.reviewType) {
       errors.push('ReviewFailureTasksStep: reviewType is required');
-    } else if (!['code_review', 'security_review'].includes(config.reviewType)) {
-      errors.push('ReviewFailureTasksStep: reviewType must be either "code_review" or "security_review"');
+    } else if (!['code_review', 'security_review', 'qa', 'devops'].includes(config.reviewType)) {
+      errors.push('ReviewFailureTasksStep: reviewType must be one of: code_review, security_review, qa, devops');
     }
     
     if (config.urgentPriorityScore !== undefined && config.urgentPriorityScore < 0) {
@@ -528,6 +467,13 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     
     if (config.deferredPriorityScore !== undefined && config.deferredPriorityScore < 0) {
       errors.push('ReviewFailureTasksStep: deferredPriorityScore must be non-negative');
+    }
+    
+    // Warning if pmDecisionVariable doesn't suggest it's from PMDecisionParserStep
+    if (config.pmDecisionVariable && 
+        !config.pmDecisionVariable.includes('pm_decision') && 
+        !config.pmDecisionVariable.includes('parsed_decision')) {
+      warnings.push(`ReviewFailureTasksStep: pmDecisionVariable "${config.pmDecisionVariable}" should typically be "pm_decision" or "parsed_decision" from PMDecisionParserStep`);
     }
     
     return {

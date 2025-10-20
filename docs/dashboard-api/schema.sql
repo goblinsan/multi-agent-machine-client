@@ -148,8 +148,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL DEFAULT 'open',
     priority_score INTEGER NOT NULL DEFAULT 0,
     
-    -- External Integration
-    external_id TEXT,  -- For review findings, tickets, etc.
+    -- External Integration (Idempotency Key)
+    external_id TEXT UNIQUE,  -- For review findings, tickets, idempotent task creation
     
     -- Denormalized Milestone Data (performance optimization)
     milestone_slug TEXT,  -- Copied from milestone for faster queries
@@ -240,13 +240,14 @@ CREATE INDEX idx_tasks_title_milestone ON tasks(
 ) WHERE status NOT IN ('done', 'archived');
 
 -- ----------------------------------------------------------------------------
--- Query Pattern 4: External ID Lookup (Review Findings)
+-- Query Pattern 4: External ID Lookup (Idempotency + Review Findings)
 -- ----------------------------------------------------------------------------
 -- Query: SELECT id, title, external_id FROM tasks
 --        WHERE project_id = ? AND external_id = ?
--- Frequency: During bulk task creation for review findings
+-- Frequency: During bulk task creation for idempotent operations + review findings
 -- Performance Target: <5ms per lookup
--- Note: Partial index (only rows with external_id)
+-- Purpose: Enables idempotent workflow re-runs (external_id acts as upsert key)
+-- Note: Partial index (only rows with external_id), UNIQUE constraint enforced at table level
 -- ----------------------------------------------------------------------------
 CREATE INDEX idx_tasks_external_id ON tasks(
     project_id,

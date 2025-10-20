@@ -55,6 +55,27 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     const data = parse.data as any;
 
     const db = await getDb();
+    
+    // Idempotency: Check if external_id already exists
+    if (data.external_id) {
+      const existingResult = db.exec(
+        'SELECT * FROM tasks WHERE project_id = ? AND external_id = ?',
+        [projectId, data.external_id]
+      );
+      
+      if (existingResult[0] && existingResult[0].values.length > 0) {
+        // Task with this external_id already exists - return it (200 OK)
+        const cols = existingResult[0].columns;
+        const row = existingResult[0].values[0];
+        const existing: any = {};
+        cols.forEach((col, idx) => { existing[col] = row[idx]; });
+        if (existing.labels) existing.labels = JSON.parse(existing.labels);
+        
+        return reply.status(200).send(existing); // 200 OK (idempotent, not created)
+      }
+    }
+
+    // No existing task - create new one
     db.run(`INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [projectId, data.title, data.description || null, data.milestone_id || null, data.parent_task_id || null, data.status, data.priority_score || 0, data.external_id || null, data.labels ? JSON.stringify(data.labels) : null]);
     
@@ -67,7 +88,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     cols.forEach((col, idx) => { created[col] = row[idx]; });
     if (created.labels) created.labels = JSON.parse(created.labels);
     
-    return reply.status(201).send(created);
+    return reply.status(201).send(created); // 201 Created (new task)
   });
 
   // POST bulk
@@ -79,11 +100,39 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
 
     const db = await getDb();
     const created: any[] = [];
+    const skipped: any[] = []; // Idempotent: track existing tasks
     
     try {
       db.run('BEGIN TRANSACTION');
+      
       for (const t of body.tasks) {
         const parsed = taskCreateSchema.parse(t);
+        
+        // Idempotency: Check if external_id already exists
+        if (parsed.external_id) {
+          const existingResult = db.exec(
+            'SELECT * FROM tasks WHERE project_id = ? AND external_id = ?',
+            [projectId, parsed.external_id]
+          );
+          
+          if (existingResult[0] && existingResult[0].values.length > 0) {
+            // Task with this external_id already exists - skip creation
+            const cols = existingResult[0].columns;
+            const row = existingResult[0].values[0];
+            const existing: any = {};
+            cols.forEach((col, idx) => { existing[col] = row[idx]; });
+            if (existing.labels) existing.labels = JSON.parse(existing.labels);
+            
+            skipped.push({
+              task: existing,
+              reason: 'duplicate_external_id',
+              external_id: parsed.external_id
+            });
+            continue; // Skip to next task
+          }
+        }
+        
+        // No existing task - create new one
         db.run('INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [projectId, parsed.title, parsed.description || null, parsed.milestone_id || null, parsed.parent_task_id || null, parsed.status, parsed.priority_score || 0, parsed.external_id || null, parsed.labels ? JSON.stringify(parsed.labels) : null]);
         
@@ -95,9 +144,19 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         if (task.labels) task.labels = JSON.parse(task.labels);
         created.push(task);
       }
+      
       db.run('COMMIT');
       saveDb(db);
-      return reply.status(201).send({ created, summary: { totalRequested: body.tasks.length, created: created.length } });
+      
+      return reply.status(201).send({ 
+        created, 
+        skipped,
+        summary: { 
+          totalRequested: body.tasks.length, 
+          created: created.length,
+          skipped: skipped.length
+        } 
+      });
     } catch (err) {
       db.run('ROLLBACK');
       return reply.status(500).send({ type: 'https://api.example.com/errors/internal-error', title: 'Bulk Failed', status: 500, detail: (err as any).message });

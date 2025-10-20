@@ -3,6 +3,14 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 export function runMigrations(db: Database): void {
+  // Check if migrations have already been run
+  const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'");
+  if (tables && tables.length > 0 && tables[0].values.length > 0) {
+    console.log('Database schema already initialized, skipping migrations');
+    db.run('PRAGMA foreign_keys = ON;');
+    return;
+  }
+
   // Use the schema from docs/dashboard-api/schema.sql (authoritative)
   // Path is relative to src/dashboard-backend/src/db/migrations.ts
   const schemaPath = join(__dirname, '../../../../docs/dashboard-api/schema.sql');
@@ -11,6 +19,9 @@ export function runMigrations(db: Database): void {
   // sql.js doesn't support WAL mode - remove those pragmas
   schema = schema.replace(/PRAGMA journal_mode = WAL;/g, '');
   schema = schema.replace(/PRAGMA synchronous = NORMAL;/g, '');
+  
+  // Make CREATE INDEX statements idempotent
+  schema = schema.replace(/CREATE INDEX/g, 'CREATE INDEX IF NOT EXISTS');
 
   db.run('PRAGMA foreign_keys = ON;');
   
