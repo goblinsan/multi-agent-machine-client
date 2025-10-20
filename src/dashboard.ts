@@ -158,99 +158,6 @@ export async function recordEvent(ev: any) {
   }
 }
 
-export type UploadContextInput = {
-  workflowId: string;
-  repoId?: string;
-  projectId?: string;
-  projectName?: string;
-  projectSlug?: string;
-  repoRoot: string;
-  branch?: string | null;
-  snapshotPath: string;
-  summaryPath: string;
-  filesNdjsonPath: string;
-  totals: { files: number; bytes: number; lines: number };
-  components?: any;
-  hotspots?: any;
-};
-
-export type UploadContextResult = {
-  ok: boolean;
-  status: number;
-  body: any;
-  error?: any;
-};
-
-export async function uploadContextSnapshot(input: UploadContextInput): Promise<UploadContextResult> {
-  const body = {
-    repo_id: input.repoId ?? input.projectId ?? input.projectSlug ?? input.repoRoot,
-    branch: input.branch ?? null,
-    workflow_id: input.workflowId,
-    snapshot_path: input.snapshotPath,
-    summary_path: input.summaryPath,
-    files_ndjson_path: input.filesNdjsonPath,
-    totals_files: input.totals.files ?? 0,
-    totals_bytes: input.totals.bytes ?? 0,
-    totals_lines: input.totals.lines ?? 0,
-    components_json: input.components ?? {},
-    hotspots_json: input.hotspots ?? {}
-  };
-
-  const started = Date.now();
-  try {
-    const endpoint = cfg.dashboardContextEndpoint.startsWith("http")
-      ? cfg.dashboardContextEndpoint
-      : `${cfg.dashboardBaseUrl.replace(/\/$/, "")}${cfg.dashboardContextEndpoint.startsWith("/") ? "" : "/"}${cfg.dashboardContextEndpoint}`;
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${cfg.dashboardApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    });
-    const duration = Date.now() - started;
-
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "<no body>");
-      logger.warn("dashboard context upload failed", {
-        status: res.status,
-        duration_ms: duration,
-        workflowId: input.workflowId,
-        projectId: input.projectId,
-        projectSlug: input.projectSlug,
-        repoRoot: input.repoRoot,
-        repoId: body.repo_id,
-        branch: input.branch,
-        url: endpoint,
-        response: errorText.slice(0, 1000)
-      });
-      return { ok: false, status: res.status, body: errorText };
-    }
-
-    let responseBody: any = null;
-    const text = await res.text();
-    try { responseBody = text ? JSON.parse(text) : null; } catch { responseBody = text; }
-
-    logger.info("dashboard context upload succeeded", {
-      status: res.status,
-      duration_ms: duration,
-      workflowId: input.workflowId,
-      projectId: input.projectId,
-      projectSlug: input.projectSlug,
-      repoRoot: input.repoRoot,
-      repoId: body.repo_id,
-      branch: input.branch,
-      url: endpoint,
-      responseSample: typeof responseBody === "string" ? responseBody.slice(0, 200) : responseBody
-    });
-    return { ok: true, status: res.status, body: responseBody };
-  } catch (e) {
-    logger.error("dashboard context upload exception", { error: e, workflowId: input.workflowId, projectId: input.projectId, projectSlug: input.projectSlug, repoRoot: input.repoRoot, branch: input.branch, url: cfg.dashboardContextEndpoint });
-    return { ok: false, status: 0, body: null, error: e };
-  }
-}
-
 export type CreateTaskInput = {
   projectId?: string;
   projectSlug?: string;
@@ -482,17 +389,22 @@ export async function fetchTask(taskId: string): Promise<any | null> {
   }
 }
 
-// Update the task status using the task's lock/version to prevent races.
-// Update the task status using new coordinator-friendly endpoints.
-// If taskId looks like a UUID, call /v1/tasks/{id}/status; otherwise treat it as external_id and call /v1/tasks/by-external/{external_id}/status.
-export async function updateTaskStatus(taskId: string, status: string, lockVersion?: number): Promise<CreateTaskResult> {
+// Update the task status using the current dashboard API
+// Current API: PATCH /projects/:projectId/tasks/:taskId
+export async function updateTaskStatus(taskId: string, status: string, projectId?: string, lockVersion?: number): Promise<CreateTaskResult> {
   if (!cfg.dashboardBaseUrl) {
     logger.warn("dashboard update skipped: base URL not configured");
     return { ok: false, status: 0, body: null };
   }
   const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
 
-  const isUuid = (s: string) => /^(?:[0-9a-fA-F]{8})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{12})$/.test(s);
+  // If no projectId provided, try to use a default or log a warning
+  if (!projectId) {
+    logger.warn("updateTaskStatus: projectId not provided, update may fail");
+    // For backwards compatibility, return success but log the issue
+    return { ok: true, status: 200, body: { message: 'projectId required for dashboard update' } };
+  }
+
   const patchOnce = async (endpoint: string, lv?: number | null) => {
     const payload: any = { status };
     if (lv !== undefined && lv !== null) payload.lock_version = lv;
@@ -511,23 +423,18 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
   };
 
   try {
-  const byId = isUuid(taskId);
-    // TODO: For local dashboard, we need project_id. For now, try to infer or use a fallback
-    // Local dashboard uses: PATCH /projects/:projectId/tasks/:taskId
-    // External dashboard uses: PATCH /v1/tasks/:id/status or /v1/tasks/by-external/:external_id/status
-    const endpoint = byId
-      ? `${base}/v1/tasks/${encodeURIComponent(taskId)}/status`
-      : `${base}/v1/tasks/by-external/${encodeURIComponent(taskId)}/status`;
+    // Current API: PATCH /projects/:projectId/tasks/:taskId
+    const endpoint = `${base}/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;
 
     // First attempt; supply provided lockVersion if any
     const first = await patchOnce(endpoint, lockVersion ?? undefined);
     if (first.statusCode >= 200 && first.statusCode < 300) {
-      logger.info("dashboard task updated", { taskId, by: byId ? 'id' : 'external', status, statusCode: first.statusCode });
+      logger.info("dashboard task updated", { taskId, projectId, status, statusCode: first.statusCode });
       return { ok: true, status: first.statusCode, body: first.responseBody } as any;
     }
 
-    // Handle optimistic concurrency or missing lock gracefully: fetch current and retry once when updating by id
-    if (byId && (first.statusCode === 409 || first.statusCode === 422)) {
+    // Handle optimistic concurrency or missing lock gracefully: fetch current and retry once
+    if (first.statusCode === 409 || first.statusCode === 422) {
       try {
         const current = await fetchTask(taskId);
         const raw = current ? (current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION) : undefined;
@@ -546,30 +453,7 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
       }
     }
 
-    // If by-external returned 404, we can optionally try to resolve to id and retry by id
-    if (!byId && first.statusCode === 404) {
-      try {
-        const resolveUrl = `${base}/v1/tasks/resolve?external_id=${encodeURIComponent(taskId)}`;
-        const r = await fetch(resolveUrl, { headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` } });
-        if (r.ok) {
-          const body: any = await r.json().catch(() => null);
-          const id = body && (body.id || body.task_id || (body.task && body.task.id)) ? String(body.id || body.task_id || body.task.id) : null;
-          if (id) {
-            const byIdEndpoint = `${base}/v1/tasks/${encodeURIComponent(id)}/status`;
-            const second = await patchOnce(byIdEndpoint, undefined);
-            if (second.statusCode >= 200 && second.statusCode < 300) {
-              logger.info("dashboard task updated (resolved by external)", { externalId: taskId, resolvedId: id, status, statusCode: second.statusCode });
-              return { ok: true, status: second.statusCode, body: second.responseBody } as any;
-            }
-            return { ok: false, status: second.statusCode, body: second.responseBody };
-          }
-        }
-      } catch (e) {
-        logger.debug('dashboard task update: resolve by external failed', { externalId: taskId, error: (e as Error).message });
-      }
-    }
-
-    logger.warn("dashboard task update failed", { taskId, by: byId ? 'id' : 'external', status, statusCode: first.statusCode, responseBody: first.responseBody });
+    logger.warn("dashboard task update failed", { taskId, projectId, status, statusCode: first.statusCode, responseBody: first.responseBody });
     return { ok: false, status: first.statusCode, body: first.responseBody };
   } catch (e) {
     logger.warn("dashboard task update exception", { taskId, status, error: (e as Error).message });

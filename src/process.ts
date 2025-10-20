@@ -4,10 +4,90 @@ import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { PERSONAS } from "./personaNames.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent, uploadContextSnapshot, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
+import { fetchContext, recordEvent, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
 import { publishEvent } from "./redis/eventPublisher.js";
+
+/**
+ * Helper to cleanup old log files, keeping only the most recent N files
+ * @param logDir - Directory containing log files
+ * @param pattern - Glob pattern to match log files (e.g., "task-*-plan.log")
+ * @param keepCount - Number of most recent files to keep (default: 5)
+ */
+async function cleanupOldLogs(logDir: string, pattern: string, keepCount: number = 5): Promise<string[]> {
+  const fs = await import("fs/promises");
+  const pathMod = await import("path");
+  
+  try {
+    // Check if directory exists
+    try {
+      await fs.access(logDir);
+    } catch {
+      return []; // Directory doesn't exist, nothing to clean up
+    }
+
+    // Read all files in directory
+    const files = await fs.readdir(logDir);
+    
+    // Filter files matching pattern and get their stats
+    const matchingFiles: { name: string; path: string; mtime: number }[] = [];
+    for (const file of files) {
+      // Simple pattern matching (task-*-plan.log or task-*-qa.log)
+      const logType = pattern.includes("plan") ? "plan" : "qa";
+      if (file.startsWith("task-") && file.endsWith(`-${logType}.log`)) {
+        const filePath = pathMod.join(logDir, file);
+        try {
+          const stats = await fs.stat(filePath);
+          matchingFiles.push({
+            name: file,
+            path: filePath,
+            mtime: stats.mtimeMs
+          });
+        } catch (e) {
+          logger.warn("Failed to stat log file", { file: filePath, error: e });
+        }
+      }
+    }
+
+    // Sort by modification time (newest first)
+    matchingFiles.sort((a, b) => b.mtime - a.mtime);
+
+    // Determine files to delete (keep only the most recent keepCount)
+    const filesToDelete = matchingFiles.slice(keepCount);
+    
+    if (filesToDelete.length === 0) {
+      return [];
+    }
+
+    // Delete old files
+    const deletedPaths: string[] = [];
+    for (const file of filesToDelete) {
+      try {
+        await fs.unlink(file.path);
+        deletedPaths.push(file.path);
+        logger.debug("Deleted old log file", { file: file.name, logDir });
+      } catch (e) {
+        logger.warn("Failed to delete old log file", { file: file.path, error: e });
+      }
+    }
+
+    if (deletedPaths.length > 0) {
+      logger.info("Cleaned up old log files", {
+        logDir,
+        pattern,
+        deletedCount: deletedPaths.length,
+        keptCount: matchingFiles.length - deletedPaths.length
+      });
+    }
+
+    return deletedPaths;
+  } catch (e) {
+    logger.warn("Failed to cleanup old logs", { logDir, pattern, error: e });
+    return [];
+  }
+}
+
 import { acknowledgeRequest } from "./redis/requestHandlers.js";
 import { interpretPersonaStatus } from "./agents/persona.js";
 // applyModelGeneratedChanges not exported from implementation stage; omit import
@@ -87,20 +167,34 @@ async function writePlanningLog(
     workflowId: msg.workflow_id 
   });
   
+  // Cleanup old planning logs (keep only last 5)
+  const deletedLogs = await cleanupOldLogs(planningDir, "task-*-plan.log", 5);
+  
   // Commit and push the planning log so other machines can access it
   try {
     const planLogRel = pathMod.relative(repoRoot, planLogPath);
+    const pathsToCommit = [planLogRel];
+    
+    // Add deleted log paths for commit (they'll be staged as deletions)
+    if (deletedLogs.length > 0) {
+      for (const deletedPath of deletedLogs) {
+        const relPath = pathMod.relative(repoRoot, deletedPath);
+        pathsToCommit.push(relPath);
+      }
+    }
+    
     const commitRes = await commitAndPushPaths({
       repoRoot,
       branch: payloadObj.branch || repoInfo.branch || null,
-      message: `plan: iteration ${iteration} for task ${taskId}`,
-      paths: [planLogRel]
+      message: `plan: iteration ${iteration} for task ${taskId}${deletedLogs.length > 0 ? ` (cleaned ${deletedLogs.length} old logs)` : ''}`,
+      paths: pathsToCommit
     });
     logger.info("Planning log committed and pushed", {
       taskId,
       planLogPath: planLogRel,
       branch: planBranch,
       iteration,
+      cleanedLogs: deletedLogs.length,
       commitResult: commitRes,
       workflowId: msg.workflow_id
     });
@@ -172,20 +266,34 @@ async function writeQALog(
     workflowId: msg.workflow_id 
   });
   
+  // Cleanup old QA logs (keep only last 5)
+  const deletedLogs = await cleanupOldLogs(qaDir, "task-*-qa.log", 5);
+  
   // Commit and push the QA log so other machines can access it
   try {
     const qaLogRel = pathMod.relative(repoRoot, qaLogPath);
+    const pathsToCommit = [qaLogRel];
+    
+    // Add deleted log paths for commit (they'll be staged as deletions)
+    if (deletedLogs.length > 0) {
+      for (const deletedPath of deletedLogs) {
+        const relPath = pathMod.relative(repoRoot, deletedPath);
+        pathsToCommit.push(relPath);
+      }
+    }
+    
     const commitRes = await commitAndPushPaths({
       repoRoot,
       branch: payloadObj.branch || repoInfo.branch || null,
-      message: `qa: ${status} for task ${taskId}`,
-      paths: [qaLogRel]
+      message: `qa: ${status} for task ${taskId}${deletedLogs.length > 0 ? ` (cleaned ${deletedLogs.length} old logs)` : ''}`,
+      paths: pathsToCommit
     });
     logger.info("QA log committed and pushed", {
       taskId,
       qaLogPath: qaLogRel,
       branch: qaBranch,
       status,
+      cleanedLogs: deletedLogs.length,
       commitResult: commitRes,
       workflowId: msg.workflow_id
     });
@@ -1118,24 +1226,12 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
             snapshotPath: scanArtifacts.snapshotRel,
             filesNdjsonPath: scanArtifacts.filesNdjsonRel
           });
-          const uploadRes = await uploadContextSnapshot({
+          // Context is now hardened into the repo itself - no dashboard upload needed
+          logger.debug("context snapshot committed to repo", {
             workflowId: msg.workflow_id,
-            repoId,
-            projectId: dashboardProject.id,
-            projectName: dashboardProject.name,
-            projectSlug: dashboardProject.slug,
             repoRoot: scanArtifacts.repoRoot,
-            branch: scanArtifacts.branch,
-            snapshotPath: scanArtifacts.snapshotRel,
-            summaryPath: scanArtifacts.summaryRel,
-            filesNdjsonPath: scanArtifacts.filesNdjsonRel,
-            totals: scanArtifacts.totals,
-            components: scanArtifacts.components,
-            hotspots: scanArtifacts.hotspots
+            branch: scanArtifacts.branch
           });
-          if (!uploadRes.ok) {
-            logger.warn("dashboard upload reported failure", { status: uploadRes.status, workflowId: msg.workflow_id });
-          }
         }
       } catch (e:any) {
         logger.warn("context summary write failed", { error: e });

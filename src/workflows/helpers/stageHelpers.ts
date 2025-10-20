@@ -62,7 +62,7 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
           }
 
           if (key) {
-            await updateTaskStatus(String(key), policy.initialStatus).catch((err) => {
+            await updateTaskStatus(String(key), policy.initialStatus, options.projectId || undefined).catch((err) => {
               logger.warn("handleFailureMiniCycle: updateTaskStatus failed", { workflowId, stage, key, error: err });
               throw err;
             });

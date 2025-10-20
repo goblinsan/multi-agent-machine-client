@@ -767,7 +767,21 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
   await runGit(["commit", "-m", sanitized], { cwd: repoRoot });
 
   try {
-    await runGit(["push", "-u", "origin", targetBranch], { cwd: repoRoot });
+    // Check if remote branch exists
+    let remoteBranchExists = false;
+    try {
+      await runGit(["ls-remote", "--heads", "origin", targetBranch], { cwd: repoRoot });
+      const output = await runGit(["ls-remote", "--heads", "origin", targetBranch], { cwd: repoRoot });
+      remoteBranchExists = output.stdout.trim().length > 0;
+    } catch (e) {
+      logger.debug("remote branch check failed, assuming doesn't exist", { repoRoot, branch: targetBranch });
+    }
+
+    if (remoteBranchExists) {
+      await runGit(["push", "origin", targetBranch], { cwd: repoRoot });
+    } else {
+      await runGit(["push", "-u", "origin", targetBranch], { cwd: repoRoot });
+    }
   } catch (e) {
     logger.warn("git push failed", { repoRoot, branch: targetBranch, error: e });
     return { committed: true, pushed: false, branch: targetBranch, reason: "push_failed" };

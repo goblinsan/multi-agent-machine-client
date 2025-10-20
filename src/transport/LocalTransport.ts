@@ -110,6 +110,15 @@ export class LocalTransport implements MessageTransport {
 
     this.streams.get(stream)!.push(message);
 
+    // Debug logging
+    if (process.env.DEBUG_TRANSPORT) {
+      console.log(`[LocalTransport xAdd] Added message to '${stream}': ${messageId}`, {
+        to_persona: fields.to_persona,
+        intent: fields.intent,
+        workflow_id: fields.workflow_id
+      });
+    }
+
     // Emit event for new message (for xRead listeners)
     this.emitter.emit(`stream:${stream}`, message);
 
@@ -166,23 +175,36 @@ export class LocalTransport implements MessageTransport {
     const count = options?.COUNT ?? 10;
     const blockMs = options?.BLOCK ?? 0;
 
+    // Debug logging
+    const debugLog = (msg: string, data?: any) => {
+      if (process.env.DEBUG_TRANSPORT) {
+        console.log(`[LocalTransport xReadGroup] ${msg}`, data || '');
+      }
+    };
+
+    debugLog('Reading', { group, consumer, streams: streamArray.map(s => s.key), count, blockMs });
+
     const result: ReadResult = {};
     let hasMessages = false;
 
     for (const { key: streamKey, id: startId } of streamArray) {
       // Check if stream exists
       if (!this.streams.has(streamKey)) {
+        debugLog(`Stream '${streamKey}' does not exist`);
         continue;
       }
 
       // Check if group exists
       const streamGroups = this.groups.get(streamKey);
       if (!streamGroups || !streamGroups.has(group)) {
+        debugLog(`Group '${group}' does not exist for stream '${streamKey}'`);
         throw new Error(`NOGROUP No such consumer group '${group}' for stream '${streamKey}'`);
       }
 
       const groupState = streamGroups.get(group)!;
       const streamMessages = this.streams.get(streamKey)!;
+
+      debugLog(`Stream '${streamKey}' has ${streamMessages.length} messages, group lastDeliveredId: ${groupState.lastDeliveredId}`);
 
       // Get consumer's pending messages set
       if (!groupState.consumers.has(consumer)) {
@@ -194,8 +216,10 @@ export class LocalTransport implements MessageTransport {
 
       // Read new messages (id = ">")
       if (startId === '>') {
+        debugLog(`Reading new messages after ${groupState.lastDeliveredId}`);
         for (const msg of streamMessages) {
           if (this.compareIds(msg.id, groupState.lastDeliveredId) > 0) {
+            debugLog(`Found new message: ${msg.id}`);
             messages.push({
               id: msg.id,
               fields: { ...msg.fields }
@@ -239,18 +263,26 @@ export class LocalTransport implements MessageTransport {
       if (messages.length > 0) {
         result[streamKey] = { messages };
         hasMessages = true;
+        debugLog(`Returning ${messages.length} messages from stream '${streamKey}'`);
+      } else {
+        debugLog(`No messages found for stream '${streamKey}'`);
       }
     }
 
     // If blocking and no messages, wait for new messages
     if (!hasMessages && blockMs > 0) {
+      debugLog(`No messages, blocking for ${blockMs}ms`);
       const waitResult = await this.waitForMessages(streamArray, blockMs);
       if (waitResult) {
+        debugLog('New messages arrived, retrying read');
         // Retry the read after new messages arrived
         return this.xReadGroup(group, consumer, streams, { ...options, BLOCK: 0 });
+      } else {
+        debugLog('Blocking timeout, no new messages');
       }
     }
 
+    debugLog(`Returning ${hasMessages ? 'messages' : 'null'}`);
     return hasMessages ? result : null;
   }
 

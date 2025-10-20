@@ -190,7 +190,8 @@ async function readOne(transport: any, persona: string) {
     for (const msg of stream.messages) {
       const id = msg.id;
       const fields = msg.fields;
-      await processOne(transport, persona, id, fields).catch(async (e: any) => {
+      // Don't await - process in background to avoid blocking the read loop
+      processOne(transport, persona, id, fields).catch(async (e: any) => {
         logger.error(`worker error`, { persona, error: e, entryId: id });
         await publishEvent(transport as any, {
           workflowId: fields?.workflow_id ?? "",
@@ -207,12 +208,40 @@ async function readOne(transport: any, persona: string) {
 }
 
 async function processOne(transport: any, persona: string, entryId: string, fields: Record<string,string>) {
+  if (process.env.DEBUG_TRANSPORT) {
+    console.log(`[processOne] persona=${persona}, to_persona=${fields.to_persona}, entryId=${entryId}`);
+  }
+  
   const parsed = RequestSchema.safeParse(fields);
-  if (!parsed.success) { await acknowledgeRequest(transport as any, persona, entryId); return; }
+  if (!parsed.success) { 
+    if (process.env.DEBUG_TRANSPORT) {
+      console.log(`[processOne] Schema validation failed for persona=${persona}`, parsed.error.errors);
+    }
+    await acknowledgeRequest(transport as any, persona, entryId); 
+    return; 
+  }
   const msg = parsed.data;
-  if (msg.to_persona !== persona) { await acknowledgeRequest(transport as any, persona, entryId); return; }
+  
+  if (process.env.DEBUG_TRANSPORT) {
+    console.log(`[processOne] Schema valid, checking to_persona: msg.to_persona=${msg.to_persona}, persona=${persona}`);
+  }
+  
+  if (msg.to_persona !== persona) { 
+    if (process.env.DEBUG_TRANSPORT) {
+      console.log(`[processOne] Message not for this persona, acknowledging`);
+    }
+    await acknowledgeRequest(transport as any, persona, entryId); 
+    return; 
+  }
+
+  if (process.env.DEBUG_TRANSPORT) {
+    console.log(`[processOne] Message IS for this persona, checking duplicates`);
+  }
 
   if (isDuplicateMessage(msg.task_id, msg.corr_id, persona)) {
+    if (process.env.DEBUG_TRANSPORT) {
+      console.log(`[processOne] Duplicate message for persona=${persona}`);
+    }
     await publishEvent(transport as any, {
       workflowId: msg.workflow_id,
       taskId: msg.task_id,
@@ -227,11 +256,18 @@ async function processOne(transport: any, persona: string, entryId: string, fiel
   }
 
   if (persona !== PERSONAS.COORDINATION && !cfg.personaModels[persona]) {
+    if (process.env.DEBUG_TRANSPORT) {
+      console.log(`[processOne] No model for persona=${persona}, re-queuing`);
+    }
     await transport.xAdd(cfg.requestStream, "*", fields).catch((e: any) => {
       logger.error("failed to re-queue message", { persona, error: e?.message });
     });
     await acknowledgeRequest(transport as any, persona, entryId);
     return;
+  }
+
+  if (process.env.DEBUG_TRANSPORT) {
+    console.log(`[processOne] Processing for persona=${persona}, workflowId=${msg.workflow_id}`);
   }
 
   const payloadObj = (() => { try { return msg.payload ? JSON.parse(msg.payload) : {}; } catch { return {}; } })();

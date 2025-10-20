@@ -35,14 +35,18 @@ export class SimpleTaskStatusStep extends WorkflowStep {
       // Import dashboard function dynamically
       const { updateTaskStatus } = await import('../../dashboard.js');
       
+      // Get projectId from context
+      const projectId = context.getVariable('projectId') || context.getVariable('project_id');
+      
       logger.info('Calling dashboard.updateTaskStatus', {
         taskId,
         status,
+        projectId,
         workflowId: context.workflowId
       });
       
       // Call the dashboard function directly (this is what tests expect)
-      await updateTaskStatus(taskId, status);
+      await updateTaskStatus(taskId, status, projectId);
       
       // Cleanup task logs if the task is completed
       const normalizedStatus = status.toLowerCase();

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const RequestSchema = z.object({
   workflow_id: z.string(),
-  task_id: z.string().optional(),
+  task_id: z.coerce.string().optional(),
   step: z.string().optional(),
   from: z.string(),
   to_persona: z.string(),
@@ -12,7 +12,7 @@ export const RequestSchema = z.object({
   deadline_s: z.coerce.number().optional(),
   repo: z.string().optional(),
   branch: z.string().optional(),
-  project_id: z.string().optional()
+  project_id: z.coerce.string().optional()
 });
 export type RequestMsg = z.infer<typeof RequestSchema>;
 
