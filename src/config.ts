@@ -218,6 +218,9 @@ const enablePersonaCompatMode = bool(process.env.ENABLE_PERSONA_COMPAT_MODE, fal
 
 
 export const cfg = {
+  // Message Transport Configuration
+  transportType: (process.env.TRANSPORT_TYPE || "redis") as "redis" | "local",
+  
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
   redisPassword: process.env.REDIS_PASSWORD || undefined,
   requestStream: process.env.REQUEST_STREAM || "agent.requests",

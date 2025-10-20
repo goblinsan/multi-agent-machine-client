@@ -1,0 +1,95 @@
+{
+  "project": {
+    "name": "My Custom Project",
+    "slug": "my-custom-project",
+    "description": "A simple example of a custom project structure"
+  },
+  "milestones": [
+    {
+      "name": "Phase 1: Setup",
+      "slug": "setup",
+      "status": "active",
+      "description": "Initial project setup and configuration"
+    },
+    {
+      "name": "Phase 2: Development",
+      "slug": "development",
+      "status": "active",
+      "description": "Core feature development"
+    },
+    {
+      "name": "Phase 3: Launch",
+      "slug": "launch",
+      "status": "active",
+      "description": "Testing and deployment"
+    }
+  ],
+  "tasks": {
+    "setup": [
+      {
+        "title": "Initialize repository",
+        "description": "Create git repository and initial structure",
+        "status": "open",
+        "labels": ["setup", "git"]
+      },
+      {
+        "title": "Configure development environment",
+        "description": "Setup Docker, dependencies, and tools",
+        "status": "open",
+        "labels": ["setup", "docker"]
+      },
+      {
+        "title": "Create project documentation",
+        "description": "Write README and setup guides",
+        "status": "open",
+        "labels": ["documentation"]
+      }
+    ],
+    "development": [
+      {
+        "title": "Implement core feature A",
+        "description": "Build the main functionality",
+        "status": "open",
+        "labels": ["feature", "backend"]
+      },
+      {
+        "title": "Implement core feature B",
+        "description": "Build secondary functionality",
+        "status": "open",
+        "labels": ["feature", "frontend"]
+      },
+      {
+        "title": "Add authentication",
+        "description": "Implement user login and permissions",
+        "status": "open",
+        "labels": ["auth", "security"]
+      },
+      {
+        "title": "Create API endpoints",
+        "description": "Build REST API for client applications",
+        "status": "open",
+        "labels": ["api", "backend"]
+      }
+    ],
+    "launch": [
+      {
+        "title": "Write unit tests",
+        "description": "Achieve 80% code coverage",
+        "status": "open",
+        "labels": ["testing", "quality"]
+      },
+      {
+        "title": "Perform security audit",
+        "description": "Review and fix security vulnerabilities",
+        "status": "open",
+        "labels": ["security", "audit"]
+      },
+      {
+        "title": "Deploy to production",
+        "description": "Setup production environment and deploy",
+        "status": "open",
+        "labels": ["deployment", "devops"]
+      }
+    ]
+  }
+}

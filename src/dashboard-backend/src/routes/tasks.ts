@@ -19,10 +19,34 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     const projectId = parseInt((request.params as any).projectId);
     const db = await getDb();
 
-    const result = db.exec('SELECT id, title, status, priority_score, milestone_id, labels FROM tasks WHERE project_id = ? LIMIT 100', [projectId]);
+    // JOIN with milestones to include milestone data in task response
+    const result = db.exec(`
+      SELECT 
+        t.id, t.title, t.status, t.priority_score, t.milestone_id, t.labels,
+        m.name as milestone_name, m.slug as milestone_slug, m.status as milestone_status
+      FROM tasks t
+      LEFT JOIN milestones m ON t.milestone_id = m.id
+      WHERE t.project_id = ? 
+      LIMIT 100
+    `, [projectId]);
+    
     const tasks = result[0] ? result[0].values.map((row: any) => {
-      const [id, title, status, priority_score, milestone_id, labels] = row;
-      return { id, title, status, priority_score, milestone_id, labels: labels ? JSON.parse(labels) : null };
+      const [id, title, status, priority_score, milestone_id, labels, milestone_name, milestone_slug, milestone_status] = row;
+      return { 
+        id, 
+        title, 
+        status, 
+        priority_score, 
+        milestone_id, 
+        labels: labels ? JSON.parse(labels) : null,
+        // Include milestone data to avoid separate lookups
+        milestone: milestone_id ? {
+          id: milestone_id,
+          name: milestone_name,
+          slug: milestone_slug,
+          status: milestone_status
+        } : null
+      };
     }) : [];
     
     return { data: tasks };

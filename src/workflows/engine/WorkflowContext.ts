@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { logger as baseLogger } from '../../logger.js';
+import type { MessageTransport } from '../../transport/index.js';
 
 /**
  * Workflow execution configuration
@@ -34,6 +35,7 @@ export class WorkflowContext {
   }> = [];
 
   public readonly logger: typeof baseLogger;
+  public readonly transport: MessageTransport;
 
   constructor(
     public readonly workflowId: string,
@@ -41,8 +43,10 @@ export class WorkflowContext {
     public readonly repoRoot: string,
     public readonly branch: string,
     public readonly config: WorkflowConfig,
+    transport: MessageTransport,
     initialVariables: Record<string, any> = {}
   ) {
+    this.transport = transport;
     // Initialize variables
     Object.entries(initialVariables).forEach(([key, value]) => {
       this.variables.set(key, value);
@@ -195,6 +199,7 @@ export class WorkflowContext {
       this.repoRoot,
       this.branch,
       this.config,
+      this.transport,
       this.getAllVariables()
     );
 

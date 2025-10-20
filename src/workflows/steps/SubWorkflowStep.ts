@@ -109,12 +109,13 @@ export class SubWorkflowStep extends WorkflowStep {
       });
 
       // Execute sub-workflow with isolated context
-      // Pass through parent context variables (projectId, repoRoot, branch)
+      // Pass through parent context variables (projectId, repoRoot, branch, transport)
       const result = await this.workflowEngine.executeWorkflowDefinition(
         subWorkflowDef,
         context.projectId,
         context.repoRoot,
         context.branch,
+        context.transport,
         subWorkflowInputs
       );
 

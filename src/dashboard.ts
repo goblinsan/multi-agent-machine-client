@@ -31,7 +31,7 @@ export async function fetchContext(workflowId: string) {
 export async function fetchProjectStatus(projectId: string | null | undefined) {
   if (!projectId) return null;
   try {
-    const res = await fetch(`${cfg.dashboardBaseUrl.replace(/\/$/, "")}/v1/projects/${encodeURIComponent(projectId)}`, {
+    const res = await fetch(`${cfg.dashboardBaseUrl.replace(/\/$/, "")}/projects/${encodeURIComponent(projectId)}`, {
       headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
     });
     if (!res.ok) throw new Error(`dashboard ${res.status}`);
@@ -72,7 +72,7 @@ export async function fetchProjectStatusDetails(projectId: string | null | undef
   if (!projectId) return null;
   try {
     const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
-    const res = await fetch(`${base}/v1/projects/${encodeURIComponent(projectId)}/status`, {
+    const res = await fetch(`${base}/projects/${encodeURIComponent(projectId)}/status`, {
       headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
     });
     if (!res.ok) throw new Error(`dashboard ${res.status}`);
@@ -512,6 +512,9 @@ export async function updateTaskStatus(taskId: string, status: string, lockVersi
 
   try {
   const byId = isUuid(taskId);
+    // TODO: For local dashboard, we need project_id. For now, try to infer or use a fallback
+    // Local dashboard uses: PATCH /projects/:projectId/tasks/:taskId
+    // External dashboard uses: PATCH /v1/tasks/:id/status or /v1/tasks/by-external/:external_id/status
     const endpoint = byId
       ? `${base}/v1/tasks/${encodeURIComponent(taskId)}/status`
       : `${base}/v1/tasks/by-external/${encodeURIComponent(taskId)}/status`;
@@ -587,7 +590,7 @@ export async function fetchProjectTasks(projectId: string): Promise<any[]> {
   
   try {
     const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
-    const url = `${base}/v1/tasks?project_id=${encodeURIComponent(projectId)}`;
+    const url = `${base}/projects/${encodeURIComponent(projectId)}/tasks`;
     
     const res = await fetch(url, {
       headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
@@ -598,7 +601,9 @@ export async function fetchProjectTasks(projectId: string): Promise<any[]> {
       return [];
     }
     
-    const tasks = await res.json();
+    const body = await res.json();
+    // Handle both array response and {data: [...]} wrapper
+    const tasks = Array.isArray(body) ? body : ((body as any)?.data || []);
     return Array.isArray(tasks) ? tasks : [];
   } catch (e) {
     logger.warn("fetchProjectTasks exception", { projectId, error: (e as Error).message });

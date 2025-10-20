@@ -1,0 +1,277 @@
+/**
+ * Health Check and Monitoring Routes
+ * 
+ * Provides production-ready endpoints for:
+ * - Service health checks
+ * - Database connectivity verification
+ * - Prometheus-compatible metrics
+ * 
+ * These endpoints are essential for:
+ * - Load balancer health checks
+ * - Container orchestration (Docker, Kubernetes)
+ * - Monitoring systems (Prometheus, Datadog, etc.)
+ * - Incident detection and alerting
+ */
+
+import type { FastifyInstance } from 'fastify';
+import { getDb } from '../db/connection';
+
+/**
+ * Application start time for uptime calculation
+ */
+const startTime = Date.now();
+
+/**
+ * Metrics tracking
+ */
+interface Metrics {
+  requestCount: number;
+  errorCount: number;
+  taskCreatedCount: number;
+  taskUpdatedCount: number;
+  dbQueryCount: number;
+}
+
+const metrics: Metrics = {
+  requestCount: 0,
+  errorCount: 0,
+  taskCreatedCount: 0,
+  taskUpdatedCount: 0,
+  dbQueryCount: 0,
+};
+
+/**
+ * Increment metrics (called by routes)
+ */
+export function incrementMetric(metric: keyof Metrics, value: number = 1) {
+  metrics[metric] += value;
+}
+
+/**
+ * Register health check and monitoring routes
+ */
+export function registerHealthRoutes(fastify: FastifyInstance) {
+  /**
+   * GET /health - Basic health check
+   * 
+   * Returns 200 OK if service is running
+   * Used by load balancers for basic availability checks
+   * 
+   * Response:
+   * {
+   *   "status": "ok",
+   *   "timestamp": "2025-10-20T10:30:00.000Z",
+   *   "uptime": 123456
+   * }
+   */
+  fastify.get('/health', async (request: any, reply: any) => {
+    const uptime = Date.now() - startTime;
+    
+    return reply.status(200).send({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime,
+      service: 'dashboard-backend',
+      version: process.env.npm_package_version || '1.0.0',
+    });
+  });
+
+  /**
+   * GET /health/db - Database health check
+   * 
+   * Verifies database connectivity by executing a simple query
+   * Returns 200 OK if database is accessible
+   * Returns 503 Service Unavailable if database is down
+   * 
+   * Response (success):
+   * {
+   *   "status": "ok",
+   *   "database": "connected",
+   *   "timestamp": "2025-10-20T10:30:00.000Z"
+   * }
+   * 
+   * Response (failure):
+   * {
+   *   "status": "error",
+   *   "database": "disconnected",
+   *   "error": "Database connection failed",
+   *   "timestamp": "2025-10-20T10:30:00.000Z"
+   * }
+   */
+  fastify.get('/health/db', async (request: any, reply: any) => {
+    try {
+      const db = await getDb();
+      
+      // Execute a simple query to verify database connectivity
+      const result = db.exec('SELECT 1 as health_check');
+      
+      if (result.length > 0) {
+        return reply.status(200).send({
+          status: 'ok',
+          database: 'connected',
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        return reply.status(503).send({
+          status: 'error',
+          database: 'disconnected',
+          error: 'Database query returned no results',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error: any) {
+      request.log.error('Database health check failed', error);
+      
+      return reply.status(503).send({
+        status: 'error',
+        database: 'disconnected',
+        error: error.message || 'Database connection failed',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  /**
+   * GET /health/ready - Readiness probe
+   * 
+   * Checks if service is ready to accept traffic
+   * Includes database connectivity check
+   * Used by Kubernetes readiness probes
+   * 
+   * Returns 200 if ready, 503 if not ready
+   */
+  fastify.get('/health/ready', async (request: any, reply: any) => {
+    try {
+      const db = await getDb();
+      db.exec('SELECT 1');
+      
+      return reply.status(200).send({
+        status: 'ready',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      return reply.status(503).send({
+        status: 'not_ready',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  /**
+   * GET /health/live - Liveness probe
+   * 
+   * Simple liveness check for Kubernetes
+   * Returns 200 if process is alive
+   * Does not check external dependencies
+   */
+  fastify.get('/health/live', async (request: any, reply: any) => {
+    return reply.status(200).send({
+      status: 'alive',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  /**
+   * GET /metrics - Prometheus-compatible metrics
+   * 
+   * Exposes application metrics in Prometheus text format
+   * Can be scraped by Prometheus or compatible monitoring systems
+   * 
+   * Metrics exposed:
+   * - http_requests_total - Total HTTP requests
+   * - http_errors_total - Total HTTP errors
+   * - tasks_created_total - Total tasks created
+   * - tasks_updated_total - Total tasks updated
+   * - db_queries_total - Total database queries
+   * - uptime_seconds - Service uptime in seconds
+   * 
+   * Example output:
+   * # HELP http_requests_total Total HTTP requests
+   * # TYPE http_requests_total counter
+   * http_requests_total{service="dashboard-backend"} 1234
+   * 
+   * # HELP uptime_seconds Service uptime in seconds
+   * # TYPE uptime_seconds gauge
+   * uptime_seconds{service="dashboard-backend"} 3600
+   */
+  fastify.get('/metrics', async (request: any, reply: any) => {
+    const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+    
+    const prometheusMetrics = `
+# HELP http_requests_total Total HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{service="dashboard-backend"} ${metrics.requestCount}
+
+# HELP http_errors_total Total HTTP errors
+# TYPE http_errors_total counter
+http_errors_total{service="dashboard-backend"} ${metrics.errorCount}
+
+# HELP tasks_created_total Total tasks created
+# TYPE tasks_created_total counter
+tasks_created_total{service="dashboard-backend"} ${metrics.taskCreatedCount}
+
+# HELP tasks_updated_total Total tasks updated
+# TYPE tasks_updated_total counter
+tasks_updated_total{service="dashboard-backend"} ${metrics.taskUpdatedCount}
+
+# HELP db_queries_total Total database queries executed
+# TYPE db_queries_total counter
+db_queries_total{service="dashboard-backend"} ${metrics.dbQueryCount}
+
+# HELP uptime_seconds Service uptime in seconds
+# TYPE uptime_seconds gauge
+uptime_seconds{service="dashboard-backend"} ${uptimeSeconds}
+
+# HELP process_start_time_seconds Process start time as Unix timestamp
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds{service="dashboard-backend"} ${Math.floor(startTime / 1000)}
+`.trim();
+
+    return reply
+      .header('Content-Type', 'text/plain; version=0.0.4')
+      .send(prometheusMetrics);
+  });
+
+  /**
+   * GET /metrics/json - JSON-formatted metrics
+   * 
+   * Same metrics as /metrics but in JSON format
+   * Useful for custom monitoring dashboards
+   */
+  fastify.get('/metrics/json', async (request: any, reply: any) => {
+    const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+    
+    return reply.status(200).send({
+      service: 'dashboard-backend',
+      timestamp: new Date().toISOString(),
+      uptime_seconds: uptimeSeconds,
+      metrics: {
+        http_requests_total: metrics.requestCount,
+        http_errors_total: metrics.errorCount,
+        tasks_created_total: metrics.taskCreatedCount,
+        tasks_updated_total: metrics.taskUpdatedCount,
+        db_queries_total: metrics.dbQueryCount,
+      },
+    });
+  });
+}
+
+/**
+ * Get current metrics snapshot
+ * Exported for testing
+ */
+export function getMetrics(): Readonly<Metrics> {
+  return { ...metrics };
+}
+
+/**
+ * Reset metrics (for testing only)
+ */
+export function resetMetrics() {
+  metrics.requestCount = 0;
+  metrics.errorCount = 0;
+  metrics.taskCreatedCount = 0;
+  metrics.taskUpdatedCount = 0;
+  metrics.dbQueryCount = 0;
+}

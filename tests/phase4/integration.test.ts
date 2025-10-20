@@ -1,3 +1,23 @@
+/**
+ * ⚠️ DEPRECATED TEST - Superseded by Phase 5
+ * 
+ * This test suite validates Phase 4 integration with ReviewFailureTasksStep.
+ * ReviewFailureTasksStep was replaced by BulkTaskCreationStep in Phase 5.
+ * 
+ * Current equivalent tests:
+ * - tests/phase4/bulkTaskCreationStep.test.ts - Modern task creation step tests
+ * - tests/phase4/pmDecisionParserStep.test.ts - PM decision parsing (still valid)
+ * - scripts/test-dashboard-integration.ts - E2E integration tests (7/7 passing)
+ * 
+ * Why deprecated:
+ * - Uses ReviewFailureTasksStep (replaced by BulkTaskCreationStep)
+ * - Tests workflow YAML with deprecated step configuration
+ * - Phase 5 dashboard integration provides superior test coverage
+ * 
+ * Skip Reason: Workflow step deprecated in Phase 5
+ * Date Skipped: October 20, 2025
+ * Revisit: Not needed - BulkTaskCreationStep + Dashboard tests cover this
+ */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WorkflowEngine } from '../../src/workflows/engine/WorkflowEngine.js';
 import { PMDecisionParserStep } from '../../src/workflows/steps/PMDecisionParserStep.js';
@@ -9,7 +29,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
-describe('Phase 4 - End-to-End Integration Tests', () => {
+describe.skip('Phase 4 - End-to-End Integration Tests [DEPRECATED - ReviewFailureTasksStep removed]', () => {
   let tempDir: string;
 
   beforeEach(async () => {

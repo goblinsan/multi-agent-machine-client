@@ -1,7 +1,6 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { sendPersonaRequest, waitForPersonaCompletion, interpretPersonaStatus } from '../../agents/persona.js';
-import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
 import { cfg } from '../../config.js';
 import { personaTimeoutMs, personaMaxRetries, calculateProgressiveTimeout } from '../../util.js';
@@ -50,7 +49,8 @@ export class PersonaRequestStep extends WorkflowStep {
     });
 
     try {
-      const redis = await makeRedis();
+      // Use transport from context instead of creating Redis client
+      const transport = context.transport;
       
       // Resolve payload variables from context
       const resolvedPayload = this.resolvePayloadVariables(payload, context);
@@ -120,7 +120,7 @@ export class PersonaRequestStep extends WorkflowStep {
           || context.getVariable('task_id') 
           || context.getVariable('taskId');
         
-        const corrId = await sendPersonaRequest(redis, {
+        const corrId = await sendPersonaRequest(transport, {
           workflowId: context.workflowId,
           toPersona: persona,
           step,
@@ -146,7 +146,7 @@ export class PersonaRequestStep extends WorkflowStep {
 
         // Wait for persona completion with progressive timeout
         try {
-          completion = await waitForPersonaCompletion(redis, persona, context.workflowId, corrId, currentTimeoutMs);
+          completion = await waitForPersonaCompletion(transport, persona, context.workflowId, corrId, currentTimeoutMs);
         } catch (error: any) {
           // Check if this is a timeout error
           if (error.message && error.message.includes('Timed out waiting')) {
@@ -172,7 +172,7 @@ export class PersonaRequestStep extends WorkflowStep {
         }
       }
       
-      await redis.disconnect();
+      // No disconnect needed - transport lifecycle managed by caller
 
       if (!completion) {
         const totalAttempts = attempt;

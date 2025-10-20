@@ -1,5 +1,6 @@
 import { WorkflowStep, WorkflowStepConfig } from './engine/WorkflowStep';
 import { WorkflowContext, WorkflowConfig } from './engine/WorkflowContext';
+import type { MessageTransport } from '../transport/index.js';
 import { PullTaskStep } from './steps/PullTaskStep';
 import { ContextStep } from './steps/ContextStep';
 import { TaskUpdateStep } from './steps/TaskUpdateStep';
@@ -15,8 +16,6 @@ import { ConditionalStep } from './steps/ConditionalStep';
 import { SimpleTaskStatusStep } from './steps/SimpleTaskStatusStep';
 import { GitOperationStep } from './steps/GitOperationStep';
 import { PlanningLoopStep } from './steps/PlanningLoopStep';
-import { QAFailureCoordinationStep } from './steps/QAFailureCoordinationStep';
-import { QAIterationLoopStep } from './steps/QAIterationLoopStep';
 import { VariableSetStep } from './steps/VariableSetStep';
 import { BlockedTaskAnalysisStep } from './steps/BlockedTaskAnalysisStep';
 import { UnblockAttemptStep } from './steps/UnblockAttemptStep';
@@ -115,8 +114,6 @@ export class WorkflowEngine {
     this.stepRegistry.set('SimpleTaskStatusStep', SimpleTaskStatusStep);
     this.stepRegistry.set('GitOperationStep', GitOperationStep);
     this.stepRegistry.set('PlanningLoopStep', PlanningLoopStep);
-    this.stepRegistry.set('QAFailureCoordinationStep', QAFailureCoordinationStep);
-    this.stepRegistry.set('QAIterationLoopStep', QAIterationLoopStep);
     this.stepRegistry.set('VariableSetStep', VariableSetStep);
     this.stepRegistry.set('BlockedTaskAnalysisStep', BlockedTaskAnalysisStep);
     this.stepRegistry.set('UnblockAttemptStep', UnblockAttemptStep);
@@ -215,6 +212,7 @@ export class WorkflowEngine {
     projectId: string,
     repoRoot: string,
     branch: string = 'main',
+    transport: MessageTransport,
     initialVariables: Record<string, any> = {}
   ): Promise<WorkflowExecutionResult> {
     const definition = this.workflowDefinitions.get(workflowName);
@@ -222,7 +220,7 @@ export class WorkflowEngine {
       throw new Error(`Workflow '${workflowName}' not found`);
     }
 
-    return this.executeWorkflowDefinition(definition, projectId, repoRoot, branch, initialVariables);
+    return this.executeWorkflowDefinition(definition, projectId, repoRoot, branch, transport, initialVariables);
   }
 
   /**
@@ -233,6 +231,7 @@ export class WorkflowEngine {
     projectId: string,
     repoRoot: string,
     branch: string = 'main',
+    transport: MessageTransport,
     initialVariables: Record<string, any> = {}
   ): Promise<WorkflowExecutionResult> {
     const startTime = Date.now();
@@ -255,6 +254,7 @@ export class WorkflowEngine {
       repoRoot,
       branch,
       workflowConfig,
+      transport,
       initialVariables
     );
     

@@ -1,0 +1,48 @@
+{
+  "project": {
+    "name": "Test Local Stack",
+    "slug": "test-local-stack",
+    "description": "Test project for verifying npm run local command"
+  },
+  "milestones": [
+    {
+      "name": "Setup",
+      "slug": "setup",
+      "status": "active",
+      "description": "Initial setup milestone"
+    },
+    {
+      "name": "Testing",
+      "slug": "testing",
+      "status": "active",
+      "description": "Testing milestone"
+    }
+  ],
+  "tasks": {
+    "setup": [
+      {
+        "title": "Create test file",
+        "description": "Create a simple test file",
+        "status": "open",
+        "priority_score": 0,
+        "external_id": "test-local-1"
+      },
+      {
+        "title": "Verify setup",
+        "description": "Verify the setup is complete",
+        "status": "open",
+        "priority_score": 0,
+        "external_id": "test-local-2"
+      }
+    ],
+    "testing": [
+      {
+        "title": "Run tests",
+        "description": "Run all test cases",
+        "status": "open",
+        "priority_score": 0,
+        "external_id": "test-local-3"
+      }
+    ]
+  }
+}

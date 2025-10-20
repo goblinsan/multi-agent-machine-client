@@ -1,4 +1,4 @@
-import { makeRedis } from "../redisClient.js";
+import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
 
@@ -141,22 +141,23 @@ async function main() {
     process.exit(1);
   }
 
-  const redis = await makeRedis();
+  const transport = await getTransport();
+  console.log(`Using transport: ${cfg.transportType}`);
 
   if (nuke) {
-    await nukeStreams(redis);
+    await nukeStreams(transport);
     if (nukeOnly) {
-      console.log("Redis streams nuked; exiting (--nuke).");
-      await redis.quit();
+      console.log("Streams nuked; exiting (--nuke).");
+      await transport.quit();
       return;
     }
   }
 
   if (drain) {
-    await drainStreams(redis);
+    await drainStreams(transport);
     if (drainOnly) {
-      console.log("Redis streams drained; exiting (--drain-only).");
-      await redis.quit();
+      console.log("Streams drained; exiting (--drain-only).");
+      await transport.quit();
       return;
     }
   }
@@ -190,9 +191,9 @@ async function main() {
     ...(baseBranch ? { branch: baseBranch } : {})
   } as Record<string, string>;
 
-  const entryId = await redis.xAdd(cfg.requestStream, "*", msg);
+  const entryId = await transport.xAdd(cfg.requestStream, "*", msg);
   console.log("Coordinator workflow dispatched", { entryId, workflow_id: msg.workflow_id, corr_id: corrId, project_id: projectId, repo, baseBranch });
-  await redis.quit();
+  await transport.quit();
 }
 
 main().catch(err => {

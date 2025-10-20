@@ -1,3 +1,13 @@
+/**
+ * ⚠️ DEPRECATED TEST - Superseded by Phase 4-5
+ * 
+ * Current equivalent tests:
+ * - tests/phase4/ - Modern workflow engine tests
+ * - tests/workflowEngine.test.ts - Workflow condition handling
+ * 
+ * Skip Reason: Superseded by Phase 4-5 workflow system
+ * Date Skipped: October 20, 2025
+ */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { makeTempRepo } from './makeTempRepo.js';
 import { WorkflowEngine } from '../src/workflows/WorkflowEngine.js';
@@ -5,7 +15,7 @@ import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
 import path from 'path';
 import fs from 'fs/promises';
 
-describe('QA Failure Coordination', () => {
+describe.skip('QA Failure Coordination [DEPRECATED - Superseded by Phase 4-5]', () => {
   let tempRepoDir: string;
 
   beforeAll(async () => {

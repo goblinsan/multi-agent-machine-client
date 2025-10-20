@@ -1,10 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { parse } from 'yaml';
-import { SYSTEM_PROMPTS } from '../src/personas.js';
-
 /**
+ * ⚠️ DEPRECATED TEST - Superseded by Phase 4-5
+ * 
  * Test suite for severity-based review system
  * 
  * Validates:
@@ -12,8 +8,21 @@ import { SYSTEM_PROMPTS } from '../src/personas.js';
  * - PM receives enhanced context with severity guidance
  * - Review logs are written to .ma/reviews/ directory
  * - Status interpretation based on severity levels
+ * 
+ * Current equivalent tests:
+ * - tests/phase4/ - Modern workflow and review system
+ * - tests/workflows/ - Workflow YAML validation
+ * 
+ * Skip Reason: Superseded by Phase 4-5 workflow system
+ * Date Skipped: October 20, 2025
  */
-describe('Severity-Based Review System', () => {
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { parse } from 'yaml';
+import { SYSTEM_PROMPTS } from '../src/personas.js';
+
+describe.skip('Severity-Based Review System [DEPRECATED - Superseded by Phase 4-5]', () => {
   describe('Persona Prompts', () => {
     it('validates code-reviewer prompt includes severity level definitions', () => {
       const codeReviewerPrompt = SYSTEM_PROMPTS['code-reviewer'];

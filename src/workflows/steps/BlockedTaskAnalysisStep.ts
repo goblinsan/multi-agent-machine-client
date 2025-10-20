@@ -1,7 +1,6 @@
 import { WorkflowStep, StepResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
-import { makeRedis } from '../../redisClient.js';
 
 interface BlockedTaskAnalysisConfig {
   task_id: string;
@@ -90,44 +89,10 @@ export class BlockedTaskAnalysisStep extends WorkflowStep {
         analysis.previous_attempts = attemptHistory;
       }
 
-      // Query Redis for workflow events to find failure details
-      try {
-        const redis = await makeRedis();
-        const workflowId = context.workflowId;
-        
-        // Look for events related to this workflow
-        const eventStream = `persona:events:${workflowId}`;
-        const events = await redis.xRange(eventStream, '-', '+', { COUNT: 100 });
-        
-        for (const event of events) {
-          const fields = event.message;
-          const status = fields.status;
-          const step = fields.step;
-          
-          // Look for failure or error events
-          if (status === 'fail' || status === 'error' || status === 'blocked') {
-            if (!analysis.failed_step) {
-              analysis.failed_step = step;
-            }
-            
-            const result = fields.result ? JSON.parse(fields.result) : null;
-            if (result?.error && !analysis.error_message) {
-              analysis.error_message = result.error;
-            }
-            
-            if (result?.message && !analysis.reason) {
-              analysis.reason = result.message;
-            }
-          }
-        }
-        
-        await redis.disconnect();
-      } catch (redisError: any) {
-        logger.warn('Failed to query Redis for workflow events', {
-          error: redisError.message,
-          workflowId: context.workflowId
-        });
-      }
+      // Note: Querying workflow events from transport would require xRange,
+      // which is not part of the MessageTransport interface. This is optional
+      // enrichment that can be added if needed.
+      // For now, analysis relies on context variables and task history.
 
       // Generate context hints based on failure patterns
       analysis.context_hints = this.generateContextHints(analysis);

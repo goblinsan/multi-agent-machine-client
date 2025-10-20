@@ -2,7 +2,6 @@ import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus } from '../../agents/persona.js';
 import { getContextualPrompt } from '../../personas.context.js';
-import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
 
 interface PlanningLoopConfig {
@@ -46,7 +45,8 @@ export class PlanningLoopStep extends WorkflowStep {
       evaluatorPersona
     });
 
-    const redis = await makeRedis();
+    // Use transport from context
+    const transport = context.transport;
 
     while (currentIteration < maxIterations) {
       currentIteration++;
@@ -81,7 +81,7 @@ export class PlanningLoopStep extends WorkflowStep {
           project_id: context.projectId
         };
 
-        const planCorrId = await sendPersonaRequest(redis, {
+        const planCorrId = await sendPersonaRequest(transport, {
           workflowId: context.workflowId,
           toPersona: plannerPersona,
           step: planStep,
@@ -93,7 +93,7 @@ export class PlanningLoopStep extends WorkflowStep {
           deadlineSeconds
         });
 
-        planResult = await waitForPersonaCompletion(redis, plannerPersona, context.workflowId, planCorrId, timeout);
+        planResult = await waitForPersonaCompletion(transport, plannerPersona, context.workflowId, planCorrId, timeout);
 
         const parsedPlanResult = summarizePlanResult(planResult);
 
@@ -165,7 +165,7 @@ export class PlanningLoopStep extends WorkflowStep {
           ...(contextualPrompt ? { _system_prompt: contextualPrompt } : {})
         };
 
-        const evalCorrId = await sendPersonaRequest(redis, {
+        const evalCorrId = await sendPersonaRequest(transport, {
           workflowId: context.workflowId,
           toPersona: evaluatorPersona,
           step: evaluateStep,
@@ -177,7 +177,7 @@ export class PlanningLoopStep extends WorkflowStep {
           deadlineSeconds
         });
 
-        evaluationResult = await waitForPersonaCompletion(redis, evaluatorPersona, context.workflowId, evalCorrId, timeout);
+        evaluationResult = await waitForPersonaCompletion(transport, evaluatorPersona, context.workflowId, evalCorrId, timeout);
 
         const parsedEvaluation = summarizeEvaluationResult(evaluationResult);
 

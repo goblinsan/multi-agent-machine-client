@@ -1,0 +1,365 @@
+{
+  "project": {
+    "name": "E-Commerce Platform Redesign",
+    "slug": "ecommerce-redesign-v2",
+    "description": "Complete redesign of the e-commerce platform with modern architecture, microservices, and enhanced user experience"
+  },
+  "milestones": [
+    {
+      "name": "Project Foundation & Architecture",
+      "slug": "foundation",
+      "status": "active",
+      "description": "Setup project structure, define architecture, and establish development environment"
+    },
+    {
+      "name": "Authentication & Authorization",
+      "slug": "auth",
+      "status": "active",
+      "description": "Implement secure authentication system with OAuth2 and role-based access control"
+    },
+    {
+      "name": "Product Catalog & Search",
+      "slug": "product-catalog",
+      "status": "active",
+      "description": "Build product catalog with advanced search, filtering, and categorization"
+    },
+    {
+      "name": "Shopping Cart & Checkout",
+      "slug": "cart-checkout",
+      "status": "active",
+      "description": "Implement shopping cart functionality and multi-step checkout process"
+    },
+    {
+      "name": "Payment Integration",
+      "slug": "payments",
+      "status": "active",
+      "description": "Integrate payment gateways (Stripe, PayPal) with secure transaction handling"
+    },
+    {
+      "name": "Order Management System",
+      "slug": "order-management",
+      "status": "active",
+      "description": "Build order tracking, fulfillment, and inventory management"
+    },
+    {
+      "name": "User Dashboard & Profile",
+      "slug": "user-dashboard",
+      "status": "active",
+      "description": "Create user dashboard with order history, preferences, and account management"
+    },
+    {
+      "name": "Admin Panel & Analytics",
+      "slug": "admin-panel",
+      "status": "active",
+      "description": "Build admin interface with analytics, reporting, and system management"
+    },
+    {
+      "name": "Testing & Deployment",
+      "slug": "testing-deployment",
+      "status": "active",
+      "description": "Comprehensive testing, performance optimization, and production deployment"
+    }
+  ],
+  "tasks": {
+    "foundation": [
+      {
+        "title": "Setup monorepo structure with Turborepo",
+        "description": "Configure Turborepo for managing frontend, backend, and shared packages",
+        "status": "open",
+        "labels": ["infrastructure", "setup"]
+      },
+      {
+        "title": "Configure Docker development environment",
+        "description": "Create Docker Compose setup for local development with all services",
+        "status": "open",
+        "labels": ["docker", "devops"]
+      },
+      {
+        "title": "Setup CI/CD pipeline with GitHub Actions",
+        "description": "Configure automated testing, building, and deployment workflows",
+        "status": "open",
+        "labels": ["ci-cd", "automation"]
+      },
+      {
+        "title": "Define API architecture and service boundaries",
+        "description": "Document microservices architecture, API contracts, and communication patterns",
+        "status": "open",
+        "labels": ["architecture", "documentation"]
+      },
+      {
+        "title": "Setup database schema and migrations",
+        "description": "Design PostgreSQL schema with Prisma ORM and migration strategy",
+        "status": "open",
+        "labels": ["database", "backend"]
+      }
+    ],
+    "auth": [
+      {
+        "title": "Implement JWT authentication with refresh tokens",
+        "description": "Build secure JWT-based auth with access/refresh token rotation",
+        "status": "open",
+        "labels": ["auth", "security", "backend"]
+      },
+      {
+        "title": "Add OAuth2 social login (Google, GitHub, Facebook)",
+        "description": "Integrate third-party OAuth2 providers using Passport.js",
+        "status": "open",
+        "labels": ["oauth", "auth", "backend"]
+      },
+      {
+        "title": "Implement role-based access control (RBAC)",
+        "description": "Create permission system with roles: admin, seller, customer, guest",
+        "status": "open",
+        "labels": ["auth", "authorization", "backend"]
+      },
+      {
+        "title": "Build password reset and email verification flows",
+        "description": "Implement secure password reset with email tokens and verification",
+        "status": "open",
+        "labels": ["auth", "email", "backend"]
+      },
+      {
+        "title": "Add multi-factor authentication (MFA)",
+        "description": "Implement TOTP-based 2FA with recovery codes",
+        "status": "open",
+        "labels": ["auth", "security", "2fa"]
+      },
+      {
+        "title": "Create session management and device tracking",
+        "description": "Track active sessions, allow users to revoke devices remotely",
+        "status": "open",
+        "labels": ["auth", "security", "backend"]
+      }
+    ],
+    "product-catalog": [
+      {
+        "title": "Design product schema with variants and attributes",
+        "description": "Create flexible schema supporting size, color, material variants",
+        "status": "open",
+        "labels": ["database", "backend", "products"]
+      },
+      {
+        "title": "Implement Elasticsearch for product search",
+        "description": "Setup Elasticsearch with fuzzy matching, synonyms, and faceted search",
+        "status": "open",
+        "labels": ["search", "elasticsearch", "backend"]
+      },
+      {
+        "title": "Build product filtering and sorting API",
+        "description": "Create REST API for filtering by price, category, brand, ratings",
+        "status": "open",
+        "labels": ["api", "backend", "products"]
+      },
+      {
+        "title": "Create product recommendation engine",
+        "description": "Implement collaborative filtering for personalized recommendations",
+        "status": "open",
+        "labels": ["ml", "recommendations", "backend"]
+      }
+    ],
+    "cart-checkout": [
+      {
+        "title": "Implement shopping cart with Redis session storage",
+        "description": "Build cart management with Redis for fast session-based storage",
+        "status": "open",
+        "labels": ["cart", "redis", "backend"]
+      },
+      {
+        "title": "Create multi-step checkout flow",
+        "description": "Build checkout: shipping address → payment method → review → confirm",
+        "status": "open",
+        "labels": ["checkout", "frontend", "backend"]
+      },
+      {
+        "title": "Add coupon and discount code system",
+        "description": "Implement promo codes with validation and discount calculation",
+        "status": "open",
+        "labels": ["promotions", "backend"]
+      },
+      {
+        "title": "Implement shipping calculation with provider APIs",
+        "description": "Integrate UPS/FedEx APIs for real-time shipping rate calculation",
+        "status": "open",
+        "labels": ["shipping", "api-integration", "backend"]
+      },
+      {
+        "title": "Build cart abandonment tracking and recovery",
+        "description": "Track abandoned carts and send reminder emails after 1 hour",
+        "status": "open",
+        "labels": ["marketing", "email", "backend"]
+      }
+    ],
+    "payments": [
+      {
+        "title": "Integrate Stripe payment gateway",
+        "description": "Implement Stripe Checkout with payment intent flow and webhooks",
+        "status": "open",
+        "labels": ["payments", "stripe", "backend"]
+      },
+      {
+        "title": "Add PayPal Express Checkout",
+        "description": "Integrate PayPal for alternative payment method",
+        "status": "open",
+        "labels": ["payments", "paypal", "backend"]
+      },
+      {
+        "title": "Implement payment webhook handling",
+        "description": "Build webhook handlers for payment success, failure, refunds",
+        "status": "open",
+        "labels": ["payments", "webhooks", "backend"]
+      },
+      {
+        "title": "Add support for saved payment methods",
+        "description": "Allow users to save credit cards securely with Stripe",
+        "status": "open",
+        "labels": ["payments", "security", "backend"]
+      },
+      {
+        "title": "Implement refund and chargeback handling",
+        "description": "Build admin interface for processing refunds and dispute management",
+        "status": "open",
+        "labels": ["payments", "admin", "backend"]
+      },
+      {
+        "title": "Add fraud detection with Stripe Radar",
+        "description": "Configure Stripe Radar rules for fraud prevention",
+        "status": "open",
+        "labels": ["payments", "security", "fraud-detection"]
+      }
+    ],
+    "order-management": [
+      {
+        "title": "Create order processing workflow",
+        "description": "Build state machine: pending → processing → shipped → delivered",
+        "status": "open",
+        "labels": ["orders", "backend", "workflow"]
+      },
+      {
+        "title": "Implement inventory management system",
+        "description": "Track stock levels, handle reservations, and low-stock alerts",
+        "status": "open",
+        "labels": ["inventory", "backend"]
+      },
+      {
+        "title": "Build order tracking with shipping carrier APIs",
+        "description": "Integrate UPS/FedEx tracking APIs for real-time updates",
+        "status": "open",
+        "labels": ["orders", "shipping", "api-integration"]
+      },
+      {
+        "title": "Add email notifications for order status changes",
+        "description": "Send automated emails for order confirmation, shipping, delivery",
+        "status": "open",
+        "labels": ["email", "notifications", "backend"]
+      }
+    ],
+    "user-dashboard": [
+      {
+        "title": "Build order history page with filtering",
+        "description": "Display user's past orders with filter by date, status, total",
+        "status": "open",
+        "labels": ["frontend", "user-dashboard"]
+      },
+      {
+        "title": "Create wishlist and saved items feature",
+        "description": "Allow users to save products for later purchase",
+        "status": "open",
+        "labels": ["frontend", "backend", "wishlist"]
+      },
+      {
+        "title": "Implement address book management",
+        "description": "Let users save multiple shipping/billing addresses",
+        "status": "open",
+        "labels": ["frontend", "backend", "user-profile"]
+      },
+      {
+        "title": "Add notification preferences settings",
+        "description": "Allow users to control email, SMS, push notification preferences",
+        "status": "open",
+        "labels": ["frontend", "settings", "notifications"]
+      },
+      {
+        "title": "Build customer support ticket system",
+        "description": "Create interface for users to submit and track support tickets",
+        "status": "open",
+        "labels": ["support", "frontend", "backend"]
+      }
+    ],
+    "admin-panel": [
+      {
+        "title": "Build admin dashboard with key metrics",
+        "description": "Display sales, orders, revenue charts with date range filters",
+        "status": "open",
+        "labels": ["admin", "frontend", "analytics"]
+      },
+      {
+        "title": "Create product management interface",
+        "description": "CRUD interface for managing products, variants, inventory",
+        "status": "open",
+        "labels": ["admin", "products", "frontend"]
+      },
+      {
+        "title": "Implement order management console",
+        "description": "Allow admins to view, update, refund, cancel orders",
+        "status": "open",
+        "labels": ["admin", "orders", "frontend"]
+      },
+      {
+        "title": "Add user management with role assignment",
+        "description": "Manage users, assign roles, suspend accounts",
+        "status": "open",
+        "labels": ["admin", "users", "frontend"]
+      },
+      {
+        "title": "Build sales reports and export functionality",
+        "description": "Generate PDF/CSV reports for sales, revenue, products",
+        "status": "open",
+        "labels": ["admin", "reports", "backend"]
+      },
+      {
+        "title": "Implement audit logging for admin actions",
+        "description": "Track all admin actions for compliance and security",
+        "status": "open",
+        "labels": ["admin", "security", "audit"]
+      }
+    ],
+    "testing-deployment": [
+      {
+        "title": "Write unit tests for critical business logic",
+        "description": "Achieve 80% code coverage for payment, order, auth modules",
+        "status": "open",
+        "labels": ["testing", "unit-tests"]
+      },
+      {
+        "title": "Create E2E tests for checkout flow",
+        "description": "Use Playwright to test complete purchase journey",
+        "status": "open",
+        "labels": ["testing", "e2e", "playwright"]
+      },
+      {
+        "title": "Perform load testing with 1000 concurrent users",
+        "description": "Use k6 to test system performance under high load",
+        "status": "open",
+        "labels": ["testing", "performance", "load-testing"]
+      },
+      {
+        "title": "Setup production infrastructure on AWS",
+        "description": "Configure ECS, RDS, ElastiCache, S3 for production",
+        "status": "open",
+        "labels": ["devops", "aws", "infrastructure"]
+      },
+      {
+        "title": "Implement monitoring with Datadog",
+        "description": "Setup APM, logs, metrics, and alerting",
+        "status": "open",
+        "labels": ["monitoring", "devops", "observability"]
+      },
+      {
+        "title": "Perform security audit and penetration testing",
+        "description": "Conduct security review and fix vulnerabilities",
+        "status": "open",
+        "labels": ["security", "testing", "audit"]
+      }
+    ]
+  }
+}

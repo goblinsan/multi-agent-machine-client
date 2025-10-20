@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-
 /**
+ * ⚠️ DEPRECATED TEST - Superseded by Phase 4-5
+ * 
  * Test suite for QA validation when no tests are executed
  * 
  * Production Issue:
@@ -12,8 +12,16 @@ import { describe, it, expect } from 'vitest';
  * Expected Behavior:
  * - QA returning "pass" with 0 tests executed should be overridden to "fail"
  * - Workflow should trigger PM coordination for this failure
+ * 
+ * Current equivalent tests:
+ * - tests/phase4/ - Modern workflow validation
+ * 
+ * Skip Reason: Superseded by Phase 4-5 workflow system
+ * Date Skipped: October 20, 2025
  */
-describe('QA No Tests Executed Validation', () => {
+import { describe, it, expect } from 'vitest';
+
+describe.skip('QA No Tests Executed Validation [DEPRECATED - Superseded by Phase 4-5]', () => {
   /**
    * Test validates that QA status is overridden when no tests are executed
    */

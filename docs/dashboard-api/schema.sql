@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS milestones (
     name TEXT NOT NULL,
     slug TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
+    description TEXT,  -- Optional milestone description
     
     -- Computed Fields (updated by triggers)
     total_tasks INTEGER NOT NULL DEFAULT 0,

@@ -1,6 +1,5 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { makeRedis } from '../../redisClient.js';
 import { logger } from '../../logger.js';
 
 export interface PullTaskConfig {
@@ -46,11 +45,11 @@ export class PullTaskStep extends WorkflowStep {
     });
 
     try {
-      const redisClient = await makeRedis();
+      const transport = context.transport;
       
       // Ensure consumer group exists
       try {
-        await redisClient.xGroupCreate(streamName, consumerGroup, '0', { MKSTREAM: true });
+        await transport.xGroupCreate(streamName, consumerGroup, '0', { MKSTREAM: true });
       } catch (error: any) {
         // Ignore if group already exists
         if (!error.message?.includes('BUSYGROUP')) {
@@ -59,7 +58,7 @@ export class PullTaskStep extends WorkflowStep {
       }
 
       // Pull messages from stream
-      const messages = await redisClient.xReadGroup(
+      const messages = await transport.xReadGroup(
         consumerGroup, 
         consumerId,
         { key: streamName, id: '>' },
@@ -70,7 +69,7 @@ export class PullTaskStep extends WorkflowStep {
         logger.info('No messages available in stream');
         context.setVariable('task', null);
         context.setVariable('taskId', null);
-        await redisClient.disconnect();
+        // No disconnect needed - transport lifecycle managed by caller
         return {
           status: 'success',
           data: { task: null, taskId: null },
@@ -85,7 +84,7 @@ export class PullTaskStep extends WorkflowStep {
         logger.info('No messages in stream data');
         context.setVariable('task', null);
         context.setVariable('taskId', null);
-        await redisClient.disconnect();
+        // No disconnect needed - transport lifecycle managed by caller
         return {
           status: 'success',
           data: { task: null, taskId: null },
@@ -116,8 +115,8 @@ export class PullTaskStep extends WorkflowStep {
       context.setVariable('taskId', messageId);
 
       // Acknowledge the message
-      await redisClient.xAck(streamName, consumerGroup, messageId);
-      await redisClient.disconnect();
+      await transport.xAck(streamName, consumerGroup, messageId);
+      // No disconnect needed - transport lifecycle managed by caller
 
       return {
         status: 'success',

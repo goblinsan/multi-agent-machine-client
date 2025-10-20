@@ -813,7 +813,6 @@ export class BulkTaskCreationStep extends WorkflowStep {
       }
 
       logger.info('Bulk task creation completed', {
-        workflowId: context.workflowId,
         stepName: this.config.name,
         projectId,
         tasksCreated: result.tasks_created,

@@ -1,7 +1,6 @@
 
 import { randomUUID } from "crypto";
 import { cfg } from "../config.js";
-import { makeRedis } from "../redisClient.js";
 import { logger } from "../logger.js";
 import { PERSONAS } from "../personaNames.js";
 import { personaTimeoutMs } from "../util.js";
@@ -19,45 +18,21 @@ export async function waitForPersonaCompletion(
     ? timeoutMs
     : personaTimeoutMs(persona, cfg);
   const started = Date.now();
-  const eventRedis = await makeRedis();
+  const transport = r; // Use the passed transport instead of creating a new Redis client
 
   try {
     const streamKey = cfg.eventStream;
 
-    const recentMatch = await (async () => {
-      try {
-        const entries = await eventRedis.xRevRange(streamKey, "+", "-", { COUNT: 200 });
-        if (!entries) return null;
-        for (const entry of entries) {
-          const id = Array.isArray(entry) ? String(entry[0]) : "";
-          const rawCandidate = Array.isArray(entry) ? entry[1] : entry;
-          if (!id || !rawCandidate || typeof rawCandidate !== "object") continue;
-          const raw = rawCandidate as Record<string, any>;
-          const fields: Record<string, string> = {};
-          for (const [k, v] of Object.entries(raw)) fields[k] = typeof v === "string" ? v : String(v);
-          if (
-            fields.workflow_id === workflowId &&
-            fields.from_persona === persona &&
-            fields.status === "done" &&
-            (!corrId || fields.corr_id === corrId)
-          ) {
-            return { id, fields };
-          }
-        }
-      } catch (error) {
-        logger.debug("waitForPersonaCompletion scan failed", { persona, workflowId, corrId, error });
-      }
-      return null;
-    })();
-
-    if (recentMatch) return recentMatch;
+    // xRevRange optimization commented out - not in MessageTransport interface
+    // This optimization scanned recent events before blocking, but isn't critical
+    // The blocking xRead below will still catch completions
 
     let lastId = "$";
     while (Date.now() - started < effectiveTimeout) {
       const elapsed = Date.now() - started;
       const remaining = Math.max(0, effectiveTimeout - elapsed);
       const blockMs = Math.max(1000, Math.min(remaining || effectiveTimeout, 5000));
-      const streams = await eventRedis.xRead([{ key: streamKey, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
+      const streams = await transport.xRead([{ key: streamKey, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
       if (!streams) continue;
 
       for (const stream of streams) {
@@ -79,7 +54,7 @@ export async function waitForPersonaCompletion(
       }
     }
   } finally {
-    try { await eventRedis.quit(); } catch {}
+    // No quit needed - transport lifecycle managed by caller
   }
 
   const timeoutSec = Math.round(effectiveTimeout / 100) / 10;

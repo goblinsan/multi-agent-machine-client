@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import YAML from 'yaml';
+import type { MessageTransport } from '../../transport/index.js';
 import { WorkflowContext, WorkflowConfig } from './WorkflowContext.js';
 import { WorkflowStep, WorkflowStepConfig, WorkflowStepFactory, StepResult } from './WorkflowStep.js';
 import { WorkflowValidator, SchemaValidationResult } from './WorkflowValidator.js';
@@ -97,6 +98,7 @@ export class WorkflowEngine {
     projectId: string,
     repoRoot: string,
     branch: string,
+    transport: MessageTransport,
     options: WorkflowExecutionOptions = {}
   ): Promise<WorkflowResult> {
     const workflowId = options.workflowId || randomUUID();
@@ -108,6 +110,7 @@ export class WorkflowEngine {
       repoRoot,
       branch,
       config,
+      transport,
       options.variables || {}
     );
 
@@ -164,6 +167,94 @@ export class WorkflowEngine {
         workflowId,
         error: String(error),
         stack: error instanceof Error ? error.stack : undefined
+      });
+
+      return {
+        workflowId,
+        status: 'failed',
+        error: error instanceof Error ? error : new Error(String(error)),
+        executionSummary: context.getExecutionSummary(),
+        context
+      };
+    }
+  }
+
+  /**
+   * Execute a workflow from an already-loaded workflow definition
+   * (used when you want to pass a modified workflow config instead of loading from file)
+   */
+  async executeWorkflowDefinition(
+    config: WorkflowConfig,
+    projectId: string,
+    repoRoot: string,
+    branch: string,
+    transport: MessageTransport,
+    variables: Record<string, any> = {}
+  ): Promise<WorkflowResult> {
+    const workflowId = randomUUID();
+    
+    const context = new WorkflowContext(
+      workflowId,
+      projectId,
+      repoRoot,
+      branch,
+      config,
+      transport,
+      variables
+    );
+
+    logger.info('Starting workflow execution from definition', {
+      workflowId,
+      workflowName: config.name,
+      workflowVersion: config.version,
+      projectId,
+      repoRoot,
+      branch
+    });
+
+    try {
+      // Validate trigger condition if present
+      if (config.trigger?.condition) {
+        const shouldExecute = await this.evaluateTriggerCondition(config.trigger.condition, context);
+        if (!shouldExecute) {
+          logger.info('Workflow trigger condition not met, skipping execution', {
+            workflowId,
+            condition: config.trigger.condition
+          });
+          
+          return {
+            workflowId,
+            status: 'completed',
+            executionSummary: { totalSteps: 0, completedSteps: 0, failedSteps: 0, skippedSteps: 0, totalDuration_ms: 0 },
+            context
+          };
+        }
+      }
+
+      // Execute all steps
+      const stepResults = await this.executeSteps(config.steps, context, {});
+      
+      const summary = context.getExecutionSummary();
+      const hasFailures = summary.failedSteps > 0;
+
+      logger.info('Workflow execution from definition completed', {
+        workflowId,
+        status: hasFailures ? 'failed' : 'completed',
+        summary
+      });
+
+      return {
+        workflowId,
+        status: hasFailures ? 'failed' : 'completed',
+        executionSummary: summary,
+        context
+      };
+    } catch (error: any) {
+      logger.error('Workflow execution from definition failed', {
+        workflowId,
+        workflowName: config.name,
+        error: error.message,
+        projectId
       });
 
       return {

@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "seed": "tsx src/tools/seed_example.ts",
     "coordinator": "tsx src/tools/run_coordinator.ts",
+    "local": "tsx src/tools/run_local_stack.ts",
     "test": "vitest tests --run",
     "monitor": "tsx scripts/monitor-redis-streams.ts"
   },

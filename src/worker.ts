@@ -1,6 +1,6 @@
 
 import { cfg } from "./config.js";
-import { makeRedis } from "./redisClient.js";
+import { getTransport, type MessageTransport } from "./transport/index.js";
 import { RequestSchema } from "./schema.js";
 import { logger } from "./logger.js";
 import { PERSONAS } from "./personaNames.js";
@@ -12,44 +12,54 @@ import { acknowledgeRequest, groupForPersona } from "./redis/requestHandlers.js"
 
 function nowIso() { return new Date().toISOString(); }
 
-async function ensureGroups(r: any) {
+async function ensureGroups(transport: MessageTransport) {
   // Create consumer groups starting from '0' to read all messages in the stream,
   // not just new ones. This prevents race conditions where messages sent before
   // the consumer starts reading are missed.
   for (const p of cfg.allowedPersonas) {
     try { 
-      await r.xGroupCreate(cfg.requestStream, groupForPersona(p), "0", { MKSTREAM: true }); 
+      await transport.xGroupCreate(cfg.requestStream, groupForPersona(p), "0", { MKSTREAM: true });
       logger.debug("created consumer group", { stream: cfg.requestStream, group: groupForPersona(p), startFrom: "0" });
     } catch (e: any) {
       // Group might already exist, which is fine
-      if (e?.message && !e.message.includes("BUSYGROUP")) {
+      if (e?.message && !e.message.includes("BUSYGROUP") && !e.message.includes("already exists")) {
         logger.warn("failed to create consumer group", { stream: cfg.requestStream, group: groupForPersona(p), error: e?.message });
       }
     }
   }
   try { 
-    await r.xGroupCreate(cfg.eventStream, `${cfg.groupPrefix}:coordinator`, "0", { MKSTREAM: true }); 
+    await transport.xGroupCreate(cfg.eventStream, `${cfg.groupPrefix}:coordinator`, "0", { MKSTREAM: true });
     logger.debug("created coordinator group", { stream: cfg.eventStream, group: `${cfg.groupPrefix}:coordinator`, startFrom: "0" });
   } catch (e: any) {
-    if (e?.message && !e.message.includes("BUSYGROUP")) {
+    if (e?.message && !e.message.includes("BUSYGROUP") && !e.message.includes("already exists")) {
       logger.warn("failed to create coordinator group", { stream: cfg.eventStream, group: `${cfg.groupPrefix}:coordinator`, error: e?.message });
     }
   }
 }
 
 
-async function readOne(r: any, persona: string) {
+async function readOne(transport: MessageTransport, persona: string) {
   // BLOCK timeout set to 1000ms (1 second) for responsive message pickup.
-  // Redis will return immediately if messages are available.
-  const res = await r.xReadGroup(groupForPersona(persona), cfg.consumerId, { key: cfg.requestStream, id: ">" }, { COUNT: 1, BLOCK: 1000 }).catch(async (e: any) => {
+  // Transport will return immediately if messages are available.
+  const res = await transport.xReadGroup(
+    groupForPersona(persona),
+    cfg.consumerId,
+    { key: cfg.requestStream, id: ">" },
+    { COUNT: 1, BLOCK: 1000 }
+  ).catch(async (e: any) => {
     // If consumer group doesn't exist (e.g., after --drain-only), recreate it
     if (e?.message && e.message.includes("NOGROUP")) {
       logger.info("consumer group missing, recreating", { persona, group: groupForPersona(persona) });
       try {
-        await r.xGroupCreate(cfg.requestStream, groupForPersona(persona), "0", { MKSTREAM: true });
+        await transport.xGroupCreate(cfg.requestStream, groupForPersona(persona), "0", { MKSTREAM: true });
         logger.info("consumer group recreated", { persona, group: groupForPersona(persona) });
         // Retry the read after creating the group
-        return await r.xReadGroup(groupForPersona(persona), cfg.consumerId, { key: cfg.requestStream, id: ">" }, { COUNT: 1, BLOCK: 1000 }).catch(() => null);
+        return await transport.xReadGroup(
+          groupForPersona(persona),
+          cfg.consumerId,
+          { key: cfg.requestStream, id: ">" },
+          { COUNT: 1, BLOCK: 1000 }
+        ).catch(() => null);
       } catch (createErr: any) {
         logger.error("failed to recreate consumer group", { persona, error: createErr?.message });
       }
@@ -57,13 +67,13 @@ async function readOne(r: any, persona: string) {
     return null;
   });
   if (!res) return;
-  for (const stream of res) {
+  for (const stream of Object.values(res)) {
     for (const msg of stream.messages) {
       const id = msg.id;
-      const fields = msg.message as Record<string, string>;
-      processOne(r, persona, id, fields).catch(async (e: any) => {
+      const fields = msg.fields;
+      processOne(transport, persona, id, fields).catch(async (e: any) => {
         logger.error(`worker error`, { persona, error: e, entryId: id });
-        await publishEvent(r, {
+        await publishEvent(transport as any, {
           workflowId: fields?.workflow_id ?? "",
           step: fields?.step,
           fromPersona: persona,
@@ -71,7 +81,7 @@ async function readOne(r: any, persona: string) {
           corrId: fields?.corr_id,
           error: String(e?.message || e)
         }).catch(()=>{});
-        await acknowledgeRequest(r, persona, id, true);
+        await acknowledgeRequest(transport as any, persona, id, true);
       });
     }
   }
@@ -80,23 +90,19 @@ async function readOne(r: any, persona: string) {
 async function main() {
   if (cfg.allowedPersonas.length === 0) { logger.error("ALLOWED_PERSONAS is empty; nothing to do."); process.exit(1); }
   
-  // Establish Redis connection and ensure it's ready
-  const r = await makeRedis();
+  // Get transport instance (will connect automatically)
+  const transport = await getTransport();
   
-  // Verify connection with a simple ping
-  try {
-    await r.ping();
-    logger.info("redis connection established", { url: cfg.redisUrl.replace(/:[^:@]+@/, ':***@') });
-  } catch (e: any) {
-    logger.error("redis connection failed", { error: e?.message, url: cfg.redisUrl.replace(/:[^:@]+@/, ':***@') });
-    throw new Error("Failed to establish Redis connection");
-  }
+  logger.info("transport connected", { 
+    type: cfg.transportType,
+    ...(cfg.transportType === 'redis' ? { url: cfg.redisUrl.replace(/:[^:@]+@/, ':***@') } : {})
+  });
   
   // Start message tracking cleanup
   startMessageTrackingCleanup();
   
   // Create consumer groups
-  await ensureGroups(r);
+  await ensureGroups(transport);
   
   logger.info("worker ready", {
     personas: cfg.allowedPersonas,
@@ -121,14 +127,14 @@ async function main() {
       personaCodingTimeoutMs: cfg.personaCodingTimeoutMs
     });
   } catch (e) { /* ignore logging errors */ }
-  while (true) { for (const p of cfg.allowedPersonas) { await readOne(r, p); } }
+  while (true) { for (const p of cfg.allowedPersonas) { await readOne(transport, p); } }
 }
 
-async function processOne(r: any, persona: string, entryId: string, fields: Record<string,string>) {
+async function processOne(transport: MessageTransport, persona: string, entryId: string, fields: Record<string,string>) {
     const parsed = RequestSchema.safeParse(fields);
-    if (!parsed.success) { await acknowledgeRequest(r, persona, entryId); return; }
+    if (!parsed.success) { await acknowledgeRequest(transport as any, persona, entryId); return; }
     const msg = parsed.data;
-    if (msg.to_persona !== persona) { await acknowledgeRequest(r, persona, entryId); return; }
+    if (msg.to_persona !== persona) { await acknowledgeRequest(transport as any, persona, entryId); return; }
   
     // Check for duplicate messages
     if (isDuplicateMessage(msg.task_id, msg.corr_id, persona)) {
@@ -140,7 +146,7 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       });
       
       // Send duplicate_response event
-      await publishEvent(r, {
+      await publishEvent(transport as any, {
         workflowId: msg.workflow_id,
         taskId: msg.task_id,
         step: msg.step,
@@ -156,7 +162,7 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
         logger.error("failed to send duplicate_response event", { error: e?.message });
       });
       
-      await acknowledgeRequest(r, persona, entryId);
+      await acknowledgeRequest(transport as any, persona, entryId);
       return;
     }
   
@@ -170,12 +176,12 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
       });
       
       // Re-queue the message by adding it back to the stream (another worker should handle it)
-      await r.xAdd(cfg.requestStream, "*", fields).catch((e: any) => {
+      await transport.xAdd(cfg.requestStream, "*", fields).catch((e: any) => {
         logger.error("failed to re-queue message", { persona, error: e?.message });
       });
       
       // Acknowledge to remove from this consumer's pending list
-      await acknowledgeRequest(r, persona, entryId);
+      await acknowledgeRequest(transport as any, persona, entryId);
       return;
     }
   
@@ -198,14 +204,14 @@ async function processOne(r: any, persona: string, entryId: string, fields: Reco
     markMessageProcessed(msg.task_id, msg.corr_id, persona, msg.workflow_id);
   
   if (persona === PERSONAS.COORDINATION) {
-    return await handleCoordinator(r, msg, payloadObj);
+    return await handleCoordinator(transport as any, {}, msg, payloadObj);
   }
   
   if (persona === PERSONAS.CONTEXT) {
-        return await processContext(r, persona, msg, payloadObj, entryId);
+        return await processContext(transport as any, persona, msg, payloadObj, entryId);
     }
   
-    return await processPersona(r, persona, msg, payloadObj, entryId);
+    return await processPersona(transport as any, persona, msg, payloadObj, entryId);
   }
 
 main().catch(e => { logger.error("worker fatal", { error: e }); process.exit(1); });

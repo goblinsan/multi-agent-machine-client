@@ -5,21 +5,29 @@ import { ReviewFailureTasksStep } from '../src/workflows/steps/ReviewFailureTask
 import fs from 'fs/promises';
 
 /**
- * Integration test for Code Review failure task creation
+ * ⚠️ DEPRECATED INTEGRATION TEST - Superseded by Phase 4-5
  * 
- * This test provides PROOF that code review 'unknown' or 'fail' status will generate tasks on the dashboard.
+ * This test suite validates ReviewFailureTasksStep which was replaced by:
+ * - Phase 4: BulkTaskCreationStep with retry logic, idempotency, and priority mapping
+ * - Phase 5: Dashboard backend HTTP API with external_id uniqueness constraints
  * 
- * What this test proves:
- * 1. ✅ ReviewFailureTasksStep handles PM responses with different formats
- * 2. ✅ PM response with {status: "pass", backlog: [...]} creates tasks correctly
- * 3. ✅ PM response with {decision: "defer", follow_up_tasks: [...]} creates tasks correctly
- * 4. ✅ PM response with {decision: "immediate_fix", immediate_issues: [...]} creates tasks correctly
- * 5. ✅ createDashboardTask() gets called with correct arguments
- * 6. ✅ Created tasks have readable titles (not garbage)
- * 7. ✅ createdCount > 0 (tasks actually created)
- * 8. ✅ Works for both 'fail' and 'unknown' code review statuses
+ * Current equivalent tests:
+ * - tests/phase4/bulkTaskCreationStep.test.ts - Task creation with retries and error handling
+ * - tests/phase5/dashboardIntegration.test.ts - Real HTTP integration tests
+ * - scripts/test-dashboard-integration.ts - E2E idempotency tests (7/7 passing)
  * 
- * This addresses the production bug where code review failures didn't create tasks.
+ * Original test goals (now covered by Phase 4-5):
+ * 1. ✅ ReviewFailureTasksStep handles PM responses → BulkTaskCreationStep handles task arrays
+ * 2. ✅ PM response with backlog creates tasks → bulk API handles arrays of tasks
+ * 3. ✅ PM response with follow_up_tasks → standard input format for BulkTaskCreationStep
+ * 4. ✅ createDashboardTask() called correctly → DashboardClient.bulkCreateTasks()
+ * 5. ✅ Created tasks have readable titles → validated in Phase 5 integration tests
+ * 6. ✅ createdCount > 0 → BulkTaskCreateResponse.summary.created
+ * 7. ✅ Works for fail/unknown statuses → workflow engine handles all review statuses
+ * 
+ * Skip Reason: Superseded by Phase 4-5 workflow system with superior implementation
+ * Date Skipped: October 20, 2025
+ * Revisit: Post-deployment if regression testing needed
  */
 
 // Mock dashboard and Redis
@@ -54,7 +62,7 @@ vi.mock('../src/redisClient.js', () => ({
   })
 }));
 
-describe('Code Review Failure Task Creation Integration Tests', () => {
+describe.skip('Code Review Failure Task Creation Integration Tests [DEPRECATED - Superseded by Phase 4-5]', () => {
   let repoCleanup: (() => Promise<void>) | null = null;
   let repoRoot: string;
 

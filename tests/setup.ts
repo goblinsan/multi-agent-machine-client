@@ -139,3 +139,33 @@ try {
 } catch (e) {
   // If spying fails for any reason, continue without the global guard.
 }
+
+// ==========================================
+// Dashboard Client Mock Configuration
+// ==========================================
+// Export mock helpers for easy access in tests
+export {
+  createMockDashboardClient,
+  mockTaskResponse,
+  mockBulkCreateResponse,
+  mockListTasksResponse,
+  mockTaskCreateInput,
+  mockBulkTaskCreateInput,
+  mockTaskUpdateInput,
+  mockSuccessfulTaskCreation,
+  mockSuccessfulBulkCreation,
+  mockIdempotentTaskCreation,
+  mockIdempotentBulkCreation,
+  mockTaskCreationFailure,
+  mockNetworkFailure,
+  priorityToPriorityScore,
+  isUrgentPriority,
+  assertBulkCreateResponse,
+  assertTaskPriority
+} from './helpers/dashboardMocks';
+
+// Uncomment the following to enable global auto-mocking of DashboardClient
+// This will automatically replace all DashboardClient instances with mocks
+// vi.mock('../src/services/DashboardClient.js', () => ({
+//   DashboardClient: vi.fn(() => createMockDashboardClient())
+// }));

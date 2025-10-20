@@ -1,13 +1,13 @@
 import { randomUUID } from "crypto";
 import { fetch } from "undici";
 import { cfg } from "../config.js";
-import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
+import { fetchProjectStatus, fetchProjectStatusDetails, fetchProjectTasks } from "../dashboard.js";
 import { resolveRepoFromPayload } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import { sendPersonaRequest, waitForPersonaCompletion } from "../agents/persona.js";
-import { makeRedis } from "../redisClient.js";
+import type { MessageTransport } from "../transport/index.js";
 import { join } from "path";
 import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
 
@@ -56,7 +56,7 @@ export class WorkflowCoordinator {
   /**
    * Main coordination function that processes tasks using workflow engine
    */
-  async handleCoordinator(r: any, msg: any, payload: any): Promise<any> {
+  async handleCoordinator(transport: MessageTransport, r: any, msg: any, payload: any): Promise<any> {
     const workflowId: string = firstString(msg?.workflow_id) || randomUUID();
     const projectId: string = firstString(msg?.project_id, payload?.project_id, payload?.projectId) || '';
     
@@ -111,7 +111,7 @@ export class WorkflowCoordinator {
         // CRITICAL: Fetch fresh tasks from dashboard at each iteration
         // This allows immediate response to urgent tasks added during processing
         // (e.g., QA failures, security issues, follow-up tasks)
-        let currentTasks = await this.fetchProjectTasks(projectId);
+        let currentTasks = await fetchProjectTasks(projectId);
         if (!currentTasks.length) {
           currentTasks = this.extractTasks(details, projectInfo);
         }
@@ -153,7 +153,7 @@ export class WorkflowCoordinator {
         
         if (task) {
           try {
-            const result = await this.processTask(task, {
+            const result = await this.processTask(transport, task, {
               workflowId,
               projectId,
               projectName,
@@ -261,7 +261,7 @@ export class WorkflowCoordinator {
   /**
    * Process a single task using the appropriate workflow
    */
-  private async processTask(task: any, context: {
+  private async processTask(transport: MessageTransport, task: any, context: {
     workflowId: string;
     projectId: string;
     projectName: string;
@@ -270,6 +270,11 @@ export class WorkflowCoordinator {
     branch: string;
     remote?: string | null;
   }): Promise<any> {
+    // Ensure transport is available for workflow execution
+    if (!transport) {
+      throw new Error('Transport is required for task processing');
+    }
+
     const taskType = this.determineTaskType(task);
     const scope = this.determineTaskScope(task);
     const taskStatus = this.normalizeTaskStatus(task?.status);
@@ -284,7 +289,7 @@ export class WorkflowCoordinator {
       
       const blockedWorkflow = this.engine.getWorkflowDefinition('blocked-task-resolution');
       if (blockedWorkflow) {
-        return this.executeWorkflow(blockedWorkflow, task, context);
+        return this.executeWorkflow(transport, blockedWorkflow, task, context);
       } else {
         logger.warn('blocked-task-resolution workflow not found, falling back to normal processing', {
           taskId: task?.id
@@ -302,7 +307,7 @@ export class WorkflowCoordinator {
       
       const reviewWorkflow = this.engine.getWorkflowDefinition('in-review-task-flow');
       if (reviewWorkflow) {
-        return this.executeWorkflow(reviewWorkflow, task, context);
+        return this.executeWorkflow(transport, reviewWorkflow, task, context);
       } else {
         logger.warn('in-review-task-flow workflow not found, falling back to normal processing', {
           taskId: task?.id
@@ -329,7 +334,7 @@ export class WorkflowCoordinator {
         taskType,
         scope
       });
-      return this.executeWorkflow(fallbackWorkflow, task, context);
+      return this.executeWorkflow(transport, fallbackWorkflow, task, context);
     }
 
     logger.info(`Executing workflow for task`, {
@@ -340,13 +345,13 @@ export class WorkflowCoordinator {
       workflowUsed: workflow.name === 'legacy-compatible-task-flow' ? 'legacy-compatible' : 'matched'
     });
 
-    return this.executeWorkflow(workflow, task, context);
+    return this.executeWorkflow(transport, workflow, task, context);
   }
 
   /**
    * Execute a workflow for a specific task
    */
-  private async executeWorkflow(workflow: any, task: any, context: {
+  private async executeWorkflow(transport: MessageTransport, workflow: any, task: any, context: {
     workflowId: string;
     projectId: string;
     projectName: string;
@@ -433,11 +438,13 @@ export class WorkflowCoordinator {
     // Create a modified workflow that skips the pull-task step when we have a task
     const modifiedWorkflow = this.createTaskInjectedWorkflow(workflow, task);
 
+    // Execute workflow with transport (passed as parameter)
     const result = await this.engine.executeWorkflowDefinition(
       modifiedWorkflow,
       context.projectId,
       context.repoRoot,
       context.branch,
+      transport, // MessageTransport instance passed from handleCoordinator
       initialVariables
     );
 
@@ -486,14 +493,14 @@ export class WorkflowCoordinator {
     }
     
     try {
-      const redis = await makeRedis();
+      const transport = context.transport;
       
       // Map workflow steps to expected persona steps
       const stepMappings = this.getPersonaStepMappings(workflow, task);
       
       const repoForPayload = context.remote || context.repoRoot;
       for (const mapping of stepMappings) {
-        const corrId = await sendPersonaRequest(redis, {
+        const corrId = await sendPersonaRequest(transport, {
           workflowId: context.workflowId,
           toPersona: mapping.persona,
           step: mapping.step,
@@ -518,7 +525,7 @@ export class WorkflowCoordinator {
         await new Promise(resolve => setTimeout(resolve, 10));
       }
       
-      await redis.disconnect();
+      // No disconnect needed - transport lifecycle managed by caller
     } catch (error) {
       logger.warn('Failed to send persona compatibility requests', { error });
     }
@@ -695,24 +702,6 @@ export class WorkflowCoordinator {
   /**
    * Fetch tasks directly from the tasks API for a project
    */
-  private async fetchProjectTasks(projectId: string): Promise<any[]> {
-    try {
-      const response = await fetch(`${cfg.dashboardBaseUrl.replace(/\/$/, '')}/v1/tasks?project_id=${encodeURIComponent(projectId)}`, {
-        headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Tasks API ${response.status}`);
-      }
-      
-      const tasks = await response.json();
-      return Array.isArray(tasks) ? tasks : [];
-    } catch (error: any) {
-      logger.warn("Fetch project tasks failed", { projectId, error: error.message });
-      return [];
-    }
-  }
-
   /**
    * Extract tasks from project information
    */
@@ -904,7 +893,7 @@ export class WorkflowCoordinator {
 
 // Legacy-compatible named export expected by worker.ts
 // Provides a function wrapper around the class-based coordinator
-export async function handleCoordinator(r: any, msg: any, payload: any): Promise<any> {
+export async function handleCoordinator(transport: MessageTransport, r: any, msg: any, payload: any): Promise<any> {
   const coordinator = new WorkflowCoordinator();
-  return coordinator.handleCoordinator(r, msg, payload);
+  return coordinator.handleCoordinator(transport, r, msg, payload);
 }

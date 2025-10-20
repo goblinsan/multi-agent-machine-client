@@ -5,6 +5,7 @@ declare module 'fastify' {
     post(path: string, handler: any): void;
     patch(path: string, handler: any): void;
     listen(opts: any): Promise<void>;
+    close(): Promise<void>;
   }
   const fastify: (opts?: any) => FastifyInstance;
   export default fastify;

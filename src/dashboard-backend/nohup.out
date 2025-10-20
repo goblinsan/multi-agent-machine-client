@@ -1,0 +1,28 @@
+npm warn Unknown project config "cxxflags". This will stop working in the next major version of npm.
+
+> dashboard-backend@0.1.0 dev
+> ts-node-dev --respawn --transpile-only src/server.ts
+
+[INFO] 15:37:43 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Database schema already initialized, skipping migrations
+Migrations applied and saved
+Error: listen EADDRINUSE: address already in use 0.0.0.0:3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at node:net:2206:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 3000
+}
+[INFO] 15:42:02 Restarting: /Users/jamescoghlan/code/multi-agent-machine-client/src/dashboard-backend/src/routes/projects.ts has been modified
+Database schema already initialized, skipping migrations
+Migrations applied and saved
+{"level":30,"time":1760989322543,"pid":50296,"hostname":"Jamess-MacBook-Pro.local","msg":"Server listening at http://0.0.0.0:3000"}
+Dashboard backend running on http://localhost:3000
+Health check available at http://localhost:3000/health
+Metrics available at http://localhost:3000/metrics
+SIGTERM received, shutting down gracefully...
+Server closed successfully

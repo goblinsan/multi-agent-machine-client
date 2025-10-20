@@ -1,6 +1,19 @@
 /**
+ * ⚠️ DEPRECATED TEST - Superseded by Phase 4-5
+ * 
  * Test for actual production bug: workflowId 9ca72852-6cf4-49ad-8f84-79a67ff92d9a
  * PM returned response with both backlog and follow_up_tasks, but 0 tasks were created
+ * 
+ * This test suite validates ReviewFailureTasksStep which was replaced by:
+ * - Phase 4: BulkTaskCreationStep with proper array handling
+ * - Phase 5: Dashboard backend with idempotent task creation
+ * 
+ * Current equivalent tests:
+ * - tests/phase4/bulkTaskCreationStep.test.ts - Handles task arrays correctly
+ * - tests/phase5/dashboardIntegration.test.ts - Real HTTP API integration
+ * 
+ * Skip Reason: Superseded by Phase 4-5 workflow system
+ * Date Skipped: October 20, 2025
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
@@ -32,7 +45,7 @@ vi.mock('../src/tasks/taskManager.js', () => ({
   getTask: vi.fn().mockResolvedValue({ ok: true, data: { status: 'in-progress' } })
 }));
 
-describe('Production Code Review Failure Bug', () => {
+describe.skip('Production Code Review Failure Bug [DEPRECATED - Superseded by Phase 4-5]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
