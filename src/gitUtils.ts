@@ -425,29 +425,42 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
   await configureCredentialStore(repoRoot, remoteInfo.credentialUrl);
 
   if (branch) {
+    const remoteExists = await remoteBranchExists(repoRoot, branch);
+    
     try {
       await runGit(["checkout", branch], { cwd: repoRoot });
     } catch {
       try {
-        await runGit(["checkout", "-B", branch, `origin/${branch}`], { cwd: repoRoot });
+        if (remoteExists) {
+          await runGit(["checkout", "-B", branch, `origin/${branch}`], { cwd: repoRoot });
+        } else {
+          // Branch doesn't exist locally or remotely, will be created later
+          logger.debug("Branch does not exist locally or remotely", { repoRoot, branch });
+        }
       } catch (e) {
         logger.warn("git checkout branch failed", { error: e, repoRoot, branch });
       }
     }
-    try {
-      await runGit(["pull", "--ff-only", "origin", branch], { cwd: repoRoot });
-    } catch (e) {
-      logger.warn("git pull failed", { error: e, repoRoot, branch });
-      // Safe realignment if no local changes exist
+    
+    // Only try to pull if remote branch exists
+    if (remoteExists) {
       try {
-        if (!(await hasLocalChanges(repoRoot))) {
-          await runGit(["fetch", "origin", branch], { cwd: repoRoot }).catch(()=>{});
-          await runGit(["reset", "--hard", `origin/${branch}`], { cwd: repoRoot });
-          logger.info("git branch aligned to origin after non-FF pull (ensureRepo)", { repoRoot, branch });
+        await runGit(["pull", "--ff-only", "origin", branch], { cwd: repoRoot });
+      } catch (e) {
+        logger.warn("git pull failed", { error: e, repoRoot, branch });
+        // Safe realignment if no local changes exist
+        try {
+          if (!(await hasLocalChanges(repoRoot))) {
+            await runGit(["fetch", "origin", branch], { cwd: repoRoot }).catch(()=>{});
+            await runGit(["reset", "--hard", `origin/${branch}`], { cwd: repoRoot });
+            logger.info("git branch aligned to origin after non-FF pull (ensureRepo)", { repoRoot, branch });
+          }
+        } catch (alignErr) {
+          logger.warn("git align to origin failed (ensureRepo)", { repoRoot, branch, error: alignErr });
         }
-      } catch (alignErr) {
-        logger.warn("git align to origin failed (ensureRepo)", { repoRoot, branch, error: alignErr });
       }
+    } else {
+      logger.debug("Skipping pull for new branch", { repoRoot, branch });
     }
   } else {
     let current = "";
@@ -640,20 +653,26 @@ export async function checkoutBranchFromBase(repoRoot: string, baseBranch: strin
       await handleCheckoutError(repoRoot, newBranch, error);
     }
 
-    try {
-      await runGit(["pull", "--ff-only", "origin", newBranch], { cwd: repoRoot });
-    } catch (error) {
-      logger.warn("git pull branch failed", { repoRoot, branch: newBranch, error });
-      // If there are no local changes, align the branch to the remote to recover from divergence
+    // Only pull if the remote branch exists
+    const remoteExists = await remoteBranchExists(repoRoot, newBranch);
+    if (remoteExists) {
       try {
-        if (!(await hasLocalChanges(repoRoot))) {
-          await runGit(["fetch", "origin", newBranch], { cwd: repoRoot }).catch(() => {});
-          await runGit(["reset", "--hard", `origin/${newBranch}`], { cwd: repoRoot });
-          logger.info("git branch aligned to origin after non-FF pull", { repoRoot, branch: newBranch });
+        await runGit(["pull", "--ff-only", "origin", newBranch], { cwd: repoRoot });
+      } catch (error) {
+        logger.warn("git pull branch failed", { repoRoot, branch: newBranch, error });
+        // If there are no local changes, align the branch to the remote to recover from divergence
+        try {
+          if (!(await hasLocalChanges(repoRoot))) {
+            await runGit(["fetch", "origin", newBranch], { cwd: repoRoot }).catch(() => {});
+            await runGit(["reset", "--hard", `origin/${newBranch}`], { cwd: repoRoot });
+            logger.info("git branch aligned to origin after non-FF pull", { repoRoot, branch: newBranch });
+          }
+        } catch (alignErr) {
+          logger.warn("git align to origin failed", { repoRoot, branch: newBranch, error: alignErr });
         }
-      } catch (alignErr) {
-        logger.warn("git align to origin failed", { repoRoot, branch: newBranch, error: alignErr });
       }
+    } else {
+      logger.debug("Branch exists locally but not on remote, skipping pull", { repoRoot, branch: newBranch });
     }
     return;
   }
