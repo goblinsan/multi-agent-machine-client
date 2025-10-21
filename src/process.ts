@@ -4,7 +4,7 @@ import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { PERSONAS } from "./personaNames.js";
 import { callLMStudio } from "./lmstudio.js";
-import { fetchContext, recordEvent, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectNextAction, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
+import { fetchContext, recordEvent, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
 import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
 import { logger } from "./logger.js";
 import { publishEvent } from "./redis/eventPublisher.js";

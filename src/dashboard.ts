@@ -83,22 +83,7 @@ export async function fetchProjectStatusDetails(projectId: string | null | undef
   }
 }
 
-export async function fetchProjectNextAction(projectId: string | null | undefined) {
-  if (!projectId) return null;
-  try {
-    const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
-    const res = await fetch(`${base}/v1/projects/${encodeURIComponent(projectId)}/next-action`, {
-      headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
-    });
-    if (!res.ok) throw new Error(`dashboard ${res.status}`);
-    return await res.json();
-  } catch (e) {
-    logger.warn("fetch project next-action failed", { projectId, error: (e as Error).message });
-    return null;
-  }
-}
-
-// Try to fetch a concise project status summary. Falls back to next-action suggestions or project read data.
+// Try to fetch a concise project status summary. Falls back to project read data.
 export async function fetchProjectStatusSummary(projectId: string | null | undefined) {
   if (!projectId) return null;
   try {
@@ -111,18 +96,6 @@ export async function fetchProjectStatusSummary(projectId: string | null | undef
       const data: any = await res.json().catch(() => null);
       // ProjectStatusSummary has 'summary' field
       if (data && typeof data.summary === 'string') return data.summary;
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  // fallback: try next-action suggestions
-  try {
-    const nextAction: any = await fetchProjectNextAction(projectId);
-    if (nextAction && Array.isArray(nextAction.suggestions) && nextAction.suggestions.length) {
-      const top: any = nextAction.suggestions[0];
-      const reason = top.reason || top.title || '';
-      return `Next suggested action: ${top.title || '(no title)'} — ${reason}`;
     }
   } catch (e) {
     // ignore
