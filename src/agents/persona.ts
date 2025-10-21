@@ -27,7 +27,9 @@ export async function waitForPersonaCompletion(
     // This optimization scanned recent events before blocking, but isn't critical
     // The blocking xRead below will still catch completions
 
-    let lastId = "$";
+    // Start with "0-0" to check all existing messages first, then use lastId for subsequent reads
+    // This ensures we don't miss events that were published before we started listening
+    let lastId = "0-0";
     while (Date.now() - started < effectiveTimeout) {
       const elapsed = Date.now() - started;
       const remaining = Math.max(0, effectiveTimeout - elapsed);
