@@ -1,11 +1,13 @@
 /**
- * Redis Event Stream Publisher
+ * Event Stream Publisher
  * 
- * Centralized helper for publishing events to the Redis event stream.
+ * Centralized helper for publishing events to the event stream.
  * Consolidates duplicate xAdd patterns across worker.ts and process.ts.
+ * Supports both Redis and LocalTransport via MessageTransport interface.
  */
 
 import { cfg } from '../config.js';
+import type { MessageTransport } from '../transport/MessageTransport.js';
 
 export interface EventData {
   workflowId: string;
@@ -19,13 +21,13 @@ export interface EventData {
 }
 
 /**
- * Publish an event to the Redis event stream
+ * Publish an event to the event stream
  * 
- * @param redisClient - Redis client instance
+ * @param transport - Message transport instance (Redis or LocalTransport)
  * @param event - Event data to publish
  * @returns Promise that resolves when event is published
  */
-export async function publishEvent(redisClient: any, event: EventData): Promise<void> {
+export async function publishEvent(transport: MessageTransport, event: EventData): Promise<void> {
   const fields: Record<string, string> = {
     workflow_id: event.workflowId,
     task_id: event.taskId || "",
@@ -48,5 +50,5 @@ export async function publishEvent(redisClient: any, event: EventData): Promise<
     fields.error = event.error;
   }
 
-  await redisClient.xAdd(cfg.eventStream, "*", fields);
+  await transport.xAdd(cfg.eventStream, "*", fields);
 }

@@ -1,12 +1,14 @@
 /**
- * Redis Request Handlers
+ * Request Handlers
  * 
- * Centralized helpers for Redis request stream operations.
+ * Centralized helpers for request stream operations.
  * Consolidates duplicate xAck patterns across worker.ts and process.ts.
+ * Supports both Redis and LocalTransport via MessageTransport interface.
  */
 
 import { cfg } from '../config.js';
 import { logger } from '../logger.js';
+import type { MessageTransport } from '../transport/MessageTransport.js';
 
 /**
  * Get the consumer group name for a persona
@@ -19,16 +21,16 @@ export function groupForPersona(persona: string): string {
 }
 
 /**
- * Acknowledge a request from the Redis request stream
+ * Acknowledge a request from the request stream
  * 
- * @param redisClient - Redis client instance
+ * @param transport - Message transport instance (Redis or LocalTransport)
  * @param persona - Persona name
- * @param entryId - Redis stream entry ID to acknowledge
+ * @param entryId - Stream entry ID to acknowledge
  * @param silent - If true, suppress errors (default: false)
  * @returns Promise that resolves when acknowledgment is complete
  */
 export async function acknowledgeRequest(
-  redisClient: any,
+  transport: MessageTransport,
   persona: string,
   entryId: string,
   silent: boolean = false
@@ -36,7 +38,7 @@ export async function acknowledgeRequest(
   const group = groupForPersona(persona);
   
   try {
-    await redisClient.xAck(cfg.requestStream, group, entryId);
+    await transport.xAck(cfg.requestStream, group, entryId);
   } catch (err: any) {
     if (!silent) {
       throw err;

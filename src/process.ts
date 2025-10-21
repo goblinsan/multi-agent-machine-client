@@ -1,5 +1,5 @@
 import { cfg } from "./config.js";
-import { makeRedis } from "./redisClient.js";
+import type { MessageTransport } from "./transport/MessageTransport.js";
 import { RequestSchema } from "./schema.js";
 import { SYSTEM_PROMPTS } from "./personas.js";
 import { PERSONAS } from "./personaNames.js";
@@ -570,7 +570,7 @@ async function writeSecurityReviewLog(
   }
 }
 
-export async function processContext(r: any, persona: string, msg: any, payloadObj: any, entryId: string) {
+export async function processContext(transport: MessageTransport, persona: string, msg: any, payloadObj: any, entryId: string) {
     const model = cfg.personaModels[persona]; if (!model) throw new Error(`No model mapping for '${persona}'`);
     const ctx: any = await fetchContext(msg.workflow_id);
     // Allow custom system prompt via payload, otherwise use default
@@ -631,7 +631,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
           const skipMessage = "Context scan skipped: no code changes detected since last scan. The existing context data is still current.";
           logger.info("persona completed (early return)", { persona, workflowId: msg.workflow_id, reason: "no_code_changes" });
           
-          await publishEvent(r, {
+          await publishEvent(transport, {
             workflowId: msg.workflow_id,
             taskId: msg.task_id,
             step: msg.step,
@@ -640,7 +640,7 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
             result: { output: skipMessage, skipped: true, reason: "no_code_changes" },
             corrId: msg.corr_id
           });
-          await acknowledgeRequest(r, persona, entryId, true);
+          await acknowledgeRequest(transport, persona, entryId, true);
           return;
         } else {
         
@@ -1327,9 +1327,9 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
     }
     
     logger.info("persona completed", { persona, workflowId: msg.workflow_id, taskId: msg.task_id, duration_ms: duration });
-    await publishEvent(r, {
+    await publishEvent(transport, {
       workflowId: msg.workflow_id,
-      taskId: msg.task_id,
+      taskId: msg.workflow_id,
       step: msg.step,
       fromPersona: persona,
       status: "done",
@@ -1337,10 +1337,10 @@ export async function processContext(r: any, persona: string, msg: any, payloadO
       corrId: msg.corr_id
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
-    await acknowledgeRequest(r, persona, entryId, true);
+    await acknowledgeRequest(transport, persona, entryId, true);
   }
 
-export async function processPersona(r: any, persona: string, msg: any, payloadObj: any, entryId: string) {
+export async function processPersona(transport: MessageTransport, persona: string, msg: any, payloadObj: any, entryId: string) {
     const model = cfg.personaModels[persona]; if (!model) throw new Error(`No model mapping for '${persona}'`);
     const ctx: any = await fetchContext(msg.workflow_id);
     // Allow custom system prompt via payload, otherwise use default
@@ -1548,7 +1548,7 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
     }
     
     logger.info("persona completed", { persona, workflowId: msg.workflow_id, taskId: msg.task_id, duration_ms: duration });
-    await publishEvent(r, {
+    await publishEvent(transport, {
       workflowId: msg.workflow_id,
       taskId: msg.task_id,
       step: msg.step,
@@ -1558,5 +1558,5 @@ export async function processPersona(r: any, persona: string, msg: any, payloadO
       corrId: msg.corr_id
     });
     await recordEvent({ workflow_id: msg.workflow_id, step: msg.step, persona, model, duration_ms: duration, corr_id: msg.corr_id, content: resp.content }).catch(()=>{});
-    await acknowledgeRequest(r, persona, entryId, true);
+    await acknowledgeRequest(transport, persona, entryId, true);
   }
