@@ -613,13 +613,12 @@ export async function processContext(transport: MessageTransport, persona: strin
       try {
           const repoRoot = repoRootNormalized;
         
-        // Check if we need to rescan by checking if there are new code commits since last context scan
-        const { isLastCommitContextOnly, hasCommitsSinceLastContextScan } = await import("./git/contextCommitCheck.js");
-        const lastCommitIsContextOnly = await isLastCommitContextOnly(repoRoot);
+        // Check if there are new code commits since last context scan (excludes .ma/ metadata)
+        const { hasCommitsSinceLastContextScan } = await import("./git/contextCommitCheck.js");
         const hasNewCommits = await hasCommitsSinceLastContextScan(repoRoot);
         
-        // Skip scan if the last commit was context-only AND we're at that commit (no new commits since)
-        if (lastCommitIsContextOnly && !hasNewCommits) {
+        // Skip scan if no new code commits since last scan
+        if (!hasNewCommits) {
           scanSummaryText = "No code changes since last context scan - using existing context data";
           logger.info("context scan skipped: no code changes since last scan", {
             repoRoot,
@@ -656,7 +655,7 @@ export async function processContext(transport: MessageTransport, persona: strin
           maxFiles: cfg.scanMaxFiles,
           maxBytes: cfg.scanMaxBytes,
           maxDepth: cfg.scanMaxDepth,
-          reason: lastCommitIsContextOnly ? 'new_commits_since_context' : 'last_commit_had_code_changes'
+          reason: 'new_code_commits_detected'
         });
   
         const { scanRepo, summarize } = await import("./scanRepo.js");
