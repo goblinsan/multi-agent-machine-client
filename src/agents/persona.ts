@@ -34,13 +34,20 @@ export async function waitForPersonaCompletion(
       const elapsed = Date.now() - started;
       const remaining = Math.max(0, effectiveTimeout - elapsed);
       const blockMs = Math.max(1000, Math.min(remaining || effectiveTimeout, 5000));
-      const streams = await transport.xRead([{ key: streamKey, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
-      if (!streams) continue;
+      const readResult = await transport.xRead([{ key: streamKey, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
+      if (!readResult) continue;
+
+      // xRead returns { [streamKey]: { messages: [...] } }, convert to array of streams
+      const streams = Object.entries(readResult).map(([key, streamData]: [string, any]) => ({
+        key,
+        messages: streamData.messages || []
+      }));
 
       for (const stream of streams) {
         const messages = stream.messages || [];
         for (const message of messages) {
-          const rawFields = message.message as Record<string, string>;
+          // Message interface has fields directly, not message.message
+          const rawFields = message.fields;
           const fields: Record<string, string> = {};
           for (const [k, v] of Object.entries(rawFields)) fields[k] = typeof v === "string" ? v : String(v);
           if (
