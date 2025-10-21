@@ -67,7 +67,9 @@ export function __setRunGitImplForTests(impl?: RunGitImpl | null) {
 }
 
 function sanitizeSegment(seg: string) {
-  return seg.replace(/[^A-Za-z0-9._-]/g, "-");
+  // Normalize to lowercase to ensure consistent repo paths regardless of casing in project hints
+  // This prevents /Multi-Agent-Log-Summarizer and /machine-client-log-summarizer from being different paths
+  return seg.replace(/[^A-Za-z0-9._-]/g, "-").toLowerCase();
 }
 
 function parseRemote(remote: string): ParsedRemote {
