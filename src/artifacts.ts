@@ -8,15 +8,27 @@ export type Artifacts = {
   summaryMd?: string;
 };
 
+/**
+ * Write context artifacts to repository
+ * 
+ * IMPORTANT: Caller must ensure they are on the correct branch before calling.
+ * This function does not manage git branches - it only writes files and commits.
+ * 
+ * @param options - Artifact writing options
+ * @param options.repoRoot - Repository root path
+ * @param options.artifacts - Artifacts to write
+ * @param options.apply - Whether to commit the artifacts (vs just writing to disk)
+ * @param options.commitMessage - Commit message if applying
+ * @param options.forceCommit - Force commit even if apply is false (for context scans)
+ */
 export async function writeArtifacts(options: {
   repoRoot: string;
   artifacts: Artifacts;
   apply: boolean;
-  branchName: string;
   commitMessage: string;
-  forceCommit?: boolean; // Force commit even if apply is false (for context scans)
+  forceCommit?: boolean;
 }) {
-  const { repoRoot, artifacts, apply, branchName, commitMessage, forceCommit = false } = options;
+  const { repoRoot, artifacts, apply, commitMessage, forceCommit = false } = options;
   const folder = ".ma/context";
   const files = [
     { rel: `${folder}/snapshot.json`, content: JSON.stringify(artifacts.snapshot, null, 2) + "\n" },
@@ -32,7 +44,7 @@ export async function writeArtifacts(options: {
     const editSpec = { ops: commitOps.map(f => ({ action: "upsert", path: f.rel, content: f.content })) };
     const res = await applyEditOps(JSON.stringify(editSpec), {
       repoRoot,
-      branchName,
+      branchName: 'feat/agent-edit',  // Legacy parameter, not used for branch operations anymore
       commitMessage
     });
     const ndPath = path.resolve(repoRoot, files[1].rel);

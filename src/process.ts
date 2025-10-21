@@ -775,7 +775,6 @@ export async function processContext(transport: MessageTransport, persona: strin
           repoRoot,
           artifacts: { snapshot, filesNdjson: ndjson, summaryMd: scanMd },
           apply: cfg.applyEdits && cfg.allowedEditPersonas.includes("context"),
-          branchName: `feat/context-${msg.workflow_id}-${(msg.corr_id||"c").slice(0,8)}`,
           commitMessage: `context: snapshot for ${msg.workflow_id}`,
           forceCommit: true // Always commit and push context scan results in distributed workflow
         });

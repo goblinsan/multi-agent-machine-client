@@ -78,7 +78,9 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
   // Ensure commit message is a single line
   const sanitizedCommitMsg = String(commitMsg).replace(/\s+/g, ' ').trim();
 
-  await runGit(["checkout", "-B", branch], { cwd: repoRoot });
+  // NOTE: Caller must ensure they are on the correct branch before calling this function.
+  // This function only applies file edits - it does not manage git branches.
+  // Branch creation/checkout is now centralized in GitWorkflowManager.
 
   const changed: string[] = [];
   for (const op of spec.ops) {

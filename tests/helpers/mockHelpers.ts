@@ -80,7 +80,7 @@ export class DashboardMockHelper {
       return this.milestones.length > 0 ? { milestones: this.milestones } as any : null as any;
     });
 
-    vi.spyOn(dashboard, 'fetchProjectNextAction').mockResolvedValue({ suggestions: [] } as any);
+    // fetchProjectNextAction was removed - it doesn't exist anymore
     vi.spyOn(dashboard, 'fetchProjectMilestones').mockResolvedValue(this.milestones as any);
 
     vi.spyOn(dashboard, 'fetchTask').mockImplementation(async (taskId: string) => {
