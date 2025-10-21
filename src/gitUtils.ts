@@ -755,10 +755,14 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
     logger.warn("git identity setup failed", { repoRoot, error: configErr });
   }
 
-  try {
-    await runGit(["checkout", targetBranch], { cwd: repoRoot });
-  } catch (e) {
-    logger.warn("commit checkout failed", { repoRoot, branch: targetBranch, error: e });
+  // Only checkout if not already on the target branch
+  const currentMeta = await getRepoMetadata(repoRoot);
+  if (currentMeta.currentBranch !== targetBranch) {
+    try {
+      await runGit(["checkout", targetBranch], { cwd: repoRoot });
+    } catch (e) {
+      logger.warn("commit checkout failed", { repoRoot, branch: targetBranch, error: e });
+    }
   }
 
   await runGit(["add", ...paths], { cwd: repoRoot });
