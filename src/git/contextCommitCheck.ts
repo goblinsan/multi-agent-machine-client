@@ -65,16 +65,21 @@ export async function hasCommitsSinceLastContextScan(repoRoot: string): Promise<
       return true;
     }
 
-    // Get the latest commit
+    // Get commits since last context scan that touch files outside .ma/ directory
+    // This excludes planning logs, QA logs, context files, etc.
+    const newCodeCommits = await runGit(
+      ["rev-list", `${contextCommitSha}..HEAD`, "--", ".", ":(exclude).ma/**"],
+      { cwd: repoRoot }
+    );
+
+    const hasNewCommits = newCodeCommits.stdout.trim().length > 0;
+
+    // Get head commit for logging
     const headCommit = await runGit(
       ["rev-parse", "HEAD"],
       { cwd: repoRoot }
     );
-
     const headSha = headCommit.stdout.trim();
-
-    // If they're different, there have been new commits
-    const hasNewCommits = contextCommitSha !== headSha;
 
     logger.info('Checked commits since last context scan', {
       repoRoot,
