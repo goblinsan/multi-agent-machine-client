@@ -1,4 +1,10 @@
-import { cfg } from "./config.js";
+#!/usr/bin/env python3
+"""
+Refactor dashboard.ts to use helper modules
+"""
+
+# New file content
+new_content = '''import { cfg } from "./config.js";
 import { fetch } from "undici";
 import { logger } from "./logger.js";
 import { ProjectAPI } from "./dashboard/ProjectAPI.js";
@@ -29,7 +35,7 @@ export async function fetchContext(workflowId: string) {
       return data;
     }
 
-    const r = await fetch(`${cfg.dashboardBaseUrl.replace(/\/$/, '')}/context/by-workflow?workflow_id=${encodeURIComponent(workflowId)}&limit=5`, {
+    const r = await fetch(`${cfg.dashboardBaseUrl.replace(/\\/$/, '')}/context/by-workflow?workflow_id=${encodeURIComponent(workflowId)}&limit=5`, {
       headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}` }
     });
     if (!r.ok) throw new Error(`dashboard ${r.status}`);
@@ -45,7 +51,7 @@ export async function fetchContext(workflowId: string) {
  */
 export async function recordEvent(ev: any) {
   try {
-    const endpoint = `${cfg.dashboardBaseUrl.replace(/\/$/, '')}/v1/events`;
+    const endpoint = `${cfg.dashboardBaseUrl.replace(/\\/$/, '')}/v1/events`;
     await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -97,3 +103,11 @@ export async function updateTaskStatus(
 ): Promise<CreateTaskResult> {
   return taskAPI.updateTaskStatus(taskId, status, projectId, lockVersion);
 }
+'''
+
+# Write the new file
+with open('/Users/jamescoghlan/code/multi-agent-machine-client/src/dashboard.ts', 'w') as f:
+    f.write(new_content)
+
+print("dashboard.ts refactored successfully!")
+print(f"New file size: {len(new_content.split(chr(10)))} lines")
