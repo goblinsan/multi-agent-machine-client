@@ -1,7 +1,9 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { fetchProjectStatusDetails } from '../../dashboard.js';
+import { ProjectAPI } from '../../dashboard/ProjectAPI.js';
 import { logger } from '../../logger.js';
+
+const projectAPI = new ProjectAPI();
 
 export interface MilestoneStatusCheckConfig {
   check_type?: 'incomplete_tasks' | 'all_tasks' | 'milestone_complete';
@@ -63,7 +65,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
     
     try {
       // Fetch project status
-      const projectStatus = await fetchProjectStatusDetails(projectId) as any;
+      const projectStatus = await projectAPI.fetchProjectStatusDetails(projectId) as any;
       
       // Filter tasks belonging to this milestone
       const milestoneTasks = (projectStatus.tasks || []).filter((t: any) => 

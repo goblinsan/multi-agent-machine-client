@@ -1,8 +1,10 @@
 import { logger } from "../../logger.js";
 import { createDashboardTaskEntriesWithSummarizer, findTaskIdByExternalId } from "../../tasks/taskManager.js";
-import { updateTaskStatus } from "../../dashboard.js";
+import { TaskAPI } from "../../dashboard/TaskAPI.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "../../agents/persona.js";
 import { PERSONAS } from "../../personaNames.js";
+
+const taskAPI = new TaskAPI();
 
 export const STAGE_POLICY: Record<string, { immediate: boolean; initialStatus: string; assignTo?: string }> = {
   qa: { immediate: true, initialStatus: "in_progress", assignTo: PERSONAS.IMPLEMENTATION_PLANNER },
@@ -62,7 +64,7 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
           }
 
           if (key) {
-            await updateTaskStatus(String(key), policy.initialStatus, options.projectId || undefined).catch((err) => {
+            await taskAPI.updateTaskStatus(String(key), policy.initialStatus, options.projectId || undefined).catch((err) => {
               logger.warn("handleFailureMiniCycle: updateTaskStatus failed", { workflowId, stage, key, error: err });
               throw err;
             });

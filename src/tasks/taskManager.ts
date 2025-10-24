@@ -1,5 +1,6 @@
 import { firstString, numericHint, slugify, toArray } from "../util.js";
-import { createDashboardTask, fetchProjectStatus } from "../dashboard.js";
+import { TaskAPI, CreateTaskInput } from "../dashboard/TaskAPI.js";
+import { ProjectAPI } from "../dashboard/ProjectAPI.js";
 import { cfg } from "../config.js";
 import { parseMilestoneDate } from "../milestones/milestoneManager.js";
 import { logger } from "../logger.js";
@@ -7,6 +8,9 @@ import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "
 import { summarizeTask } from "../agents/summarizer.js";
 import { PERSONAS } from "../personaNames.js";
 import { randomUUID } from "crypto";
+
+const taskAPI = new TaskAPI();
+const projectAPI = new ProjectAPI();
 
 // Note: we do not persist externalId->createdId mapping here. The dashboard
 // is the canonical store. If needed, use findTaskIdByExternalId to recover
@@ -286,7 +290,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       let resolvedMilestoneSlug = milestoneSlug;
       if (!resolvedMilestoneId && resolvedMilestoneSlug && options.projectId) {
         try {
-          const proj = await fetchProjectStatus(options.projectId);
+          const proj = await projectAPI.fetchProjectStatus(options.projectId);
           const p = proj as any;
           const candidates = p?.milestones || p?.milestones_list || (p?.milestones?.items) || [];
           if (Array.isArray(candidates)) {
@@ -353,7 +357,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
         });
       }
 
-      const body = await createDashboardTask({
+      const body = await taskAPI.createDashboardTask({
         projectId: options.projectId || undefined,
         projectSlug: derivedProjectSlug || undefined,
         milestoneId: resolvedMilestoneId || undefined,
@@ -439,7 +443,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     if (!externalId) return null;
     if (!projectId) return null;
     try {
-      const proj = await fetchProjectStatus(projectId as string);
+      const proj = await projectAPI.fetchProjectStatus(projectId as string);
       if (!proj) return null;
   const p: any = proj as any;
   const candidates = Array.isArray(p?.tasks) ? p.tasks : (Array.isArray(p?.task_list) ? p.task_list : (Array.isArray(p?.tasks_list) ? p.tasks_list : []));

@@ -3,8 +3,12 @@ import { cfg } from "../../config.js";
 import { logger } from "../../logger.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus, extractJsonPayloadFromText } from "../../agents/persona.js";
 import { PERSONAS } from "../../personaNames.js";
-import { updateTaskStatus, fetchProjectStatus } from "../../dashboard.js";
+import { TaskAPI } from "../../dashboard/TaskAPI.js";
+import { ProjectAPI } from "../../dashboard/ProjectAPI.js";
 import { firstString, slugify, normalizeRepoPath, ENGINEER_PERSONAS_REQUIRING_PLAN } from "../../util.js";
+
+const taskAPI = new TaskAPI();
+const projectAPI = new ProjectAPI();
 
 // Per-stage max planning iterations; default 5 via cfg
 const MAX_APPROVAL_RETRIES = Number.isFinite(cfg.planMaxIterationsPerStage as any) && cfg.planMaxIterationsPerStage !== null

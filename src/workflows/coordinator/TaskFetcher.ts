@@ -1,5 +1,7 @@
-import { fetchProjectStatus, fetchProjectStatusDetails, fetchProjectTasks } from "../../dashboard.js";
+import { ProjectAPI } from "../../dashboard/ProjectAPI.js";
 import { logger } from "../../logger.js";
+
+const projectAPI = new ProjectAPI();
 
 /**
  * Helper class for fetching, extracting, and normalizing project tasks
@@ -9,7 +11,7 @@ export class TaskFetcher {
    * Fetch project tasks from the dashboard API
    */
   async fetchTasks(projectId: string): Promise<any[]> {
-    return await fetchProjectTasks(projectId);
+    return await projectAPI.fetchProjectTasks(projectId);
   }
 
   /**
@@ -147,8 +149,8 @@ export class TaskFetcher {
    */
   async getRemainingTaskCount(projectId: string): Promise<number> {
     try {
-      const projectInfo = await fetchProjectStatus(projectId);
-      const details = await fetchProjectStatusDetails(projectId).catch(() => null);
+      const projectInfo = await projectAPI.fetchProjectStatus(projectId);
+      const details = await projectAPI.fetchProjectStatusDetails(projectId).catch(() => null);
       const tasks = this.extractTasks(details, projectInfo);
       const pendingTasks = tasks.filter(task => this.normalizeTaskStatus(task?.status) !== 'done');
       return pendingTasks.length;

@@ -1,6 +1,9 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
+import { TaskAPI } from '../../dashboard/TaskAPI.js';
+
+const taskAPI = new TaskAPI();
 
 interface SimpleTaskStatusConfig {
   status: string;
@@ -32,21 +35,18 @@ export class SimpleTaskStatusStep extends WorkflowStep {
         throw new Error('Task ID not found in task data');
       }
 
-      // Import dashboard function dynamically
-      const { updateTaskStatus } = await import('../../dashboard.js');
-      
       // Get projectId from context
       const projectId = context.getVariable('projectId') || context.getVariable('project_id');
       
-      logger.info('Calling dashboard.updateTaskStatus', {
+      logger.info('Calling TaskAPI.updateTaskStatus', {
         taskId,
         status,
         projectId,
         workflowId: context.workflowId
       });
       
-      // Call the dashboard function directly (this is what tests expect)
-      await updateTaskStatus(taskId, status, projectId);
+      // Call the task API method
+      await taskAPI.updateTaskStatus(taskId, status, projectId);
       
       // Cleanup task logs if the task is completed
       const normalizedStatus = status.toLowerCase();

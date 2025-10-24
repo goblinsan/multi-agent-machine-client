@@ -1,7 +1,11 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
-import { createDashboardTask, fetchProjectTasks } from '../../dashboard.js';
+import { TaskAPI, CreateTaskInput } from '../../dashboard/TaskAPI.js';
+import { ProjectAPI } from '../../dashboard/ProjectAPI.js';
+
+const taskAPI = new TaskAPI();
+const projectAPI = new ProjectAPI();
 
 /**
  * Configuration for ReviewFailureTasksStep
@@ -159,7 +163,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
       });
       
       // Fetch existing tasks for duplicate detection
-      const existingTasks = await fetchProjectTasks(projectId);
+      const existingTasks = await projectAPI.fetchProjectTasks(projectId);
       logger.debug('Fetched existing tasks for duplicate detection', {
         stepName: this.config.name,
         existingTasksCount: existingTasks.length
@@ -218,7 +222,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
               assignee: 'implementation-planner'
             });
             
-            const result = await createDashboardTask({
+            const result = await taskAPI.createDashboardTask({
               projectId,
               milestoneId: targetMilestoneId,
               milestoneSlug: targetMilestoneSlug,

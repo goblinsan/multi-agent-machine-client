@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { fetch } from "undici";
 import { cfg } from "../config.js";
-import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
+import { ProjectAPI } from "../dashboard/ProjectAPI.js";
 import { resolveRepoFromPayload } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
@@ -9,6 +9,8 @@ import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import { sendPersonaRequest, waitForPersonaCompletion } from "../agents/persona.js";
 import type { MessageTransport } from "../transport/index.js";
 import { join } from "path";
+
+const projectAPI = new ProjectAPI();
 import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
 import { TaskFetcher } from "./coordinator/TaskFetcher.js";
 import { WorkflowSelector } from "./coordinator/WorkflowSelector.js";
@@ -95,8 +97,8 @@ export class WorkflowCoordinator {
 
     try {
       // Fetch project information
-      const projectInfo: any = await fetchProjectStatus(projectId);
-      const details: any = await fetchProjectStatusDetails(projectId).catch(() => null);
+      const projectInfo: any = await projectAPI.fetchProjectStatus(projectId);
+      const details: any = await projectAPI.fetchProjectStatusDetails(projectId).catch(() => null);
       
       const projectName = firstString(projectInfo?.name, payload?.project_name) || 'project';
       const projectSlug = slugify(firstString(projectInfo?.slug, payload?.project_slug, projectName) || projectName || 'project');

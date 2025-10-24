@@ -1,7 +1,9 @@
 import { WorkflowStep, StepResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
-import { updateTaskStatus } from '../../dashboard.js';
+import { TaskAPI } from '../../dashboard/TaskAPI.js';
+
+const taskAPI = new TaskAPI();
 
 interface UnblockAttemptConfig {
   task_id: string;

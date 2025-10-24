@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
-import * as dashboard from '../../src/dashboard.js';
+import { ProjectAPI } from '../../src/dashboard/ProjectAPI.js';
+import { TaskAPI } from '../../src/dashboard/TaskAPI.js';
 import * as persona from '../../src/agents/persona.js';
 import * as tasks from '../../src/tasks/taskManager.js';
 import * as fileops from '../../src/fileops.js';
@@ -59,6 +60,8 @@ export class DashboardMockHelper {
   private milestones: TestMilestone[];
   private updatedTasks: Record<string, string> = {};
   public updateTaskStatusSpy: any;
+  private projectAPIMock: any;
+  private taskAPIMock: any;
 
   constructor(project: TestProject, milestones: TestMilestone[] = []) {
     this.project = project;
@@ -69,26 +72,27 @@ export class DashboardMockHelper {
    * Set up all dashboard API mocks for a test scenario
    */
   setupMocks() {
-    vi.spyOn(dashboard, 'fetchProjectStatus').mockImplementation(async () => {
+    // Mock ProjectAPI prototype methods
+    vi.spyOn(ProjectAPI.prototype, 'fetchProjectStatus').mockImplementation(async () => {
       // Filter out tasks that have been marked as done
       const openTasks = this.project.tasks.filter(t => this.updatedTasks[t.id] !== 'done');
       return { ...this.project, tasks: openTasks } as any;
     });
 
-    vi.spyOn(dashboard, 'fetchProjectStatusDetails').mockImplementation(async () => {
+    vi.spyOn(ProjectAPI.prototype, 'fetchProjectStatusDetails').mockImplementation(async () => {
       // Return fresh milestone data that reflects current task statuses
       return this.milestones.length > 0 ? { milestones: this.milestones } as any : null as any;
     });
 
-    // fetchProjectNextAction was removed - it doesn't exist anymore
-    vi.spyOn(dashboard, 'fetchProjectMilestones').mockResolvedValue(this.milestones as any);
+    vi.spyOn(ProjectAPI.prototype, 'fetchProjectMilestones').mockResolvedValue(this.milestones as any);
 
-    vi.spyOn(dashboard, 'fetchTask').mockImplementation(async (taskId: string) => {
+    // Mock TaskAPI prototype methods
+    vi.spyOn(TaskAPI.prototype, 'fetchTask').mockImplementation(async (taskId: string) => {
       const task = this.project.tasks.find(t => t.id === taskId);
       return { ...task, lock_version: task?.lock_version || 0 } as any;
     });
 
-    this.updateTaskStatusSpy = vi.spyOn(dashboard, 'updateTaskStatus').mockImplementation(async (taskId: string, status: string) => {
+    this.updateTaskStatusSpy = vi.spyOn(TaskAPI.prototype, 'updateTaskStatus').mockImplementation(async (taskId: string, status: string) => {
       this.updatedTasks[taskId] = status;
       
       // Update task in project
@@ -202,8 +206,8 @@ export class PersonaMockHelper {
       if (match.toPersona === 'project-manager') {
         const task = match.payload?.task;
         if (task) {
-          // Update task status when PM processes
-          dashboard.updateTaskStatus(task.id, 'closed');
+          // Task status update is handled by the mocked TaskAPI.updateTaskStatus
+          // No need to call it directly here
         }
         return { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-pm' };
       }
@@ -216,7 +220,8 @@ export class PersonaMockHelper {
         if (step === '3-devops') {
           const task = match.payload?.task;
           if (task && task.id) {
-            await dashboard.updateTaskStatus(task.id, 'done');
+            // Task status update is handled by the mocked TaskAPI.updateTaskStatus
+            // The actual workflow will call it, no need to duplicate here
           }
         }
         
