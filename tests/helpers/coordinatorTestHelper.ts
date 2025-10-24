@@ -63,10 +63,11 @@ export function createDynamicTaskMocking(
      * Set up dashboard mocks to return dynamic task data
      */
     async setupDashboardMocks() {
-      const { fetchProjectStatusDetails, updateTaskStatus } = await import('../../src/dashboard.js');
+      const { ProjectAPI } = await import('../../src/dashboard/ProjectAPI.js');
+      const { TaskAPI } = await import('../../src/dashboard/TaskAPI.js');
       
       // Mock fetchProjectStatusDetails to return tasks dynamically
-      (fetchProjectStatusDetails as any).mockImplementation(async () => ({
+      vi.spyOn(ProjectAPI.prototype, 'fetchProjectStatusDetails').mockImplementation(async () => ({
         tasks: Array.from(taskStatuses.entries())
           .map(([id, status]) => {
             const task = taskData.get(id)!;
@@ -76,9 +77,9 @@ export function createDynamicTaskMocking(
       }));
       
       // Mock updateTaskStatus to track status changes
-      (updateTaskStatus as any).mockImplementation(async (taskId: string, status: string) => {
+      vi.spyOn(TaskAPI.prototype, 'updateTaskStatus').mockImplementation(async (taskId: string, status: string) => {
         taskStatuses.set(taskId, status);
-        return { ok: true, status: 200 };
+        return { ok: true, status: 200, body: {} };
       });
     }
   };

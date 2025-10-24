@@ -36,7 +36,9 @@ vi.mock('undici', () => {
 
 describe('dashboard interactions', () => {
   it('createDashboardTask uses upsert and parent_task_external_id for non-UUID parent', async () => {
-    const { createDashboardTask } = await import('../src/dashboard.js');
+    const { TaskAPI } = await import('../src/dashboard/TaskAPI.js');
+    const taskAPI = new TaskAPI();
+    const createDashboardTask = taskAPI.createDashboardTask.bind(taskAPI);
 
     // Arrange a single successful upsert response
     const resp = await createDashboardTask({
@@ -59,7 +61,9 @@ describe('dashboard interactions', () => {
   });
 
   it('createDashboardTask includes milestone_slug when milestoneId is missing', async () => {
-    const { createDashboardTask } = await import('../src/dashboard.js');
+    const { TaskAPI } = await import('../src/dashboard/TaskAPI.js');
+    const taskAPI = new TaskAPI();
+    const createDashboardTask = taskAPI.createDashboardTask.bind(taskAPI);
 
     const resp = await createDashboardTask({
       projectId: '11111111-1111-1111-1111-111111111111',
@@ -92,7 +96,9 @@ describe('dashboard interactions', () => {
       return makeResponse(200, {});
     });
 
-    const { createDashboardTask } = await import('../src/dashboard.js');
+    const { TaskAPI } = await import('../src/dashboard/TaskAPI.js');
+    const taskAPI = new TaskAPI();
+    const createDashboardTask = taskAPI.createDashboardTask.bind(taskAPI);
     const resp = await createDashboardTask({
       projectId: '11111111-1111-1111-1111-111111111111',
       title: 'Test',
@@ -113,7 +119,9 @@ describe('dashboard interactions', () => {
       if (url.includes('/v1/projects/') && url.includes('/milestones')) return makeResponse(200, { milestones: [] });
       return makeResponse(200, {});
     });
-    const { fetchProjectMilestones } = await import('../src/dashboard.js');
+    const { ProjectAPI } = await import('../src/dashboard/ProjectAPI.js');
+    const projectAPI = new ProjectAPI();
+    const fetchProjectMilestones = projectAPI.fetchProjectMilestones.bind(projectAPI);
     const pid = '33333333-3333-3333-3333-333333333333';
     const res = await fetchProjectMilestones(pid);
     expect(Array.isArray(res)).toBe(true);
@@ -133,9 +141,16 @@ describe('dashboard interactions', () => {
       return makeResponse(200, {});
     });
 
-    const { updateTaskStatus } = await import('../src/dashboard.js');
+    const { TaskAPI } = await import('../src/dashboard/TaskAPI.js');
+    const taskAPI = new TaskAPI();
+    // Don't provide projectId to force legacy path that uses by-external
+    const updateTaskStatus = (taskId: string, status: string) => taskAPI.updateTaskStatus(taskId, status);
   const out = await updateTaskStatus('ext-missing', 'done');
     expect(out.ok).toBe(true);
+    
+    // Debug: log all calls to see what's happening
+    // console.log('All calls:', calls.map(c => ({ url: c.url, method: c.method })));
+    
     const byExternal = calls.find(c => c.url.includes('/v1/tasks/by-external/'));
     const resolve = calls.find(c => c.url.includes('/v1/tasks/resolve'));
     const byId = calls.find(c => c.url.includes('/v1/tasks/44444444-4444-4444-4444-444444444444/status'));
