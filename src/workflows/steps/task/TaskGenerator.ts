@@ -114,9 +114,11 @@ export class TaskGenerator {
   private generateQAAnalysisTasks(analysis: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
     const tasks: TaskDefinition[] = [];
     
-    if (analysis.failures && Array.isArray(analysis.failures)) {
-      for (let i = 0; i < analysis.failures.length; i++) {
-        const failure = analysis.failures[i];
+    // Check both failureAnalyses (from QAAnalysisStep) and failures (legacy)
+    const failures = analysis.failureAnalyses || analysis.failures;
+    if (failures && Array.isArray(failures)) {
+      for (let i = 0; i < failures.length; i++) {
+        const failure = failures[i];
         const taskId = `qa-failure-${startId + i}`;
         
         const task: TaskDefinition = {
