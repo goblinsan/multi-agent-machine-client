@@ -1,0 +1,7 @@
+dist/
+node_modules/
+outputs/
+projects/
+true/
+coverage/
+*.log

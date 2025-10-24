@@ -27,6 +27,51 @@ Removed obsolete workflow steps that were replaced in v3.0.0 unified review hand
    - Contains: QAReviewCoordinationStep, CodeReviewCoordinationStep, SecurityReviewCoordinationStep
    - Reason: None of these were registered in WorkflowEngine
 
+## Additional Cleanup - October 23, 2025
+
+Removed unreferenced/duplicated implementations discovered during the modern engine migration and codebase scan.
+
+### Source Files (now 7 files total removed)
+1. **src/workflows/engine/WorkflowEngine.ts**
+   - Status: Duplicate class definition of WorkflowEngine
+   - Replaced by: Authoritative implementation in `src/workflows/WorkflowEngine.ts`
+   - Reason: No imports referenced this module; keeping one canonical engine avoids drift.
+
+2. **src/git/GitService.ts**
+   - Status: Unused high-level git wrapper
+   - Replaced by: `src/gitUtils.ts` and `GitWorkflowManager` (centralized lifecycle)
+   - Reason: No references across codebase; removal reduces dead code and maintenance surface.
+
+3. **src/process.ts** and **src/process.ts.bak**
+   - Status: Legacy persona/context processing path
+   - Replaced by: Modern WorkflowEngine + PersonaRequestStep and WorkflowCoordinator
+   - Reason: Tests and workflows use the modern engine; removed to eliminate split paths.
+
+4. **src/worker.ts**
+   - Status: Legacy persona stream worker invoking `processContext`/`processPersona`
+   - Replaced by: Coordinator-driven workflows and step-level transport handling
+   - Reason: Avoids dual execution models; dev entry now uses `run_coordinator.ts`.
+
+5. **src/tools/run_local_stack.ts** and **src/tools/run_local_workflow.ts**
+   - Status: Local dev helpers tied to legacy worker/process path
+   - Replaced by: `src/tools/run_coordinator.ts`
+   - Reason: Simplify dev story around the modern engine and coordinator.
+
+6. **src/redis/eventPublisher.ts**, **src/redis/requestHandlers.ts**, **src/messageTracking.ts**
+   - Status: Utilities only used by the legacy worker/tools path
+   - Replaced by: Step-level transport + engine event logging
+   - Reason: Fully dead after removing worker/process and local legacy tools.
+
+### Verification
+- Grep confirmed no remaining references to deleted files.
+- Test suite: PASS (49 passed | 10 skipped)
+- TypeScript typecheck: PASS (no errors)
+
+### Benefits
+- Eliminates duplicate engine implementations and an unused service layer
+- Removes the legacy persona/worker path entirely, preventing architectural drift
+- Reduces build time and cognitive load; imports align on a single canonical WorkflowEngine
+
 ### Test Files (2 files)
 5. **tests/qaFailureTaskCreation.integration.test.ts**
    - Tests: QAFailureCoordinationStep (deleted)

@@ -1,0 +1,141 @@
+name: "legacy-compatible-task-flow"
+description: "Simplified legacy-compatible task workflow ensuring QA gating before downstream reviews"
+version: "1.0.1"
+
+trigger:
+  condition: "task_type == 'task' || task_type == 'feature'"
+
+context:
+  repo_required: true
+  branch_strategy: "feature-branch"
+
+steps:
+  - name: checkout_branch
+    type: GitOperationStep
+    description: "Checkout feature branch from base branch"
+    config:
+      operation: "checkoutBranchFromBase"
+      baseBranch: "main"
+      newBranch: "${featureBranchName}"
+
+  - name: mark_task_in_progress
+    type: SimpleTaskStatusStep
+    description: "Mark task as in progress on dashboard"
+    depends_on: ["checkout_branch"]
+    config:
+      status: "in_progress"
+
+  - name: context_request
+    type: PersonaRequestStep
+    description: "Request context gathering from context persona"
+    depends_on: ["mark_task_in_progress"]
+    config:
+      step: "1-context"
+      persona: "context"
+      intent: "context_gathering"
+      payload:
+        task: "${task}"
+        repo: "${repo_remote}"
+        project_id: "${projectId}"
+
+  - name: planning_loop
+    type: PlanningLoopStep
+    description: "Plan creation and evaluation loop with max 5 iterations"
+    depends_on: ["context_request"]
+    config:
+      maxIterations: 5
+      plannerPersona: "implementation-planner"
+      evaluatorPersona: "plan-evaluator"
+      planStep: "2-plan"
+      evaluateStep: "2.5-evaluate-plan"
+      payload:
+        task: "${task}"
+        context: "${context_request_result}"
+        repo: "${repo_remote}"
+        project_id: "${projectId}"
+
+  - name: qa_request
+    type: PersonaRequestStep
+    description: "Request QA review from tester-qa persona"
+    depends_on: ["planning_loop"]
+    outputs: ["qa_request_result", "qa_request_status"]
+    config:
+      step: "3-qa"
+      persona: "tester-qa"
+      intent: "qa"
+      payload:
+        task: "${task}"
+        repo: "${repo_remote}"
+        project_id: "${projectId}"
+
+  - name: mark_task_in_review
+    type: SimpleTaskStatusStep
+    description: "Mark task as in review when QA passes"
+    depends_on: ["qa_request"]
+    condition: "${qa_request_status} == 'pass'"
+    config:
+      status: "in_review"
+
+  - name: code_review_request
+    type: PersonaRequestStep
+    description: "Request code review"
+    depends_on: ["mark_task_in_review"]
+    outputs: ["code_review_request_result", "code_review_request_status"]
+    config:
+      step: "4-code-review"
+      persona: "code-reviewer"
+      intent: "code_review"
+      payload:
+        task: "${task}"
+        repo: "${repo_remote}"
+        project_id: "${projectId}"
+
+  - name: security_request
+    type: PersonaRequestStep
+    description: "Request security review"
+    depends_on: ["code_review_request"]
+    condition: "${code_review_request_status} == 'pass'"
+    outputs: ["security_request_result", "security_request_status"]
+    config:
+      step: "5-security"
+      persona: "security-review"
+      intent: "security_review"
+      payload:
+        task: "${task}"
+        repo: "${repo_remote}"
+        project_id: "${projectId}"
+
+  - name: devops_request
+    type: PersonaRequestStep
+    description: "Request devops"
+    depends_on: ["security_request"]
+    condition: "${security_request_status} == 'pass'"
+    outputs: ["devops_request_result", "devops_request_status"]
+    config:
+      step: "6-devops"
+      persona: "devops"
+      intent: "deploy"
+      payload:
+        task: "${task}"
+        repo: "${repo_remote}"
+        project_id: "${projectId}"
+
+  - name: mark_task_done
+    type: SimpleTaskStatusStep
+    description: "Mark task done if security passed and devops completed"
+    depends_on: ["devops_request"]
+    condition: "${security_request_status} == 'pass'"
+    config:
+      status: "done"
+
+failure_handling:
+  on_workflow_failure:
+    - name: mark_task_blocked
+      type: SimpleTaskStatusStep
+      description: "Mark task as blocked when workflow fails"
+      config:
+        status: "blocked"
+
+timeouts:
+  context_request_timeout: 600000
+  default_step: 300000

@@ -113,12 +113,13 @@ describe('Blocked Task Resolution Workflow', () => {
     try {
       const result = await Promise.race([
         coordinator.handleCoordinator(
-          {},
+          {} as any,
+          {} as any,
           { workflow_id: 'wf-blocked-test', project_id: 'proj-blocked' },
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 15000)
+          setTimeout(() => reject(new Error('Test timeout')), 1000)
         )
       ]);
       
@@ -159,12 +160,13 @@ describe('Blocked Task Resolution Workflow', () => {
     try {
       await Promise.race([
         coordinator.handleCoordinator(
-          {},
+          {} as any,
+          {} as any,
           { workflow_id: 'wf-blocked-max', project_id: 'proj-blocked' },
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 15000)
+          setTimeout(() => reject(new Error('Test timeout')), 1000)
         )
       ]);
       
@@ -202,12 +204,13 @@ describe('Blocked Task Resolution Workflow', () => {
     try {
       const result = await Promise.race([
         coordinator.handleCoordinator(
-          {},
+          {} as any,
+          {} as any,
           { workflow_id: 'wf-blocked-increment', project_id: 'proj-blocked' },
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 15000)
+          setTimeout(() => reject(new Error('Test timeout')), 1000)
         )
       ]);
       
@@ -230,12 +233,13 @@ describe('Blocked Task Resolution Workflow', () => {
     try {
       await Promise.race([
         coordinator.handleCoordinator(
-          {},
+          {} as any,
+          {} as any,
           { workflow_id: 'wf-blocked-analyze', project_id: 'proj-blocked' },
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 15000)
+          setTimeout(() => reject(new Error('Test timeout')), 1000)
         )
       ]);
       
@@ -268,12 +272,13 @@ describe('Blocked Task Resolution Workflow', () => {
     try {
       await Promise.race([
         coordinator.handleCoordinator(
-          {},
+          {} as any,
+          {} as any,
           { workflow_id: 'wf-blocked-success', project_id: 'proj-blocked' },
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 15000)
+          setTimeout(() => reject(new Error('Test timeout')), 1000)
         )
       ]);
       

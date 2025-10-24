@@ -317,6 +317,7 @@ export const cfg = {
 };
 
 // Filter allowedPersonas to only include personas this worker can actually handle
+const quietConfigLogs = (process.env.NODE_ENV === 'test') || ["1","true","yes","on"].includes((process.env.QUIET_CONFIG_LOGS || '').toLowerCase());
 // Coordination persona doesn't need a model mapping (it's a workflow orchestrator)
 const rawAllowedPersonas = cfg.allowedPersonas;
 cfg.allowedPersonas = cfg.allowedPersonas.filter(persona => {
@@ -327,13 +328,15 @@ cfg.allowedPersonas = cfg.allowedPersonas.filter(persona => {
   const hasModelMapping = !!cfg.personaModels[persona];
   
   if (!hasModelMapping) {
-    console.warn(`[config] Persona '${persona}' in ALLOWED_PERSONAS but no model mapping - will not handle requests for this persona`);
+    const warnFn = quietConfigLogs ? console.debug : console.warn;
+    warnFn(`[config] Persona '${persona}' in ALLOWED_PERSONAS but no model mapping - will not handle requests for this persona`);
   }
   
   return hasModelMapping;
 });
 
 if (rawAllowedPersonas.length > cfg.allowedPersonas.length) {
-  console.log(`[config] Filtered personas: ${rawAllowedPersonas.length} → ${cfg.allowedPersonas.length} (removed personas without model mappings)`);
-  console.log(`[config] Active personas: ${cfg.allowedPersonas.join(', ')}`);
+  const infoFn = quietConfigLogs ? console.debug : console.log;
+  infoFn(`[config] Filtered personas: ${rawAllowedPersonas.length} → ${cfg.allowedPersonas.length} (removed personas without model mappings)`);
+  infoFn(`[config] Active personas: ${cfg.allowedPersonas.join(', ')}`);
 }

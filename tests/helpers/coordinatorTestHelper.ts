@@ -14,10 +14,12 @@ import { WorkflowCoordinator } from '../../src/workflows/WorkflowCoordinator.js'
  */
 export function createFastCoordinator(): WorkflowCoordinator {
   const coordinator = new WorkflowCoordinator();
-  // Mock fetchProjectTasks to prevent slow dashboard API calls (10+ seconds)
+  // FORCE fast mode: return empty tasks immediately to prevent ANY iteration delays
   vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
     return [];
   });
+  // Override loadWorkflows to do nothing
+  vi.spyOn(coordinator, 'loadWorkflows').mockResolvedValue(undefined);
   return coordinator;
 }
 

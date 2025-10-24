@@ -87,6 +87,8 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
     );
     context.setVariable('repo_remote', 'git@github.com:test/repo.git');
     context.setVariable('branch', 'main');
+    // CRITICAL: Disable persona bypass for these tests that specifically test persona retry logic
+    context.setVariable('SKIP_PERSONA_OPERATIONS', false);
   });
 
   afterEach(() => {

@@ -10,9 +10,7 @@ beforeEach(() => {
 });
 
 describe('Coordinator branch selection', () => {
-  // TODO: Re-enable after fixing devops persona mock handling
-  // Test times out waiting for devops persona which doesn't have model mapping in tests
-  it.skip('uses remote default branch as base and avoids milestone/milestone', { timeout: 30000 }, async () => {
+  it('uses remote default branch as base and avoids milestone/milestone', { timeout: 5000 }, async () => {
     // Arrange: Create project with a single task
     const project: TestProject = {
       id: 'proj-2',
@@ -66,7 +64,7 @@ describe('Coordinator branch selection', () => {
     const coordinator = new coordinatorMod.WorkflowCoordinator();
     const msg = { workflow_id: 'wf-branch', project_id: 'proj-2' } as any;
     const payload = { repo: 'https://example/repo.git' } as any;
-    await coordinator.handleCoordinator({}, msg, payload);
+  await coordinator.handleCoordinator({} as any, {} as any, msg, payload);
 
     // Assert: Verify that the checkout used the remote default branch 'main' 
     // instead of the misleading local branch 'milestone/milestone'

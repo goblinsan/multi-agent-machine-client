@@ -1,5 +1,7 @@
 # Workflow System Documentation
 
+Note: This document describes the modern engine/coordinator architecture. Some historical code examples that referenced legacy modules (e.g., `src/redis/eventPublisher.ts`, `src/redis/requestHandlers.ts`, `src/worker.ts`) have been removed; eventing and acknowledgments are now handled internally within steps and the transport abstraction.
+
 ## Overview
 
 A Redis-based distributed multi-agent coordination system that orchestrates AI personas to plan, implement, test, and review code changes across multiple machines. Uses YAML-defined workflows with progressive timeout/retry mechanisms and git-based state synchronization.
@@ -50,7 +52,7 @@ Dashboard → Redis Stream → Coordinator → Workflow Engine → Personas → 
 - **GitOperationStep**: Performs git operations (checkout, commit, push)
 - **ConditionalStep**: Conditional execution based on runtime state
 - **PlanningLoopStep**: Iterative planning with TDD gates
-- **QAIterationLoopStep**: Test-fix-retest loop until pass
+ 
 - **DiffApplyStep**: Applies code diffs from personas
 - **TaskUpdateStep**: Updates task status on dashboard
 
@@ -472,30 +474,9 @@ const response = await waitForPersonaCompletion(
 );
 ```
 
-### Redis Helpers
+### Redis Notes
 
-**Event Publishing** (`src/redis/eventPublisher.ts`):
-```typescript
-import { publishEvent } from './redis/eventPublisher.js';
-
-await publishEvent(redis, {
-  workflowId: 'wf-123',
-  taskId: 'task-456',
-  fromPersona: 'lead-engineer',
-  status: 'done',
-  result: {code_changes: [...], files: [...]},
-  corrId: 'corr-789'
-});
-```
-
-**Request Acknowledgment** (`src/redis/requestHandlers.ts`):
-```typescript
-import { acknowledgeRequest } from './redis/requestHandlers.js';
-
-await acknowledgeRequest(redis, 'lead-engineer', entryId);
-// OR with silent error handling:
-await acknowledgeRequest(redis, 'lead-engineer', entryId, true);
-```
+Legacy helper modules for event publishing and request acknowledgment have been removed. Step implementations interact with the transport abstraction directly where needed.
 
 ---
 
@@ -951,7 +932,7 @@ export const cfg = {
 
 ### Logs
 
-**Worker Logs**:
+**Engine/Coordinator Logs**:
 - Persona registration
 - Task receipt
 - Step execution
@@ -996,7 +977,7 @@ export const cfg = {
    > XREAD COUNT 10 STREAMS machine:events 0
    ```
 
-2. **Check Worker Logs**:
+2. **Check Engine/Coordinator Logs**:
    ```bash
    tail -f machine-client.log
    ```

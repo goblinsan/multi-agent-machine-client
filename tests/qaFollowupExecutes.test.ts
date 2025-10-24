@@ -35,7 +35,8 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
     try {
       // SAFETY: Race condition with timeout protection
       const testPromise = coordinator.handleCoordinator(
-        {}, 
+        {} as any,
+        {} as any,
         { workflow_id: 'wf-qa-followup', project_id: 'proj-qa-exec' }, 
         { repo: tempRepo }
       ).then(() => {
@@ -47,7 +48,7 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - QA follow-up hanging')), 3000)
+        setTimeout(() => reject(new Error('Test timeout - QA follow-up hanging')), 500)
       );
 
       await Promise.race([testPromise, timeoutPromise]);

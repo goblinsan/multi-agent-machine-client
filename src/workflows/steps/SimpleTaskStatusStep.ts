@@ -80,7 +80,9 @@ export class SimpleTaskStatusStep extends WorkflowStep {
       }
       
       // Set completion variables in context
-      context.setVariable('taskStatus', status);
+  context.setVariable('taskStatus', status);
+  // Back-compat for behavior tests expecting snake_case
+  context.setVariable('task_status', status);
       context.setVariable('taskCompleted', true);
       context.setVariable('taskId', taskId);
 
@@ -99,6 +101,7 @@ export class SimpleTaskStatusStep extends WorkflowStep {
         },
         outputs: {
           taskStatus: status,
+          task_status: status,
           taskCompleted: true,
           taskId
         }

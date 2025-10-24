@@ -99,20 +99,36 @@ export class WorkflowEngine {
     projectId: string,
     repoRoot: string,
     branch: string,
-    transport: MessageTransport,
-    options: WorkflowExecutionOptions = {}
+    transportOrOptions?: MessageTransport | WorkflowExecutionOptions,
+    maybeOptions: WorkflowExecutionOptions = {}
   ): Promise<WorkflowResult> {
+    // Backward-compatible parameter handling: allow omitting transport and passing options as the 5th arg
+    let transport: MessageTransport | undefined;
+    let options: WorkflowExecutionOptions = {};
+
+    // If the 5th argument looks like options (plain object without transport interface), treat it as options
+    const looksLikeTransport = (obj: any) => obj && (typeof obj.xAdd === 'function' || typeof obj.xReadGroup === 'function');
+    if (looksLikeTransport(transportOrOptions)) {
+      transport = transportOrOptions as MessageTransport;
+      options = maybeOptions || {};
+    } else {
+      options = (transportOrOptions as WorkflowExecutionOptions) || {};
+      transport = undefined as any;
+    }
+
     const workflowId = options.workflowId || randomUUID();
     const config = await this.loadWorkflow(workflowPath);
     
     // Ensure the branch exists before starting workflow
     // This is THE place where branches are created for workflows
     logger.info('Ensuring workflow branch exists', { branch, repoRoot, workflowId });
-    await gitWorkflowManager.ensureBranch({
-      repoRoot,
-      branchName: branch,
-      baseBranch: 'main'  // Could make this configurable via config.context?.base_branch
-    });
+    if (repoRoot) {
+      await gitWorkflowManager.ensureBranch({
+        repoRoot,
+        branchName: branch,
+        baseBranch: 'main'  // Could make this configurable via config.context?.base_branch
+      });
+    }
     
     const context = new WorkflowContext(
       workflowId,
@@ -120,7 +136,7 @@ export class WorkflowEngine {
       repoRoot,
       branch,
       config,
-      transport,
+      transport as any,
       options.variables || {}
     );
 

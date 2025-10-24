@@ -1,6 +1,7 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
+import { makeRedis } from '../../redisClient.js';
 
 export interface PullTaskConfig {
   streamName: string;
@@ -44,8 +45,15 @@ export class PullTaskStep extends WorkflowStep {
       maxMessages
     });
 
+    let localClientCreated = false;
+    let transport: any;
     try {
-      const transport = context.transport;
+      transport = (context as any).transport;
+      if (!transport || typeof transport.xGroupCreate !== 'function') {
+        // Fall back to creating a local Redis client when no transport is provided (test/mocked environments)
+        transport = await makeRedis();
+        localClientCreated = true;
+      }
       
       // Ensure consumer group exists
       try {
@@ -69,7 +77,10 @@ export class PullTaskStep extends WorkflowStep {
         logger.info('No messages available in stream');
         context.setVariable('task', null);
         context.setVariable('taskId', null);
-        // No disconnect needed - transport lifecycle managed by caller
+        // Disconnect local client if we created one
+        if (localClientCreated && transport?.disconnect) {
+          await transport.disconnect();
+        }
         return {
           status: 'success',
           data: { task: null, taskId: null },
@@ -84,7 +95,10 @@ export class PullTaskStep extends WorkflowStep {
         logger.info('No messages in stream data');
         context.setVariable('task', null);
         context.setVariable('taskId', null);
-        // No disconnect needed - transport lifecycle managed by caller
+        // Disconnect local client if we created one
+        if (localClientCreated && transport?.disconnect) {
+          await transport.disconnect();
+        }
         return {
           status: 'success',
           data: { task: null, taskId: null },
@@ -116,7 +130,10 @@ export class PullTaskStep extends WorkflowStep {
 
       // Acknowledge the message
       await transport.xAck(streamName, consumerGroup, messageId);
-      // No disconnect needed - transport lifecycle managed by caller
+      // Disconnect local client if we created one
+      if (localClientCreated && transport?.disconnect) {
+        await transport.disconnect();
+      }
 
       return {
         status: 'success',
@@ -131,6 +148,12 @@ export class PullTaskStep extends WorkflowStep {
         consumerGroup,
         consumerId
       });
+      // Ensure local client is closed on error
+      try {
+        if (localClientCreated && transport?.disconnect) {
+          await transport.disconnect();
+        }
+      } catch {}
       return {
         status: 'failure',
         error: new Error(`Failed to pull task: ${error.message}`)

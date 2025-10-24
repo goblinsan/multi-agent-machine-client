@@ -371,11 +371,51 @@ export async function updateTaskStatus(taskId: string, status: string, projectId
   }
   const base = cfg.dashboardBaseUrl.replace(/\/$/, "");
 
-  // If no projectId provided, try to use a default or log a warning
+  // Legacy compatibility path: if no projectId provided, try older endpoints by external_id
   if (!projectId) {
-    logger.warn("updateTaskStatus: projectId not provided, update may fail");
-    // For backwards compatibility, return success but log the issue
-    return { ok: true, status: 200, body: { message: 'projectId required for dashboard update' } };
+    try {
+      // 1) Try updating directly by external id
+      const byExternalUrl = `${base}/v1/tasks/by-external/${encodeURIComponent(taskId)}/status`;
+      let res = await fetch(byExternalUrl, {
+        method: 'POST',
+        headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) {
+        const body = await res.json().catch(() => ({}));
+        logger.info('dashboard task updated by external_id', { external_id: taskId, status });
+        return { ok: true, status: res.status, body } as any;
+      }
+
+      // 2) Resolve to canonical id then update by id
+      const resolveUrl = `${base}/v1/tasks/resolve`;
+      const resolveRes = await fetch(resolveUrl, {
+        method: 'POST',
+        headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ external_id: taskId })
+      });
+  const resolveBody = await resolveRes.json().catch(() => ({}));
+  const rb: any = resolveBody as any;
+  const resolvedId = (rb && (rb.id || rb.task_id)) ? (rb.id || rb.task_id) : null;
+      if (resolvedId) {
+        const byIdUrl = `${base}/v1/tasks/${encodeURIComponent(String(resolvedId))}/status`;
+        const byId = await fetch(byIdUrl, {
+          method: 'POST',
+          headers: { "Authorization": `Bearer ${cfg.dashboardApiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ status })
+        });
+        const byIdBody = await byId.json().catch(() => ({}));
+        if (byId.ok) {
+          logger.info('dashboard task updated by resolved id', { external_id: taskId, resolvedId });
+          return { ok: true, status: byId.status, body: byIdBody } as any;
+        }
+      }
+      // Legacy flow failed
+      return { ok: false, status: 404, body: null };
+    } catch (e) {
+      logger.warn('legacy updateTaskStatus flow failed', { taskId, error: (e as Error).message });
+      return { ok: false, status: 0, body: null, error: e } as any;
+    }
   }
 
   const patchOnce = async (endpoint: string, lv?: number | null) => {

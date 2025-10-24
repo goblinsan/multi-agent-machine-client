@@ -1,166 +1,33 @@
 # Quick Start Guide
 
-## Running Workflows Locally
+Note: This project now centers on the modern Workflow Engine and Coordinator. The legacy worker/process and local single-process runners have been removed.
 
-### Option 1: Full Local Stack (Recommended for Quick Testing) ⭐
+## Recommended: Run the test suite
 
-The easiest way to test workflows locally without Redis:
+The tests exercise the coordinator and workflows end-to-end without requiring any external services.
 
 ```bash
-# Ensure TRANSPORT_TYPE=local in your .env file
-npm run local -- <project_id> [repo_url] [base_branch]
+npm test
 ```
 
-**Example:**
+## Dispatch a coordinator workflow (advanced)
+
+You can enqueue a coordinator message to the request stream. This is useful when integrating with your own runtime or for manual testing of dispatch. Processing the message requires a worker/executor in your environment; this repository no longer ships a legacy worker process.
+
 ```bash
-# Use a test project ID (e.g., 999 or any non-production ID)
-npm run local -- 999
-```
-
-This single command:
-1. ✅ Starts the dashboard backend (http://localhost:3000)
-2. ✅ Dispatches the coordinator workflow
-3. ✅ Starts the worker to process messages
-4. ✅ Shows live progress
-5. ✅ Shuts down automatically when complete
-
-**When to use:**
-- Quick local testing
-- No Redis installation needed
-- See everything in one terminal
-- Automatic cleanup on completion
-
-### Option 2: Multi-Process Development (With Redis)
-
-For production-like development with separate services:
-
-**Terminal 1 - Dashboard:**
-```bash
-cd src/dashboard-backend
-npm run dev
-```
-
-**Terminal 2 - Worker:**
-```bash
-npm run dev
-```
-
-**Terminal 3 - Dispatch Workflow:**
-```bash
+# Example: send a coordinator message for project id 1
 npm run coordinator -- 1
 ```
 
-**When to use:**
-- Testing distributed setups
-- Long-running workflows
-- Multiple concurrent workflows
-- Production-like environment
+Environment variables (e.g., repo URL, base branch) can be provided via CLI args or .env and are forwarded by `run_coordinator.ts`.
 
-### Option 3: Single-Process Workflow (Without Dashboard)
+## Transport
 
-For testing just the workflow processing:
-
-```bash
-npx tsx src/tools/run_local_workflow.ts 1
-```
-
-**When to use:**
-- Testing workflow logic only
-- No dashboard needed
-- CI/CD pipelines
-- Automated testing
-
-## Transport Types
-
-### Local Transport (`TRANSPORT_TYPE=local`)
-
-In-memory messaging for single-process development.
-
-**Pros:**
-- ✅ No Redis needed
-- ✅ Faster setup
-- ✅ Perfect for testing
-
-**Cons:**
-- ❌ Single process only
-- ❌ No persistence
-- ❌ Not for production
-
-**Set in `.env`:**
-```bash
-TRANSPORT_TYPE=local
-```
-
-**Use with:**
-- `npm run local -- 1`
-- `npx tsx src/tools/run_local_workflow.ts 1`
-
-### Redis Transport (`TRANSPORT_TYPE=redis`)
-
-Distributed messaging for multi-process/multi-machine setups.
-
-**Pros:**
-- ✅ Multi-process communication
-- ✅ Persistent messages
-- ✅ Production ready
-- ✅ Distributed workflows
-
-**Cons:**
-- ❌ Requires Redis installation
-- ❌ More setup needed
-
-**Set in `.env`:**
-```bash
-TRANSPORT_TYPE=redis
-REDIS_URL=redis://localhost:6379
-```
-
-**Install Redis:**
-```bash
-# macOS
-brew install redis
-brew services start redis
-
-# Linux
-sudo apt-get install redis-server
-sudo systemctl start redis
-```
-
-**Use with:**
-- `npm run dev` + `npm run coordinator -- 1`
+The coordinator tool uses the configured transport abstraction. In tests, an in-memory transport is used. For external runtimes, configure your preferred transport via `.env`.
 
 ## Complete Examples
 
-### Example 1: Quick Local Test
-
-```bash
-# 1. Set transport type
-echo "TRANSPORT_TYPE=local" >> .env
-
-# 2. Run everything
-npm run local -- 1
-
-# Output:
-# 🚀 Starting Local Stack
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 📊 Starting dashboard backend...
-# ✅ Dashboard backend started
-#    URL: http://localhost:3000
-# ⚙️  Starting worker...
-# ✅ Worker ready
-# 📤 Dispatching coordinator workflow...
-# ✅ Workflow dispatched
-#    Workflow ID: wf_coord_1760983794962
-#    Project ID: 1
-# 🔄 Processing workflow...
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# [info] processing request { persona: 'coordination', ... }
-# ...
-# ✅ Workflow completed
-# 🎉 Local stack completed successfully
-```
-
-### Example 2: Multi-Process with Redis
+### Example: Multi-Process with Redis
 
 ```bash
 # 1. Start Redis
@@ -173,31 +40,28 @@ echo "REDIS_URL=redis://localhost:6379" >> .env
 # 3. Terminal 1 - Start dashboard
 cd src/dashboard-backend && npm run dev
 
-# 4. Terminal 2 - Start worker  
-npm run dev
-
-# 5. Terminal 3 - Dispatch workflow
+# 4. Terminal 2 - Dispatch workflow
 npm run coordinator -- 1
 
 # 6. View dashboard
 open http://localhost:3000
 ```
 
-### Example 3: With Custom Repository
+### Example: With Custom Repository
 
 ```bash
-npm run local -- 1 https://github.com/username/repo-name main
+npm run coordinator -- 1 https://github.com/username/repo-name main
 ```
 
 ## Troubleshooting
 
-### Worker not picking up messages
+### No processing after dispatch
 
-**Symptom:** `npm run coordinator` says "dispatched" but nothing happens
+**Symptom:** `npm run coordinator` prints "dispatched" but you don’t see processing
 
-**Cause:** Using `TRANSPORT_TYPE=local` with separate processes
+**Cause:** This repository no longer includes a legacy worker process
 
-**Solution:** Use `npm run local -- 1` or switch to Redis transport
+**Solution:** Integrate with your own executor/worker runtime that consumes from the request stream and executes workflows, or use the test suite for in-process execution.
 
 ### Dashboard not starting
 
@@ -217,24 +81,9 @@ kill -9 <PID>
 npm run local -- 1
 ```
 
-### Redis connection errors
+### Transport configuration
 
-**Symptom:** `ECONNREFUSED` errors
-
-**Cause:** Redis not running or wrong URL
-
-**Solution:**
-```bash
-# Check Redis is running
-redis-cli ping
-# Should return: PONG
-
-# If not running
-brew services start redis
-
-# Check your .env has correct URL
-cat .env | grep REDIS_URL
-```
+If you’re using an external transport (e.g., Redis) in your environment, ensure your `.env` is configured appropriately. The test suite doesn’t require external services.
 
 ## Environment Variables
 
@@ -265,42 +114,21 @@ PROJECT_BASE=~/code
 
 ## NPM Scripts Reference
 
-| Command | Description | Transport | Use Case |
-|---------|-------------|-----------|----------|
-| `npm run local -- 1` | Full local stack | local | Quick testing, demos |
-| `npm run dev` | Worker only | any | Background processing |
-| `npm run coordinator -- 1` | Dispatch workflow | any | Trigger workflows |
-| `npx tsx src/tools/run_local_workflow.ts 1` | Worker + workflow | local | Testing without dashboard |
-| `npm test` | Run test suite | local | Automated testing |
+| Command | Description |
+|---------|-------------|
+| `npm test` | Run test suite (in-process execution) |
+| `npm run coordinator -- 1` | Dispatch a coordinator message |
 
 ## What Happens When You Run `npm run local -- 1`
 
-1. **Dashboard Startup** (2-5 seconds)
-   - Spawns dashboard backend process
-   - Waits for server to be ready
-   - Dashboard available at http://localhost:3000
-
-2. **Worker Initialization** (1 second)
-   - Connects to local transport
-   - Creates consumer groups
-   - Starts message tracking
-
-3. **Workflow Dispatch** (instant)
+1. **Workflow Dispatch** (instant)
    - Creates coordinator message
    - Adds to request stream
    - Assigns workflow ID
 
-4. **Message Processing** (varies)
-   - Worker polls for messages
-   - Processes each persona's tasks
-   - Logs progress to console
-   - Continues until workflow completes
-
-5. **Automatic Shutdown** (when idle)
-   - Detects no more messages
-   - Stops dashboard backend
-   - Closes transport connection
-   - Exits cleanly
+2. **Processing**
+   - Handled by your executor/worker runtime consuming the stream
+   - In tests, processing is performed in-process without external services
 
 ## Next Steps
 
@@ -324,8 +152,7 @@ PROJECT_BASE=~/code
 
 ## Additional Resources
 
-- [Local Transport Guide](./docs/LOCAL_TRANSPORT.md) - Detailed transport documentation
-- [Workflow System](./docs/WORKFLOW_SYSTEM.md) - How workflows work
+- [Workflow System](./docs/WORKFLOW_SYSTEM.md) - How workflows work (modern engine)
 - [Persona System](./docs/PERSONA_RETRY_MECHANISM.md) - Agent coordination
 - [Task Logging](./docs/TASK_LOGGING.md) - Understanding logs
 

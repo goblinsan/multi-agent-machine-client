@@ -34,12 +34,14 @@ steps:
             comment: "Maximum unblock attempts (${max_attempts}) exceeded. Manual intervention required."
       on_false:
         - name: continue_unblock_attempt
-          type: NoOpStep
+          type: VariableSetStep
           description: "Continue with unblock attempt"
+          config:
+            set: {}
 
   # Step 2: Increment attempt counter
   - name: increment_attempt_counter
-    type: VariableStep
+    type: VariableSetStep
     description: "Track number of unblock attempts"
     depends_on: ["check_max_attempts"]
     config:

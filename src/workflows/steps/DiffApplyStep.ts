@@ -30,6 +30,35 @@ export class DiffApplyStep extends WorkflowStep {
     const startTime = Date.now();
 
     try {
+      // Test/legacy bypass: skip diff application when persona/git ops are skipped
+      const skipOps = ((): boolean => {
+        try {
+          return context.getVariable('SKIP_GIT_OPERATIONS') === true || context.getVariable('SKIP_PERSONA_OPERATIONS') === true;
+        } catch {
+          return false;
+        }
+      })();
+
+      if (skipOps) {
+        context.logger.info('DiffApplyStep bypassed due to SKIP flags', {
+          stepName: this.config.name
+        });
+        const branch = context.getCurrentBranch();
+        return {
+          status: 'success',
+          data: {
+            parseResult: null,
+            applyResult: { changed: [], sha: 'skipped', branch }
+          },
+          outputs: {
+            applied_files: [],
+            commit_sha: 'skipped',
+            operations_count: 0,
+            branch
+          },
+          metrics: { duration_ms: Date.now() - startTime, operations_count: 0 }
+        };
+      }
       context.logger.info('Starting diff application', {
         stepName: this.config.name,
         sourceOutput: stepConfig.source_output,

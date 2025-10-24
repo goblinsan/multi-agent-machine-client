@@ -5,7 +5,8 @@ import { SYSTEM_PROMPTS } from "./personas.js";
 import { PERSONAS } from "./personaNames.js";
 import { callLMStudio } from "./lmstudio.js";
 import { fetchContext, recordEvent, fetchProjectStatus, fetchProjectStatusDetails, fetchProjectStatusSummary, createDashboardTask, updateTaskStatus } from "./dashboard.js";
-import { resolveRepoFromPayload, getRepoMetadata, commitAndPushPaths, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
+import { resolveRepoFromPayload, getRepoMetadata, checkoutBranchFromBase, ensureBranchPublished, runGit } from "./gitUtils.js";
+import { gitWorkflowManager } from "./git/workflowManager.js";
 import { logger } from "./logger.js";
 import { publishEvent } from "./redis/eventPublisher.js";
 
@@ -102,6 +103,7 @@ async function applyModelGeneratedChanges(_: any): Promise<ApplyEditsOutcome> {
   return { attempted: false, applied: false, reason: 'not_implemented' } as ApplyEditsOutcome;
 }
 import { gatherPromptFileSnippets, extractMentionedPaths } from "./prompt.js";
+import { buildPersonaMessages, callPersonaModel } from "./personas/PersonaRequestHandler.js";
 import { normalizeRepoPath, firstString, clipText, shouldUploadDashboardFlag, personaTimeoutMs, CODING_PERSONA_SET, ENGINEER_PERSONAS_REQUIRING_PLAN } from "./util.js";
 
 /**
@@ -183,19 +185,18 @@ async function writePlanningLog(
       }
     }
     
-    const commitRes = await commitAndPushPaths({
+    await gitWorkflowManager.commitFiles({
       repoRoot,
-      branch: payloadObj.branch || repoInfo.branch || null,
+      branch: payloadObj.branch || repoInfo.branch || undefined,
       message: `plan: iteration ${iteration} for task ${taskId}${deletedLogs.length > 0 ? ` (cleaned ${deletedLogs.length} old logs)` : ''}`,
-      paths: pathsToCommit
+      files: pathsToCommit
     });
-    logger.info("Planning log committed and pushed", {
+    logger.info("Planning log committed", {
       taskId,
       planLogPath: planLogRel,
       branch: planBranch,
       iteration,
       cleanedLogs: deletedLogs.length,
-      commitResult: commitRes,
       workflowId: msg.workflow_id
     });
   } catch (commitErr: any) {
@@ -282,19 +283,18 @@ async function writeQALog(
       }
     }
     
-    const commitRes = await commitAndPushPaths({
+    await gitWorkflowManager.commitFiles({
       repoRoot,
-      branch: payloadObj.branch || repoInfo.branch || null,
+      branch: payloadObj.branch || repoInfo.branch || undefined,
       message: `qa: ${status} for task ${taskId}${deletedLogs.length > 0 ? ` (cleaned ${deletedLogs.length} old logs)` : ''}`,
-      paths: pathsToCommit
+      files: pathsToCommit
     });
-    logger.info("QA log committed and pushed", {
+    logger.info("QA log committed", {
       taskId,
       qaLogPath: qaLogRel,
       branch: qaBranch,
       status,
       cleanedLogs: deletedLogs.length,
-      commitResult: commitRes,
       workflowId: msg.workflow_id
     });
   } catch (commitErr: any) {
@@ -415,18 +415,17 @@ async function writeCodeReviewLog(
   // Commit and push the review log so other machines can access it
   try {
     const reviewLogRel = pathMod.relative(repoRoot, reviewLogPath);
-    const commitRes = await commitAndPushPaths({
+    await gitWorkflowManager.commitFiles({
       repoRoot,
-      branch: payloadObj.branch || repoInfo.branch || null,
+      branch: payloadObj.branch || repoInfo.branch || undefined,
       message: `code-review: ${status} for task ${taskId} (severe:${findings.severe?.length || 0}, high:${findings.high?.length || 0})`,
-      paths: [reviewLogRel]
+      files: [reviewLogRel]
     });
-    logger.info("Code review log committed and pushed", {
+    logger.info("Code review log committed", {
       taskId,
       reviewLogPath: reviewLogRel,
       branch: reviewBranch,
       status,
-      commitResult: commitRes,
       workflowId: msg.workflow_id
     });
   } catch (commitErr: any) {
@@ -547,18 +546,17 @@ async function writeSecurityReviewLog(
   // Commit and push the security review log so other machines can access it
   try {
     const securityLogRel = pathMod.relative(repoRoot, securityLogPath);
-    const commitRes = await commitAndPushPaths({
+    await gitWorkflowManager.commitFiles({
       repoRoot,
-      branch: payloadObj.branch || repoInfo.branch || null,
+      branch: payloadObj.branch || repoInfo.branch || undefined,
       message: `security-review: ${status} for task ${taskId} (severe:${findings.severe?.length || 0}, high:${findings.high?.length || 0})`,
-      paths: [securityLogRel]
+      files: [securityLogRel]
     });
-    logger.info("Security review log committed and pushed", {
+    logger.info("Security review log committed", {
       taskId,
       securityLogPath: securityLogRel,
       branch: securityBranch,
       status,
-      commitResult: commitRes,
       workflowId: msg.workflow_id
     });
   } catch (commitErr: any) {
@@ -645,7 +643,7 @@ export async function processContext(transport: MessageTransport, persona: strin
         
         const components = Array.isArray(payloadObj.components) ? payloadObj.components
                           : (Array.isArray(cfg.scanComponents) ? cfg.scanComponents : null);
-  
+
         logger.info("context scan starting", {
           repoRoot,
           branch: repoInfo.branch ?? null,
@@ -657,103 +655,20 @@ export async function processContext(transport: MessageTransport, persona: strin
           maxDepth: cfg.scanMaxDepth,
           reason: 'new_code_commits_detected'
         });
-  
-        const { scanRepo, summarize } = await import("./scanRepo.js");
-        type Comp = { base: string; include: string[]; exclude: string[] };
-        const comps: Comp[] = components && components.length
-          ? components.map((c:any)=>({
-              base: String(c.base||"").replace(/\\/g,"/"),
-              include: (c.include||cfg.scanInclude),
-              exclude: (c.exclude||cfg.scanExclude)
-            }))
-          : [{ base: "", include: cfg.scanInclude, exclude: cfg.scanExclude }];
-  
-        let allFiles: any[] = [];
-        const perComp: any[] = [];
-        const localSummaries: { component: string; totals: any; largest: any[]; longest: any[] }[] = [];
-  
-        for (const c of comps) {
-          const basePath = (c.base && c.base.length) ? (repoRoot.replace(/\/$/,"") + "/" + c.base.replace(/^\//,"")) : repoRoot;
-          const files = await scanRepo({
-            repo_root: basePath,
-            include: c.include,
-            exclude: c.exclude,
-            max_files: cfg.scanMaxFiles,
-            max_bytes: cfg.scanMaxBytes,
-            max_depth: cfg.scanMaxDepth,
-            track_lines: cfg.scanTrackLines,
-            track_hash: cfg.scanTrackHash
-          });
-          const prefixed = files.map(f => ({ ...f, path: (c.base ? (c.base.replace(/^\/+|\/+$|/g,'') + '/' + f.path) : f.path) }));
-          allFiles.push(...prefixed);
-          const sum = summarize(prefixed);
-          const compName = c.base || ".";
-          perComp.push({ component: compName, totals: sum.totals, largest: sum.largest.slice(0,10), longest: sum.longest.slice(0,10) });
-          localSummaries.push({ component: compName, totals: sum.totals, largest: sum.largest.slice(0,5), longest: sum.longest.slice(0,5) });
-        }
-  
-        const ndjson = allFiles.map(f => JSON.stringify(f)).join("\n") + "\n";
-        const { summarize: summarize2 } = await import("./scanRepo.js");
-        const global = summarize2(allFiles);
-  
-        // Build scanMd with Alembic awareness and full file tree
-        const scanMd = (() => {
-          const lines: string[] = [];
-          lines.push("# Context Snapshot (Scan)", "", `Repo: ${repoRoot}`, `Generated: ${new Date().toISOString()}`, "", "## Totals");
-          lines.push(`- Files: ${global.totals.files}`, `- Bytes: ${global.totals.bytes}`, `- Lines: ${global.totals.lines}`, "", "## Components");
-          for (const pc of perComp) {
-            lines.push(`### ${pc.component}`, `- Files: ${pc.totals.files}`, `- Bytes: ${pc.totals.bytes}`, `- Lines: ${pc.totals.lines}`);
-            lines.push(`- Largest (top 10):`);
-            for (const f of pc.largest) lines.push(`  - ${f.path} (${f.bytes} bytes)`);
-            lines.push(`- Longest (top 10):`);
-            for (const f of pc.longest) lines.push(`  - ${f.path} (${f.lines || 0} lines)`);
-            lines.push("");
-          }
-          
-          // Add complete file tree organized by directory
-          lines.push("## File Tree");
-          lines.push("");
-          
-          // Group files by directory
-          const filesByDir = new Map<string, typeof allFiles>();
-          for (const file of allFiles) {
-            const dirPath = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '.';
-            if (!filesByDir.has(dirPath)) {
-              filesByDir.set(dirPath, []);
-            }
-            filesByDir.get(dirPath)!.push(file);
-          }
-          
-          // Sort directories alphabetically
-          const sortedDirs = Array.from(filesByDir.keys()).sort();
-          
-          for (const dir of sortedDirs) {
-            const files = filesByDir.get(dir)!.sort((a, b) => a.path.localeCompare(b.path));
-            lines.push(`### ${dir === '.' ? 'Root' : dir}`);
-            lines.push("");
-            for (const f of files) {
-              const fileName = f.path.includes('/') ? f.path.substring(f.path.lastIndexOf('/') + 1) : f.path;
-              const sizeInfo = `${f.bytes} bytes${typeof f.lines === 'number' ? `, ${f.lines} lines` : ''}`;
-              lines.push(`- **${fileName}** (${sizeInfo})`);
-            }
-            lines.push("");
-          }
-          
-          // Alembic detection
-          const alembicFiles = allFiles.filter(f => /(^|\/)alembic(\/|$)/i.test(f.path));
-          if (alembicFiles.length) {
-            const versions = alembicFiles.filter(f => /(^|\/)alembic(\/|).*\bversions\b(\/|).+\.py$/i.test(f.path));
-            const latest = [...versions].sort((a,b)=> (b.mtime||0) - (a.mtime||0)).slice(0, 10);
-            lines.push("## Alembic Migrations");
-            lines.push(`- Alembic tree detected (files: ${alembicFiles.length}, versions: ${versions.length})`);
-            lines.push(versions.length ? "- Latest versions (by modified time):" : "- No versioned migrations found under alembic/versions");
-            for (const f of latest) {
-              lines.push(`  - ${f.path}  (mtime=${new Date(f.mtime).toISOString()}, bytes=${f.bytes}${typeof f.lines==='number'?`, lines=${f.lines}`:''})`);
-            }
-            lines.push("");
-          }
-          return lines.join("\n");
-        })();
+
+        const { scanRepositoryForContext } = await import("./git/contextScanner.js");
+        const scanRes = await scanRepositoryForContext(repoRoot, {
+          include: cfg.scanInclude,
+          exclude: cfg.scanExclude,
+          maxFiles: cfg.scanMaxFiles,
+          maxBytes: cfg.scanMaxBytes,
+          maxDepth: cfg.scanMaxDepth,
+          trackLines: cfg.scanTrackLines,
+          trackHash: cfg.scanTrackHash,
+          components: components || undefined,
+        });
+
+        const { snapshot, ndjson, summaryMd: scanMd, perComp, global } = scanRes;
   
         const repoMeta = await getRepoMetadata(repoRoot);
         const branchUsed = repoInfo.branch ?? repoMeta.currentBranch ?? null;
@@ -761,14 +676,7 @@ export async function processContext(transport: MessageTransport, persona: strin
         repoInfo.remote = repoInfo.remote || repoMeta.remoteUrl || undefined;
         const repoSlug = repoMeta.remoteSlug || null;
   
-        const snapshot = {
-          repo: repoRoot,
-          generated_at: new Date().toISOString(),
-          totals: global.totals,
-          files: allFiles,  // Include full file list in snapshot
-          components: perComp,
-          hotspots: { largest_files: global.largest, longest_files: global.longest }
-        };
+        // snapshot, perComp, and global were produced by scanRepositoryForContext above
   
         const { writeArtifacts } = await import("./artifacts.js");
         const writeRes = await writeArtifacts({
@@ -820,7 +728,7 @@ export async function processContext(transport: MessageTransport, persona: strin
           remote: repoInfo.remote || null,
           repoSlug,
           totals: global.totals,
-          components: localSummaries
+          components: perComp
         });
   
         const shouldUpload = shouldUploadDashboardFlag(payloadObj.upload_dashboard);
@@ -1066,57 +974,17 @@ export async function processContext(transport: MessageTransport, persona: strin
   
     const userText = userLines.join("\n");
   
-    const messages: any[] = [
-      { role: "system", content: systemPrompt }
-    ];
-  
-    if (scanSummaryForPrompt && scanSummaryForPrompt.length) {
-      const label = persona === PERSONAS.CONTEXT ? "Authoritative file scan summary" : "File scan summary";
-      messages.push({ role: "system", content: `${label}:\n${scanSummaryForPrompt}` });
-    }
-  
-    if (cfg.injectDashboardContext && (persona !== PERSONAS.CONTEXT || !scanArtifacts) && (ctx?.projectTree || ctx?.fileHotspots)) {
-      messages.push({ role: "system", content: `Dashboard context (may be stale):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` });
-    }
-  
     // Coordinator-managed short summary insertion: fetch a concise project summary (if available)
     try {
       const projectIdForSummary = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id, dashboardProject.id) || null;
       const projSummary = await fetchProjectStatusSummary(projectIdForSummary);
       if (projSummary && typeof projSummary === 'string' && projSummary.trim().length) {
-        messages.push({ role: 'system', content: `Previous step summary (from dashboard):\n${projSummary.trim()}` });
+        // Include pre-step summary via extraSystemMessages below
+        (payloadObj as any).__preStepSummary = projSummary.trim();
       }
     } catch (err) {
       // ignore summary fetch failures
     }
-  
-    // Include QA test results for planners/evaluators to inform their decisions
-    if (qaHistory && qaHistory.length > 0) {
-      messages.push({ 
-        role: 'system', 
-        content: `Latest QA Test Results:\n${clipText(qaHistory, 2000)}\n\nUse this to understand what failed in previous attempts and adjust your plan accordingly.` 
-      });
-    }
-  
-    // Include previous planning iterations for planner to refine and improve
-    if (planningHistory && planningHistory.length > 0) {
-      messages.push({
-        role: 'system',
-        content: `Previous Planning Iterations:\n${clipText(planningHistory, 3000)}\n\nYou have created plans before for this task. Review the previous planning attempts above, consider what may have changed (new context, QA results, etc.), and either:\n1. Use the existing plan if it's still valid and complete\n2. Refine and improve the plan based on new information\n3. Create a new plan if requirements have changed significantly\n\nBe clear about whether you're reusing, refining, or replacing the previous plan.`
-      });
-    }
-  
-    if (promptFileSnippets.length) {
-      const snippetParts: string[] = ["Existing project files for reference (read-only):"];
-      for (const snippet of promptFileSnippets) {
-        snippetParts.push(`File: ${snippet.path}`);
-        snippetParts.push("```");
-        snippetParts.push(snippet.content);
-        snippetParts.push("```");
-      }
-      messages.push({ role: "system", content: snippetParts.join("\n") });
-    }
-  
   
     const personaLower = persona.toLowerCase();
     const stepLower = (msg.step || "").toLowerCase();
@@ -1128,38 +996,47 @@ export async function processContext(transport: MessageTransport, persona: strin
       payloadObj.repository_url,
       msg.repo
     ) || "the existing repository";
-  
-    if (ENGINEER_PERSONAS_REQUIRING_PLAN.has(personaLower) && stepLower === "2-plan") {
-      messages.push({
-        role: "system",
-        content: `You are preparing an execution plan for work in ${repoHint}. This is a planning step only. Do not provide code snippets, diffs, or file changes. Respond with JSON containing a 'plan' array where each item describes a concrete numbered step (include goals, files to touch, owners if relevant, and dependencies). Add optional context such as 'risks' or 'open_questions'. Await coordinator approval before attempting any implementation.`
-      });
-    } else if (CODING_PERSONA_SET.has(personaLower)) {
-      messages.push({
-        role: "system",
-        content: `You are working inside ${repoHint}. The repository already exists; modify only the necessary files. Do not generate a brand-new project scaffold. Provide concrete code edits as unified diffs that apply cleanly with \`git apply\`. Wrap each patch in \`\`\`diff\`\`\` fences. If you add or delete files, include the appropriate diff headers. Always reference existing files by their actual paths.`
-      });
+
+    const extraSystemMessages: string[] = [];
+    if (cfg.injectDashboardContext && (persona !== PERSONAS.CONTEXT || !scanArtifacts) && (ctx?.projectTree || ctx?.fileHotspots)) {
+      const dash = `Tree: ${ctx?.projectTree || ''}\nHotspots: ${ctx?.fileHotspots || ''}`;
+      // pass as dashboardContext below
+      (payloadObj as any).__dash = dash;
     }
-    messages.push({ role: "user", content: userText });
-  
-    // Ensure we don't accidentally pass prior assistant messages as history; use only system+user messages
-    const freshMessages = messages.filter(m => m && (m.role === 'system' || m.role === 'user')) as any[];
-    const started = Date.now();
-    // Use persona-specific timeout for LM calls so long-running personas can be configured via env
+    if (ENGINEER_PERSONAS_REQUIRING_PLAN.has(personaLower) && stepLower === "2-plan") {
+      extraSystemMessages.push(`You are preparing an execution plan for work in ${repoHint}. This is a planning step only. Do not provide code snippets, diffs, or file changes. Respond with JSON containing a 'plan' array where each item describes a concrete numbered step (include goals, files to touch, owners if relevant, and dependencies). Add optional context such as 'risks' or 'open_questions'. Await coordinator approval before attempting any implementation.`);
+    } else if (CODING_PERSONA_SET.has(personaLower)) {
+      extraSystemMessages.push(`You are working inside ${repoHint}. The repository already exists; modify only the necessary files. Do not generate a brand-new project scaffold. Provide concrete code edits as unified diffs that apply cleanly with \`git apply\`. Wrap each patch in \`\`\`diff\`\`\` fences. If you add or delete files, include the appropriate diff headers. Always reference existing files by their actual paths.`);
+    }
+    if ((payloadObj as any).__preStepSummary) {
+      extraSystemMessages.push(`Previous step summary (from dashboard):\n${(payloadObj as any).__preStepSummary}`);
+    }
+
+    const messages = buildPersonaMessages({
+      persona,
+      systemPrompt,
+      userText,
+      scanSummaryForPrompt,
+      labelForScanSummary: persona === PERSONAS.CONTEXT ? 'Authoritative file scan summary' : 'File scan summary',
+      dashboardContext: (payloadObj as any).__dash || null,
+      qaHistory: qaHistory ? clipText(qaHistory, 2000) : null,
+      planningHistory: planningHistory ? clipText(planningHistory, 3000) : null,
+      promptFileSnippets,
+      extraSystemMessages
+    });
+
     const lmTimeoutMs = personaTimeoutMs(persona, cfg);
     logger.debug("calling LM model", { persona, model, timeoutMs: lmTimeoutMs });
-    
+
     let resp: { content: string };
     let duration: number;
+    const startedCall = Date.now();
     try {
-      resp = await callLMStudio(model, freshMessages, 0.2, { timeoutMs: lmTimeoutMs });
-      duration = Date.now() - started;
-      const responsePreview = resp.content && resp.content.length > 4000
-        ? resp.content.slice(0, 4000) + "... (truncated)"
-        : resp.content;
-      logger.info("persona response", { persona, workflowId: msg.workflow_id, corrId: msg.corr_id || "", preview: responsePreview });
+      const result = await callPersonaModel({ persona, model, messages, timeoutMs: lmTimeoutMs });
+      resp = { content: result.content };
+      duration = result.duration_ms;
     } catch (lmError: any) {
-      duration = Date.now() - started;
+      duration = Date.now() - startedCall;
       logger.error("LM call failed", { persona, workflowId: msg.workflow_id, error: lmError?.message || String(lmError), duration_ms: duration });
       
       // For context persona, if scan artifacts exist, we can still return the scan summary
@@ -1196,13 +1073,13 @@ export async function processContext(transport: MessageTransport, persona: strin
         ].filter(Boolean)));
   
         try {
-          const commitRes = await commitAndPushPaths({
+          await gitWorkflowManager.commitFiles({
             repoRoot: scanArtifacts.repoRoot,
-            branch: scanArtifacts.branch,
+            branch: scanArtifacts.branch || undefined,
             message: `context: snapshot for ${msg.workflow_id}`,
-            paths: commitPaths
+            files: commitPaths
           });
-          logger.info("context artifacts push result", { workflowId: msg.workflow_id, result: commitRes });
+          logger.info("context artifacts committed", { workflowId: msg.workflow_id, paths: commitPaths.length });
         } catch (commitErr: any) {
           logger.error("context artifacts push failed", { error: commitErr, workflowId: msg.workflow_id });
         }
@@ -1395,67 +1272,42 @@ export async function processPersona(transport: MessageTransport, persona: strin
   
     const userText = userLines.join("\n");
   
-    const messages: any[] = [
-      { role: "system", content: systemPrompt }
-    ];
-  
-    if (scanSummaryForPrompt && scanSummaryForPrompt.length) {
-      const label = "File scan summary";
-      messages.push({ role: "system", content: `${label}:\n${scanSummaryForPrompt}` });
-    }
-  
-    if (cfg.injectDashboardContext && (ctx?.projectTree || ctx?.fileHotspots)) {
-      messages.push({ role: "system", content: `Dashboard context (may be stale):\nTree: ${ctx?.projectTree || ""}\nHotspots: ${ctx?.fileHotspots || ""}` });
-    }
-  
     // Coordinator-managed short summary insertion: fetch a concise project summary (if available)
     try {
       const projectIdForSummary = firstString(payloadObj.project_id, payloadObj.projectId, msg.project_id) || null;
       const projSummary = await fetchProjectStatusSummary(projectIdForSummary);
       if (projSummary && typeof projSummary === 'string' && projSummary.trim().length) {
-        messages.push({ role: 'system', content: `Previous step summary (from dashboard):\n${projSummary.trim()}` });
+        (payloadObj as any).__preStepSummary = projSummary.trim();
       }
     } catch (err) {
       // ignore summary fetch failures
     }
-  
-    if (promptFileSnippets.length) {
-      const snippetParts: string[] = ["Existing project files for reference (read-only):"];
-      for (const snippet of promptFileSnippets) {
-        snippetParts.push(`File: ${snippet.path}`);
-        snippetParts.push("```");
-        snippetParts.push(snippet.content);
-        snippetParts.push("```");
-      }
-      messages.push({ role: "system", content: snippetParts.join("\n") });
+
+    const extraSystemMessages2: string[] = [];
+    if (cfg.injectDashboardContext && (ctx?.projectTree || ctx?.fileHotspots)) {
+      const dash = `Tree: ${ctx?.projectTree || ''}\nHotspots: ${ctx?.fileHotspots || ''}`;
+      (payloadObj as any).__dash = dash;
     }
-  
-  
-    const personaLower = persona.toLowerCase();
-    const stepLower = (msg.step || "").toLowerCase();
-    const repoHint = firstString(
-      payloadObj.repo,
-      payloadObj.repository,
-      payloadObj.remote,
-      payloadObj.repo_url,
-      payloadObj.repository_url,
-      msg.repo
-    ) || "the existing repository";
-  
-    messages.push({ role: "user", content: userText });
-  
-    // Ensure we don't accidentally pass prior assistant messages as history; use only system+user messages
-    const freshMessages = messages.filter(m => m && (m.role === 'system' || m.role === 'user')) as any[];
-    const started = Date.now();
-    // Use persona-specific timeout for LM calls so long-running personas can be configured via env
+    if ((payloadObj as any).__preStepSummary) {
+      extraSystemMessages2.push(`Previous step summary (from dashboard):\n${(payloadObj as any).__preStepSummary}`);
+    }
+
+    const messages = buildPersonaMessages({
+      persona,
+      systemPrompt,
+      userText,
+      scanSummaryForPrompt,
+      labelForScanSummary: 'File scan summary',
+      dashboardContext: (payloadObj as any).__dash || null,
+      promptFileSnippets,
+      extraSystemMessages: extraSystemMessages2
+    });
+
     const lmTimeoutMs = personaTimeoutMs(persona, cfg);
     logger.debug("calling LM model", { persona, model, timeoutMs: lmTimeoutMs });
-    const resp = await callLMStudio(model, freshMessages, 0.2, { timeoutMs: lmTimeoutMs });
-    const duration = Date.now() - started;
-    const responsePreview = resp.content && resp.content.length > 4000
-      ? resp.content.slice(0, 4000) + "... (truncated)"
-      : resp.content;
-    logger.info("persona response", { persona, workflowId: msg.workflow_id, corrId: msg.corr_id || "", preview: responsePreview });
+    const { content, duration_ms } = await callPersonaModel({ persona, model, messages, timeoutMs: lmTimeoutMs });
+    const resp = { content };
+    const duration = duration_ms;
   
     let editOutcome: ApplyEditsOutcome | null = null;
     if (cfg.applyEdits && cfg.allowedEditPersonas.includes(persona)) {

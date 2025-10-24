@@ -98,7 +98,7 @@ steps:
     condition: "follow_up_tasks.length > 0"
     config:
       project_id: "${project_id}"
-      tasks: "${follow_up_tasks}"
+      tasks: "${parse_pm_decision.pm_decision.follow_up_tasks}"
       priority_mapping:
         critical: "${priority_scores.urgent}"
         high: "${priority_scores.urgent}"
@@ -148,6 +148,6 @@ outputs:
   deferred_tasks_created: "${create_tasks_bulk.deferred_tasks_created || 0}"
   task_ids: "${create_tasks_bulk.task_ids || []}"
   duplicate_task_ids: "${create_tasks_bulk.duplicate_task_ids || []}"
-  pm_decision: "${pm_evaluation.pm_decision}"
+  pm_decision: "${parse_pm_decision.pm_decision}"
   original_task_blocked: "${mark_original_blocked.original_task_blocked || false}"
   skipped_duplicates: "${create_tasks_bulk.skipped_duplicates || 0}"

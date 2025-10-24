@@ -102,6 +102,19 @@ export class SubWorkflowStep extends WorkflowStep {
       // Prepare input variables for sub-workflow
       const subWorkflowInputs = this.resolveInputs(stepConfig.inputs || {}, context);
 
+      // Inherit critical execution flags/vars from parent to ensure consistent behavior in tests and prod
+      const inheritedFlags: Record<string, any> = {
+        // Preserve test bypasses and git skips unless explicitly overridden in inputs
+        SKIP_GIT_OPERATIONS: context.getVariable('SKIP_GIT_OPERATIONS') ?? true,
+        SKIP_PERSONA_OPERATIONS: context.getVariable('SKIP_PERSONA_OPERATIONS') ?? true,
+        // Ensure sub-workflow has a usable remote URL for persona requests
+        repo_remote: context.getVariable('repo_remote') || subWorkflowInputs.repo,
+        // Provide both projectId and project_id aliases for step compatibility
+        projectId: context.projectId,
+        project_id: context.projectId
+      };
+      const effectiveInputs = { ...inheritedFlags, ...subWorkflowInputs };
+
       context.logger.info('Sub-workflow inputs prepared', {
         stepName: this.config.name,
         subWorkflow: stepConfig.workflow,
@@ -116,7 +129,7 @@ export class SubWorkflowStep extends WorkflowStep {
         context.repoRoot,
         context.branch,
         context.transport,
-        subWorkflowInputs
+        effectiveInputs
       );
 
       if (!result.success) {
@@ -202,12 +215,8 @@ export class SubWorkflowStep extends WorkflowStep {
 
     // Handle string variable references: "${variable_name}"
     if (typeof value === 'string') {
-      const match = value.match(/^\$\{(.+)\}$/);
-      if (match) {
-        const varName = match[1];
-        return context.getVariable(varName);
-      }
-      return value;
+      // Delegate to template evaluator to support simple fallbacks
+      return this.evaluateTemplate(value, context);
     }
 
     // Handle arrays
@@ -241,19 +250,75 @@ export class SubWorkflowStep extends WorkflowStep {
   ): Record<string, any> {
     const outputs: Record<string, any> = {};
 
-    for (const [parentVar, subVar] of Object.entries(outputMapping)) {
-      const value = subContext.getVariable(subVar);
+    for (const [parentVar, subVarExpr] of Object.entries(outputMapping)) {
+      const value = this.evaluateTemplate(subVarExpr, subContext);
       if (value !== undefined) {
         outputs[parentVar] = value;
       } else {
         logger.warn('Sub-workflow output variable not found', {
           stepName: this.config.name,
           parentVar,
-          subVar
+          subVar: subVarExpr
         });
       }
     }
 
     return outputs;
+  }
+
+  /**
+   * Evaluate a template expression like "${var}", "${step.output}", or with simple fallbacks "${var || 0}"
+   */
+  private evaluateTemplate(expr: string, context: WorkflowContext): any {
+    if (typeof expr !== 'string') return expr;
+
+    const match = expr.match(/^\$\{([\s\S]+)\}$/);
+    if (!match) {
+      // Not a template, return as-is
+      return expr;
+    }
+
+    const inner = match[1].trim();
+
+    // Support simple fallback operator: a.b || 0
+    const parts = inner.split('||').map(p => p.trim());
+    const primaryExpr = parts[0];
+    const fallbackExpr = parts[1];
+
+    const primaryVal = this.getVarOrStepOutput(context, primaryExpr);
+    if (primaryVal !== undefined && primaryVal !== null) {
+      return primaryVal;
+    }
+
+    if (fallbackExpr === undefined) return undefined;
+    // Parse simple literal fallbacks
+    if (fallbackExpr === '[]') return [];
+    if (fallbackExpr === 'false') return false;
+    if (fallbackExpr === 'true') return true;
+    if (/^\d+(?:\.\d+)?$/.test(fallbackExpr)) return Number(fallbackExpr);
+    // Strip quotes if present
+    const strMatch = fallbackExpr.match(/^['\"]([\s\S]*)['\"]$/);
+    return strMatch ? strMatch[1] : this.getVarOrStepOutput(context, fallbackExpr);
+  }
+
+  /**
+   * Fetch a variable or step.output value from the given context
+   */
+  private getVarOrStepOutput(context: WorkflowContext, path: string): any {
+    if (!path) return undefined;
+
+    // Direct variable
+    const direct = context.getVariable(path);
+    if (direct !== undefined) return direct;
+
+    // Step output path: stepName.prop[.prop2]
+    if (path.includes('.')) {
+      const [stepName, ...rest] = path.split('.');
+      const output = context.getStepOutput(stepName);
+      if (!output) return undefined;
+      return rest.reduce((acc: any, key: string) => (acc != null ? acc[key] : undefined), output);
+    }
+
+    return undefined;
   }
 }

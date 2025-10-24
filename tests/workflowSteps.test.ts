@@ -102,6 +102,8 @@ describe('Workflow Steps', () => {
       mockConfig,
       {}
     );
+    // Disable persona bypass for tests that verify persona request behavior
+    context.setVariable('SKIP_PERSONA_OPERATIONS', false);
     vi.clearAllMocks();
     vi.mocked(sendPersonaRequest).mockResolvedValue('corr-123');
     vi.mocked(waitForPersonaCompletion).mockResolvedValue({

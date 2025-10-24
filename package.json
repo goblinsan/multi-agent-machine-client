@@ -3,13 +3,16 @@
   "version": "0.4.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/worker.ts",
-    "start": "node --env-file=.env dist/worker.js",
+    "dev": "tsx src/tools/run_coordinator.ts",
+    "start": "node --env-file=.env dist/tools/run_coordinator.js",
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed": "tsx src/tools/seed_example.ts",
     "coordinator": "tsx src/tools/run_coordinator.ts",
-    "local": "tsx src/tools/run_local_stack.ts",
+    "local": "tsx src/tools/run_coordinator.ts",
     "test": "vitest tests --run",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "monitor": "tsx scripts/monitor-redis-streams.ts"
   },
   "dependencies": {
@@ -25,6 +28,9 @@
   "devDependencies": {
     "@types/node": "^24.6.1",
     "ajv": "^8.17.1",
+    "eslint": "^9.13.0",
+    "@typescript-eslint/eslint-plugin": "^8.12.2",
+    "@typescript-eslint/parser": "^8.12.2",
     "tsx": "^4.19.0",
     "typescript": "^5.6.3"
   }

@@ -238,7 +238,8 @@ describe('WorkflowCoordinator Task Processing', () => {
     try {
       // SAFETY: Race condition with timeout protection  
       const testPromise = coordinator.handleCoordinator(
-        {}, 
+        {} as any,
+        {} as any,
         { workflow_id: 'wf-task-processing', project_id: 'proj-process' },
         { repo: 'https://example/repo.git' }
       ).then(() => {
@@ -250,7 +251,7 @@ describe('WorkflowCoordinator Task Processing', () => {
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - task processing hanging')), 3000)
+        setTimeout(() => reject(new Error('Test timeout - task processing hanging')), 500)
       );
 
       await Promise.race([testPromise, timeoutPromise]);
@@ -272,7 +273,8 @@ describe('WorkflowCoordinator Task Processing', () => {
     try {
       // SAFETY: Race condition with timeout protection  
       const testPromise = coordinator.handleCoordinator(
-        {}, 
+        {} as any,
+        {} as any,
         { workflow_id: 'wf-exec-handling', project_id: 'proj-exec' },
         { repo: 'https://example/repo.git' }
       ).then(() => {
@@ -284,7 +286,7 @@ describe('WorkflowCoordinator Task Processing', () => {
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - execution handling hanging')), 3000)
+        setTimeout(() => reject(new Error('Test timeout - execution handling hanging')), 500)
       );
 
       await Promise.race([testPromise, timeoutPromise]);
@@ -315,7 +317,8 @@ describe('WorkflowCoordinator Task Processing', () => {
       .mockResolvedValue({ success: false, failedStep: 'context_request', error: 'context failure' });
 
     const result = await coordinator.handleCoordinator(
-      {},
+      {} as any,
+      {} as any,
       { workflow_id: 'wf-abort', project_id: 'proj-abort' },
       { repo: 'https://example/repo.git' }
     );
@@ -353,7 +356,9 @@ describe('WorkflowCoordinator Task Processing', () => {
       'proj-1',
       '/tmp/repo',
       'main',
-      workflowDef
+      workflowDef,
+      {} as any,
+      {}
     );
 
     vi.spyOn(engine, 'executeWorkflowDefinition').mockResolvedValue({
