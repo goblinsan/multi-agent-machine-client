@@ -7,6 +7,8 @@
  * - title_and_milestone matching (60% threshold with weighted description overlap)
  */
 
+import { normalizeTitle as normalizeTitleUtil, extractKeyPhrases } from '../../../util/textNormalization.js';
+
 /**
  * Task information needed for duplicate detection
  */
@@ -175,8 +177,8 @@ export class TaskDuplicateDetector {
    * @returns Overlap percentage (0-100)
    */
   calculateOverlapPercentage(a: string, b: string): number {
-    const aWords = this.extractWords(a || '');
-    const bWords = this.extractWords(b || '');
+    const aWords = extractKeyPhrases(a || '', 3);
+    const bWords = extractKeyPhrases(b || '', 3);
     
     if (aWords.size === 0) return 0;
     
@@ -192,18 +194,13 @@ export class TaskDuplicateDetector {
    * Normalize title for comparison
    */
   private normalizeTitle(title: string): string {
-    return title.toLowerCase().trim();
+    return normalizeTitleUtil(title);
   }
 
   /**
    * Extract significant words (3+ characters) from text
    */
   private extractWords(text: string): Set<string> {
-    if (!text) return new Set();
-    return new Set(
-      text
-        .toLowerCase()
-        .match(/\b\w{3,}\b/g) || []
-    );
+    return extractKeyPhrases(text || '', 3);
   }
 }

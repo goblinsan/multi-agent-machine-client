@@ -3,6 +3,7 @@ import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 import { TaskAPI, CreateTaskInput } from '../../dashboard/TaskAPI.js';
 import { ProjectAPI } from '../../dashboard/ProjectAPI.js';
+import { TaskDuplicateDetector } from './helpers/TaskDuplicateDetector.js';
 
 const taskAPI = new TaskAPI();
 const projectAPI = new ProjectAPI();
@@ -98,6 +99,16 @@ interface ReviewFailureTasksConfig {
  * ```
  */
 export class ReviewFailureTasksStep extends WorkflowStep {
+  /**
+   * Review type to human-readable label mapping
+   */
+  private static readonly REVIEW_TYPE_LABELS: Record<string, string> = {
+    'code_review': 'Code Review',
+    'security_review': 'Security Review',
+    'qa': 'QA',
+    'devops': 'DevOps'
+  };
+
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as ReviewFailureTasksConfig;
     const startTime = Date.now();
@@ -311,73 +322,43 @@ export class ReviewFailureTasksStep extends WorkflowStep {
   }
   
   /**
-   * Check if a task is a duplicate of an existing task
-   * Compares normalized title and description keywords (50% overlap threshold)
+   * Check if a task is a duplicate of an existing task using TaskDuplicateDetector
+   * Uses title_and_milestone strategy with 50% overlap threshold
    */
   private isDuplicateTask(followUpTask: any, existingTasks: any[], formattedTitle: string): boolean {
     if (!followUpTask || !existingTasks || existingTasks.length === 0) {
       return false;
     }
     
-    // Normalize titles for comparison (remove prefixes, emojis, brackets)
-    const normalizeTitle = (title: string): string => {
-      return title
-        .toLowerCase()
-        .replace(/🚨|📋|⚠️|✅/g, '') // Remove emojis
-        .replace(/\[.*?\]/g, '') // Remove [Code Review] etc
-        .replace(/urgent/gi, '') // Remove urgent markers
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .trim();
+    // Use TaskDuplicateDetector with title_and_milestone strategy
+    const detector = new TaskDuplicateDetector();
+    
+    // Prepare task for duplicate detection
+    const taskForDetection = {
+      title: formattedTitle, // Use formatted title for consistent comparison
+      description: followUpTask.description || '',
+      external_id: followUpTask.external_id,
+      milestone_id: followUpTask.milestone_id
     };
     
-    const normalizedNewTitle = normalizeTitle(followUpTask.title);
-    const normalizedFormattedTitle = normalizeTitle(formattedTitle);
+    // Find duplicate with detailed scoring
+    const result = detector.findDuplicateWithDetails(
+      taskForDetection,
+      existingTasks,
+      'title_and_milestone'
+    );
     
-    // Extract key phrases from description (words 5+ chars)
-    const extractKeyPhrases = (text: string): Set<string> => {
-      if (!text) return new Set();
-      return new Set(
-        text
-          .toLowerCase()
-          .match(/\b\w{5,}\b/g) || []
-      );
-    };
-    
-    const newKeyPhrases = extractKeyPhrases(followUpTask.description || '');
-    
-    for (const existingTask of existingTasks) {
-      const existingTitle = existingTask.title || '';
-      const normalizedExistingTitle = normalizeTitle(existingTitle);
-      
-      // Title similarity check
-      const titleMatch = 
-        normalizedExistingTitle.includes(normalizedNewTitle) ||
-        normalizedNewTitle.includes(normalizedExistingTitle) ||
-        normalizedExistingTitle === normalizedFormattedTitle;
-      
-      if (titleMatch) {
-        // If titles match closely, check description overlap
-        const existingKeyPhrases = extractKeyPhrases(existingTask.description || '');
-        const overlapCount = [...newKeyPhrases].filter(phrase => 
-          existingKeyPhrases.has(phrase)
-        ).length;
-        
-        // If >50% of key phrases overlap, consider it a duplicate
-        const overlapRatio = newKeyPhrases.size > 0 
-          ? overlapCount / newKeyPhrases.size 
-          : 0;
-        
-        if (overlapRatio > 0.5) {
-          logger.debug('Duplicate task detected', {
-            newTitle: followUpTask.title,
-            existingTitle: existingTask.title,
-            overlapRatio,
-            overlapPercentage: `${(overlapRatio * 100).toFixed(1)}%`,
-            existingTaskId: existingTask.id
-          });
-          return true;
-        }
-      }
+    if (result && result.matchScore >= 50) {
+      logger.debug('Duplicate task detected', {
+        newTitle: followUpTask.title,
+        formattedTitle: formattedTitle,
+        existingTitle: result.duplicate.title,
+        matchScore: result.matchScore,
+        titleOverlap: result.titleOverlap,
+        descriptionOverlap: result.descriptionOverlap,
+        existingTaskId: result.duplicate.id
+      });
+      return true;
     }
     
     return false;
@@ -388,15 +369,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
    */
   private formatTaskTitle(title: string, reviewType: string, isUrgent: boolean): string {
     const prefix = isUrgent ? '🚨 URGENT' : '📋';
-    
-    const reviewLabels: Record<string, string> = {
-      'code_review': 'Code Review',
-      'security_review': 'Security Review',
-      'qa': 'QA',
-      'devops': 'DevOps'
-    };
-    
-    const reviewLabel = reviewLabels[reviewType] || reviewType;
+    const reviewLabel = ReviewFailureTasksStep.REVIEW_TYPE_LABELS[reviewType] || reviewType;
     
     // If title already has the review type, don't duplicate
     if (title.toLowerCase().includes(reviewLabel.toLowerCase())) {
@@ -415,14 +388,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     reviewType: string,
     parentTaskId?: string
   ): string {
-    const reviewLabels: Record<string, string> = {
-      'code_review': 'Code Review',
-      'security_review': 'Security Review',
-      'qa': 'QA',
-      'devops': 'DevOps'
-    };
-    
-    const reviewLabel = reviewLabels[reviewType] || reviewType;
+    const reviewLabel = ReviewFailureTasksStep.REVIEW_TYPE_LABELS[reviewType] || reviewType;
     
     let formatted = `## ${reviewLabel} Follow-up\n\n`;
     formatted += `${description}\n\n`;
