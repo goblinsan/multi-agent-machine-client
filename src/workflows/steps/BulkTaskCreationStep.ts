@@ -2,6 +2,9 @@ import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 import { DashboardClient, type TaskCreateInput } from '../../services/DashboardClient.js';
+import { TaskPriorityCalculator, TaskPriority, DEFAULT_PRIORITY_MAPPING } from './helpers/TaskPriorityCalculator.js';
+import { TaskDuplicateDetector, type ExistingTask as DetectorExistingTask, type DuplicateMatchStrategy } from './helpers/TaskDuplicateDetector.js';
+import { TaskRouter, type MilestoneStrategy, type ParentTaskMapping } from './helpers/TaskRouter.js';
 
 /**
  * Task to create in bulk operation
@@ -9,7 +12,7 @@ import { DashboardClient, type TaskCreateInput } from '../../services/DashboardC
 interface TaskToCreate {
   title: string;
   description?: string;
-  priority?: 'critical' | 'high' | 'medium' | 'low';
+  priority?: TaskPriority;
   milestone_slug?: string;
   parent_task_id?: string;
   external_id?: string;
@@ -22,14 +25,9 @@ interface TaskToCreate {
 
 /**
  * Existing task from dashboard (for duplicate detection)
+ * Re-export from detector for backward compatibility
  */
-interface ExistingTask {
-  id: string;
-  title: string;
-  status: string;
-  milestone_slug?: string;
-  external_id?: string;
-}
+type ExistingTask = DetectorExistingTask;
 
 /**
  * Configuration for BulkTaskCreationStep
@@ -39,14 +37,8 @@ interface BulkTaskCreationConfig {
   tasks: TaskToCreate[];
   workflow_run_id?: string;  // Unique workflow execution ID for idempotency
   priority_mapping?: Record<string, number>;  // Map priority string to score
-  milestone_strategy?: {
-    urgent?: string;    // Milestone slug for urgent tasks
-    deferred?: string;  // Milestone slug for deferred tasks
-  };
-  parent_task_mapping?: {
-    urgent?: string;    // Parent task ID for urgent tasks
-    deferred?: string | null;  // Parent task ID for deferred tasks
-  };
+  milestone_strategy?: MilestoneStrategy;
+  parent_task_mapping?: ParentTaskMapping;
   title_prefix?: string;  // Prefix to add to all task titles
   retry?: {
     max_attempts?: number;       // Default: 3
@@ -60,7 +52,7 @@ interface BulkTaskCreationConfig {
     external_id_template?: string;    // Custom template, or auto-generate if upsert_by_external_id=true
     check_duplicates?: boolean;
     existing_tasks?: ExistingTask[];
-    duplicate_match_strategy?: 'title' | 'title_and_milestone' | 'external_id';
+    duplicate_match_strategy?: DuplicateMatchStrategy;
     abort_on_partial_failure?: boolean; // Abort workflow if some tasks fail after retries
   };
 }
@@ -135,6 +127,17 @@ interface BulkCreationResult {
  * ```
  */
 export class BulkTaskCreationStep extends WorkflowStep {
+  private priorityCalculator: TaskPriorityCalculator;
+  private duplicateDetector: TaskDuplicateDetector;
+  private router: TaskRouter;
+
+  constructor(config: WorkflowStepConfig) {
+    super(config);
+    this.priorityCalculator = new TaskPriorityCalculator();
+    this.duplicateDetector = new TaskDuplicateDetector();
+    this.router = new TaskRouter();
+  }
+
   /**
    * Validate configuration
    */
@@ -413,41 +416,15 @@ export class BulkTaskCreationStep extends WorkflowStep {
     const created_tasks: any[] = [];
     const skipped_tasks: any[] = [];
 
-    const isUrgent = (p?: string) => p === 'critical' || p === 'high';
-    const inferType = (title: string): 'qa' | 'code' | 'security' | 'devops' | 'other' => {
-      const t = title.toLowerCase();
-      if (t.includes('[qa]')) return 'qa';
-      if (t.includes('[code]')) return 'code';
-      if (t.includes('[security]')) return 'security';
-      if (t.includes('[devops]')) return 'devops';
-      return 'other';
-    };
+    const isUrgent = (p?: string) => this.priorityCalculator.isUrgent(p as TaskPriority);
+    const computePriority = (title: string, priority?: string) => 
+      this.priorityCalculator.calculateWithTitleInference(title, priority as TaskPriority);
+    const prefixTitle = (title: string, urgent: boolean) => 
+      this.priorityCalculator.addTitlePrefix(title, urgent);
 
-    const computePriority = (title: string, priority?: string): number => {
-      if (!isUrgent(priority)) return 50; // deferred
-      const type = inferType(title);
-      if (type === 'qa') return 1200;
-      if (type === 'code' || type === 'security' || type === 'devops') return 1000;
-      return 1000;
-    };
-
-    const prefixTitle = (title: string, urgent: boolean): string => {
-      if (urgent) {
-        return /^🚨/.test(title) ? title : `🚨 ${title}`;
-      }
-      return /^📋/.test(title) ? title : `📋 ${title}`;
-    };
-
-    // Duplicate detection helpers
-    const words = (s?: string) => (s || '').toLowerCase().match(/\b\w{3,}\b/g) || [];
-    const overlapPct = (a: string, b: string): number => {
-      const aw = new Set(words(a));
-      const bw = new Set(words(b));
-      if (aw.size === 0) return 0;
-      let inter = 0;
-      aw.forEach(w => { if (bw.has(w)) inter++; });
-      return (inter / aw.size) * 100;
-    };
+    // Duplicate detection helper
+    const overlapPct = (a: string, b: string): number => 
+      this.duplicateDetector.calculateOverlapPercentage(a, b);
 
     // Idempotency: precompute external_ids
     const externalIdFor = (idx: number) => `${workflowRunId}:${stepId}:${idx}`;
@@ -487,18 +464,16 @@ export class BulkTaskCreationStep extends WorkflowStep {
       };
 
       // Milestone routing
-      if (urgent) {
-        if (plainContext.parent_milestone_id) {
-          created.milestone_id = plainContext.parent_milestone_id;
-        } else if (plainContext.backlog_milestone_id) {
-          created.milestone_id = plainContext.backlog_milestone_id;
-          warnings.push('Parent milestone not found, routed to backlog milestone');
-        } else if (t.milestone_id) {
-          created.milestone_id = t.milestone_id;
-        }
-      } else {
-        created.milestone_id = plainContext.backlog_milestone_id || t.milestone_id || null;
-      }
+      const routingResult = this.router.routeWithFallback(
+        t.priority as TaskPriority,
+        {
+          parent_milestone_id: plainContext.parent_milestone_id,
+          backlog_milestone_id: plainContext.backlog_milestone_id
+        },
+        t.milestone_id
+      );
+      created.milestone_id = routingResult.milestone_id;
+      warnings.push(...routingResult.warnings);
 
       // Parent linking
       if (plainContext.parent_task_id) {
@@ -616,12 +591,9 @@ export class BulkTaskCreationStep extends WorkflowStep {
    */
   private enrichTasks(config: BulkTaskCreationConfig): TaskToCreate[] {
     const enriched: TaskToCreate[] = [];
-    const priorityMapping = config.priority_mapping || {
-      critical: 1500,
-      high: 1200,
-      medium: 800,
-      low: 50
-    };
+    
+    // Initialize priority calculator with custom mapping if provided
+    const priorityCalc = new TaskPriorityCalculator(config.priority_mapping);
 
     for (const task of config.tasks) {
       // Skip if already marked as duplicate by PM
@@ -642,7 +614,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
 
       // Check for duplicates in existing tasks
       if (config.options?.check_duplicates && config.options.existing_tasks) {
-        const duplicateInfo = this.findDuplicateWithDetails(
+        const duplicateInfo = this.duplicateDetector.findDuplicateWithDetails(
           enrichedTask,
           config.options.existing_tasks,
           config.options.duplicate_match_strategy || 'title_and_milestone'
@@ -667,28 +639,24 @@ export class BulkTaskCreationStep extends WorkflowStep {
       }
 
       // Map priority string to score
-      if (task.priority && priorityMapping[task.priority] !== undefined) {
-        enrichedTask.priority_score = priorityMapping[task.priority];
+      if (task.priority) {
+        enrichedTask.priority_score = priorityCalc.calculateScore(task.priority);
       }
 
-      // Assign milestone based on priority
-      if (config.milestone_strategy && task.priority) {
-        const isUrgent = task.priority === 'critical' || task.priority === 'high';
-        if (isUrgent && config.milestone_strategy.urgent) {
-          enrichedTask.milestone_slug = config.milestone_strategy.urgent;
-        } else if (!isUrgent && config.milestone_strategy.deferred) {
-          enrichedTask.milestone_slug = config.milestone_strategy.deferred;
-        }
+      // Assign milestone and parent task based on priority
+      const routing = this.router.routeTask(
+        task.priority,
+        config.milestone_strategy,
+        config.parent_task_mapping,
+        task.milestone_slug,
+        task.parent_task_id
+      );
+      
+      if (routing.milestone_slug !== undefined) {
+        enrichedTask.milestone_slug = routing.milestone_slug;
       }
-
-      // Assign parent task based on priority
-      if (config.parent_task_mapping && task.priority) {
-        const isUrgent = task.priority === 'critical' || task.priority === 'high';
-        if (isUrgent && config.parent_task_mapping.urgent) {
-          enrichedTask.parent_task_id = config.parent_task_mapping.urgent;
-        } else if (!isUrgent && config.parent_task_mapping.deferred !== undefined) {
-          enrichedTask.parent_task_id = config.parent_task_mapping.deferred;
-        }
+      if (routing.parent_task_id !== undefined) {
+        enrichedTask.parent_task_id = routing.parent_task_id;
       }
 
       // Generate external_id if template provided or auto-generate if enabled
@@ -713,130 +681,6 @@ export class BulkTaskCreationStep extends WorkflowStep {
     }
 
     return enriched;
-  }
-
-  /**
-   * Find duplicate task in existing tasks list
-   */
-  private findDuplicate(
-    task: TaskToCreate,
-    existingTasks: ExistingTask[],
-    strategy: 'title' | 'title_and_milestone' | 'external_id'
-  ): ExistingTask | null {
-    const result = this.findDuplicateWithDetails(task, existingTasks, strategy);
-    return result ? result.duplicate : null;
-  }
-
-  /**
-   * Find duplicate task with detailed match information
-   */
-  private findDuplicateWithDetails(
-    task: TaskToCreate,
-    existingTasks: ExistingTask[],
-    strategy: 'title' | 'title_and_milestone' | 'external_id'
-  ): { 
-    duplicate: ExistingTask; 
-    strategy: string;
-    matchScore: number;
-    titleOverlap?: number;
-    descriptionOverlap?: number;
-  } | null {
-    const normalizeTitle = (title: string) => title.toLowerCase().trim();
-    const extractWords = (text: string): Set<string> => {
-      if (!text) return new Set();
-      return new Set(
-        text
-          .toLowerCase()
-          .match(/\b\w{3,}\b/g) || []
-      );
-    };
-
-    for (const existing of existingTasks) {
-      let matchScore = 0;
-      let titleOverlap: number | undefined;
-      let descriptionOverlap: number | undefined;
-
-      switch (strategy) {
-        case 'external_id':
-          if (task.external_id && existing.external_id === task.external_id) {
-            return { 
-              duplicate: existing, 
-              strategy: 'external_id',
-              matchScore: 100
-            };
-          }
-          break;
-
-        case 'title': {
-          const taskTitle = normalizeTitle(task.title);
-          const existingTitle = normalizeTitle(existing.title);
-          
-          if (taskTitle === existingTitle) {
-            matchScore = 100;
-          } else {
-            // Calculate word overlap
-            const taskWords = extractWords(task.title);
-            const existingWords = extractWords(existing.title);
-            const intersection = new Set([...taskWords].filter(w => existingWords.has(w)));
-            titleOverlap = taskWords.size > 0 ? intersection.size / taskWords.size : 0;
-            matchScore = titleOverlap * 100;
-          }
-
-          if (matchScore >= 80) { // 80% title match threshold
-            return {
-              duplicate: existing,
-              strategy: 'title',
-              matchScore,
-              titleOverlap
-            };
-          }
-          break;
-        }
-
-  case 'title_and_milestone': {
-          const taskTitle = normalizeTitle(task.title);
-          const existingTitle = normalizeTitle(existing.title);
-          
-          if (existing.milestone_slug === task.milestone_slug) {
-            if (taskTitle === existingTitle) {
-              matchScore = 100;
-            } else {
-              // Calculate word overlap for title
-              const taskWords = extractWords(task.title);
-              const existingWords = extractWords(existing.title);
-              const intersection = new Set([...taskWords].filter(w => existingWords.has(w)));
-              titleOverlap = taskWords.size > 0 ? intersection.size / taskWords.size : 0;
-              
-              // Calculate description overlap if both have descriptions
-              if (task.description && (existing as any).description) {
-                const taskDescWords = extractWords(task.description);
-                const existingDescWords = extractWords((existing as any).description);
-                const descIntersection = new Set([...taskDescWords].filter(w => existingDescWords.has(w)));
-                descriptionOverlap = taskDescWords.size > 0 ? descIntersection.size / taskDescWords.size : 0;
-                
-                // Weighted average: 70% title, 30% description
-                matchScore = (titleOverlap * 0.7 + descriptionOverlap * 0.3) * 100;
-              } else {
-                matchScore = titleOverlap * 100;
-              }
-            }
-
-            if (matchScore >= 60) { // 60% match threshold with same milestone (tuned for behavior tests)
-              return {
-                duplicate: existing,
-                strategy: 'title_and_milestone',
-                matchScore,
-                titleOverlap,
-                descriptionOverlap
-              };
-            }
-          }
-          break;
-        }
-      }
-    }
-
-    return null;
   }
 
   /**
@@ -927,7 +771,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
     const createCandidates: TaskToCreate[] = tasks.filter(t => {
       if (t.is_duplicate) return false;
       if (options.check_duplicates && options.existing_tasks) {
-        const dupInfo = this.findDuplicateWithDetails(
+        const dupInfo = this.duplicateDetector.findDuplicateWithDetails(
           t,
           options.existing_tasks,
           (options as any).duplicate_match_strategy || 'title_and_milestone'
@@ -954,7 +798,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
         title: task.title,
         description: task.description,
         status: 'open',
-        priority_score: this.priorityToPriorityScore(task.priority),
+        priority_score: this.priorityCalculator.calculateScore(task.priority),
         milestone_id: task.milestone_slug ? undefined : undefined, // TODO: Resolve milestone slug to ID
         parent_task_id: task.parent_task_id ? parseInt(task.parent_task_id) : undefined,
         external_id: task.external_id,
@@ -995,7 +839,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
         result.tasks_created++;
 
         // Determine if urgent based on priority score
-        const isUrgent = createdTask.priority_score >= 1000;
+        const isUrgent = this.priorityCalculator.isUrgentByScore(createdTask.priority_score);
         if (isUrgent) {
           result.urgent_tasks_created++;
         } else {
@@ -1048,23 +892,5 @@ export class BulkTaskCreationStep extends WorkflowStep {
     }
 
     return result;
-  }
-
-  /**
-   * Convert priority string to priority_score number
-   */
-  private priorityToPriorityScore(priority?: 'critical' | 'high' | 'medium' | 'low'): number {
-    switch (priority) {
-      case 'critical':
-        return 1500;
-      case 'high':
-        return 1200;
-      case 'medium':
-        return 800;
-      case 'low':
-        return 50;
-      default:
-        return 500; // Default priority
-    }
   }
 }

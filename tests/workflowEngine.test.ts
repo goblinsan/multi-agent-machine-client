@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WorkflowEngine } from '../src/workflows/engine/WorkflowEngine.js';
+import { WorkflowEngine } from '../src/workflows/WorkflowEngine.js';
 import { WorkflowStepFactory } from '../src/workflows/engine/WorkflowStep.js';
 import { TestStep } from '../src/workflows/steps/TestStep.js';
 import { DiffApplyStep } from '../src/workflows/steps/DiffApplyStep.js';
