@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { fetch } from "undici";
 import { cfg } from "../config.js";
-import { fetchProjectStatus, fetchProjectStatusDetails, fetchProjectTasks as fetchProjectTasksApi } from "../dashboard.js";
+import { fetchProjectStatus, fetchProjectStatusDetails } from "../dashboard.js";
 import { resolveRepoFromPayload } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
@@ -10,6 +10,8 @@ import { sendPersonaRequest, waitForPersonaCompletion } from "../agents/persona.
 import type { MessageTransport } from "../transport/index.js";
 import { join } from "path";
 import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
+import { TaskFetcher } from "./coordinator/TaskFetcher.js";
+import { WorkflowSelector } from "./coordinator/WorkflowSelector.js";
 
 /**
  * Enhanced coordinator that uses the new WorkflowEngine for task processing
@@ -17,6 +19,9 @@ import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
 export class WorkflowCoordinator {
   private engine: WorkflowEngine;
   private workflowsLoaded: boolean = false;
+  private taskFetcher: TaskFetcher;
+  private workflowSelector: WorkflowSelector;
+  
   private isTestEnv(): boolean {
     try {
       // Detect Vitest/Jest-like environments
@@ -29,14 +34,16 @@ export class WorkflowCoordinator {
 
   constructor(engine?: WorkflowEngine) {
     this.engine = engine || workflowEngine;
+    this.taskFetcher = new TaskFetcher();
+    this.workflowSelector = new WorkflowSelector();
   }
 
   /**
    * Fetch project tasks (instance method for test-time spying/mocking)
-   * Tests expect to spy on coordinator.fetchProjectTasks, so delegate to dashboard API here.
+   * Tests expect to spy on coordinator.fetchProjectTasks, so delegate to TaskFetcher here.
    */
   public async fetchProjectTasks(projectId: string): Promise<any[]> {
-    return await fetchProjectTasksApi(projectId);
+    return await this.taskFetcher.fetchTasks(projectId);
   }
 
   /**
@@ -132,11 +139,11 @@ export class WorkflowCoordinator {
         // (e.g., QA failures, security issues, follow-up tasks)
   let currentTasks = await this.fetchProjectTasks(projectId);
         if (!currentTasks.length) {
-          currentTasks = this.extractTasks(details, projectInfo);
+          currentTasks = this.taskFetcher.extractTasks(details, projectInfo);
         }
         const currentPendingTasks = currentTasks
-          .filter(task => this.normalizeTaskStatus(task?.status) !== 'done')
-          .sort((a, b) => this.compareTaskPriority(a, b));  // Priority: priority_score (desc) > blocked > in_review > in_progress > open
+          .filter(task => this.taskFetcher.normalizeTaskStatus(task?.status) !== 'done')
+          .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));  // Priority: priority_score (desc) > blocked > in_review > in_progress > open
         
         // Debug logging to see extracted tasks
         logger.info("Fetched tasks debug", {
@@ -238,7 +245,7 @@ export class WorkflowCoordinator {
           workflowId,
           projectId,
           maxIterations,
-          remainingTasks: await this.getRemainingTaskCount(projectId)
+          remainingTasks: await this.taskFetcher.getRemainingTaskCount(projectId)
         });
       }
 
@@ -305,74 +312,26 @@ export class WorkflowCoordinator {
       throw new Error('Transport is required for task processing');
     }
 
-    const taskType = this.determineTaskType(task);
-    const scope = this.determineTaskScope(task);
-    const taskStatus = this.normalizeTaskStatus(task?.status);
+    const taskType = this.workflowSelector.determineTaskType(task);
+    const scope = this.workflowSelector.determineTaskScope(task);
     
-    // Check if task is blocked - route to blocked task resolution workflow
-    if (taskStatus === 'blocked' || task?.status?.toLowerCase() === 'blocked') {
-      logger.info('Task is blocked, routing to blocked-task-resolution workflow', {
-        taskId: task?.id,
-        workflowId: context.workflowId,
-        blockedAttemptCount: task?.blocked_attempt_count || 0
-      });
-      
-      const blockedWorkflow = this.engine.getWorkflowDefinition('blocked-task-resolution');
-      if (blockedWorkflow) {
-        return this.executeWorkflow(transport, blockedWorkflow, task, context);
-      } else {
-        logger.warn('blocked-task-resolution workflow not found, falling back to normal processing', {
-          taskId: task?.id
-        });
-      }
+    // Use WorkflowSelector to select the appropriate workflow
+    const selection = this.workflowSelector.selectWorkflowForTask(this.engine, task, {
+      preferLegacyCompatible: true
+    });
+    
+    if (!selection) {
+      throw new Error(`No suitable workflow found for task ${task?.id} (type: ${taskType}, scope: ${scope})`);
     }
     
-    // Check if task is in review - route to in-review workflow (skips implementation steps)
-    if (taskStatus === 'in_review' || task?.status?.toLowerCase()?.includes('review')) {
-      logger.info('Task is in review, routing to in-review-task-flow workflow', {
-        taskId: task?.id,
-        workflowId: context.workflowId,
-        status: task?.status
-      });
-      
-      const reviewWorkflow = this.engine.getWorkflowDefinition('in-review-task-flow');
-      if (reviewWorkflow) {
-        return this.executeWorkflow(transport, reviewWorkflow, task, context);
-      } else {
-        logger.warn('in-review-task-flow workflow not found, falling back to normal processing', {
-          taskId: task?.id
-        });
-      }
-    }
+    const { workflow, reason } = selection;
     
-    // Try to use legacy-compatible workflow for tasks that need test compatibility
-    let workflow = this.engine.getWorkflowDefinition('legacy-compatible-task-flow');
-    
-    if (!workflow) {
-      // Find workflow by condition if legacy workflow not available
-      workflow = this.engine.findWorkflowByCondition(taskType, scope);
-    }
-    
-    if (!workflow) {
-      // Fallback to project-loop workflow
-      const fallbackWorkflow = this.engine.getWorkflowDefinition('project-loop');
-      if (!fallbackWorkflow) {
-        throw new Error(`No suitable workflow found for task ${task?.id} (type: ${taskType}, scope: ${scope})`);
-      }
-      logger.warn(`No specific workflow found for task, using project-loop fallback`, {
-        taskId: task?.id,
-        taskType,
-        scope
-      });
-      return this.executeWorkflow(transport, fallbackWorkflow, task, context);
-    }
-
     logger.info(`Executing workflow for task`, {
       taskId: task?.id,
       workflowName: workflow.name,
       taskType,
       scope,
-      workflowUsed: workflow.name === 'legacy-compatible-task-flow' ? 'legacy-compatible' : 'matched'
+      selectionReason: reason
     });
 
     return this.executeWorkflow(transport, workflow, task, context);
@@ -402,7 +361,7 @@ export class WorkflowCoordinator {
     const initialVariables = {
       task: {
         id: task?.id || task?.key || 'unknown',
-        type: this.determineTaskType(task),
+        type: this.workflowSelector.determineTaskType(task),
         persona: 'lead_engineer', // Default persona
         data: {
           ...task, // Include all original task properties
@@ -413,8 +372,8 @@ export class WorkflowCoordinator {
       },
       taskId: task?.id || task?.key,
       taskName: task?.name || task?.title || task?.summary,
-      taskType: this.determineTaskType(task),
-      taskScope: this.determineTaskScope(task),
+      taskType: this.workflowSelector.determineTaskType(task),
+      taskScope: this.workflowSelector.determineTaskScope(task),
       projectId: context.projectId,
       projectName: context.projectName,
       projectSlug: context.projectSlug,
@@ -428,7 +387,7 @@ export class WorkflowCoordinator {
       // Task-specific fields for branch naming
       task_slug: task?.slug || task?.task_slug || null,
       // Compute feature branch name based on milestone/task slug (using branchUtils logic)
-      featureBranchName: this.computeFeatureBranchName(task, context.projectSlug),
+      featureBranchName: this.workflowSelector.computeFeatureBranchName(task, context.projectSlug),
       // Legacy compatibility variables
       REDIS_STREAM_NAME: process.env.REDIS_STREAM_NAME || 'workflow-tasks',
       CONSUMER_GROUP: process.env.CONSUMER_GROUP || 'workflow-consumers',
@@ -653,61 +612,6 @@ export class WorkflowCoordinator {
   }
 
   /**
-   * Determine task type for workflow selection
-   */
-  private determineTaskType(task: any): string {
-    if (!task) return 'analysis';
-    
-    const taskName = (task?.name || task?.title || task?.summary || '').toLowerCase();
-    const taskDescription = (task?.description || task?.details || '').toLowerCase();
-    const taskLabels = Array.isArray(task?.labels) ? task.labels.map((l: any) => String(l).toLowerCase()) : [];
-    
-    const content = `${taskName} ${taskDescription} ${taskLabels.join(' ')}`;
-    
-    // Analyze content for keywords
-    if (content.includes('hotfix') || content.includes('urgent') || content.includes('critical') || content.includes('emergency')) {
-      return 'hotfix';
-    }
-    
-    if (content.includes('feature') || content.includes('enhancement') || content.includes('new')) {
-      return 'feature';
-    }
-    
-    if (content.includes('analysis') || content.includes('understand') || content.includes('review') || content.includes('document')) {
-      return 'analysis';
-    }
-    
-    if (content.includes('bug') || content.includes('fix') || content.includes('error') || content.includes('issue')) {
-      return 'bugfix';
-    }
-    
-    // Default to standard task
-    return 'task';
-  }
-
-  /**
-   * Determine task scope for workflow selection
-   */
-  private determineTaskScope(task: any): string {
-    if (!task) return 'medium';
-    
-    const taskName = (task?.name || task?.title || task?.summary || '').toLowerCase();
-    const taskDescription = (task?.description || task?.details || '').toLowerCase();
-    const content = `${taskName} ${taskDescription}`;
-    
-    // Analyze scope indicators
-    if (content.includes('large') || content.includes('major') || content.includes('comprehensive') || content.includes('complete')) {
-      return 'large';
-    }
-    
-    if (content.includes('small') || content.includes('minor') || content.includes('quick') || content.includes('simple')) {
-      return 'small';
-    }
-    
-    return 'medium';
-  }
-
-  /**
    * Extract repository remote from various sources
    */
   private extractRepoRemote(details: any, projectInfo: any, payload: any): string {
@@ -727,197 +631,6 @@ export class WorkflowCoordinator {
       pickRemoteFrom(projectInfo),
       pickRemoteFrom(payload)
     ) || '';
-  }
-
-  /**
-   * Fetch tasks directly from the tasks API for a project
-   */
-  /**
-   * Extract tasks from project information
-   */
-  private extractTasks(details: any, projectInfo: any): any[] {
-    const tasks: any[] = [];
-    
-    // Extract from milestones first
-    if (details && Array.isArray(details.milestones) && details.milestones.length) {
-      for (const milestone of details.milestones) {
-        const milestoneTasks = Array.isArray(milestone?.tasks) ? milestone.tasks : [];
-        for (const task of milestoneTasks) {
-          tasks.push({ ...task, milestone });
-        }
-      }
-    } else {
-      // Fallback to direct tasks
-      const directTasks = Array.isArray(projectInfo?.tasks) ? projectInfo.tasks : [];
-      tasks.push(...directTasks);
-    }
-    
-    return tasks;
-  }
-
-  /**
-   * Normalize task status to standard values
-   */
-  private normalizeTaskStatus(status: string): string {
-    if (!status) return 'unknown';
-    
-    const normalized = String(status).toLowerCase().trim();
-    
-    if (['done', 'completed', 'finished', 'closed', 'resolved'].includes(normalized)) {
-      return 'done';
-    }
-    
-    if (['in_progress', 'in-progress', 'inprogress', 'active', 'working'].includes(normalized)) {
-      return 'in_progress';
-    }
-    
-    if (['open', 'new', 'todo', 'pending', 'ready'].includes(normalized)) {
-      return 'open';
-    }
-    
-    if (['blocked', 'stuck', 'waiting'].includes(normalized)) {
-      return 'blocked';
-    }
-    
-    if (['review', 'in_review', 'in-review', 'in review'].includes(normalized)) {
-      return 'in_review';
-    }
-    
-    return 'unknown';
-  }
-
-  /**
-   * Compare tasks by priority for sorting
-   * Priority order: blocked (0) > in_review (1) > in_progress (2) > open (3)
-   */
-  private compareTaskPriority(a: any, b: any): number {
-    // FIRST: Check for explicit priority_score (higher score = higher priority)
-    // This allows urgent follow-up tasks (e.g., priority_score: 1000) to jump ahead
-    const scoreA = a?.priority_score ?? a?.priorityScore ?? 0;
-    const scoreB = b?.priority_score ?? b?.priorityScore ?? 0;
-    
-    if (scoreA !== scoreB) {
-      return scoreB - scoreA;  // Higher score first (descending)
-    }
-    
-    // SECOND: Use status-based priority
-    const priorityA = this.getTaskPriority(a);
-    const priorityB = this.getTaskPriority(b);
-    
-    // Lower number = higher priority, so sort ascending
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
-    
-    // THIRD: If same priority, sort by task order/position if available
-    const orderA = a?.order ?? a?.position ?? a?.rank ?? Infinity;
-    const orderB = b?.order ?? b?.position ?? b?.rank ?? Infinity;
-    
-    return orderA - orderB;
-  }
-
-  /**
-   * Get numeric priority for a task status
-   * Lower number = higher priority
-   */
-  private getTaskPriority(task: any): number {
-    const status = task?.status;
-    if (!status) return 3;  // Default to "open" priority
-    
-    const normalized = String(status).toLowerCase().trim().replace(/[^a-z0-9]+/g, '_');
-    
-    // Priority map: blocked > in_review > in_progress > open
-    const priorityMap: Record<string, number> = {
-      blocked: 0,
-      stuck: 0,
-      review: 1,
-      in_review: 1,
-      in_code_review: 1,
-      in_security_review: 1,
-      ready: 1,
-      in_progress: 2,
-      active: 2,
-      doing: 2,
-      working: 2,
-      open: 3,
-      planned: 3,
-      backlog: 3,
-      todo: 3,
-      not_started: 3,
-      waiting: 4,
-      pending: 4,
-      qa: 4,
-      testing: 4
-    };
-    
-    if (normalized in priorityMap) {
-      return priorityMap[normalized];
-    }
-    
-    // Fallback pattern matching
-    if (normalized.includes('block') || normalized.includes('stuck')) return 0;
-    if (normalized.includes('review')) return 1;
-    if (normalized.includes('progress') || normalized.includes('doing') || normalized.includes('work') || normalized.includes('active')) return 2;
-    
-    return 3;  // Default to "open" priority
-  }
-
-  /**
-   * Get count of remaining tasks for a project
-   */
-  private async getRemainingTaskCount(projectId: string): Promise<number> {
-    try {
-      const projectInfo = await fetchProjectStatus(projectId);
-      const details = await fetchProjectStatusDetails(projectId).catch(() => null);
-      const tasks = this.extractTasks(details, projectInfo);
-      const pendingTasks = tasks.filter(task => this.normalizeTaskStatus(task?.status) !== 'done');
-      return pendingTasks.length;
-    } catch (error) {
-      logger.error('Failed to get remaining task count', { projectId, error });
-      return 0;
-    }
-  }
-
-  /**
-   * Compute feature branch name based on task/milestone information
-   * Uses same logic as branchUtils.buildBranchName
-   */
-  private computeFeatureBranchName(task: any, projectSlug: string): string {
-    // Priority:
-    // 1) Explicit milestone.branch
-    // 2) Explicit task.branch
-    // 3) milestone/{milestone_slug} if available
-    // 4) feat/{task_slug} if available
-    // 5) milestone/{projectSlug} as fallback
-    
-    const milestone = task?.milestone;
-    const milestoneSlug = task?.milestone?.slug || task?.milestone_slug || null;
-    const taskSlug = task?.slug || task?.task_slug || null;
-    
-    // Check for explicit branch name from milestone
-    const fromMilestone = milestone?.branch || milestone?.branch_name || milestone?.branchName;
-    if (fromMilestone && typeof fromMilestone === 'string' && fromMilestone.trim()) {
-      return fromMilestone.trim();
-    }
-    
-    // Check for explicit branch name from task
-    const fromTask = task?.branch || task?.branch_name || task?.branchName;
-    if (fromTask && typeof fromTask === 'string' && fromTask.trim()) {
-      return fromTask.trim();
-    }
-    
-    // Use milestone slug if available and not generic
-    if (milestoneSlug && typeof milestoneSlug === 'string' && milestoneSlug.trim() && milestoneSlug !== 'milestone') {
-      return `milestone/${milestoneSlug}`;
-    }
-    
-    // Use task slug if available
-    if (taskSlug && typeof taskSlug === 'string' && taskSlug.trim()) {
-      return `feat/${taskSlug}`;
-    }
-    
-    // Fallback to project-based milestone branch
-    return `milestone/${projectSlug}`;
   }
 }
 
