@@ -12,7 +12,7 @@ export class ProjectAPI extends DashboardClient {
     if (!projectId) return null;
 
     try {
-      return await this.get(`/v1/projects/${encodeURIComponent(projectId)}`);
+      return await this.get(`/projects/${encodeURIComponent(projectId)}`);
     } catch (e) {
       logger.warn("fetchProjectStatus failed", { projectId, error: (e as Error).message });
       return null;
@@ -26,7 +26,7 @@ export class ProjectAPI extends DashboardClient {
     if (!projectId) return null;
 
     try {
-      const data = await this.get(`/v1/projects/${encodeURIComponent(projectId)}/milestones`);
+      const data = await this.get(`/projects/${encodeURIComponent(projectId)}/milestones`);
       if (!data) return null;
 
       // Handle both direct array and { milestones: [...] } wrapper
@@ -49,7 +49,7 @@ export class ProjectAPI extends DashboardClient {
     if (!projectId) return null;
 
     try {
-      return await this.get(`/v1/projects/${encodeURIComponent(projectId)}/status`);
+      return await this.get(`/projects/${encodeURIComponent(projectId)}/status`);
     } catch (e) {
       logger.warn("fetchProjectStatusDetails failed", { projectId, error: (e as Error).message });
       return null;
@@ -63,7 +63,7 @@ export class ProjectAPI extends DashboardClient {
     if (!projectId) return null;
 
     try {
-      const data = await this.get(`/v1/projects/${encodeURIComponent(projectId)}/status/summary`);
+      const data = await this.get(`/projects/${encodeURIComponent(projectId)}/status/summary`);
       if (!data) return null;
 
       // If summary is a string, return it; otherwise extract from object
