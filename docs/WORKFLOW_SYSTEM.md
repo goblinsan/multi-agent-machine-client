@@ -21,12 +21,23 @@ A distributed multi-agent system that orchestrates AI personas to plan, implemen
 - Returns success/failure results
 
 **Workflow Steps** (`src/workflows/steps/`)
-- PersonaRequestStep - Dispatches work to AI personas
-- GitOperationStep - Git operations (checkout, commit, push)
-- DiffApplyStep - Applies code diffs
-- TaskUpdateStep - Updates task status
-- PlanningLoopStep - Iterative planning with TDD gates
-- ConditionalStep - Conditional execution based on state
+- **PersonaRequestStep** - Dispatches work to AI personas
+- **PlanningLoopStep** - Iterative planning with evaluation
+- **GitOperationStep** - Git operations (checkout, commit, push)
+- **DiffApplyStep** - Applies code diffs
+- **TaskUpdateStep** - Updates task status
+- **SimpleTaskStatusStep** - Simple status updates
+- **TaskCreationStep** - Creates individual tasks
+- **BulkTaskCreationStep** - Creates multiple tasks with retry/duplicate detection
+- **QAAnalysisStep** - Analyzes QA results
+- **ReviewFailureTasksStep** - Creates follow-up tasks from review failures
+- **ConditionalStep** - Conditional execution based on state
+- **BlockedTaskAnalysisStep** - Analyzes blocked tasks
+- **UnblockAttemptStep** - Attempts to unblock tasks
+- **PMDecisionParserStep** - Parses PM decisions
+- **SubWorkflowStep** - Executes sub-workflows
+- **MilestoneStatusCheckStep** - Checks milestone completion
+- **VariableResolutionStep** - Resolves workflow variables
 
 **Personas** (`src/agents/persona.ts`)
 - Individual AI agents with specific roles
@@ -89,11 +100,12 @@ steps:
 
 ### Available Workflows
 
-- `task-flow.yaml` - Standard development workflow
-- `hotfix.yaml` - Emergency hotfix workflow  
-- `feature.yaml` - Feature-specific workflow
-- `blocked-task-resolution.yaml` - Handles blocked tasks
-- `review-failure-handling.yaml` - Handles review failures (QA, code review, security)
+- `task-flow.yaml` - Standard development workflow (v3.0.0)
+- `legacy-compatible-task-flow.yaml` - Legacy-compatible workflow (v1.0.1)
+- `hotfix-task-flow.yaml` - Emergency hotfix workflow (v1.0.0)
+- `in-review-task-flow.yaml` - Review phase handling (v2.0.0)
+- `blocked-task-resolution.yaml` - Handles blocked tasks (v2.0.0)
+- `project-loop.yaml` - Project-level coordination (v1.0.0)
 
 ## Timeout & Retry
 
