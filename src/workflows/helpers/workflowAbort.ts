@@ -4,29 +4,23 @@ import { PERSONAS } from "../../personaNames.js";
 import type { WorkflowContext } from "../engine/WorkflowContext.js";
 
 const STREAM_NAME = cfg.requestStream;
-import { makeRedis } from "../../redisClient.js";
 
 // Purge any pending persona requests related to the aborted workflow from Redis stream
 // Expected behavior (per tests):
 // - XRANGE to list entries
 // - XACK for each matching entry for both lead-engineer and coordination groups
 // - XDEL to remove the entries
-// - QUIT the client
-async function purgeWorkflowRedisQueues(workflowId: string): Promise<{ removed: number; acked: number }> {
-  // In test/local environments, Redis may not be available; guard to avoid noisy failures
-  let client: any = null;
+// Note: Transport lifecycle is managed by the caller (WorkflowContext)
+async function purgeWorkflowRedisQueues(
+  transport: any,
+  workflowId: string
+): Promise<{ removed: number; acked: number }> {
   try {
-    client = await makeRedis();
-  } catch {
-    return { removed: 0, acked: 0 };
-  }
-
-  try {
-    if (!client || typeof client.xRange !== 'function') {
+    if (!transport || typeof transport.xRange !== 'function') {
       return { removed: 0, acked: 0 };
     }
 
-    const entries = await client.xRange(STREAM_NAME, '-', '+', { COUNT: 200 });
+    const entries = await transport.xRange(STREAM_NAME, '-', '+', { COUNT: 200 });
     const toRemove: string[] = [];
     let acked = 0;
 
@@ -37,21 +31,22 @@ async function purgeWorkflowRedisQueues(workflowId: string): Promise<{ removed: 
         toRemove.push(id);
         // Ack for expected groups
         try {
-          acked += await client.xAck(STREAM_NAME, `${cfg.groupPrefix}:lead-engineer`, id);
+          acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:lead-engineer`, id);
         } catch {}
         try {
-          acked += await client.xAck(STREAM_NAME, `${cfg.groupPrefix}:coordination`, id);
+          acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:coordination`, id);
         } catch {}
       }
     }
 
     let removed = 0;
     if (toRemove.length) {
-      removed = await client.xDel(STREAM_NAME, toRemove);
+      removed = await transport.xDel(STREAM_NAME, toRemove);
     }
     return { removed, acked };
-  } finally {
-    try { await client?.quit?.(); } catch {}
+  } catch (err) {
+    // Silently fail if transport operations fail
+    return { removed: 0, acked: 0 };
   }
 }
 
@@ -81,7 +76,7 @@ export async function abortWorkflowWithReason(
   }
 
   try {
-    cleanupResult = await purgeWorkflowRedisQueues(workflowId);
+    cleanupResult = await purgeWorkflowRedisQueues(context.transport, workflowId);
     context.logger.warn("cleared pending persona requests after workflow abort", {
       workflowId,
       reason,

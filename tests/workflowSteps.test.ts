@@ -38,7 +38,8 @@ vi.mock('../src/redisClient.js', () => {
   };
 
   return {
-    makeRedis: vi.fn().mockResolvedValue(redisMock)
+    makeRedis: vi.fn().mockResolvedValue(redisMock),
+    redisMock // Export for test access
   };
 });
 
@@ -87,8 +88,31 @@ vi.mock('../src/logger.js', () => ({
 
 describe('Workflow Steps', () => {
   let context: WorkflowContext;
+  let mockTransport: any;
 
   beforeEach(() => {
+    // Create mock transport with all necessary methods
+    mockTransport = {
+      xGroupCreate: vi.fn().mockResolvedValue(null),
+      xReadGroup: vi.fn().mockResolvedValue([{
+        name: 'test-stream',
+        messages: [{
+          id: 'test-id-123',
+          message: {
+            type: 'code-task',
+            persona: 'lead_engineer',
+            data: JSON.stringify({ description: 'Test task' })
+          }
+        }]
+      }]),
+      xAck: vi.fn().mockResolvedValue(null),
+      xRange: vi.fn().mockResolvedValue([]),
+      xDel: vi.fn().mockResolvedValue(0),
+      xAdd: vi.fn().mockResolvedValue('1-0'),
+      disconnect: vi.fn().mockResolvedValue(null),
+      connect: vi.fn().mockResolvedValue(null)
+    };
+
     const mockConfig = {
       name: 'test-workflow',
       version: '1.0.0',
@@ -100,6 +124,7 @@ describe('Workflow Steps', () => {
       '/test/repo',
       'main',
       mockConfig,
+      mockTransport,
       {}
     );
     // Disable persona bypass for tests that verify persona request behavior

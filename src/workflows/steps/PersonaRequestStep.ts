@@ -4,7 +4,6 @@ import { sendPersonaRequest, waitForPersonaCompletion, interpretPersonaStatus } 
 import { logger } from '../../logger.js';
 import { cfg } from '../../config.js';
 import { personaTimeoutMs, personaMaxRetries, calculateProgressiveTimeout } from '../../util.js';
-import { makeRedis } from '../../redisClient.js';
 
 interface PersonaRequestConfig {
   step: string;
@@ -138,10 +137,12 @@ export class PersonaRequestStep extends WorkflowStep {
       backoffIncrementMs: cfg.personaRetryBackoffIncrementMs
     });
 
-    let transport: any;
+    const transport = context.transport;
+    if (!transport) {
+      throw new Error('Transport not available in context');
+    }
+
     try {
-      // Create a transport for persona communication (tests spy on this and expect disconnect)
-      transport = await makeRedis();
       
       // Resolve payload variables from context
       const resolvedPayload = this.resolvePayloadVariables(payload, context);
@@ -262,11 +263,8 @@ export class PersonaRequestStep extends WorkflowStep {
             throw error;
           }
         }
-    }
+      }
       
-    // Always disconnect transport when finished (tests assert this)
-    try { await transport?.disconnect?.(); } catch {}
-
       if (!completion) {
         const totalAttempts = attempt;
         const finalTimeoutMs = calculateProgressiveTimeout(baseTimeoutMs, attempt, cfg.personaRetryBackoffIncrementMs);
@@ -398,8 +396,6 @@ export class PersonaRequestStep extends WorkflowStep {
       };
 
     } catch (error: any) {
-      // Best-effort: if a transport was created above and is still open, disconnect it
-      try { await transport?.disconnect?.(); } catch {}
       logger.error(`Persona request failed`, {
         workflowId: context.workflowId,
         step,

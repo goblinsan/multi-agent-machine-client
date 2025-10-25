@@ -53,17 +53,38 @@ vi.mock('../src/config.js', () => ({
 
 describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
   let mockRedis: any;
+  let mockTransport: any;
   let context: WorkflowContext;
 
   beforeEach(() => {
     // Reset all mocks
     vi.clearAllMocks();
     
-    // Mock Redis client
+    // Mock Redis client (deprecated - but tests still check disconnect)
     mockRedis = {
       disconnect: vi.fn()
     };
     vi.mocked(redisClient.makeRedis).mockResolvedValue(mockRedis);
+
+    // Mock transport
+    mockTransport = {
+      connect: vi.fn().mockResolvedValue(null),
+      disconnect: vi.fn().mockResolvedValue(null),
+      xAdd: vi.fn().mockResolvedValue('1-0'),
+      xGroupCreate: vi.fn().mockResolvedValue(null),
+      xReadGroup: vi.fn().mockResolvedValue([]),
+      xRead: vi.fn().mockResolvedValue([]),
+      xRange: vi.fn().mockResolvedValue([]),
+      xAck: vi.fn().mockResolvedValue(1),
+      xDel: vi.fn().mockResolvedValue(0),
+      del: vi.fn().mockResolvedValue(0),
+      xLen: vi.fn().mockResolvedValue(0),
+      xPending: vi.fn().mockResolvedValue([]),
+      xClaim: vi.fn().mockResolvedValue([]),
+      xInfoGroups: vi.fn().mockResolvedValue([]),
+      xGroupDestroy: vi.fn().mockResolvedValue(null),
+      quit: vi.fn().mockResolvedValue(null)
+    };
 
     // Mock message tracking (no duplicates by default)
     vi.mocked(messageTracking.isDuplicateMessage).mockReturnValue(false);
@@ -83,6 +104,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       '/test/repo',
       'main',
       { steps: [] } as any,
+      mockTransport,
       {}
     );
     context.setVariable('repo_remote', 'git@github.com:test/repo.git');
@@ -417,7 +439,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       await step.execute(context);
 
       expect(persona.sendPersonaRequest).toHaveBeenCalledWith(
-        mockRedis,
+        mockTransport,
         expect.objectContaining({
           taskId: 'task-123'
         })
@@ -446,7 +468,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       await step.execute(context);
 
       expect(persona.sendPersonaRequest).toHaveBeenCalledWith(
-        mockRedis,
+        mockTransport,
         expect.objectContaining({
           taskId: 'task-from-context'
         })
@@ -478,7 +500,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       await step.execute(context);
 
       expect(persona.sendPersonaRequest).toHaveBeenCalledWith(
-        mockRedis,
+        mockTransport,
         expect.objectContaining({
           taskId: 'task-from-payload'
         })
@@ -568,7 +590,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       expect(result.data?.totalAttempts).toBe(1);
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(1);
       expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(1);
-      expect(mockRedis.disconnect).toHaveBeenCalledTimes(1);
+      // Transport lifecycle is managed by context, not individual steps
     });
 
     it('should succeed on third attempt after two timeouts', async () => {
