@@ -328,11 +328,25 @@ export class PersonaConsumer {
     const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} persona.`;
 
     // Build user text from intent and payload
+    // Priority: user_text > task.description > description > task.title > intent
     let userText = intent || 'Process this request';
     if (payload.user_text) {
       userText = payload.user_text;
+    } else if (payload.task && payload.task.description) {
+      // Extract task description for planning/implementation context
+      userText = `Task: ${payload.task.title || 'Untitled'}\n\nDescription: ${payload.task.description}`;
+      
+      // Add task type/scope context if available
+      if (payload.task.type) {
+        userText += `\n\nType: ${payload.task.type}`;
+      }
+      if (payload.task.scope) {
+        userText += `\nScope: ${payload.task.scope}`;
+      }
     } else if (payload.description) {
       userText = payload.description;
+    } else if (payload.task && payload.task.title) {
+      userText = `Task: ${payload.task.title}`;
     }
 
     // Get scan summary if repo is provided
