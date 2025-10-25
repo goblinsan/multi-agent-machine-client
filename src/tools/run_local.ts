@@ -19,7 +19,7 @@
  *   - Dashboard backend at src/dashboard-backend
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, fork } from 'child_process';
 import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
@@ -32,6 +32,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let dashboardProcess: ChildProcess | null = null;
+let workerProcesses: ChildProcess[] = [];
 let isShuttingDown = false;
 
 function printUsage() {
@@ -45,6 +46,65 @@ function printUsage() {
   console.error("Environment:");
   console.error("  TRANSPORT_TYPE=local    (recommended for single-process)");
   console.error("  PROJECT_BASE=<path>     (where to clone/find projects)");
+}
+
+/**
+ * Start persona worker processes for local transport
+ * 
+ * When using LocalTransport, we need to spawn worker processes in the same
+ * process context to handle persona requests. Each worker listens for its
+ * persona's requests on the shared LocalTransport instance.
+ */
+async function startPersonaWorkers(): Promise<void> {
+  // Only spawn workers if using local transport
+  if (cfg.transportType !== 'local') {
+    console.log('Skipping persona workers (not using local transport)');
+    return;
+  }
+
+  console.log('Starting persona workers for local transport...');
+  console.log(`Allowed personas: ${cfg.allowedPersonas.join(', ')}`);
+
+  // Use tsx to run the worker in TypeScript mode
+  const workerPath = path.join(__dirname, '..', 'worker.ts');
+  
+  // For local transport, we can run a single worker process that handles all personas
+  // The worker.ts already loops through all allowed personas
+  console.log('Starting unified persona worker...');
+  
+  const workerProcess = spawn('npx', ['tsx', workerPath], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      TRANSPORT_TYPE: 'local',  // Ensure worker uses same transport
+      NODE_ENV: process.env.NODE_ENV || 'development'
+    },
+    shell: true
+  });
+
+  workerProcess.stdout?.on('data', (data) => {
+    console.log(`[worker] ${data.toString().trim()}`);
+  });
+
+  workerProcess.stderr?.on('data', (data) => {
+    console.error(`[worker] ${data.toString().trim()}`);
+  });
+
+  workerProcess.on('error', (error) => {
+    console.error('Worker process error:', error);
+  });
+
+  workerProcess.on('exit', (code) => {
+    if (!isShuttingDown) {
+      console.log(`Worker process exited with code ${code}`);
+    }
+  });
+
+  workerProcesses.push(workerProcess);
+  
+  // Give workers a moment to start up
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  console.log('Persona workers started');
 }
 
 /**
@@ -132,6 +192,15 @@ async function shutdown(transport: any) {
 
   console.log('\nShutting down...');
 
+  // Stop worker processes
+  if (workerProcesses.length > 0) {
+    console.log('Stopping persona workers...');
+    for (const worker of workerProcesses) {
+      worker.kill('SIGTERM');
+    }
+    workerProcesses = [];
+  }
+
   // Stop dashboard
   if (dashboardProcess) {
     console.log('Stopping dashboard backend...');
@@ -191,7 +260,15 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 2: Get transport connection
+  // Step 2: Start persona workers (for local transport)
+  try {
+    await startPersonaWorkers();
+  } catch (error) {
+    console.error('Failed to start persona workers:', error);
+    process.exit(1);
+  }
+
+  // Step 3: Get transport connection
   const transport = await getTransport();
   console.log(`Transport connected: ${cfg.transportType}`);
 
@@ -199,7 +276,7 @@ async function main() {
   process.on('SIGINT', () => shutdown(transport));
   process.on('SIGTERM', () => shutdown(transport));
 
-  // Step 3: Dispatch coordinator message
+  // Step 4: Dispatch coordinator message
   const payload: Record<string, unknown> = { project_id: projectId };
   if (repo) payload.repo = repo;
   if (baseBranch) payload.base_branch = baseBranch;
@@ -230,7 +307,7 @@ async function main() {
   const entryId = await transport.xAdd(cfg.requestStream, "*", msg);
   console.log(`Coordinator message dispatched: ${entryId}`);
 
-  // Step 4: Process the coordinator workflow
+  // Step 5: Process the coordinator workflow
   try {
     await processCoordinatorLoop(transport, msg);
   } catch (error: any) {
