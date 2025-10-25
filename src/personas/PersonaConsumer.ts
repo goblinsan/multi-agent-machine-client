@@ -194,6 +194,23 @@ export class PersonaConsumer {
     const step = fields.step || '';
     const corrId = fields.corr_id || '';
     const intent = fields.intent || '';
+    const toPersona = fields.to_persona || '';
+
+    // CRITICAL: Only process messages addressed to this persona
+    // Skip messages meant for other personas (they have their own consumer groups)
+    if (toPersona && toPersona !== persona) {
+      logger.debug('PersonaConsumer: Skipping message for different persona', {
+        thisPersona: persona,
+        targetPersona: toPersona,
+        workflowId,
+        messageId
+      });
+      
+      // Acknowledge the message so it doesn't block this consumer's queue
+      // The correct persona will process it from their own consumer group
+      await this.transport.xAck(cfg.requestStream, group, messageId);
+      return;
+    }
 
     logger.info('PersonaConsumer: Processing request', {
       persona,
