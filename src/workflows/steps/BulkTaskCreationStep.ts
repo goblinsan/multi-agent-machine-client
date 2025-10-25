@@ -5,6 +5,7 @@ import { DashboardClient, type TaskCreateInput } from '../../services/DashboardC
 import { TaskPriorityCalculator, TaskPriority, DEFAULT_PRIORITY_MAPPING } from './helpers/TaskPriorityCalculator.js';
 import { TaskDuplicateDetector, type ExistingTask as DetectorExistingTask, type DuplicateMatchStrategy } from './helpers/TaskDuplicateDetector.js';
 import { TaskRouter, type MilestoneStrategy, type ParentTaskMapping } from './helpers/TaskRouter.js';
+import { sleep, isRetryableError } from '../../util/retry.js';
 
 /**
  * Task to create in bulk operation
@@ -235,7 +236,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
               delay_ms: delay,
               backoff_strategy: 'exponential'
             });
-            await this.sleep(delay);
+            await sleep(delay);
           }
 
           context.logger.info(`Bulk task creation attempt ${attempt}/${maxAttempts}`, {
@@ -552,37 +553,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
    * Check if errors contain retryable error messages
    */
   private hasRetryableErrors(errors: string[], retryablePatterns?: string[]): boolean {
-    if (!retryablePatterns || retryablePatterns.length === 0) {
-      // Default retryable patterns
-      const defaultPatterns = [
-        'timeout',
-        'ETIMEDOUT',
-        'ECONNRESET',
-        'ECONNREFUSED',
-        'network',
-        'rate limit',
-        '429',
-        '500',
-        '502',
-        '503',
-        '504'
-      ];
-      retryablePatterns = defaultPatterns;
-    }
-
-    return errors.some(error => {
-      const lowerError = error.toLowerCase();
-      return retryablePatterns!.some(pattern => 
-        lowerError.includes(pattern.toLowerCase())
-      );
-    });
-  }
-
-  /**
-   * Sleep for specified milliseconds
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return errors.some(error => isRetryableError(error, retryablePatterns));
   }
 
   /**

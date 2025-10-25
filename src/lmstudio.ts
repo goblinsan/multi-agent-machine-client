@@ -1,10 +1,9 @@
 import { cfg } from "./config.js";
 import { fetch } from "undici";
 import { logger } from "./logger.js";
+import { sleep, calculateBackoffDelay } from "./util/retry.js";
 
 export type ChatMessage = { role: "system"|"user"|"assistant"; content: string };
-
-function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 export async function callLMStudio(model: string, messages: ChatMessage[], temperature = 0.2, opts?: { timeoutMs?: number; retries?: number }) {
   const timeoutMs = opts?.timeoutMs ?? 20000;
@@ -54,9 +53,13 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
       if (attempt === maxRetries) break;
 
       // exponential backoff with jitter
-      const base = 500 * Math.pow(2, attempt); // 500ms, 1s, 2s, 4s...
-      const jitter = Math.floor(Math.random() * 300);
-      const backoff = Math.min(base + jitter, 15000);
+      const backoff = calculateBackoffDelay(attempt, {
+        initialDelayMs: 500,
+        backoffMultiplier: 2,
+        maxDelayMs: 15000,
+        addJitter: true,
+        maxJitterMs: 300
+      });
       await sleep(backoff);
     }
   }
