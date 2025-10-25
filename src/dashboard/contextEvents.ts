@@ -30,22 +30,3 @@ export async function fetchContext(workflowId: string) {
     return { projectTree: "", fileHotspots: "", limits: "", personaHints: "" };
   }
 }
-
-/**
- * Record an event to dashboard
- */
-export async function recordEvent(ev: any) {
-  try {
-    const endpoint = `${cfg.dashboardBaseUrl.replace(/\/$/, '')}/v1/events`;
-    await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${cfg.dashboardApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(ev)
-    });
-  } catch (e) {
-    logger.warn("dashboard event post failed", { error: e, event: ev });
-  }
-}
