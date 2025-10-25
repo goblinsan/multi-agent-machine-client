@@ -19,12 +19,13 @@
  *   - Dashboard backend at src/dashboard-backend
  */
 
-import { spawn, ChildProcess, fork } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
 import { logger } from "../logger.js";
 import { WorkflowCoordinator } from "../workflows/WorkflowCoordinator.js";
+import { PersonaConsumer } from "../personas/PersonaConsumer.js";
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -32,7 +33,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let dashboardProcess: ChildProcess | null = null;
-let workerProcesses: ChildProcess[] = [];
+let personaConsumer: PersonaConsumer | null = null;
 let isShuttingDown = false;
 
 function printUsage() {
@@ -49,62 +50,36 @@ function printUsage() {
 }
 
 /**
- * Start persona worker processes for local transport
+ * Start persona consumer for local transport
  * 
- * When using LocalTransport, we need to spawn worker processes in the same
- * process context to handle persona requests. Each worker listens for its
- * persona's requests on the shared LocalTransport instance.
+ * When using LocalTransport, we run persona consumers in the same process.
+ * Each persona gets its own consumer group and poll loop, allowing them to
+ * process requests concurrently.
  */
-async function startPersonaWorkers(): Promise<void> {
-  // Only spawn workers if using local transport
+async function startPersonaConsumers(transport: any): Promise<void> {
+  // Only start consumers if using local transport
   if (cfg.transportType !== 'local') {
-    console.log('Skipping persona workers (not using local transport)');
+    console.log('Skipping persona consumers (not using local transport)');
     return;
   }
 
-  console.log('Starting persona workers for local transport...');
+  if (cfg.allowedPersonas.length === 0) {
+    console.log('No personas configured in ALLOWED_PERSONAS');
+    return;
+  }
+
+  console.log('Starting persona consumers for local transport...');
   console.log(`Allowed personas: ${cfg.allowedPersonas.join(', ')}`);
 
-  // Use tsx to run the worker in TypeScript mode
-  const workerPath = path.join(__dirname, '..', 'worker.ts');
+  // Create and start persona consumer
+  personaConsumer = new PersonaConsumer(transport);
   
-  // For local transport, we can run a single worker process that handles all personas
-  // The worker.ts already loops through all allowed personas
-  console.log('Starting unified persona worker...');
-  
-  const workerProcess = spawn('npx', ['tsx', workerPath], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      TRANSPORT_TYPE: 'local',  // Ensure worker uses same transport
-      NODE_ENV: process.env.NODE_ENV || 'development'
-    },
-    shell: true
+  // Start consumer loops (they run in background)
+  await personaConsumer.start({
+    personas: cfg.allowedPersonas
   });
 
-  workerProcess.stdout?.on('data', (data) => {
-    console.log(`[worker] ${data.toString().trim()}`);
-  });
-
-  workerProcess.stderr?.on('data', (data) => {
-    console.error(`[worker] ${data.toString().trim()}`);
-  });
-
-  workerProcess.on('error', (error) => {
-    console.error('Worker process error:', error);
-  });
-
-  workerProcess.on('exit', (code) => {
-    if (!isShuttingDown) {
-      console.log(`Worker process exited with code ${code}`);
-    }
-  });
-
-  workerProcesses.push(workerProcess);
-  
-  // Give workers a moment to start up
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  console.log('Persona workers started');
+  console.log('Persona consumers started');
 }
 
 /**
@@ -192,13 +167,11 @@ async function shutdown(transport: any) {
 
   console.log('\nShutting down...');
 
-  // Stop worker processes
-  if (workerProcesses.length > 0) {
-    console.log('Stopping persona workers...');
-    for (const worker of workerProcesses) {
-      worker.kill('SIGTERM');
-    }
-    workerProcesses = [];
+  // Stop persona consumers
+  if (personaConsumer) {
+    console.log('Stopping persona consumers...');
+    await personaConsumer.stop();
+    personaConsumer = null;
   }
 
   // Stop dashboard
@@ -260,21 +233,21 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 2: Start persona workers (for local transport)
-  try {
-    await startPersonaWorkers();
-  } catch (error) {
-    console.error('Failed to start persona workers:', error);
-    process.exit(1);
-  }
-
-  // Step 3: Get transport connection
+  // Step 2: Get transport connection (before starting consumers)
   const transport = await getTransport();
   console.log(`Transport connected: ${cfg.transportType}`);
 
   // Setup graceful shutdown
   process.on('SIGINT', () => shutdown(transport));
   process.on('SIGTERM', () => shutdown(transport));
+
+  // Step 3: Start persona consumers (for local transport)
+  try {
+    await startPersonaConsumers(transport);
+  } catch (error) {
+    console.error('Failed to start persona consumers:', error);
+    process.exit(1);
+  }
 
   // Step 4: Dispatch coordinator message
   const payload: Record<string, unknown> = { project_id: projectId };

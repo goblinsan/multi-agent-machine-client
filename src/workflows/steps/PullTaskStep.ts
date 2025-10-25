@@ -61,14 +61,14 @@ export class PullTaskStep extends WorkflowStep {
       }
 
       // Pull messages from stream
-      const messages = await transport.xReadGroup(
+      const result = await transport.xReadGroup(
         consumerGroup, 
         consumerId,
         { key: streamName, id: '>' },
         { COUNT: maxMessages, BLOCK: blockTime }
       );
 
-      if (!messages || messages.length === 0) {
+      if (!result) {
         logger.info('No messages available in stream');
         context.setVariable('task', null);
         context.setVariable('taskId', null);
@@ -79,8 +79,8 @@ export class PullTaskStep extends WorkflowStep {
         };
       }
 
-      const streamData = messages[0];
-      const messageList = streamData.messages;
+      const streamData = result[streamName];
+      const messageList = streamData?.messages;
 
       if (!messageList || messageList.length === 0) {
         logger.info('No messages in stream data');
@@ -96,7 +96,7 @@ export class PullTaskStep extends WorkflowStep {
       // Parse the first message
       const firstMessage = messageList[0];
       const messageId = firstMessage.id;
-      const fields = firstMessage.message;
+      const fields = firstMessage.fields;
       
       const taskData: TaskData = {
         id: messageId,

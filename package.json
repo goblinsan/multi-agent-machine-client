@@ -3,8 +3,8 @@
   "version": "0.4.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/tools/run_coordinator.ts",
-    "start": "node --env-file=.env dist/tools/run_coordinator.js",
+    "dev": "tsx src/tools/run_persona_workers.ts",
+    "start": "node --env-file=.env dist/tools/run_persona_workers.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed": "tsx src/tools/seed_example.ts",

@@ -120,11 +120,26 @@ describe('Architecture Validation', () => {
     expect(violations).toHaveLength(0);
   });
 
-  it('should not have worker.ts (replaced by transport abstraction)', () => {
+  it('should not have worker.ts in src/ (replaced by PersonaConsumer)', () => {
     const srcDir = join(process.cwd(), 'src');
     const entries = readdirSync(srcDir);
     
     expect(entries).not.toContain('worker.ts');
+  });
+
+  it('should have PersonaConsumer architecture', () => {
+    const personasDir = join(process.cwd(), 'src', 'personas');
+    const entries = readdirSync(personasDir);
+    
+    expect(entries).toContain('PersonaConsumer.ts');
+    expect(entries).toContain('PersonaRequestHandler.ts');
+  });
+
+  it('should have persona worker runner', () => {
+    const toolsDir = join(process.cwd(), 'src', 'tools');
+    const entries = readdirSync(toolsDir);
+    
+    expect(entries).toContain('run_persona_workers.ts');
   });
 
   it('should have transport abstraction files', () => {
@@ -136,10 +151,12 @@ describe('Architecture Validation', () => {
     expect(entries).toContain('MessageTransport.ts');
   });
 
-  it('should use run_coordinator.ts as main entry point', () => {
+  it('should use run_coordinator.ts and run_persona_workers.ts as main entry points', () => {
     const toolsDir = join(process.cwd(), 'src', 'tools');
     const entries = readdirSync(toolsDir);
     
     expect(entries).toContain('run_coordinator.ts');
+    expect(entries).toContain('run_persona_workers.ts');
+    expect(entries).toContain('run_local.ts');
   });
 });
