@@ -112,11 +112,11 @@ describe('dashboard interactions', () => {
     expect(legacy).toBeTruthy();
   });
 
-  it('fetchProjectMilestones uses /v1/projects/{id}/milestones', async () => {
+  it('fetchProjectMilestones uses /projects/{id}/milestones', async () => { // Fixed test name
     const { fetch } = await import('undici');
     (fetch as any).mockImplementation(async (url: string, init?: any) => {
       calls.push({ url, init, method: init?.method || 'GET' });
-      if (url.includes('/v1/projects/') && url.includes('/milestones')) return makeResponse(200, { milestones: [] });
+      if (url.includes('/projects/') && url.includes('/milestones')) return makeResponse(200, { milestones: [] }); // Fixed: removed /v1
       return makeResponse(200, {});
     });
     const { ProjectAPI } = await import('../src/dashboard/ProjectAPI.js');
@@ -125,7 +125,7 @@ describe('dashboard interactions', () => {
     const pid = '33333333-3333-3333-3333-333333333333';
     const res = await fetchProjectMilestones(pid);
     expect(Array.isArray(res)).toBe(true);
-    const call = calls.find(c => c.url.includes(`/v1/projects/${pid}/milestones`));
+    const call = calls.find(c => c.url.includes(`/projects/${pid}/milestones`)); // Fixed: removed /v1 prefix
     expect(call).toBeTruthy();
   });
 
