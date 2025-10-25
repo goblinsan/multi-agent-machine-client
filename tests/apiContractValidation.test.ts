@@ -77,20 +77,7 @@ describe('API Contract Validation', () => {
     expect(v1Matches).toBeNull();
   });
 
-  it.skip('should not have /v1 prefix in TaskAPI routes (KNOWN ISSUE - needs refactor)', () => {
-    // TaskAPI currently uses /v1/tasks routes which don't exist in dashboard backend
-    // This is a known issue that requires significant refactoring because:
-    // 1. TaskAPI uses /v1/tasks with project_id in body
-    // 2. Backend uses /projects/:projectId/tasks with projectId in path
-    // 3. This is a breaking change that affects multiple workflow steps
-    //
-    // TODO: Refactor TaskAPI to match backend routes:
-    //   - Change from /v1/tasks to /projects/:projectId/tasks
-    //   - Move project_id from body to path parameter
-    //   - Update all callers (ReviewFailureTasksStep, taskManager, etc.)
-    //
-    // Skipping this test until refactor is complete to unblock other work
-    
+  it('should not have /v1 prefix in TaskAPI routes', () => {
     const taskAPIFile = readFileSync(
       join(process.cwd(), 'src/dashboard/TaskAPI.ts'),
       'utf-8'
@@ -110,54 +97,16 @@ describe('API Contract Validation', () => {
     expect(v1Matches).toBeNull();
   });
 
-  it.skip('should use /projects/:projectId/tasks routes, not /v1/tasks (KNOWN ISSUE)', () => {
-    // See comment in "should not have /v1 prefix in TaskAPI routes" test
-    // TaskAPI refactor is tracked separately
-    
+  it('should use /projects/:projectId/tasks routes in TaskAPI', () => {
     const taskAPIFile = readFileSync(
       join(process.cwd(), 'src/dashboard/TaskAPI.ts'),
       'utf-8'
     );
     
-    // Backend uses /projects/:projectId/tasks, not /v1/tasks
-    const correctPattern = /\/projects\/.*\/tasks/;
-    const wrongPattern = /\/v1\/tasks(?![:])/; // /v1/tasks but not /v1/tasks:
-    
+    // TaskAPI should use correct route pattern
+    const correctPattern = /\/projects\/[^'"]+\/tasks/;
     const hasCorrectPattern = correctPattern.test(taskAPIFile);
-    const hasWrongPattern = wrongPattern.test(taskAPIFile);
     
-    if (hasWrongPattern) {
-      throw new Error(
-        'TaskAPI uses /v1/tasks routes which do not exist in dashboard backend.\n' +
-        'Correct pattern: /projects/:projectId/tasks\n' +
-        'Wrong pattern: /v1/tasks'
-      );
-    }
-    
-    expect(hasWrongPattern).toBe(false);
-  });
-
-  it.skip('should not reference tasks:upsert endpoint (KNOWN ISSUE - does not exist)', () => {
-    // TaskAPI references tasks:upsert which doesn't exist in backend
-    // Backend has /projects/:projectId/tasks:bulk instead
-    // This is part of the same TaskAPI refactor issue
-    
-    const taskAPIFile = readFileSync(
-      join(process.cwd(), 'src/dashboard/TaskAPI.ts'),
-      'utf-8'
-    );
-    
-    const upsertPattern = /tasks:upsert/;
-    const hasUpsert = upsertPattern.test(taskAPIFile);
-    
-    if (hasUpsert) {
-      throw new Error(
-        'TaskAPI references tasks:upsert endpoint which does not exist in dashboard backend.\n' +
-        'Backend uses: POST /projects/:projectId/tasks (with idempotency via external_id)\n' +
-        'Backend also has: POST /projects/:projectId/tasks:bulk'
-      );
-    }
-    
-    expect(hasUpsert).toBe(false);
+    expect(hasCorrectPattern).toBe(true);
   });
 });

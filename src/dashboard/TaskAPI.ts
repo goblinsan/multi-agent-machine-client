@@ -48,8 +48,14 @@ export class TaskAPI extends DashboardClient {
       return null;
     }
 
-    const defaultEndpoint = `${this.baseUrl}/v1/tasks`;
-    const upsertEndpoint = `${this.baseUrl}/v1/tasks:upsert`;
+    // ProjectId is REQUIRED for backend routes
+    const projectId = input.projectId;
+    if (!projectId) {
+      logger.warn("dashboard task creation failed: projectId required");
+      return { ok: false, status: 400, body: { error: "projectId required" }, createdId: null };
+    }
+
+    const endpoint = `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/tasks`;
 
     // Sanitize inputs
     const maxTitleLen = 180;
@@ -63,59 +69,17 @@ export class TaskAPI extends DashboardClient {
       description: safeDesc,
     };
 
-    if (input.projectId) body.project_id = input.projectId;
-    if (input.projectSlug) body.project_slug = input.projectSlug;
+    // Note: projectId is in the URL path, not the body
 
     // Resolve milestone slug to ID if needed
     let resolvedMilestoneId = input.milestoneId ?? null;
-    if (!resolvedMilestoneId && input.milestoneSlug && input.projectId) {
-      resolvedMilestoneId = await this.resolveMilestoneSlug(input.projectId, input.milestoneSlug);
+    if (!resolvedMilestoneId && input.milestoneSlug && projectId) {
+      resolvedMilestoneId = await this.resolveMilestoneSlug(projectId, input.milestoneSlug);
     }
 
-    // Handle milestone ID/slug
+    // Handle milestone ID
     if (resolvedMilestoneId) {
-      body.milestone_id = resolvedMilestoneId;
-    } else if (input.milestoneSlug) {
-      body.milestone_slug = input.milestoneSlug;
-
-      // Enable auto-create if milestone not resolved to ID
-      if (!input.options) {
-        body.options = { create_milestone_if_missing: true };
-        logger.debug("Milestone not resolved to ID, enabling auto-create", {
-          milestoneSlug: input.milestoneSlug,
-          projectId: input.projectId,
-        });
-      } else if (!input.options.create_milestone_if_missing) {
-        body.options = { ...input.options, create_milestone_if_missing: true };
-        logger.debug("Milestone not resolved to ID, overriding create_milestone_if_missing to true", {
-          milestoneSlug: input.milestoneSlug,
-          projectId: input.projectId,
-          originalValue: input.options.create_milestone_if_missing,
-        });
-      }
-
-      // Check auto-create policy
-      if (body.options && body.options.create_milestone_if_missing) {
-        const norm = (input.milestoneSlug || "")
-          .toString()
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-        const allowOnlyFuture =
-          typeof cfg.dashboardAutoCreateFutureEnhancementsOnly === "boolean"
-            ? cfg.dashboardAutoCreateFutureEnhancementsOnly
-            : true;
-        if (
-          allowOnlyFuture &&
-          !(norm === "future-enhancements" || norm === "future-enhancement" || norm === "future_enhancements" || norm === "future")
-        ) {
-          logger.info("milestone auto-create policy would block non-future slug", {
-            requested: input.milestoneSlug,
-            projectId: input.projectId,
-          });
-        }
-      }
+      body.milestone_id = Number(resolvedMilestoneId);
     }
 
     // Handle parent task ID
@@ -123,8 +87,14 @@ export class TaskAPI extends DashboardClient {
       const isUuid = /^(?:[0-9a-fA-F]{8})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{12})$/.test(
         String(input.parentTaskId)
       );
-      if (isUuid) body.parent_task_id = input.parentTaskId;
-      else body.parent_task_external_id = input.parentTaskId;
+      if (isUuid) {
+        body.parent_task_id = Number(input.parentTaskId);
+      } else {
+        // Backend doesn't support parent_task_external_id - would need to resolve first
+        logger.warn("parent_task_external_id not supported by backend, skipping", { 
+          parentTaskId: input.parentTaskId 
+        });
+      }
     }
 
     if (typeof input.effortEstimate === "number") body.effort_estimate = input.effortEstimate;
@@ -132,26 +102,22 @@ export class TaskAPI extends DashboardClient {
     if (input.assigneePersona) body.assignee_persona = input.assigneePersona;
     if (input.externalId) body.external_id = input.externalId;
     if (input.attachments && Array.isArray(input.attachments)) body.attachments = input.attachments;
-    if (input.options) body.options = input.options;
 
     const initialStatus =
       input.options && typeof input.options.initial_status === "string" && input.options.initial_status.trim().length
         ? input.options.initial_status.trim()
-        : null;
+        : "open";
+    
+    if (initialStatus) body.status = initialStatus;
 
     try {
-      const useUpsert = Boolean(input.externalId);
-      const endpoint = useUpsert ? upsertEndpoint : defaultEndpoint;
-      const requestBody = { ...body } as any;
-      if (!useUpsert && initialStatus) requestBody.initial_status = initialStatus;
-
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(body),
       });
 
       const status = res.status;
@@ -164,15 +130,9 @@ export class TaskAPI extends DashboardClient {
       }
 
       if (!res.ok) {
-        const safeBody = { ...requestBody };
+        const safeBody = { ...body };
         if (safeBody.attachments) safeBody.attachments = `[${(safeBody.attachments as any[]).length} attachments]` as any;
         logger.warn("dashboard task creation failed", { status, endpoint, request: safeBody, response: responseBody ?? "<no-json>" });
-
-        // Fallback to legacy endpoint if upsert not supported
-        if (useUpsert && (status === 404 || status === 405 || (status >= 500 && status < 600))) {
-          return await this.createTaskLegacy(body, initialStatus);
-        }
-
         return { ok: false, status, body: responseBody, createdId: null };
       }
 
@@ -181,6 +141,7 @@ export class TaskAPI extends DashboardClient {
         title: input.title,
         status,
         endpoint,
+        projectId,
         milestoneId: input.milestoneId || null,
         milestoneSlug: input.milestoneSlug || null,
         parentTaskId: input.parentTaskId,
@@ -196,14 +157,19 @@ export class TaskAPI extends DashboardClient {
 
   /**
    * Fetch a task by ID
+   * Note: Requires projectId since backend uses /projects/:projectId/tasks/:taskId
    */
-  async fetchTask(taskId: string): Promise<any | null> {
+  async fetchTask(taskId: string, projectId?: string): Promise<any | null> {
     if (!this.baseUrl) return null;
+    if (!projectId) {
+      logger.warn("fetchTask requires projectId for current backend");
+      return null;
+    }
 
     try {
-      return await this.get(`/v1/tasks/${encodeURIComponent(taskId)}`);
+      return await this.get(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`);
     } catch (e) {
-      logger.warn("fetchTask exception", { taskId, error: (e as Error).message });
+      logger.warn("fetchTask exception", { taskId, projectId, error: (e as Error).message });
       return null;
     }
   }
@@ -222,9 +188,10 @@ export class TaskAPI extends DashboardClient {
       return { ok: false, status: 0, body: null };
     }
 
-    // Legacy compatibility: try external_id path if no projectId
+    // Legacy compatibility: warn that projectId is now required
     if (!projectId) {
-      return await this.updateTaskStatusLegacy(taskId, status);
+      logger.warn("updateTaskStatus requires projectId for current backend", { taskId });
+      return { ok: false, status: 400, body: { error: "projectId required" } };
     }
 
     const endpoint = `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;
@@ -239,7 +206,7 @@ export class TaskAPI extends DashboardClient {
 
       // Handle concurrency conflict: retry with fresh lock version
       if (first.statusCode === 409 || first.statusCode === 422) {
-        const retryResult = await this.retryWithFreshLock(endpoint, taskId, status);
+        const retryResult = await this.retryWithFreshLock(endpoint, taskId, status, projectId);
         if (retryResult) return retryResult;
       }
 
@@ -311,48 +278,6 @@ export class TaskAPI extends DashboardClient {
   }
 
   /**
-   * Legacy task creation fallback
-   */
-  private async createTaskLegacy(body: Record<string, any>, initialStatus: string | null): Promise<CreateTaskResult> {
-    try {
-      const legacyBody = { ...body } as any;
-      if (initialStatus) legacyBody.initial_status = initialStatus;
-
-      const res2 = await fetch(`${this.baseUrl}/v1/tasks`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(legacyBody),
-      });
-
-      const status2 = res2.status;
-      let rb2: any = null;
-      try {
-        const t2 = await res2.text();
-        rb2 = t2 ? JSON.parse(t2) : null;
-      } catch {
-        rb2 = null;
-      }
-
-      if (!res2.ok) {
-        logger.warn("dashboard task creation failed (legacy fallback)", {
-          status: status2,
-          endpoint: `${this.baseUrl}/v1/tasks`,
-          body: body.title,
-          response: rb2,
-        });
-        return { ok: false, status: status2, body: rb2, createdId: null };
-      }
-
-      const createdId2 = this.extractCreatedId(res2, rb2);
-      logger.info("dashboard task created (legacy fallback)", { title: body.title, status: status2, createdId: createdId2 });
-      return { ok: true, status: status2, body: rb2, createdId: createdId2 };
-    } catch (e) {
-      logger.warn("dashboard task creation exception (legacy fallback)", { error: e, title: body.title });
-      return { ok: false, status: 0, body: null, error: e };
-    }
-  }
-
-  /**
    * PATCH task status
    */
   private async patchTaskStatus(
@@ -390,10 +315,11 @@ export class TaskAPI extends DashboardClient {
   private async retryWithFreshLock(
     endpoint: string,
     taskId: string,
-    status: string
+    status: string,
+    projectId: string
   ): Promise<CreateTaskResult | null> {
     try {
-      const current = await this.fetchTask(taskId);
+      const current = await this.fetchTask(taskId, projectId);
       const raw = current ? current.lock_version ?? current.lockVersion ?? current.LOCK_VERSION : undefined;
       const fetchedLv = raw !== undefined && raw !== null ? Number(raw) : undefined;
 
@@ -422,58 +348,5 @@ export class TaskAPI extends DashboardClient {
       logger.debug("dashboard task update: failed to fetch for retry", { taskId, error: (e as Error).message });
     }
     return null;
-  }
-
-  /**
-   * Legacy update by external_id
-   */
-  private async updateTaskStatusLegacy(taskId: string, status: string): Promise<CreateTaskResult> {
-    try {
-      // Try updating by external_id
-      const byExternalUrl = `${this.baseUrl}/v1/tasks/by-external/${encodeURIComponent(taskId)}/status`;
-      let res = await fetch(byExternalUrl, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-
-      if (res.ok) {
-        const body = await res.json().catch(() => ({}));
-        logger.info("dashboard task updated by external_id", { external_id: taskId, status });
-        return { ok: true, status: res.status, body } as any;
-      }
-
-      // Resolve external_id to canonical ID then update
-      const resolveUrl = `${this.baseUrl}/v1/tasks/resolve`;
-      const resolveRes = await fetch(resolveUrl, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ external_id: taskId }),
-      });
-
-      const resolveBody = await resolveRes.json().catch(() => ({}));
-      const rb: any = resolveBody as any;
-      const resolvedId = rb && (rb.id || rb.task_id) ? rb.id || rb.task_id : null;
-
-      if (resolvedId) {
-        const byIdUrl = `${this.baseUrl}/v1/tasks/${encodeURIComponent(String(resolvedId))}/status`;
-        const byId = await fetch(byIdUrl, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
-        });
-        const byIdBody = await byId.json().catch(() => ({}));
-
-        if (byId.ok) {
-          logger.info("dashboard task updated by resolved id", { external_id: taskId, resolvedId });
-          return { ok: true, status: byId.status, body: byIdBody } as any;
-        }
-      }
-
-      return { ok: false, status: 404, body: null };
-    } catch (e) {
-      logger.warn("legacy updateTaskStatus flow failed", { taskId, error: (e as Error).message });
-      return { ok: false, status: 0, body: null, error: e } as any;
-    }
   }
 }

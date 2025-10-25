@@ -1,5 +1,17 @@
 import 'dotenv/config';
 
+/**
+ * DEPRECATED: This script uses old /v1/* API routes that no longer exist.
+ * The dashboard backend now uses /projects/* routes.
+ * 
+ * To fix:
+ * - /v1/projects/:id → /projects/:id
+ * - /v1/tasks/:id → /projects/:projectId/tasks/:taskId
+ * - /v1/milestones/:id → /projects/:projectId/milestones/:milestoneId
+ * 
+ * This script has NOT been updated yet. Use at your own risk.
+ */
+
 const DEFAULT_PROJECT_ID = '1808e304-fc52-49f6-9a42-71044b4cb4b5';
 const DEFAULT_NEW_MILESTONE_ID = 'b85c21ff-5bd3-4aaf-a83a-899b86261eb9';
 const DEFAULT_OLD_MILESTONE_ID = 'c9464afe-15dd-4c5f-b29c-c28cf391c136';
