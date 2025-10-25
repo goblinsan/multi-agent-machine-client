@@ -126,16 +126,26 @@ PERSONA_MAX_RETRIES_JSON='{"lead-engineer":5,"tester-qa":2}'
 
 ### Retry Behavior
 
-PersonaRequestStep implements progressive backoff:
+PersonaRequestStep implements **progressive timeouts** (no delays between attempts):
 
 ```
-Attempt 1 → [timeout] → Wait 30s →
-Attempt 2 → [timeout] → Wait 60s →
-Attempt 3 → [timeout] → Wait 90s →
-Attempt 4 → [timeout] → Fail
+Attempt 1 → [60s timeout] → Fail → Immediate retry
+Attempt 2 → [90s timeout] → Fail → Immediate retry  
+Attempt 3 → [120s timeout] → Fail → Immediate retry
+Attempt 4 → [150s timeout] → Fail → Final failure
 ```
 
-Only timeout errors trigger retries. Other errors fail immediately.
+**Key Points:**
+- Timeout increases by 30s each attempt (configurable via `PERSONA_RETRY_BACKOFF_INCREMENT_MS`)
+- **No artificial delays** between retry attempts (immediate retry after timeout)
+- Only timeout errors trigger retries (other errors fail immediately)
+- Formula: `currentTimeout = baseTimeout + (attemptNumber - 1) × backoffIncrement`
+
+**Example:** Context persona with 60s base timeout and 3 retries:
+- Attempt 1: 60s timeout
+- Attempt 2: 90s timeout (60s + 30s)
+- Attempt 3: 120s timeout (60s + 60s)
+- Attempt 4: 150s timeout (60s + 90s)
 
 ## Message Transport
 
