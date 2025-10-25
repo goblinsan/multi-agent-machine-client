@@ -55,12 +55,22 @@ npm run coordinator -- --nuke        # Destroy streams and groups
 2. Sends message to `cfg.requestStream` with `to_persona: COORDINATION`
 3. Exits immediately (does NOT stay running)
 
-#### Local Development (Future)
+#### run_local.ts
 
-For local development, a `run_local.ts` tool will be created to:
-1. Start dashboard backend (port 3000)
-2. Dispatch coordinator message
-3. Stay running to process workflows in same process
+**Purpose**: Full local development stack orchestration (all-in-one)
+
+**Usage**:
+```bash
+npm run local -- <project_id> [repo_url] [base_branch]
+```
+
+**What it does**:
+1. Starts dashboard backend (port 3000)
+2. Dispatches coordinator message to `cfg.requestStream`
+3. Processes the coordinator workflow using `handleCoordinator()`
+4. Shuts down gracefully on completion or SIGINT/SIGTERM
+
+**When to use**: Local development with single-process execution
 
 ## Dashboard
 
@@ -147,9 +157,14 @@ src/
 ## Development Workflow
 
 1. Set `TRANSPORT_TYPE=local` in `.env`
-2. Start local dashboard: `cd src/dashboard-backend && npm run dev`
-3. Dispatch coordinator: `npm run coordinator -- <project_id>`
-4. (Future) Or use: `npm run local -- <project_id>` for all-in-one
+2. Run the local orchestrator: `npm run local -- <project_id>`
+   - This starts dashboard, dispatches coordinator, and processes workflows
+   
+**OR** for separate components:
+
+1. Start local dashboard: `cd src/dashboard-backend && npm run dev`
+2. Dispatch coordinator: `npm run coordinator -- <project_id>`
+3. (Future) Run worker process to handle messages
 
 ## Common Pitfalls
 
