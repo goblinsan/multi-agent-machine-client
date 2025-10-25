@@ -114,7 +114,7 @@ export class TaskGenerator {
   private generateQAAnalysisTasks(analysis: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
     const tasks: TaskDefinition[] = [];
     
-    // Check both failureAnalyses (from QAAnalysisStep) and failures (legacy)
+    // Check both failureAnalyses (from QAAnalysisStep) and failures (older field name)
     const failures = analysis.failureAnalyses || analysis.failures;
     if (failures && Array.isArray(failures)) {
       for (let i = 0; i < failures.length; i++) {

@@ -80,7 +80,7 @@ export class TaskPriorityCalculator {
 
   /**
    * Infer task type from title and calculate adjusted priority
-   * Used in legacy behavior tests
+   * Used in behavior tests
    * 
    * @param title - Task title
    * @param priority - Base priority

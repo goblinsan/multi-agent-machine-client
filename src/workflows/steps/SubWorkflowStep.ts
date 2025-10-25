@@ -109,7 +109,7 @@ export class SubWorkflowStep extends WorkflowStep {
         SKIP_PERSONA_OPERATIONS: context.getVariable('SKIP_PERSONA_OPERATIONS') ?? true,
         // Ensure sub-workflow has a usable remote URL for persona requests
         repo_remote: context.getVariable('repo_remote') || subWorkflowInputs.repo,
-        // Provide both projectId and project_id aliases for step compatibility
+        // Provide both projectId and project_id aliases
         projectId: context.projectId,
         project_id: context.projectId
       };

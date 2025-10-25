@@ -115,7 +115,7 @@ export class TaskRouter {
   }
 
   /**
-   * Route task with legacy behavior logic (for behavior tests)
+   * Route task with behavior test logic
    * Includes fallback to backlog milestone with warnings
    * 
    * @param priority - Task priority level

@@ -51,7 +51,7 @@ interface ReviewFailureTasksConfig {
  * ReviewFailureTasksStep creates follow-up tasks based on PM review failure prioritization
  * 
  * **IMPORTANT:** This step requires normalized PM decision from PMDecisionParserStep.
- * The legacy parsePMDecision() method has been REMOVED (44% code reduction).
+ * The old parsePMDecision() method has been REMOVED (44% code reduction).
  * 
  * This step:
  * 1. Gets normalized PM decision from PMDecisionParserStep (via context variable)

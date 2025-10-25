@@ -2,7 +2,7 @@
  * Redis Message Transport
  * 
  * Wrapper around Redis client that implements the MessageTransport interface.
- * Provides compatibility layer between Redis Streams and the transport abstraction.
+ * Adapter between Redis Streams and the transport abstraction.
  */
 
 import { createClient, RedisClientType } from 'redis';

@@ -19,7 +19,7 @@ interface GitOperationConfig {
  */
 export class GitOperationStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
-    // Test/legacy mode: allow skipping git operations entirely
+    // Test mode: allow skipping git operations entirely
     if (context.getVariable('SKIP_GIT_OPERATIONS') === true) {
       return {
         status: 'success',

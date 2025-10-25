@@ -113,7 +113,7 @@ describe('Phase 4 - PMDecisionParserStep', () => {
       // Priority validation warnings logged internally
     });
 
-    it('should handle only backlog field (backward compatibility)', async () => {
+    it('should handle only backlog field (deprecated format)', async () => {
       const step = new PMDecisionParserStep({
         name: 'parse_pm_decision',
         type: 'PMDecisionParserStep',

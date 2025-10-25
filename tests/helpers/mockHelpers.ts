@@ -372,14 +372,10 @@ export class TaskMockHelper {
 }
 
 /**
- * Coordinator compatibility layer mocking to prevent Redis issues
+ * Coordinator mocking to prevent Redis issues in tests
  */
 export async function setupCoordinatorMocks() {
-  const coordinatorMod = await import('../../src/workflows/WorkflowCoordinator.js');
-  vi.spyOn(coordinatorMod.WorkflowCoordinator.prototype, 'sendPersonaCompatibilityRequests' as any)
-    .mockResolvedValue(undefined);
-  
-  // Also mock the internal Redis usage for persona requests
+  // Mock the internal Redis usage for persona requests
   vi.mock('../../src/redisClient.js', async () => {
     const actual = await vi.importActual('../../src/redisClient.js') as any;
     return {

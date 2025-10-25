@@ -2,7 +2,6 @@ name: "task-flow"
 description: "Consolidated task processing workflow with unified review feedback loops and TDD awareness"
 version: "3.0.0"
 # MIGRATION HISTORY:
-# v1.0.0 - legacy-compatible-task-flow (original)
 # v2.0.0 - Code review + security review use review-failure-handling sub-workflow
 # v3.0.0 - QA review also uses review-failure-handling (removed QAIterationLoopStep)
 #        - ALL reviews now use unified feedback loop pattern

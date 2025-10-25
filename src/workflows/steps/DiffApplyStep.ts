@@ -30,7 +30,7 @@ export class DiffApplyStep extends WorkflowStep {
     const startTime = Date.now();
 
     try {
-      // Test/legacy bypass: skip diff application when persona/git ops are skipped
+      // Test bypass: skip diff application when persona/git ops are skipped
       const skipOps = ((): boolean => {
         try {
           return context.getVariable('SKIP_GIT_OPERATIONS') === true || context.getVariable('SKIP_PERSONA_OPERATIONS') === true;

@@ -108,17 +108,8 @@ function parsePersonaMaxRetries(raw: Record<string, unknown>) {
 
 const projectBaseRaw = process.env.PROJECT_BASE || "./repo";
 const projectBase = path.resolve(expandHome(projectBaseRaw)!);
-// DEFAULT_REPO_NAME env is deprecated and ignored, but we still keep a fixed fallback name for path construction utilities
 const defaultRepoName = "active";
-// No placeholder repo under PROJECT_BASE. The default path is the PROJECT_BASE itself (parent folder for repos), never a repo.
 const repoRoot = projectBase;
-// If someone still sets REPO_ROOT, warn that it's ignored (deprecated)
-if (process.env.REPO_ROOT && process.env.REPO_ROOT.trim().length) {
-  console.warn("[config] REPO_ROOT env var is deprecated and ignored. Repositories must be resolved from payload or remote; PROJECT_BASE is only a parent folder.");
-}
-if (process.env.DEFAULT_REPO_NAME && process.env.DEFAULT_REPO_NAME.trim().length) {
-  console.warn("[config] DEFAULT_REPO_NAME env var is deprecated and ignored.");
-}
 
 const maxFileBytes = Number(process.env.MAX_FILE_BYTES || 524288);
 const allowedExts = splitCsv(process.env.ALLOWED_EXTS || ".ts,.tsx,.js,.jsx,.py,.md,.json,.yml,.yaml,.css,.html,.sh,.bat", [])
@@ -210,13 +201,6 @@ const personaDefaultTimeoutMs = parseDurationMs(process.env.PERSONA_DEFAULT_TIME
 // Default max retries: 3
 const personaDefaultMaxRetries = parseRevisionLimit(process.env.PERSONA_DEFAULT_MAX_RETRIES, 3);
 
-// Legacy configuration support (deprecated)
-const personaCodingTimeoutMs = parseDurationMs(process.env.PERSONA_CODING_TIMEOUT_MS, 180000);
-const personaCodingPersonas = splitCsv(process.env.PERSONA_CODING_PERSONAS || "lead-engineer,devops,ui-engineer,qa-engineer,ml-engineer", []);
-const enablePersonaCompatMode = bool(process.env.ENABLE_PERSONA_COMPAT_MODE, false);
-
-
-
 export const cfg = {
   // Message Transport Configuration
   transportType: (process.env.TRANSPORT_TYPE || "redis") as "redis" | "local",
@@ -252,7 +236,7 @@ export const cfg = {
   coordinatorMaxIterations,
   planMaxIterationsPerStage,
   blockedMaxAttempts,
-  personaTimeoutMaxRetries, // Legacy global default
+  personaTimeoutMaxRetries, // Global default
   personaRetryBackoffIncrementMs,
   // Plan citation and relevance budget settings
   planRequireCitations,
@@ -283,9 +267,6 @@ export const cfg = {
   personaMaxRetries,
   personaDefaultTimeoutMs,
   personaDefaultMaxRetries,
-  personaCodingTimeoutMs, // Legacy
-  personaCodingPersonas, // Legacy
-  enablePersonaCompatMode,
 
   git: {
     defaultBranch: (process.env.GIT_DEFAULT_BRANCH || "main").trim() || "main",

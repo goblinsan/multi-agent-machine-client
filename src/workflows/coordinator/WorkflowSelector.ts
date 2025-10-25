@@ -67,10 +67,7 @@ export class WorkflowSelector {
    */
   selectWorkflowForTask(
     engine: WorkflowEngine,
-    task: any,
-    options?: {
-      preferLegacyCompatible?: boolean;
-    }
+    task: any
   ): { workflow: any; reason: string } | null {
     const taskType = this.determineTaskType(task);
     const scope = this.determineTaskScope(task);
@@ -94,17 +91,6 @@ export class WorkflowSelector {
         return {
           workflow: reviewWorkflow,
           reason: 'in-review-task'
-        };
-      }
-    }
-    
-    // Try to use legacy-compatible workflow if requested
-    if (options?.preferLegacyCompatible) {
-      const legacyWorkflow = engine.getWorkflowDefinition('legacy-compatible-task-flow');
-      if (legacyWorkflow) {
-        return {
-          workflow: legacyWorkflow,
-          reason: 'legacy-compatible'
         };
       }
     }

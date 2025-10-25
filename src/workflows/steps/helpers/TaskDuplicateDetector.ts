@@ -170,7 +170,7 @@ export class TaskDuplicateDetector {
   }
 
   /**
-   * Calculate overlap percentage between two text strings (legacy behavior test helper)
+   * Calculate overlap percentage between two text strings (behavior test helper)
    * 
    * @param a - First text
    * @param b - Second text

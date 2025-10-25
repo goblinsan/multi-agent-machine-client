@@ -8,7 +8,7 @@
  * - tests/initialPlanningAckAndEval.test.ts (100 lines)
  * - tests/qaPmGating.test.ts (100 lines)
  * - src/workflows/steps/PMDecisionParserStep.ts (347 lines - modern implementation)
- * - src/workflows/steps/ReviewFailureTasksStep.ts (540 lines - legacy parser)
+ * - src/workflows/steps/ReviewFailureTasksStep.ts (540 lines - old parser)
  * 
  * Key Validated Behaviors:
  * 1. Single consolidated parser (PMDecisionParserStep only)

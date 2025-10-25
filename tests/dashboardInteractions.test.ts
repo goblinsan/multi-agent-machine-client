@@ -142,20 +142,11 @@ describe('dashboard interactions', () => {
     expect(call).toBeTruthy();
   });
 
-  it('updateTaskStatus requires projectId for current backend', async () => {
+  it('updateTaskStatus requires projectId - throws error if missing', async () => {
     const { TaskAPI } = await import('../src/dashboard/TaskAPI.js');
     const taskAPI = new TaskAPI();
     
-    // Don't provide projectId - should fail
-    const out = await taskAPI.updateTaskStatus('task-123', 'done');
-    expect(out.ok).toBe(false);
-    expect(out.status).toBe(400);
-  });
-});
-
-describe('coordinator dashboard hygiene', () => {
-  it.skip('skips updateTaskStatus for synthetic task id (legacy test - needs refactor for transport)', async () => {
-    // This test used old Redis mock patterns and needs to be updated for MessageTransport
-    // Skipping for now as it's testing legacy behavior
+    // Don't provide projectId - should throw
+    await expect(taskAPI.updateTaskStatus('task-123', 'done')).rejects.toThrow('projectId is required');
   });
 });

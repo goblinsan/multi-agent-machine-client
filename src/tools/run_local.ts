@@ -24,7 +24,7 @@ import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
 import { logger } from "../logger.js";
-import { handleCoordinator } from "../workflows/WorkflowCoordinator.js";
+import { WorkflowCoordinator } from "../workflows/WorkflowCoordinator.js";
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -111,7 +111,8 @@ async function processCoordinatorLoop(transport: any, initialMessage: any): Prom
   const initialPayload = JSON.parse(initialMessage.payload || '{}');
   
   try {
-    await handleCoordinator(transport, transport, initialMessage, initialPayload);
+    const coordinator = new WorkflowCoordinator();
+    await coordinator.handleCoordinator(transport, transport, initialMessage, initialPayload);
     console.log('Initial coordinator workflow completed');
   } catch (error: any) {
     console.error('Error processing initial coordinator message:', error.message);

@@ -318,9 +318,7 @@ export class WorkflowCoordinator {
     const scope = this.workflowSelector.determineTaskScope(task);
     
     // Use WorkflowSelector to select the appropriate workflow
-    const selection = this.workflowSelector.selectWorkflowForTask(this.engine, task, {
-      preferLegacyCompatible: true
-    });
+    const selection = this.workflowSelector.selectWorkflowForTask(this.engine, task);
     
     if (!selection) {
       throw new Error(`No suitable workflow found for task ${task?.id} (type: ${taskType}, scope: ${scope})`);
@@ -390,10 +388,6 @@ export class WorkflowCoordinator {
       task_slug: task?.slug || task?.task_slug || null,
       // Compute feature branch name based on milestone/task slug (using branchUtils logic)
       featureBranchName: this.workflowSelector.computeFeatureBranchName(task, context.projectSlug),
-      // Legacy compatibility variables
-      REDIS_STREAM_NAME: process.env.REDIS_STREAM_NAME || 'workflow-tasks',
-      CONSUMER_GROUP: process.env.CONSUMER_GROUP || 'workflow-consumers',
-      CONSUMER_ID: process.env.CONSUMER_ID || 'workflow-engine',
       // Skip pull task step since we're injecting the task directly
       SKIP_PULL_TASK: true,
       // CRITICAL: Always use remote URL for distributed systems - never pass local paths
@@ -410,20 +404,6 @@ export class WorkflowCoordinator {
         projectId: context.projectId
       });
       throw new Error('Cannot execute workflow: no repository remote URL. Configure the repository URL in the project dashboard.');
-    }
-
-    if (cfg.enablePersonaCompatMode) {
-      logger.debug('Sending legacy persona compatibility requests', {
-        workflowId: context.workflowId,
-        taskId: task?.id,
-        mode: 'compat'
-      });
-      await this.sendPersonaCompatibilityRequests(workflow, task, context);
-    } else {
-      logger.debug('Legacy persona compatibility requests disabled', {
-        workflowId: context.workflowId,
-        taskId: task?.id
-      });
     }
 
     // Create a modified workflow that skips the pull-task step when we have a task
@@ -469,58 +449,6 @@ export class WorkflowCoordinator {
   }
 
   /**
-   * Send persona requests via Redis for test compatibility
-   */
-  private async sendPersonaCompatibilityRequests(workflow: any, task: any, context: any): Promise<void> {
-    // Skip sending real Redis requests in test environments
-  if (process.env.NODE_ENV === 'test' || process.env.VITEST || typeof (globalThis as any).vi !== 'undefined' ||
-        context.workflowId?.includes('test') || task?.id?.includes('test')) {
-      logger.debug('Skipping persona compatibility requests in test environment', {
-        env: process.env.NODE_ENV,
-        vitest: process.env.VITEST,
-        workflowId: context.workflowId
-      });
-      return;
-    }
-    
-    try {
-      const transport = context.transport;
-      
-      // Map workflow steps to expected persona steps
-      const stepMappings = this.getPersonaStepMappings(workflow, task);
-      
-      const repoForPayload = context.remote || context.repoRoot;
-      for (const mapping of stepMappings) {
-        const corrId = await sendPersonaRequest(transport, {
-          workflowId: context.workflowId,
-          toPersona: mapping.persona,
-          step: mapping.step,
-          intent: mapping.intent,
-          payload: {
-            task,
-            repo: repoForPayload,
-            branch: context.getCurrentBranch(),
-            project_id: context.projectId,
-            project_name: context.projectName,
-            milestone: task?.milestone?.name,
-            milestone_name: task?.milestone?.name,
-            task_name: task?.name,
-            ...mapping.payload
-          },
-          repo: repoForPayload,
-          branch: context.getCurrentBranch(),
-          projectId: context.projectId
-        });
-
-        // For tests that check persona requests, we wait briefly for the request to be sent
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
-      
-      // No disconnect needed - transport lifecycle managed by caller
-    } catch (error) {
-      logger.warn('Failed to send persona compatibility requests', { error });
-    }
-  }  /**
    * Create a modified workflow that skips pull-task step when task is provided
    */
   private createTaskInjectedWorkflow(workflow: any, task: any): any {
@@ -549,71 +477,6 @@ export class WorkflowCoordinator {
   }
 
   /**
-   * Emit persona compatibility events for test compatibility
-   */
-  /**
-   * Get persona step mappings based on workflow and task
-   */
-  private getPersonaStepMappings(workflow: any, task: any): Array<{step: string, persona: string, intent?: string, payload?: any}> {
-    const mappings = [];
-
-    // Always emit context step
-    mappings.push({
-      step: '1-context',
-      persona: 'contextualizer',
-      intent: 'context_gathering'
-    });
-
-    // Emit planning step
-    mappings.push({
-      step: '2-plan',
-      persona: 'implementation-planner',
-      intent: 'plan_execution',
-      payload: {
-        plan_request: true
-      }
-    });
-
-    // Emit implementation step
-    mappings.push({
-      step: '2-implementation', 
-      persona: 'lead-engineer',
-      intent: 'implementation'
-    });
-
-    // Emit QA step
-    mappings.push({
-      step: '3-qa',
-      persona: 'tester-qa',
-      intent: 'quality_assurance'
-    });
-
-    // Add additional steps based on workflow type
-    if (workflow.name === 'feature') {
-      mappings.push({
-        step: '3-code-review',
-        persona: 'code-reviewer',
-        intent: 'code_review'
-      });
-      
-      mappings.push({
-        step: '3-security',
-        persona: 'security-engineer', 
-        intent: 'security_review'
-      });
-    }
-
-    // Add devops step
-    mappings.push({
-      step: '3-devops',
-      persona: 'devops-engineer',
-      intent: 'deployment'
-    });
-
-    return mappings;
-  }
-
-  /**
    * Extract repository remote from various sources
    */
   private extractRepoRemote(details: any, projectInfo: any, payload: any): string {
@@ -634,11 +497,4 @@ export class WorkflowCoordinator {
       pickRemoteFrom(payload)
     ) || '';
   }
-}
-
-// Legacy-compatible named export expected by worker.ts
-// Provides a function wrapper around the class-based coordinator
-export async function handleCoordinator(transport: MessageTransport, r: any, msg: any, payload: any): Promise<any> {
-  const coordinator = new WorkflowCoordinator();
-  return coordinator.handleCoordinator(transport, r, msg, payload);
 }

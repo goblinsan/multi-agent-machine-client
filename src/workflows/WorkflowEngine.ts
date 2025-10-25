@@ -216,10 +216,10 @@ export class WorkflowEngine {
         projectId: variables.project_id || variables.projectId || 'test-project',
         ...variables
       };
-      // Ensure a task object exists for SimpleTaskStatusStep compatibility
-      const legacyTaskId = (variables as any).task?.id || (variables as any).task_id || (variables as any).taskId;
-      if (legacyTaskId && !seededVars.task) {
-        seededVars.task = { id: legacyTaskId, title: (variables as any).task_name || (variables as any).title || 'test-task' };
+      // Ensure a task object exists for SimpleTaskStatusStep
+      const taskId = (variables as any).task?.id || (variables as any).task_id || (variables as any).taskId;
+      if (taskId && !seededVars.task) {
+        seededVars.task = { id: taskId, title: (variables as any).task_name || (variables as any).title || 'test-task' };
       }
 
       return this.executeWorkflowDefinition(

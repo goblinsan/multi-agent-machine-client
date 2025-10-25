@@ -17,7 +17,7 @@ interface PersonaRequestConfig {
 
 /**
  * PersonaRequestStep - Makes persona requests via Redis with exact step names
- * This step implements the exact persona communication pattern expected by legacy tests
+ * This step implements the exact persona communication pattern expected by tests
  */
 export class PersonaRequestStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
@@ -76,7 +76,7 @@ export class PersonaRequestStep extends WorkflowStep {
       // Choose seeded response without clobbering pre-seeded "*_result" if present
       const seededResponse = (preseededResult !== undefined ? preseededResult : (fallbackResponse || {}));
 
-      // Set interpreted status as {step_name}_status for workflow conditions, and also the legacy statusKey
+      // Set interpreted status as {step_name}_status for workflow conditions, and also the statusKey
       context.setVariable(`${stepName}_status`, seededStatus);
       if (mapping?.statusKey) {
         context.setVariable(mapping.statusKey, seededStatus);

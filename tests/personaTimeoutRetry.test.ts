@@ -714,8 +714,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
           'lead-engineer': 90000,
           'context': 60000
         },
-        personaDefaultTimeoutMs: 60000,
-        personaCodingTimeoutMs: 180000
+        personaDefaultTimeoutMs: 60000
       };
 
       expect(personaTimeoutMs('lead-engineer', mockCfg)).toBe(90000);

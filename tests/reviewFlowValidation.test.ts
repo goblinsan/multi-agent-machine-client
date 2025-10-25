@@ -15,7 +15,7 @@ describe('Review Flow Validation', () => {
   async function loadWorkflowSteps() {
     const workflowPath = path.resolve(
       process.cwd(),
-      'src/workflows/definitions/task-flow.yaml'  // Updated from legacy-compatible-task-flow.yaml
+      'src/workflows/definitions/task-flow.yaml'
     );
     const fileContent = await readFile(workflowPath, 'utf-8');
     const workflow = parse(fileContent) as {

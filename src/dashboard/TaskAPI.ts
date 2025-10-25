@@ -188,10 +188,9 @@ export class TaskAPI extends DashboardClient {
       return { ok: false, status: 0, body: null };
     }
 
-    // Legacy compatibility: warn that projectId is now required
+    // ProjectId is REQUIRED for backend routes
     if (!projectId) {
-      logger.warn("updateTaskStatus requires projectId for current backend", { taskId });
-      return { ok: false, status: 400, body: { error: "projectId required" } };
+      throw new Error("updateTaskStatus: projectId is required");
     }
 
     const endpoint = `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;

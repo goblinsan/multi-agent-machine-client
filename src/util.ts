@@ -1,9 +1,12 @@
 import { cfg } from "./config.js";
 
-export const CODING_PERSONA_SET = new Set((cfg.personaCodingPersonas && cfg.personaCodingPersonas.length
-    ? cfg.personaCodingPersonas
-    : ["lead-engineer", "devops", "ui-engineer", "qa-engineer", "ml-engineer"]
-  ).map(p => p.trim().toLowerCase()).filter(Boolean));
+export const CODING_PERSONA_SET = new Set([
+  "lead-engineer", 
+  "devops", 
+  "ui-engineer", 
+  "qa-engineer", 
+  "ml-engineer"
+].map(p => p.trim().toLowerCase()).filter(Boolean));
 
 export const ENGINEER_PERSONAS_REQUIRING_PLAN = new Set(["lead-engineer", "ui-engineer"]);
 
@@ -84,7 +87,6 @@ export function slugify(value: string) {
   export function personaTimeoutMs(persona: string, cfg: any) {
     const key = (persona || "").toLowerCase();
     if (key && cfg.personaTimeouts[key] !== undefined) return cfg.personaTimeouts[key];
-    if (CODING_PERSONA_SET.has(key) && cfg.personaCodingTimeoutMs) return cfg.personaCodingTimeoutMs;
     return cfg.personaDefaultTimeoutMs;
   }
 

@@ -10,8 +10,8 @@ interface SimpleTaskStatusConfig {
 }
 
 /**
- * SimpleTaskStatusStep - Simple task status update compatible with tests
- * This step directly calls dashboard.updateTaskStatus as expected by legacy tests
+ * SimpleTaskStatusStep - Simple task status update
+ * This step directly calls dashboard.updateTaskStatus as expected by tests
  */
 export class SimpleTaskStatusStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {

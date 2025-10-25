@@ -8,9 +8,6 @@ import { TaskAPI, CreateTaskInput, CreateTaskResult } from "./dashboard/TaskAPI.
 const projectAPI = new ProjectAPI();
 const taskAPI = new TaskAPI();
 
-// Re-export types for backward compatibility
-export type { CreateTaskInput, CreateTaskResult };
-
 /**
  * Fetch context snapshot for a workflow
  */

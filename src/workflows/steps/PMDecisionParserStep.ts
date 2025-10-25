@@ -30,7 +30,7 @@ interface PMDecisionParserConfig {
  * Handles multiple formats:
  * - JSON response with decision object
  * - Text response with structured sections
- * - Legacy formats from different PM prompts
+ * - Different formats from different PM prompts
  * 
  * **Backlog Deprecation (Production Bug Fix):**
  * - PM used to return both `backlog` and `follow_up_tasks` fields
@@ -138,7 +138,7 @@ export class PMDecisionParserStep extends WorkflowStep {
         warnings
       );
 
-      // Behavior-tests compatibility: add alias fields expected by legacy behavior tests
+      // Add alias fields expected by behavior tests
       const behaviorCompatDecision: any = {
         ...enrichedDecision,
         immediate_fix: enrichedDecision.decision === 'immediate_fix',

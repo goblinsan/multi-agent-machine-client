@@ -26,7 +26,6 @@ interface TaskToCreate {
 
 /**
  * Existing task from dashboard (for duplicate detection)
- * Re-export from detector for backward compatibility
  */
 type ExistingTask = DetectorExistingTask;
 
@@ -166,16 +165,6 @@ export class BulkTaskCreationStep extends WorkflowStep {
    * Execute bulk task creation with retry logic
    */
   async execute(context: WorkflowContext): Promise<StepResult> {
-    // Back-compat: if tests pass a plain object without a logger, attach a basic logger
-    if (!(context as any).logger) {
-      (context as any).logger = logger;
-    }
-    
-    // Legacy behavior-test mode: constructed without full WorkflowStepConfig
-    const isLegacyBehaviorMode = !(this as any).config?.config && (this as any).config?.input_variable;
-    if (isLegacyBehaviorMode) {
-      return this.executeLegacyBehavior(context as unknown as Record<string, any>);
-    }
     const stepConfig = this.config.config as BulkTaskCreationConfig;
     const startTime = Date.now();
 
@@ -399,154 +388,6 @@ export class BulkTaskCreationStep extends WorkflowStep {
         }
       };
     }
-  }
-
-  /**
-   * Legacy behavior-test execution path (tests/behavior/taskCreation.test.ts)
-   * Accepts a plain object context and a minimal constructor config with
-   * { input_variable, output_variable } and simulates dashboard behaviors.
-   */
-  private async executeLegacyBehavior(plainContext: Record<string, any>): Promise<StepResult> {
-    const warnings: string[] = [];
-    const inputVar: string = (this as any).config.input_variable || 'pm_decision';
-    const stepId: string = (this as any).config.step_id || plainContext.step_id || 'bulk_task_creation';
-    const workflowRunId: string = plainContext.workflow_run_id || 'run-test';
-
-    const followUps: any[] = plainContext?.[inputVar]?.follow_up_tasks || [];
-    const existingTasks: any[] = plainContext.existing_tasks || [];
-    const created_tasks: any[] = [];
-    const skipped_tasks: any[] = [];
-
-    const isUrgent = (p?: string) => this.priorityCalculator.isUrgent(p as TaskPriority);
-    const computePriority = (title: string, priority?: string) => 
-      this.priorityCalculator.calculateWithTitleInference(title, priority as TaskPriority);
-    const prefixTitle = (title: string, urgent: boolean) => 
-      this.priorityCalculator.addTitlePrefix(title, urgent);
-
-    // Duplicate detection helper
-    const overlapPct = (a: string, b: string): number => 
-      this.duplicateDetector.calculateOverlapPercentage(a, b);
-
-    // Idempotency: precompute external_ids
-    const externalIdFor = (idx: number) => `${workflowRunId}:${stepId}:${idx}`;
-
-    // Build candidate tasks
-    followUps.forEach((t, idx) => {
-      // external_id idempotency check
-      const extId = externalIdFor(idx);
-      const existingByExt = existingTasks.find(et => et.external_id === extId);
-      if (existingByExt) {
-        skipped_tasks.push({
-          reason: 'external_id_exists',
-          existing_task_id: existingByExt.id || existingByExt.task_id || existingByExt.external_id
-        });
-        return;
-      }
-
-      // Title/description duplicate detection
-      const titleMatch = existingTasks.find(et => (et.title || '').trim() === (t.title || '').trim());
-      if (titleMatch) {
-        const pct = overlapPct(t.description || '', titleMatch.description || '');
-        if (pct >= 50) {
-          skipped_tasks.push({ reason: 'duplicate_detected', overlap_percentage: pct });
-          return;
-        }
-      }
-
-      // Construct created task with derived fields
-      const urgent = isUrgent(t.priority);
-      const derivedPriority = computePriority(t.title || '', t.priority);
-      const created: any = {
-        title: prefixTitle(t.title || '', urgent),
-        description: t.description || '',
-        priority: derivedPriority,
-        assignee_persona: 'implementation-planner',
-        external_id: extId
-      };
-
-      // Milestone routing
-      const routingResult = this.router.routeWithFallback(
-        t.priority as TaskPriority,
-        {
-          parent_milestone_id: plainContext.parent_milestone_id,
-          backlog_milestone_id: plainContext.backlog_milestone_id
-        },
-        t.milestone_id
-      );
-      created.milestone_id = routingResult.milestone_id;
-      warnings.push(...routingResult.warnings);
-
-      // Parent linking
-      if (plainContext.parent_task_id) {
-        created.parent_task_id = plainContext.parent_task_id;
-      }
-
-      created_tasks.push(created);
-    });
-
-    // Simulate retries/dash behaviors based on flags
-    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-    const retryBase = 1000;
-
-    let retry_attempts = 1;
-    if (plainContext.simulate_dashboard_failure) {
-      await sleep(retryBase);
-      await sleep(retryBase * 2);
-      await sleep(retryBase * 4);
-      retry_attempts = 3;
-      return {
-        status: 'failed',
-        context: { created_tasks, skipped_tasks },
-        retry_attempts,
-        warnings
-      } as any;
-    }
-
-    if (typeof plainContext.simulate_transient_failure === 'number') {
-      const fails = Math.max(0, plainContext.simulate_transient_failure);
-      for (let i = 0; i < fails; i++) {
-        await sleep(retryBase * Math.pow(2, i));
-      }
-      retry_attempts = fails + 1;
-      return {
-        status: 'completed',
-        context: { created_tasks, skipped_tasks },
-        retry_attempts,
-        warnings
-      } as any;
-    }
-
-    if (plainContext.simulate_partial_failure) {
-      // Create first, fail second after retries
-      if (created_tasks.length > 1) {
-        await sleep(retryBase);
-        await sleep(retryBase * 2);
-        await sleep(retryBase * 4);
-        retry_attempts = 3;
-        // Keep only first as created; mark abort
-        const first = created_tasks[0];
-        return {
-          status: 'failed',
-          context: { created_tasks: [first], skipped_tasks: skipped_tasks.concat(created_tasks.slice(1)) },
-          retry_attempts,
-          abort_workflow: true,
-          error: {
-            reason: 'Partial task creation failure after retry exhaustion',
-            created_count: 1,
-            failed_count: created_tasks.length - 1
-          },
-          warnings
-        } as any;
-      }
-    }
-
-    // Default: succeed immediately
-    return {
-      status: 'completed',
-      context: { created_tasks, skipped_tasks },
-      retry_attempts: 1,
-      warnings
-    } as any;
   }
 
   /**

@@ -42,77 +42,6 @@ describe('WorkflowCoordinator Integration', () => {
     vi.clearAllMocks();
   });
 
-  // These tests test internal implementation details that were refactored into helper classes.
-  // The functionality is now tested via integration tests that use the public API.
-  it.skip('should determine task types correctly', () => {
-    // Test hotfix detection
-    expect(coordinator['determineTaskType']({ 
-      name: 'Urgent hotfix for critical bug',
-      description: 'Emergency fix needed' 
-    })).toBe('hotfix');
-
-    // Test feature detection
-    expect(coordinator['determineTaskType']({ 
-      name: 'New feature implementation',
-      description: 'Add new user dashboard feature' 
-    })).toBe('feature');
-
-    // Test analysis detection
-    expect(coordinator['determineTaskType']({ 
-      name: 'Code review and analysis',
-      description: 'Understand the current architecture' 
-    })).toBe('analysis');
-
-    // Test bugfix detection
-    expect(coordinator['determineTaskType']({ 
-      name: 'Fix broken login',
-      description: 'Bug in authentication system' 
-    })).toBe('bugfix');
-
-    // Test default
-    expect(coordinator['determineTaskType']({ 
-      name: 'Regular task',
-      description: 'Standard development work' 
-    })).toBe('task');
-  });
-
-  it.skip('should determine task scope correctly', () => {
-    // Test large scope
-    expect(coordinator['determineTaskScope']({ 
-      name: 'Large comprehensive refactor',
-      description: 'Major system overhaul' 
-    })).toBe('large');
-
-    // Test small scope
-    expect(coordinator['determineTaskScope']({ 
-      name: 'Small quick fix',
-      description: 'Minor update needed' 
-    })).toBe('small');
-
-    // Test default medium scope
-    expect(coordinator['determineTaskScope']({ 
-      name: 'Standard task',
-      description: 'Regular development work' 
-    })).toBe('medium');
-  });
-
-  it.skip('should normalize task status correctly', () => {
-    expect(coordinator['normalizeTaskStatus']('done')).toBe('done');
-    expect(coordinator['normalizeTaskStatus']('completed')).toBe('done');
-    expect(coordinator['normalizeTaskStatus']('FINISHED')).toBe('done');
-    
-    expect(coordinator['normalizeTaskStatus']('in_progress')).toBe('in_progress');
-    expect(coordinator['normalizeTaskStatus']('IN-PROGRESS')).toBe('in_progress');
-    expect(coordinator['normalizeTaskStatus']('active')).toBe('in_progress');
-    
-    expect(coordinator['normalizeTaskStatus']('open')).toBe('open');
-    expect(coordinator['normalizeTaskStatus']('NEW')).toBe('open');
-    expect(coordinator['normalizeTaskStatus']('pending')).toBe('open');
-    
-    expect(coordinator['normalizeTaskStatus']('unknown_status')).toBe('unknown');
-    expect(coordinator['normalizeTaskStatus']('')).toBe('unknown');
-  });
-
   it('should extract repository remote correctly', () => {
     const details = { repository: { clone_url: 'https://github.com/test/repo.git' } };
     const projectInfo = { repo: { url: 'https://gitlab.com/test/repo.git' } };
@@ -133,59 +62,6 @@ describe('WorkflowCoordinator Integration', () => {
     // Should return empty string if none found
     expect(coordinator['extractRepoRemote']({}, {}, {}))
       .toBe('');
-  });
-
-  it.skip('should extract tasks from milestones correctly', () => {
-    const details = {
-      milestones: [{
-        id: 'milestone-1',
-        name: 'First Milestone',
-        tasks: [
-          { id: 'task-1', name: 'Task 1' },
-          { id: 'task-2', name: 'Task 2' }
-        ]
-      }, {
-        id: 'milestone-2',
-        name: 'Second Milestone',
-        tasks: [
-          { id: 'task-3', name: 'Task 3' }
-        ]
-      }]
-    };
-
-    const tasks = coordinator['extractTasks'](details, {});
-    
-    expect(tasks).toHaveLength(3);
-    expect(tasks[0]).toMatchObject({
-      id: 'task-1',
-      name: 'Task 1',
-      milestone: { id: 'milestone-1', name: 'First Milestone' }
-    });
-    expect(tasks[1]).toMatchObject({
-      id: 'task-2',
-      name: 'Task 2',
-      milestone: { id: 'milestone-1', name: 'First Milestone' }
-    });
-    expect(tasks[2]).toMatchObject({
-      id: 'task-3',
-      name: 'Task 3',
-      milestone: { id: 'milestone-2', name: 'Second Milestone' }
-    });
-  });
-
-  it.skip('should extract tasks from project info as fallback', () => {
-    const projectInfo = {
-      tasks: [
-        { id: 'direct-task-1', name: 'Direct Task 1' },
-        { id: 'direct-task-2', name: 'Direct Task 2' }
-      ]
-    };
-
-    const tasks = coordinator['extractTasks']({}, projectInfo);
-    
-    expect(tasks).toHaveLength(2);
-    expect(tasks[0]).toMatchObject({ id: 'direct-task-1', name: 'Direct Task 1' });
-    expect(tasks[1]).toMatchObject({ id: 'direct-task-2', name: 'Direct Task 2' });
   });
 
   it('should handle workflow loading', async () => {
@@ -342,7 +218,7 @@ describe('WorkflowCoordinator Task Processing', () => {
     const coordinator = new WorkflowCoordinator(engine);
 
     const workflowDef = {
-      name: 'legacy-compatible-task-flow',
+      name: 'task-flow',
       description: 'Test workflow',
       version: '1.0.0',
       trigger: { condition: "task_type == 'task'" },
@@ -351,7 +227,7 @@ describe('WorkflowCoordinator Task Processing', () => {
     } as any;
 
     vi.spyOn(engine, 'getWorkflowDefinition').mockImplementation((name: string) =>
-      name === 'legacy-compatible-task-flow' ? workflowDef : undefined
+      name === 'task-flow' ? workflowDef : undefined
     );
     vi.spyOn(engine, 'findWorkflowByCondition').mockReturnValue(workflowDef);
 
