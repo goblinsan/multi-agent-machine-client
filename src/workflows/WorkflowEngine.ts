@@ -15,6 +15,7 @@ import { PersonaRequestStep } from './steps/PersonaRequestStep';
 import { ConditionalStep } from './steps/ConditionalStep';
 import { SimpleTaskStatusStep } from './steps/SimpleTaskStatusStep';
 import { GitOperationStep } from './steps/GitOperationStep';
+import { GitArtifactStep } from './steps/GitArtifactStep';
 import { PlanningLoopStep } from './steps/PlanningLoopStep';
 import { VariableSetStep } from './steps/VariableSetStep';
 import { BlockedTaskAnalysisStep } from './steps/BlockedTaskAnalysisStep';
@@ -122,6 +123,7 @@ export class WorkflowEngine {
     this.stepRegistry.set('ConditionalStep', ConditionalStep);
     this.stepRegistry.set('SimpleTaskStatusStep', SimpleTaskStatusStep);
     this.stepRegistry.set('GitOperationStep', GitOperationStep);
+    this.stepRegistry.set('GitArtifactStep', GitArtifactStep);
     this.stepRegistry.set('PlanningLoopStep', PlanningLoopStep);
     this.stepRegistry.set('VariableSetStep', VariableSetStep);
     this.stepRegistry.set('BlockedTaskAnalysisStep', BlockedTaskAnalysisStep);
