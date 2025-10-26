@@ -31,10 +31,10 @@ async function purgeWorkflowRedisQueues(
         // Ack for expected groups
         try {
           acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:lead-engineer`, id);
-        } catch {}
+        } catch { /* xAck may fail if message already acked */ }
         try {
           acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:coordination`, id);
-        } catch {}
+        } catch { /* xAck may fail if message already acked */ }
       }
     }
 

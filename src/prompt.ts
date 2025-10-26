@@ -30,7 +30,7 @@ function normalizeRepoRelativePath(value: string): string {
   export function extractMentionedPaths(text: string | null | undefined): string[] {
     if (!text) return [];
     const found = new Set<string>();
-    const quotedRegex = /[`\'\"]([^`\'"\n]+\.(?:ts|tsx|js|jsx|json|css|md|html|yml|yaml))[`\'\"]/gi;
+    const quotedRegex = /[`'"]([^`'"\n]+\.(?:ts|tsx|js|jsx|json|css|md|html|yml|yaml))[`'"]/gi;
     let match: RegExpExecArray | null;
     while ((match = quotedRegex.exec(text))) {
       const raw = match[1]?.trim();
@@ -39,7 +39,7 @@ function normalizeRepoRelativePath(value: string): string {
       if (!normalized.length || normalized.includes("..") || normalized.startsWith(".ma/")) continue;
       found.add(normalized);
     }
-    const slashRegex = /(^|[^A-Za-z0-9._\/-])((?:src|app|lib|components|tests|public)\/[A-Za-z0-9._\/-]+\.(?:ts|tsx|js|jsx|json|css|md|html|yml|yaml))/gi;
+    const slashRegex = /(^|[^A-Za-z0-9._/-])((?:src|app|lib|components|tests|public)\/[A-Za-z0-9._/-]+\.(?:ts|tsx|js|jsx|json|css|md|html|yml|yaml))/gi;
     while ((match = slashRegex.exec(text))) {
       const raw = match[2]?.trim();
       if (!raw) continue;

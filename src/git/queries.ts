@@ -9,7 +9,7 @@ export async function detectRemoteDefaultBranch(repoRoot: string): Promise<strin
       return ref.slice("refs/remotes/origin/".length);
     }
     if (ref.length) return ref;
-  } catch {}
+  } catch { /* symbolic-ref failed, try remote show */ }
 
   try {
     const remoteShow = await runGit(["remote", "show", "origin"], { cwd: repoRoot });
@@ -21,7 +21,7 @@ export async function detectRemoteDefaultBranch(repoRoot: string): Promise<strin
       const branch = line.split(":" , 2)[1]?.trim();
       if (branch) return branch;
     }
-  } catch {}
+  } catch { /* remote show failed, return null */ }
 
   return null;
 }
@@ -170,13 +170,13 @@ export async function getRepoMetadata(repoRoot: string) {
       remoteUrl = remote;
       remoteSlugValue = remoteSlug(remote);
     }
-  } catch {}
+  } catch { /* git remote failed, use defaults */ }
 
   try {
     const branchRes = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot });
     const branch = branchRes.stdout.trim();
     if (branch && branch !== "HEAD") currentBranch = branch;
-  } catch {}
+  } catch { /* rev-parse failed, use default branch */ }
 
   return { remoteUrl, remoteSlug: remoteSlugValue, currentBranch };
 }

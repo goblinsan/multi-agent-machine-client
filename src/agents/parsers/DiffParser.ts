@@ -245,7 +245,7 @@ export class DiffParser {
       /^--- /m,
       /^\+\+\+ /m,
       /^@@ /m,
-      /^[+\-]/m
+      /^[+-]/m
     ];
     
     return diffIndicators.some(pattern => pattern.test(content));

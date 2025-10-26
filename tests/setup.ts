@@ -94,7 +94,7 @@ afterAll(() => {
   // Clean up PROJECT_BASE tmp directory for CI hygiene
   try {
     fs.rmSync(tmpBase, { recursive: true, force: true });
-  } catch {}
+  } catch { /* cleanup may fail if dir doesn't exist */ }
 });
 
 // Guard: prevent git commands from running outside tmp directories during tests

@@ -297,7 +297,7 @@ export class SubWorkflowStep extends WorkflowStep {
     if (fallbackExpr === 'true') return true;
     if (/^\d+(?:\.\d+)?$/.test(fallbackExpr)) return Number(fallbackExpr);
     // Strip quotes if present
-    const strMatch = fallbackExpr.match(/^['\"]([\s\S]*)['\"]$/);
+    const strMatch = fallbackExpr.match(/^['"]([\s\S]*)['"]$/);
     return strMatch ? strMatch[1] : this.getVarOrStepOutput(context, fallbackExpr);
   }
 

@@ -48,7 +48,7 @@ export async function scanRepo(spec: ScanSpec): Promise<FileInfo[]> {
             const txt = await fs.readFile(abs, "utf8");
             fi.lines = txt.split(/\r?\n/).length;
             if (spec.track_hash) fi.sha1 = crypto.createHash("sha1").update(txt).digest("hex");
-          } catch {}
+          } catch { /* file read failed, skip metrics */ }
         }
         results.push(fi);
       }

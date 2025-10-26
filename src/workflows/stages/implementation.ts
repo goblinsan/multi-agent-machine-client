@@ -127,7 +127,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
                 hasQaFeedback: !!ef,
                 qaSource: ef && typeof ef === 'object' ? (ef.source || 'object') : (ef ? 'inline' : 'none')
             });
-        } catch {}
+        } catch { /* logging QA feedback failed, non-fatal */ }
 
         // Ensure a non-null QA feedback object for evaluator
         const qaFb = explicitQaFeedback || (feedback ? { status: 'info', details: feedback, source: 'feedback_text' } : null) || { status: 'unknown', details: 'No explicit QA feedback provided', source: 'none' };
@@ -210,7 +210,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
                 const preview = typeof ack === 'string' ? String(ack).slice(0, 500) : JSON.stringify(ack).slice(0, 500);
                 logger.info("planner acknowledged evaluator feedback (initial planning)", { workflowId, preview });
             }
-        } catch {}
+        } catch { /* planner acknowledgement failed, non-fatal */ }
         return { planText: planOutput, planPayload: planJson, planSteps, history: planHistory.slice() };
     }
     // Failing open: if we exceeded attempts, proceed with the latest plan in history
@@ -224,7 +224,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
             (payload as any).meta.reason = 'iteration_limit_exceeded';
             logger.warn("plan approval attempts exhausted; proceeding with last plan", { workflowId, planner, attempt, steps: steps.length });
             return { planText: last.content, planPayload: payload, planSteps: steps, history: planHistory.slice() };
-        } catch {}
+        } catch { /* fallback plan extraction failed, non-fatal */ }
     }
     throw new Error(`Exceeded plan approval attempts for ${planner} on revision ${attempt}`);
 }
@@ -269,7 +269,7 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
         if (!derivedQaFeedback && taskDescriptor) {
             derivedQaFeedback = { status: 'unknown', details: taskDescriptor.summary || taskDescriptor.name || '(no details)', source: 'task_fallback' };
         }
-    } catch {}
+    } catch { /* QA feedback derivation failed, non-fatal */ }
     const engineerBasePayload = {
         repo: repoRemote,
         branch: branchName,

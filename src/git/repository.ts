@@ -35,7 +35,7 @@ function parseRemote(remote: string): ParsedRemote {
 
   // Guard: reject obvious local filesystem paths (Windows drive letters, UNC, POSIX absolute)
   // when they do not include a URL scheme. These are not git remotes.
-  const isWindowsDrive = /^[A-Za-z]:[\\\/]/.test(trimmed);
+  const isWindowsDrive = /^[A-Za-z]:[/\\]/.test(trimmed);
   const isUnc = /^\\\\/.test(trimmed);
   const isPosixAbs = /^\//.test(trimmed);
   if (!trimmed.includes("://") && (isWindowsDrive || isUnc || isPosixAbs)) {
@@ -157,7 +157,7 @@ async function configureCredentialStore(repoRoot: string, credentialUrl?: URL) {
 
   try {
     await fs.mkdir(path.dirname(credentialsPath), { recursive: true });
-  } catch {}
+  } catch { /* directory may already exist */ }
 
   const username = credentialUrl.username || (cfg.git.username || (cfg.git.token ? "git" : ""));
   const password = credentialUrl.password || cfg.git.token || cfg.git.password;
@@ -231,13 +231,13 @@ function repoUrlFromPayload(payload: any): string | null {
     const trimmed = candidate.trim();
     if (!trimmed.length) continue;
     // Skip local filesystem-looking paths
-    if (/^(?:[A-Za-z]:[\\\/]|\\\\|\/)/.test(trimmed)) continue;
+    if (/^(?:[A-Za-z]:[/\\]|\\\\|\/)/.test(trimmed)) continue;
     // Only treat as a remote if it parses as an SSH/HTTPS git remote. Ignore local filesystem paths.
     try {
       // Will throw for local paths like C:\\... or /Users/...
       parseRemote(trimmed);
       return trimmed;
-    } catch {}
+    } catch { /* not a valid git remote */ }
   }
   return null;
 }
@@ -257,7 +257,7 @@ export async function resolveRepoFromPayload(payload: any): Promise<RepoResoluti
     if (!cand || typeof cand !== 'string') continue;
     const trimmed = cand.trim();
     if (!trimmed) continue;
-    if (!/^(?:[A-Za-z]:[\\\/]|\\\\|\/)/.test(trimmed)) continue; // not an absolute local path
+    if (!/^(?:[A-Za-z]:[/\\]|\\\\|\/)/.test(trimmed)) continue; // not an absolute local path
     const gitDir = path.join(trimmed, ".git");
     if (await directoryExists(gitDir).catch(() => false)) {
       // Avoid mutating the current workspace by default
@@ -333,7 +333,7 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
     logger.info("git fetch", { remote: displayRemote, repoRoot });
     try {
       await runGit(["remote", "set-url", "origin", remoteInfo.sanitized], { cwd: repoRoot });
-    } catch {}
+    } catch { /* remote set-url may fail, continue with fetch */ }
     await runGit(["fetch", "--all", "--tags"], { cwd: repoRoot });
   }
 
@@ -389,7 +389,7 @@ async function ensureRepo(remote: string, branch: string | null, projectHint: st
     let current = "";
     try {
       current = (await runGit(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot })).stdout.trim();
-    } catch {}
+    } catch { /* rev-parse may fail in detached HEAD */ }
 
     if (!current || current === "HEAD") {
       const fallback = (await detectRemoteDefaultBranch(repoRoot)) || cfg.git.defaultBranch;

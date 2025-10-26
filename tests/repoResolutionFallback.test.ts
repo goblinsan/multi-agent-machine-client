@@ -24,7 +24,7 @@ describe('resolveRepoFromPayload respects PROJECT_BASE and remote URLs', () => {
   afterEach(async () => {
     (cfg as any).projectBase = originalProjectBase;
     (cfg as any).repoRoot = originalProjectBase;
-    try { await (await import('fs/promises')).rm(tmpBase, { recursive: true, force: true }); } catch {}
+    try { await (await import('fs/promises')).rm(tmpBase, { recursive: true, force: true }); } catch { /* cleanup may fail if dir doesn't exist */ }
     gitUtils.__setRunGitImplForTests(null);
   });
 

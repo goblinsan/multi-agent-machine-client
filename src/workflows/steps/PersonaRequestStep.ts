@@ -35,7 +35,7 @@ export class PersonaRequestStep extends WorkflowStep {
           const explicit = context.getVariable('SKIP_PERSONA_OPERATIONS');
           // Only allow bypass to be disabled if explicitly set to false
           if (explicit === false) return false;
-        } catch {}
+        } catch { /* getVariable may throw in test setup */ }
         // Default: ALWAYS bypass in test mode
         return true;
       }
@@ -43,7 +43,7 @@ export class PersonaRequestStep extends WorkflowStep {
       // In production, respect the SKIP_PERSONA_OPERATIONS flag
       try {
         return context.getVariable('SKIP_PERSONA_OPERATIONS') === true;
-      } catch {}
+      } catch { /* getVariable may throw, default to false */ }
       return false;
     })();
 

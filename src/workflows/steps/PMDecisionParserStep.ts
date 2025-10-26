@@ -156,7 +156,7 @@ export class PMDecisionParserStep extends WorkflowStep {
       // For direct usage in behavior tests: attach result to plain context object
       try {
         (context as any).pm_decision = behaviorCompatDecision as any;
-      } catch {}
+      } catch { /* context assignment may fail in some test scenarios */ }
 
       return ({
         status: 'success',

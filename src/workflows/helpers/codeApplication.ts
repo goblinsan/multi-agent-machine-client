@@ -121,7 +121,7 @@ export async function applyAgentCodeChanges(options: ApplyAgentCodeChangesOption
     throw new Error(messages.noChanges);
   }
 
-  try { await ensureBranchPublished(repoRoot, branchName); } catch {}
+  try { await ensureBranchPublished(repoRoot, branchName); } catch { /* branch may already be published */ }
 
   const commitResult = await commitAndPushPaths({ repoRoot, branch: branchName, message: options.commitMessage ?? `feat: ${taskName}`, paths: editResult.changed });
   if (!commitResult || !commitResult.committed || !commitResult.pushed) {
