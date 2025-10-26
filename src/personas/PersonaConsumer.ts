@@ -1,8 +1,10 @@
-import { MessageTransport } from '../transport/MessageTransport.js';
+import { MessageTransport } from '../transport/index.js';
 import { cfg } from '../config.js';
-import { logger } from '../logger.js';
 import { buildPersonaMessages, callPersonaModel } from './PersonaRequestHandler.js';
 import { SYSTEM_PROMPTS } from '../personas.js';
+import { logger } from '../logger.js';
+import fs from 'fs/promises';
+import path from 'path';
 
 export type PersonaConsumerConfig = {
   /** List of personas this consumer should handle */
@@ -328,11 +330,74 @@ export class PersonaConsumer {
     const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} persona.`;
 
     // Build user text from intent and payload
-    // Priority: user_text > task.description > description > task.title > intent
+    // Priority: user_text > artifact paths > task.description > description > task.title > intent
     let userText = intent || 'Process this request';
+    
     if (payload.user_text) {
+      // Explicit user text takes highest priority
       userText = payload.user_text;
-    } else if (payload.task && payload.task.description) {
+    } 
+    else if (payload.plan_artifact) {
+      // Read approved plan from git
+      try {
+        const artifactPath = this.resolveArtifactPath(payload.plan_artifact, payload);
+        userText = await this.readArtifactFromGit(artifactPath, repo);
+        logger.info('Loaded plan artifact from git', {
+          persona,
+          artifactPath,
+          contentLength: userText.length
+        });
+      } catch (error) {
+        logger.error('Failed to read plan_artifact from git', {
+          persona,
+          artifactPath: payload.plan_artifact,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        // Fallback to other sources
+        userText = intent || 'Process this request';
+      }
+    }
+    else if (payload.qa_result_artifact) {
+      // Read QA result from git
+      try {
+        const artifactPath = this.resolveArtifactPath(payload.qa_result_artifact, payload);
+        userText = await this.readArtifactFromGit(artifactPath, repo);
+        logger.info('Loaded QA result artifact from git', {
+          persona,
+          artifactPath,
+          contentLength: userText.length
+        });
+      } catch (error) {
+        logger.error('Failed to read qa_result_artifact from git', {
+          persona,
+          artifactPath: payload.qa_result_artifact,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        // Fallback to other sources
+        userText = intent || 'Process this request';
+      }
+    }
+    else if (payload.context_artifact) {
+      // Read context scan from git
+      try {
+        const artifactPath = this.resolveArtifactPath(payload.context_artifact, payload);
+        userText = await this.readArtifactFromGit(artifactPath, repo);
+        logger.info('Loaded context artifact from git', {
+          persona,
+          artifactPath,
+          contentLength: userText.length
+        });
+      } catch (error) {
+        logger.error('Failed to read context_artifact from git', {
+          persona,
+          artifactPath: payload.context_artifact,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        // Fallback to other sources
+        userText = intent || 'Process this request';
+      }
+    }
+    else if (payload.task && payload.task.description) {
       // Extract task description for planning/implementation context
       userText = `Task: ${payload.task.title || 'Untitled'}\n\nDescription: ${payload.task.description}`;
       
@@ -426,5 +491,60 @@ export class PersonaConsumer {
   async waitForCompletion(): Promise<void> {
     const loops = Array.from(this.personaLoops.values());
     await Promise.allSettled(loops);
+  }
+
+  /**
+   * Resolve artifact path with variable placeholders
+   * Supports ${task.id}, ${milestone.id}, etc.
+   */
+  private resolveArtifactPath(artifactPath: string, payload: any): string {
+    return artifactPath.replace(/\$\{([^}]+)\}/g, (match, varPath) => {
+      const parts = varPath.split('.');
+      let value: any = payload;
+      
+      for (const part of parts) {
+        if (value && typeof value === 'object' && part in value) {
+          value = value[part];
+        } else {
+          // Keep placeholder if not found
+          return match;
+        }
+      }
+      
+      return value !== undefined && value !== null ? String(value) : match;
+    });
+  }
+
+  /**
+   * Read artifact content from git repository
+   * Converts remote URL to local PROJECT_BASE path
+   */
+  private async readArtifactFromGit(artifactPath: string, repoUrl: string | undefined): Promise<string> {
+    if (!repoUrl) {
+      throw new Error('Cannot read artifact: no repository URL provided');
+    }
+
+    // Convert remote URL to local path using PROJECT_BASE
+    const projectBase = cfg.projectBase || process.env.PROJECT_BASE || '/tmp/projects';
+    
+    // Extract repo name from URL (e.g., "git@github.com:owner/repo.git" → "repo")
+    const repoName = repoUrl.split('/').pop()?.replace(/\.git$/, '') || 'unknown';
+    const repoLocalPath = path.join(projectBase, repoName);
+
+    const fullPath = path.join(repoLocalPath, artifactPath);
+
+    logger.debug('Reading artifact from git', {
+      artifactPath,
+      repoUrl,
+      repoLocalPath,
+      fullPath
+    });
+
+    try {
+      const content = await fs.readFile(fullPath, 'utf-8');
+      return content;
+    } catch (error) {
+      throw new Error(`Failed to read artifact from ${fullPath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
