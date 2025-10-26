@@ -422,7 +422,7 @@ describe('Workflow Steps', () => {
         type: 'QAStep',
         config: {
           testCommand: 'npm test',
-          timeout: 30000
+          timeout: 1000
         }
       };
 

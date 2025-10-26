@@ -47,7 +47,7 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - QA follow-up hanging')), 500)
+        setTimeout(() => reject(new Error('Test timeout - QA follow-up hanging')), 100)
       );
 
       await Promise.race([testPromise, timeoutPromise]);

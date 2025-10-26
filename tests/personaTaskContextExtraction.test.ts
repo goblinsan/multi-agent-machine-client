@@ -44,7 +44,7 @@ describe('PersonaConsumer task context extraction', () => {
       batchSize: 1
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     // Send request with task object in payload
     await transport.xAdd(cfg.requestStream, '*', {
@@ -66,7 +66,7 @@ describe('PersonaConsumer task context extraction', () => {
     });
 
     // Wait for processing
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     // Verify userText was extracted from task
@@ -101,7 +101,7 @@ describe('PersonaConsumer task context extraction', () => {
       batchSize: 1
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-test-2',
@@ -118,7 +118,7 @@ describe('PersonaConsumer task context extraction', () => {
       })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     // user_text should take priority over task.description
@@ -147,7 +147,7 @@ describe('PersonaConsumer task context extraction', () => {
       batchSize: 1
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-test-3',
@@ -161,7 +161,7 @@ describe('PersonaConsumer task context extraction', () => {
       })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     expect(capturedUserText).toBe('Analyze the repository structure');
@@ -188,7 +188,7 @@ describe('PersonaConsumer task context extraction', () => {
       batchSize: 1
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-test-4',
@@ -205,7 +205,7 @@ describe('PersonaConsumer task context extraction', () => {
       })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     expect(capturedUserText).toBe('Task: Implement logging system');
@@ -232,7 +232,7 @@ describe('PersonaConsumer task context extraction', () => {
       batchSize: 1
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     // Minimal payload - only intent available
     await transport.xAdd(cfg.requestStream, '*', {
@@ -244,7 +244,7 @@ describe('PersonaConsumer task context extraction', () => {
       payload: JSON.stringify({})
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     // Should fall back to intent
@@ -273,7 +273,7 @@ describe('PersonaConsumer task context extraction', () => {
       batchSize: 1
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     // Realistic payload from PlanningLoopStep
     await transport.xAdd(cfg.requestStream, '*', {
@@ -296,7 +296,7 @@ describe('PersonaConsumer task context extraction', () => {
       })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     // BEFORE FIX: userText would be just "planning" (the intent)

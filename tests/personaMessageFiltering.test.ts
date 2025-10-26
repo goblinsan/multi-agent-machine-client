@@ -47,7 +47,7 @@ describe('PersonaConsumer message filtering', () => {
     });
 
     // Give consumers time to set up
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     // Send messages to different personas
     await transport.xAdd(cfg.requestStream, '*', {
@@ -78,7 +78,7 @@ describe('PersonaConsumer message filtering', () => {
     });
 
     // Give consumers time to process messages
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
 
     // Stop consumers
     await consumer.stop();
@@ -123,7 +123,7 @@ describe('PersonaConsumer message filtering', () => {
       batchSize: 10
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     // Send message for context (should process)
     const contextMsgId = await transport.xAdd(cfg.requestStream, '*', {
@@ -145,7 +145,7 @@ describe('PersonaConsumer message filtering', () => {
       payload: JSON.stringify({})
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     // Context message should be acked and executed
@@ -189,7 +189,7 @@ describe('PersonaConsumer message filtering', () => {
       batchSize: 10
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     // Simulate coordinator sending request to context persona
     // (This is what caused the race condition bug)
@@ -203,7 +203,7 @@ describe('PersonaConsumer message filtering', () => {
       payload: JSON.stringify({ task: 'milestone setup' })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     // CRITICAL: Only context persona should have processed this
@@ -234,7 +234,7 @@ describe('PersonaConsumer message filtering', () => {
       batchSize: 10
     });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 5));
 
     // Send message without to_persona field (edge case)
     await transport.xAdd(cfg.requestStream, '*', {
@@ -246,7 +246,7 @@ describe('PersonaConsumer message filtering', () => {
       // to_persona field missing
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
     // Without to_persona, message should still be processed

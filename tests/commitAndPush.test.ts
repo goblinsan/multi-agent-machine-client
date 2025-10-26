@@ -71,7 +71,7 @@ describe('Coordinator commit and push (integration-ish)', () => {
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - workflow hanging')), 3000)
+        setTimeout(() => reject(new Error('Test timeout - workflow hanging')), 100)
       );
 
       await Promise.race([testPromise, timeoutPromise]);

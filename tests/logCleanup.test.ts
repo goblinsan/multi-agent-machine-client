@@ -34,7 +34,7 @@ describe('Log Cleanup', () => {
       await fs.utimes(logFile, time, time);
       
       // Small delay to ensure different mtimes
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 1));
     }
 
     // Verify all 8 files exist

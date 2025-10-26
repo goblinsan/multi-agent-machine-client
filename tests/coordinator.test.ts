@@ -45,7 +45,7 @@ describe('Coordinator QA failure handling', () => {
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - QA coordination hanging')), 3000)
+        setTimeout(() => reject(new Error('Test timeout - QA coordination hanging')), 100)
       );
 
       await Promise.race([testPromise, timeoutPromise]);
@@ -81,7 +81,7 @@ describe('Coordinator QA failure handling', () => {
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Test timeout - diff verification hanging')), 3000)
+        setTimeout(() => reject(new Error('Test timeout - diff verification hanging')), 100)
       );
 
       await Promise.race([testPromise, timeoutPromise]);

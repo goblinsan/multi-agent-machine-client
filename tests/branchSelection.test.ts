@@ -10,7 +10,7 @@ beforeEach(() => {
 });
 
 describe('Coordinator branch selection', () => {
-  it('uses remote default branch as base and avoids milestone/milestone', { timeout: 5000 }, async () => {
+  it('uses remote default branch as base and avoids milestone/milestone', { timeout: 1000 }, async () => {
     // Arrange: Create project with a single task
     const project: TestProject = {
       id: 'proj-2',

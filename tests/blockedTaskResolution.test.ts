@@ -118,7 +118,7 @@ describe('Blocked Task Resolution Workflow', () => {
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 1000)
+          setTimeout(() => reject(new Error('Test timeout')), 100)
         )
       ]);
       
@@ -165,7 +165,7 @@ describe('Blocked Task Resolution Workflow', () => {
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 1000)
+          setTimeout(() => reject(new Error('Test timeout')), 100)
         )
       ]);
       
@@ -209,7 +209,7 @@ describe('Blocked Task Resolution Workflow', () => {
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 1000)
+          setTimeout(() => reject(new Error('Test timeout')), 100)
         )
       ]);
       
@@ -238,7 +238,7 @@ describe('Blocked Task Resolution Workflow', () => {
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 1000)
+          setTimeout(() => reject(new Error('Test timeout')), 100)
         )
       ]);
       
@@ -277,7 +277,7 @@ describe('Blocked Task Resolution Workflow', () => {
           { repo: tempRepo }
         ),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 1000)
+          setTimeout(() => reject(new Error('Test timeout')), 100)
         )
       ]);
       
