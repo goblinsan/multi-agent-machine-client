@@ -1,7 +1,6 @@
 import { DashboardClient } from "./DashboardClient.js";
 import { ProjectAPI } from "./ProjectAPI.js";
 import { logger } from "../logger.js";
-import { cfg } from "../config.js";
 import { fetch } from "undici";
 
 export type CreateTaskInput = {

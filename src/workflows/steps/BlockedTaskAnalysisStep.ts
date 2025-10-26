@@ -38,12 +38,12 @@ interface BlockageAnalysis {
 export class BlockedTaskAnalysisStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as BlockedTaskAnalysisConfig;
-    const { task_id, project_id, repo_root, branch } = config;
+    const { task_id } = config;
 
     logger.info('Analyzing blocked task', {
       workflowId: context.workflowId,
       taskId: task_id,
-      projectId: project_id
+      projectId: context.projectId
     });
 
     try {
@@ -82,7 +82,6 @@ export class BlockedTaskAnalysisStep extends WorkflowStep {
       }
 
       // Extract previous attempt history
-      const attemptCount = task?.blocked_attempt_count || 0;
       const attemptHistory = task?.blocked_attempt_history || [];
       
       if (Array.isArray(attemptHistory)) {

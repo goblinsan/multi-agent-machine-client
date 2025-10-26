@@ -23,11 +23,10 @@ import { WorkflowEngine } from '../../src/workflows/WorkflowEngine.js';
 import { makeTempRepo } from '../makeTempRepo.js';
 
 describe('Review Trigger Logic', () => {
-  let tempDir: string;
   let workflowEngine: WorkflowEngine;
 
   beforeEach(async () => {
-    tempDir = await makeTempRepo();
+    await makeTempRepo();
     workflowEngine = new WorkflowEngine();
   });
 

@@ -1,12 +1,10 @@
 import { randomUUID } from "crypto";
-import { fetch } from "undici";
 import { cfg } from "../config.js";
 import { ProjectAPI } from "../dashboard/ProjectAPI.js";
 import { resolveRepoFromPayload } from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
-import { sendPersonaRequest, waitForPersonaCompletion } from "../agents/persona.js";
 import type { MessageTransport } from "../transport/index.js";
 import { join } from "path";
 
@@ -301,12 +299,9 @@ export class WorkflowCoordinator {
     // Test-compat: allow calling with signature (task, context) where transport is omitted
     // If called as processTask(task, context), shift arguments accordingly
     if (arguments.length === 2) {
-      // @ts-ignore
       context = task as any;
-      // @ts-ignore
       task = transport as any;
       // Provide a minimal stub transport; engine mocks typically don't use it
-      // @ts-ignore
       transport = {} as any;
     }
     // Ensure transport is available for workflow execution

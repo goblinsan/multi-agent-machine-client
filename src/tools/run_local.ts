@@ -23,7 +23,6 @@ import { spawn, ChildProcess } from 'child_process';
 import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
-import { logger } from "../logger.js";
 import { WorkflowCoordinator } from "../workflows/WorkflowCoordinator.js";
 import { PersonaConsumer } from "../personas/PersonaConsumer.js";
 import path from 'path';

@@ -1,4 +1,4 @@
-import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
+import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { ProjectAPI } from '../../dashboard/ProjectAPI.js';
 import { logger } from '../../logger.js';

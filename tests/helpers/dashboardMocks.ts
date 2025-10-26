@@ -135,7 +135,7 @@ export function mockBulkCreateResponse(options: {
  * @param count Number of tasks to include in the list (default: 5)
  * @param projectId Project ID for all tasks (default: 1)
  */
-export function mockListTasksResponse(count: number = 5, projectId: number = 1): TaskListResponse {
+export function mockListTasksResponse(count: number = 5, _projectId: number = 1): TaskListResponse {
   const tasks = [];
   for (let i = 0; i < count; i++) {
     const status: 'open' | 'in_progress' = i % 2 === 0 ? 'open' : 'in_progress';

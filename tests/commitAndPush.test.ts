@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator.js';
 import * as gitUtils from '../src/gitUtils.js';
 import * as fileops from '../src/fileops.js';
 import fs from 'fs/promises';

@@ -1,13 +1,11 @@
 import { firstString, numericHint, slugify, toArray } from "../util.js";
-import { TaskAPI, CreateTaskInput } from "../dashboard/TaskAPI.js";
+import { TaskAPI } from "../dashboard/TaskAPI.js";
 import { ProjectAPI } from "../dashboard/ProjectAPI.js";
 import { cfg } from "../config.js";
 import { parseMilestoneDate } from "../milestones/milestoneManager.js";
 import { logger } from "../logger.js";
-import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult } from "../agents/persona.js";
 import { summarizeTask } from "../agents/summarizer.js";
 import { PERSONAS } from "../personaNames.js";
-import { randomUUID } from "crypto";
 
 const taskAPI = new TaskAPI();
 const projectAPI = new ProjectAPI();

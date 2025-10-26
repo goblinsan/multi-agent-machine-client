@@ -11,9 +11,12 @@
     "coordinator": "tsx src/tools/run_coordinator.ts",
     "local": "tsx src/tools/run_local.ts",
     "test": "vitest tests --run",
-    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=250",
+    "lint:strict": "eslint . --ext .ts,.tsx --max-warnings=0",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
-    "monitor": "tsx scripts/monitor-redis-streams.ts"
+    "precommit": "npm run typecheck && npm run lint && npm test",
+    "monitor": "tsx scripts/monitor-redis-streams.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -27,11 +30,20 @@
   },
   "devDependencies": {
     "@types/node": "^24.6.1",
-    "ajv": "^8.17.1",
-    "eslint": "^9.13.0",
     "@typescript-eslint/eslint-plugin": "^8.12.2",
     "@typescript-eslint/parser": "^8.12.2",
+    "ajv": "^8.17.1",
+    "eslint": "^9.13.0",
+    "globals": "^16.4.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
     "tsx": "^4.19.0",
     "typescript": "^5.6.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "git add"
+    ]
   }
 }

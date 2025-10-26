@@ -14,7 +14,6 @@
 
 import { createClient } from "redis";
 import { cfg } from "../src/config.js";
-import { RequestSchema, EventSchema } from "../src/schema.js";
 
 const VERBOSE = process.argv.includes("--verbose") || process.argv.includes("-v");
 const MONITOR_MODE = process.argv[2] && !process.argv[2].startsWith("-") ? process.argv[2] : "both";

@@ -118,7 +118,6 @@ function ensureTmpCwd(opts?: any) {
 // Install spies once per test worker
 try {
   // exec
-  // @ts-ignore
   if (!vi.isMockFunction((childProcess as any).exec)) {
     vi.spyOn(childProcess as any, 'exec').mockImplementation((...args: any[]) => {
       const command = args[0];
@@ -128,7 +127,6 @@ try {
     });
   }
   // execSync
-  // @ts-ignore
   if (!vi.isMockFunction((childProcess as any).execSync)) {
     vi.spyOn(childProcess as any, 'execSync').mockImplementation((...args: any[]) => {
       const command = args[0];
@@ -138,7 +136,6 @@ try {
     });
   }
   // execFile
-  // @ts-ignore
   if (!vi.isMockFunction((childProcess as any).execFile)) {
     vi.spyOn(childProcess as any, 'execFile').mockImplementation((...args: any[]) => {
       const file = args[0];
@@ -148,7 +145,6 @@ try {
     });
   }
   // execFileSync
-  // @ts-ignore
   if (!vi.isMockFunction((childProcess as any).execFileSync)) {
     vi.spyOn(childProcess as any, 'execFileSync').mockImplementation((...args: any[]) => {
       const file = args[0];
@@ -158,7 +154,6 @@ try {
     });
   }
   // spawn
-  // @ts-ignore
   if (!vi.isMockFunction((childProcess as any).spawn)) {
     vi.spyOn(childProcess as any, 'spawn').mockImplementation((...args: any[]) => {
       const command = args[0];
@@ -168,7 +163,6 @@ try {
     });
   }
   // spawnSync
-  // @ts-ignore
   if (!vi.isMockFunction((childProcess as any).spawnSync)) {
     vi.spyOn(childProcess as any, 'spawnSync').mockImplementation((...args: any[]) => {
       const command = args[0];

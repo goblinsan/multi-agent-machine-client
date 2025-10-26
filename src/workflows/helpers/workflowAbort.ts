@@ -1,5 +1,4 @@
 import { cfg } from "../../config.js";
-import { logger } from "../../logger.js";
 import { PERSONAS } from "../../personaNames.js";
 import type { WorkflowContext } from "../engine/WorkflowContext.js";
 

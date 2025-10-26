@@ -32,7 +32,6 @@ describe('PersonaConsumer task context extraction', () => {
     });
 
     // Mock callPersonaModel to avoid actual LLM calls
-    const originalCallModel = buildMessagesModule.callPersonaModel;
     vi.spyOn(buildMessagesModule, 'callPersonaModel').mockResolvedValue({
       content: '{"plan": [{"goal": "test"}]}',
       duration_ms: 100

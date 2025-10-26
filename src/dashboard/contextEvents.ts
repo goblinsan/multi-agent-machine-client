@@ -1,6 +1,5 @@
 import { cfg } from "../config.js";
 import { fetch } from "undici";
-import { logger } from "../logger.js";
 
 /**
  * Fetch context snapshot for a workflow

@@ -318,7 +318,7 @@ export class PersonaConsumer {
     projectId?: string;
     taskId?: string;
   }): Promise<any> {
-    const { persona, workflowId, step, intent, payload, repo, branch, projectId, taskId } = params;
+    const { persona, workflowId, intent, payload, repo, branch } = params;
 
     // Get persona configuration
     const model = cfg.personaModels[persona];

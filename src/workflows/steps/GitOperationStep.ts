@@ -1,16 +1,18 @@
-import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
+import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 import { abortWorkflowDueToPushFailure, abortWorkflowWithReason } from '../helpers/workflowAbort.js';
 
 interface GitOperationConfig {
-  operation: 'checkoutBranchFromBase' | 'commitAndPushPaths' | 'verifyRemoteBranchHasDiff' | 'ensureBranchPublished';
+  operation: 'checkoutBranchFromBase' | 'commitAndPushPaths' | 'verifyRemoteBranchHasDiff' | 'ensureBranchPublished' | 'checkContextFreshness';
   repoRoot?: string;
   baseBranch?: string;
   newBranch?: string;
   branch?: string;
   message?: string;
   paths?: string[];
+  taskId?: string | number;
+  artifactPath?: string;
 }
 
 /**
@@ -191,6 +193,102 @@ export class GitOperationStep extends WorkflowStep {
           context.setVariable('branchPublished', true);
           break;
 
+        case 'checkContextFreshness': {
+          logger.info('Checking context freshness', {
+            repoRoot,
+            workflowId: context.workflowId
+          });
+          
+          // Check if context artifact exists
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          
+          // Resolve taskId and artifact path
+          const taskId = this.resolveVariable(config.taskId?.toString(), context) || context.getVariable('taskId') || context.getVariable('task_id') || context.getVariable('task')?.id;
+          const artifactPath = this.resolveVariable(config.artifactPath, context) || `.ma/tasks/${taskId}/01-context.md`;
+          const fullArtifactPath = path.join(repoRoot, artifactPath);
+          
+          let contextExists = false;
+          let hasNewFiles = true;  // Default to true (needs scan) if we can't determine
+          
+          try {
+            await fs.access(fullArtifactPath);
+            contextExists = true;
+            logger.info('Context artifact exists', { artifactPath, fullArtifactPath });
+            
+            // Get the commit time when the artifact was last modified using git log
+            try {
+              // Get the commit hash of the last commit that modified this artifact
+              const artifactGitArgs = ['log', '-1', '--pretty=format:%H', '--', artifactPath];
+              const artifactGitResult = await gitUtils.runGit(artifactGitArgs, { cwd: repoRoot });
+              const artifactCommitHash = artifactGitResult.stdout.trim();
+              
+              if (!artifactCommitHash) {
+                // Artifact exists but isn't in git history - default to needing scan
+                logger.warn('Artifact exists but not in git history', { artifactPath });
+                hasNewFiles = true;
+              } else {
+                // Get all commits after the artifact commit, excluding .ma/ changes
+                // Using commit_hash..HEAD gets commits after (not including) the artifact commit
+                const newCommitsArgs = ['log', `${artifactCommitHash}..HEAD`, '--name-status', '--pretty=format:', '--', '.', ':(exclude).ma/'];
+                const newCommitsResult = await gitUtils.runGit(newCommitsArgs, { cwd: repoRoot });
+                const newCommitsOutput = newCommitsResult.stdout.trim();
+                
+                if (!newCommitsOutput) {
+                  // No new commits after artifact
+                  hasNewFiles = false;
+                } else {
+                  // Check if there are any file additions or modifications
+                  const lines = newCommitsOutput.split('\n').filter((line: string) => line.trim());
+                  hasNewFiles = lines.some((line: string) => {
+                    const trimmed = line.trim();
+                    return trimmed.startsWith('A\t') || trimmed.startsWith('M\t');
+                  });
+                }
+                
+                logger.info('Git log check completed', {
+                  artifactPath,
+                  artifactCommitHash,
+                  hasNewFiles
+                });
+              }
+            } catch (gitError: any) {
+              logger.warn('Could not check git history for new files', {
+                artifactPath,
+                error: gitError.message
+              });
+              // Default to true (needs rescan) if git check fails
+              hasNewFiles = true;
+            }
+          } catch (accessError) {
+            // Context artifact doesn't exist
+            contextExists = false;
+            hasNewFiles = true;  // No context = needs scan
+            logger.info('Context artifact does not exist', { artifactPath });
+          }
+          
+          // Set context variables for workflow conditions
+          const needsRescan = !contextExists || hasNewFiles;
+          context.setVariable('context_exists', contextExists);
+          context.setVariable('has_new_files', hasNewFiles);
+          context.setVariable('needs_rescan', needsRescan);
+          
+          result = {
+            contextExists,
+            hasNewFiles,
+            needsRescan,
+            artifactPath
+          };
+          
+          logger.info('Context freshness check complete', {
+            contextExists,
+            hasNewFiles,
+            needsRescan,
+            artifactPath
+          });
+          break;
+        }
+
         default:
           throw new Error(`Unsupported git operation: ${operation}`);
       }
@@ -245,7 +343,7 @@ export class GitOperationStep extends WorkflowStep {
       errors.push('GitOperationStep: operation is required');
     }
 
-    const validOperations = ['checkoutBranchFromBase', 'commitAndPushPaths', 'verifyRemoteBranchHasDiff', 'ensureBranchPublished'];
+    const validOperations = ['checkoutBranchFromBase', 'commitAndPushPaths', 'verifyRemoteBranchHasDiff', 'ensureBranchPublished', 'checkContextFreshness'];
     if (config.operation && !validOperations.includes(config.operation)) {
       errors.push(`GitOperationStep: operation must be one of: ${validOperations.join(', ')}`);
     }

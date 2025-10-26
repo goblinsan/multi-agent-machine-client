@@ -1,7 +1,4 @@
-
-import { logger } from "./logger.js";
 import fs from "fs/promises";
-import path from "path";
 import { cfg } from "./config.js";
 
 const PROMPT_FILE_MAX_TOTAL_CHARS = Math.max(2000, Math.floor(cfg.promptFileMaxChars || 48000));

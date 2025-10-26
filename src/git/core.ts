@@ -11,8 +11,8 @@ type GitRunOptions = { cwd?: string };
 type RunGitImpl = (args: string[], options?: GitRunOptions) => Promise<{ stdout: string; stderr?: string }>;
 let runGitImpl: RunGitImpl | null = null;
 
-export function gitEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env } as NodeJS.ProcessEnv;
+export function gitEnv(): Record<string, string | undefined> {
+  const env = { ...process.env };
   env.GIT_TERMINAL_PROMPT = "0";
   if (cfg.git.sshKeyPath) {
     env.GIT_SSH_COMMAND = `ssh -i "${cfg.git.sshKeyPath}" -o IdentitiesOnly=yes`;

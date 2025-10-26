@@ -7,7 +7,7 @@ vi.mock('../src/redisClient.js');
 // Minimal test to ensure governance (code-review/security) does not run during TDD failing test stage
 describe('coordinator TDD governance gating', () => {
   it("skips governanceHook when tdd_stage is 'write_failing_test'", async () => {
-    const { setupAllMocks, coordinatorMod } = await import('./helpers/mockHelpers.js');
+    const { setupAllMocks } = await import('./helpers/mockHelpers.js');
 
     // Setup project for TDD scenario
     const project = {
@@ -17,7 +17,7 @@ describe('coordinator TDD governance gating', () => {
       repositories: [{ url: 'https://github.com/example/tdd.git' }]
     };
 
-    const mocks = setupAllMocks(project);
+    setupAllMocks(project);
     
     // Track governance hook calls (this would be mocked in real scenario)
     const governanceHookCalled = vi.fn();

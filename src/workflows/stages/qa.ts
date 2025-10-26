@@ -1,5 +1,3 @@
-
-import { logger } from "../../logger.js";
 import path from "path";
 import fs from "fs/promises";
 import { clipText } from "../../util.js";
@@ -9,7 +7,7 @@ type CommandRunResult = {
     stdout: string;
     stderr: string;
     exitCode: number;
-    signal: NodeJS.Signals | null;
+    signal: string | null;
     durationMs: number;
     error?: string;
   };
@@ -74,7 +72,7 @@ type CommandRunResult = {
     entries: Array<{
       command: string;
       exitCode: number;
-      signal: NodeJS.Signals | null;
+      signal: string | null;
       durationMs: number;
       stdout: string;
       stderr: string;

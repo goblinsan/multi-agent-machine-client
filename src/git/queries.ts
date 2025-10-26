@@ -1,4 +1,3 @@
-import { cfg } from "../config.js";
 import { logger } from "../logger.js";
 import { runGit } from "./core.js";
 

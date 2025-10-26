@@ -15,7 +15,7 @@ const projectUpdateSchema = z.object({
 
 export function registerProjectRoutes(fastify: FastifyInstance) {
   // List all projects
-  fastify.get('/projects', async (request: any, reply: any) => {
+  fastify.get('/projects', async (_request: any, reply: any) => {
     const db = await getDb();
     
     const result = db.exec('SELECT id, name, slug, description, created_at, updated_at FROM projects ORDER BY created_at DESC LIMIT 100');

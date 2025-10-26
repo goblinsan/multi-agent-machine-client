@@ -1,4 +1,4 @@
-import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
+import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 
@@ -122,7 +122,7 @@ export class VariableResolutionStep extends WorkflowStep {
     }
   }
 
-  async validate(context: WorkflowContext): Promise<ValidationResult> {
+  async validate(_context: WorkflowContext): Promise<ValidationResult> {
     const config = this.config.config as VariableConfig;
 
     if (!config.variables) {

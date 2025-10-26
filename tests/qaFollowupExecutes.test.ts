@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator.js';
 import { makeTempRepo } from './makeTempRepo.js';
 
 // Mock Redis client (uses __mocks__/redisClient.js)

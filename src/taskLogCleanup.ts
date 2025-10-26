@@ -20,7 +20,6 @@ export async function cleanupTaskLogs(options: {
   try {
     const fs = await import("fs/promises");
     const pathMod = await import("path");
-    const { commitAndPushPaths } = await import("./gitUtils.js");
     
     logger.info("Starting task log cleanup", { taskId, repoRoot });
     

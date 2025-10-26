@@ -282,7 +282,6 @@ export class DiffParser {
     const lines = block.content.split('\n');
     
     let currentFile: string | null = null;
-    let isNewFile = false;
     let isDeletedFile = false;
     
     for (let i = 0; i < lines.length; i++) {
@@ -298,9 +297,8 @@ export class DiffParser {
         continue;
       }
       
-      // Check for new/deleted file indicators
+      // Skip new file mode indicator (we process all files the same way)
       if (line.includes('new file mode')) {
-        isNewFile = true;
         continue;
       }
       
@@ -339,7 +337,6 @@ export class DiffParser {
         }
         
         currentFile = null;
-        isNewFile = false;
       }
     }
     

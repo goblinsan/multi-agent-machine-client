@@ -1,4 +1,4 @@
-import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
+import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { sendPersonaRequest, waitForPersonaCompletion, interpretPersonaStatus } from '../../agents/persona.js';
 import { logger } from '../../logger.js';
@@ -335,7 +335,6 @@ export class PersonaRequestStep extends WorkflowStep {
       // SPECIAL VALIDATION: QA must execute tests to pass
       // If QA returns "pass" but 0 tests were executed, override to "fail"
       if (persona === 'tester-qa' && statusInfo.status === 'pass') {
-        const rawLower = rawResponse.toLowerCase();
         // Check for patterns indicating no tests were executed
         const noTestsPatterns = [
           /0\s+passed,\s+0\s+failed/i,
@@ -415,19 +414,141 @@ export class PersonaRequestStep extends WorkflowStep {
     const resolved: Record<string, any> = {};
 
     for (const [key, value] of Object.entries(payload)) {
-      if (typeof value === 'string' && value.startsWith('${') && value.endsWith('}')) {
-        // Variable reference like ${variableName}
-        const variableName = value.slice(2, -1);
-        resolved[key] = context.getVariable(variableName);
-      } else if (typeof value === 'object' && value !== null) {
-        // Recursively resolve nested objects
-        resolved[key] = this.resolvePayloadVariables(value, context);
-      } else {
-        resolved[key] = value;
-      }
+      resolved[key] = this.resolveValue(value, context);
     }
 
     return resolved;
+  }
+
+  /**
+   * Recursively resolve a value, handling:
+   * - Simple variables: ${variableName}
+   * - Nested properties: ${task.id}, ${milestone.slug}, ${task.milestone.slug}
+   * - Template strings: '.ma/tasks/${task.id}/plan.md'
+   * - Arrays: recursively resolve each element
+   * - Objects: recursively resolve each property
+   */
+  private resolveValue(value: any, context: WorkflowContext): any {
+    // Handle null/undefined
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    // Handle arrays - recursively resolve each element
+    if (Array.isArray(value)) {
+      return value.map(item => this.resolveValue(item, context));
+    }
+
+    // Handle objects - recursively resolve each property
+    if (typeof value === 'object') {
+      const resolved: Record<string, any> = {};
+      for (const [k, v] of Object.entries(value)) {
+        resolved[k] = this.resolveValue(v, context);
+      }
+      return resolved;
+    }
+
+    // Handle strings with variable templates
+    if (typeof value === 'string') {
+      return this.resolveStringTemplate(value, context);
+    }
+
+    // Other primitives (numbers, booleans, etc.)
+    return value;
+  }
+
+  /**
+   * Resolve a string that may contain variable templates.
+   * Examples:
+   * - '${task}' (exact match) → returns the task object as-is
+   * - '${task.id}' → '42'
+   * - '.ma/tasks/${task.id}/plan.md' → '.ma/tasks/42/plan.md'
+   * - '${milestone.slug}' → 'phase-1'
+   * - '${task.milestone.slug}' → 'phase-1'
+   */
+  private resolveStringTemplate(template: string, context: WorkflowContext): any {
+    // Pattern to match ${variable} or ${object.property} or ${object.nested.property}
+    const variablePattern = /\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}/g;
+    
+    // Check if the entire string is a single variable reference (e.g., '${task}')
+    // In this case, return the value as-is without string conversion
+    const exactMatch = template.match(/^\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}$/);
+    if (exactMatch) {
+      const path = exactMatch[1];
+      try {
+        const parts = path.split('.');
+        let value = context.getVariable(parts[0]);
+        
+        // Navigate nested properties
+        for (let i = 1; i < parts.length; i++) {
+          if (value === null || value === undefined) {
+            return template; // Preserve template
+          }
+          if (typeof value === 'object' && parts[i] in value) {
+            value = value[parts[i]];
+          } else {
+            return template; // Preserve template
+          }
+        }
+        
+        // Return the value as-is (could be object, array, etc.)
+        return value !== undefined && value !== null ? value : template;
+      } catch (error) {
+        return template; // Preserve template on error
+      }
+    }
+    
+    // If not an exact match, perform string interpolation
+    return template.replace(variablePattern, (match, path) => {
+      try {
+        // Split path by dots: 'task.id' → ['task', 'id']
+        const parts = path.split('.');
+        
+        // Get the root variable
+        let value = context.getVariable(parts[0]);
+        
+        // Navigate nested properties
+        for (let i = 1; i < parts.length; i++) {
+          if (value === null || value === undefined) {
+            // Path doesn't exist, preserve the template
+            logger.warn(`Variable path not found, preserving template`, {
+              template: match,
+              path,
+              stoppedAt: parts.slice(0, i).join('.')
+            });
+            return match;
+          }
+          
+          if (typeof value === 'object' && parts[i] in value) {
+            value = value[parts[i]];
+          } else {
+            // Property doesn't exist, preserve the template
+            logger.warn(`Variable property not found, preserving template`, {
+              template: match,
+              path,
+              missingProperty: parts[i]
+            });
+            return match;
+          }
+        }
+        
+        // Convert value to string for interpolation
+        if (value === null || value === undefined) {
+          // Variable exists but is null/undefined, preserve template
+          return match;
+        }
+        
+        return String(value);
+      } catch (error) {
+        // Variable not found in context, preserve the template
+        logger.warn(`Failed to resolve variable, preserving template`, {
+          template: match,
+          path,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        return match;
+      }
+    });
   }
 
   private setOutputVariables(context: WorkflowContext, result: any): void {

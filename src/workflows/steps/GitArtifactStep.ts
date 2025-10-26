@@ -223,7 +223,7 @@ export class GitArtifactStep extends WorkflowStep {
     }
   }
 
-  async validate(context: WorkflowContext): Promise<ValidationResult> {
+  async validate(_context: WorkflowContext): Promise<ValidationResult> {
     const config = this.config.config as GitArtifactStepConfig;
     const errors: string[] = [];
     const warnings: string[] = [];

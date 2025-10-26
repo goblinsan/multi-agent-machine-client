@@ -21,9 +21,6 @@ const repositoryUpdateSchema = z.object({
   message: 'At least one field must be provided for update'
 });
 
-type RepositoryCreate = z.infer<typeof repositoryCreateSchema>;
-type RepositoryUpdate = z.infer<typeof repositoryUpdateSchema>;
-
 export function registerRepositoryRoutes(fastify: FastifyInstance) {
   /**
    * GET /projects/:projectId/repositories

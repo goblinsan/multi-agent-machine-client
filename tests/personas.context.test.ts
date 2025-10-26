@@ -83,7 +83,6 @@ describe('Contextual Persona Prompts', () => {
     })
 
     it('revision prompt is genuinely more lenient', () => {
-      const planningPrompt = CONTEXT_SPECIFIC_PROMPTS['plan-evaluator']['planning']
       const revisionPrompt = CONTEXT_SPECIFIC_PROMPTS['plan-evaluator']['revision']
       
       expect(revisionPrompt.toLowerCase()).toContain('lenient')

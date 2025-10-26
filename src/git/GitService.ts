@@ -1,5 +1,4 @@
 import { runGit } from '../gitUtils.js';
-import { logger } from '../logger.js';
 
 /**
  * Git operation result
@@ -125,7 +124,7 @@ export class GitService {
    */
   async isWorkingDirectoryClean(): Promise<boolean> {
     try {
-      const result = await runGit(['diff', '--quiet'], { cwd: this.repoRoot });
+      await runGit(['diff', '--quiet'], { cwd: this.repoRoot });
       return true;
     } catch {
       return false;

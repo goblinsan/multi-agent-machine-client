@@ -1,6 +1,9 @@
 import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
+import { PersonaRequestStep } from './PersonaRequestStep.js';
+import { TaskCreationStep } from './TaskCreationStep.js';
+import { TaskUpdateStep } from './TaskUpdateStep.js';
 
 interface ConditionalConfig {
   condition: string;
@@ -190,11 +193,6 @@ export class ConditionalStep extends WorkflowStep {
   }
 
   private createStepInstance(stepConfig: WorkflowStepConfig): WorkflowStep {
-    // Import step classes dynamically
-    const { PersonaRequestStep } = require('./PersonaRequestStep.js');
-    const { TaskCreationStep } = require('./TaskCreationStep.js');
-    const { TaskUpdateStep } = require('./TaskUpdateStep.js');
-
     switch (stepConfig.type) {
       case 'PersonaRequestStep':
         return new PersonaRequestStep(stepConfig);

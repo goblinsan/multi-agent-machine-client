@@ -1,4 +1,4 @@
-import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '../engine/WorkflowStep.js';
+import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 import { TaskAPI, CreateTaskInput } from '../../dashboard/TaskAPI.js';
@@ -416,7 +416,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     return formatted;
   }
   
-  async validate(context: WorkflowContext): Promise<ValidationResult> {
+  async validate(_context: WorkflowContext): Promise<ValidationResult> {
     const config = this.config.config as ReviewFailureTasksConfig;
     const errors: string[] = [];
     const warnings: string[] = [];

@@ -23,7 +23,7 @@ export class FailureAnalyzer {
   /**
    * Analyze a single failure to determine category, root cause, and suggested fix
    */
-  analyzeFailure(failure: QAFailure, performRootCauseAnalysis: boolean = true): FailureAnalysis {
+  analyzeFailure(failure: QAFailure, _performRootCauseAnalysis: boolean = true): FailureAnalysis {
     const errorText = failure.error.toLowerCase();
     const analysis: FailureAnalysis = {
       category: 'Unknown',

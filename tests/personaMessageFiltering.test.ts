@@ -27,7 +27,6 @@ describe('PersonaConsumer message filtering', () => {
     const processedRequests: Array<{ persona: string; toPersona: string; messageId: string }> = [];
 
     // Mock the persona execution to track processing
-    const originalExecute = (consumer as any).executePersonaRequest;
     vi.spyOn(consumer as any, 'executePersonaRequest').mockImplementation(async (opts: any) => {
       processedRequests.push({
         persona: opts.persona,

@@ -1,6 +1,5 @@
 import { cfg } from "./config.js";
 import { fetch } from "undici";
-import { logger } from "./logger.js";
 import { ProjectAPI } from "./dashboard/ProjectAPI.js";
 import { TaskAPI, CreateTaskInput, CreateTaskResult } from "./dashboard/TaskAPI.js";
 

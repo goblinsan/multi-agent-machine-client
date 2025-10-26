@@ -1,7 +1,7 @@
 import { cfg } from "../config.js";
 import { logger } from "../logger.js";
 import { runGit, guardWorkspaceMutation } from "./core.js";
-import { hasLocalChanges, remoteBranchExists, getRepoMetadata } from "./queries.js";
+import { getRepoMetadata } from "./queries.js";
 
 export async function ensureBranchPublished(repoRoot: string, branch: string) {
   guardWorkspaceMutation(repoRoot, `ensureBranchPublished ${branch}`);

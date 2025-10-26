@@ -119,7 +119,7 @@ function cleanupExpiredMessages(): void {
 /**
  * Start automatic cleanup of expired messages
  */
-let cleanupIntervalHandle: NodeJS.Timeout | null = null;
+let cleanupIntervalHandle: ReturnType<typeof setInterval> | null = null;
 
 export function startMessageTrackingCleanup(): void {
   if (cleanupIntervalHandle) {

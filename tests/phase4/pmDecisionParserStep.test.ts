@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PMDecisionParserStep } from '../../src/workflows/steps/PMDecisionParserStep.js';
 import { WorkflowContext } from '../../src/workflows/engine/WorkflowContext.js';
+import type { WorkflowStepConfig } from '../../src/workflows/engine/WorkflowStep.js';
 
 describe('Phase 4 - PMDecisionParserStep', () => {
   let context: WorkflowContext;

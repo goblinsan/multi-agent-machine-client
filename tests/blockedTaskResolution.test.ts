@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator';
 import { makeTempRepo } from './makeTempRepo';
 
 // Mock all external dependencies
@@ -287,7 +286,7 @@ describe('Blocked Task Resolution Workflow', () => {
       
       // Check if any call set status to 'open'
       const statusCalls = (updateTaskStatus as any).mock.calls;
-      const openStatusCall = statusCalls.find((call: any[]) => 
+      statusCalls.find((call: any[]) => 
         call[1] === 'open' || call[0]?.status === 'open'
       );
       

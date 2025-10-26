@@ -1,9 +1,6 @@
 import { WorkflowStep, StepResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
-import { TaskAPI } from '../../dashboard/TaskAPI.js';
-
-const taskAPI = new TaskAPI();
 
 interface UnblockAttemptConfig {
   task_id: string;
@@ -38,7 +35,7 @@ interface UnblockResult {
 export class UnblockAttemptStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as UnblockAttemptConfig;
-    const { task_id, project_id, strategy, resolution_plan, repo_root, branch } = config;
+    const { task_id, strategy, resolution_plan } = config;
 
     logger.info('Attempting to unblock task', {
       workflowId: context.workflowId,
@@ -47,7 +44,6 @@ export class UnblockAttemptStep extends WorkflowStep {
     });
 
     try {
-      const task = context.getVariable('task');
       const blockageAnalysis = context.getVariable('blockage_analysis');
       
       let result: UnblockResult;
@@ -236,7 +232,6 @@ export class UnblockAttemptStep extends WorkflowStep {
 
     // Extract fix details from resolution plan
     const fixType = resolutionPlan?.fix_type || 'unknown';
-    const fixDetails = resolutionPlan?.fix_details || {};
 
     actions.push(`Identified fix type: ${fixType}`);
 

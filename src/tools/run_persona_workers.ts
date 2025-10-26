@@ -29,7 +29,6 @@
 
 import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
-import { logger } from "../logger.js";
 import { PersonaConsumer } from "../personas/PersonaConsumer.js";
 
 let consumer: PersonaConsumer | null = null;

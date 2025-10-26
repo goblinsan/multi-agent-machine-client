@@ -1,5 +1,4 @@
 declare module 'fastify' {
-  import { Server, IncomingMessage, ServerResponse } from 'http';
   export interface FastifyInstance {
     get(path: string, handler: any): void;
     post(path: string, handler: any): void;

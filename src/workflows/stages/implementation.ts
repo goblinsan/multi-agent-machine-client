@@ -3,12 +3,7 @@ import { cfg } from "../../config.js";
 import { logger } from "../../logger.js";
 import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpretPersonaStatus, extractJsonPayloadFromText } from "../../agents/persona.js";
 import { PERSONAS } from "../../personaNames.js";
-import { TaskAPI } from "../../dashboard/TaskAPI.js";
-import { ProjectAPI } from "../../dashboard/ProjectAPI.js";
-import { firstString, slugify, normalizeRepoPath, ENGINEER_PERSONAS_REQUIRING_PLAN } from "../../util.js";
-
-const taskAPI = new TaskAPI();
-const projectAPI = new ProjectAPI();
+import { ENGINEER_PERSONAS_REQUIRING_PLAN } from "../../util.js";
 
 // Per-stage max planning iterations; default 5 via cfg
 const MAX_APPROVAL_RETRIES = Number.isFinite(cfg.planMaxIterationsPerStage as any) && cfg.planMaxIterationsPerStage !== null
@@ -42,7 +37,6 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
     if (!ENGINEER_PERSONAS_REQUIRING_PLAN.has(implementationPersona.toLowerCase())) return null;
 
     const planner = plannerPersona || implementationPersona;
-    const plannerLower = planner.toLowerCase();
     if (!cfg.allowedPersonas.includes(planner)) {
         logger.warn("plan approval persona not allowed", { planner });
     }

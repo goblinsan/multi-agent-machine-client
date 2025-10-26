@@ -21,7 +21,7 @@ describe('Coordinator branch selection', () => {
 
     // Set up all mocks using our reusable helper
     // Include devops completion so workflow can finish (step name is '3-devops' not 'devops')
-    const mockHelpers = setupAllMocks(project, [], {
+    setupAllMocks(project, [], {
       '3-devops': { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-devops' } as any
     });
 

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WorkflowCoordinator } from '../src/workflows/WorkflowCoordinator.js';
 import { makeTempRepo } from './makeTempRepo.js';
 import { createDynamicTaskMocking, createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
@@ -44,13 +43,11 @@ describe('Coordinator QA failure plan evaluation', () => {
     
     const tempRepo = await makeTempRepo();
     let workflowExecuted = false;
-    let taskProcessed = false;
     
     const coordinator = createFastCoordinator();
     
     // Mock processTask to mark tasks as done when processed
     vi.spyOn(coordinator as any, 'processTask').mockImplementation(async (task: any, context: any) => {
-      taskProcessed = true;
       // Mark task as done so coordinator loop exits
       taskMocking.markDone(task.id);
       return { success: true, taskId: task.id };
