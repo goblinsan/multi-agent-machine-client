@@ -56,9 +56,10 @@ describe('Coordinator QA failure plan evaluation', () => {
     try {
       // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
       await coordinator.handleCoordinator(
-        {}, 
-        { workflow_id: 'wf-qa-fail', project_id: 'proj-qa-fail' },
-        { repo: tempRepo }
+        {} as any, // transport
+        {}, // r
+        { workflow_id: 'wf-qa-fail', project_id: 'proj-qa-fail' }, // msg
+        {} // payload
       );
       workflowExecuted = true;
     } catch (error) {

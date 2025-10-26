@@ -147,7 +147,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
     }
   }
   
-  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+  protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     const config = this.config.config as MilestoneStatusCheckConfig || {};
     const errors: string[] = [];
     

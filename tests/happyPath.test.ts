@@ -37,6 +37,7 @@ describe('Coordinator happy path across multiple milestones and tasks', () => {
     try {
       // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
       await coordinator.handleCoordinator(
+        {} as any, // transport parameter
         {}, // r parameter
         { workflow_id: 'wf-happy', project_id: 'proj-happy' }, // msg parameter
         { repo: tempRepo } // payload parameter

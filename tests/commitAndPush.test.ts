@@ -59,6 +59,7 @@ describe('Coordinator commit and push (integration-ish)', () => {
     try {
       // SAFETY: Race condition with timeout protection  
       const testPromise = coordinator.handleCoordinator(
+        {} as any, // transport
         {}, 
         { workflow_id: 'wf-commit', project_id: 'proj-commit' },
         { repo: tmp }

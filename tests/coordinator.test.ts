@@ -33,6 +33,7 @@ describe('Coordinator QA failure handling', () => {
     try {
       // SAFETY: Race condition with timeout protection
       const testPromise = coordinator.handleCoordinator(
+        {} as any, // transport
         {}, 
         { workflow_id: 'wf-qa-coord', project_id: 'proj-qa' }, 
         { repo: tempRepo }
@@ -69,6 +70,7 @@ describe('Coordinator QA failure handling', () => {
     try {
       // SAFETY: Race condition with timeout protection
       const testPromise = coordinator.handleCoordinator(
+        {} as any, // transport
         {}, 
         { workflow_id: 'wf-verify', project_id: 'proj-verify' }, 
         { repo: tempRepo }

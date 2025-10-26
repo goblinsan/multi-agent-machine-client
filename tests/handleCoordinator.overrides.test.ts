@@ -34,9 +34,10 @@ describe('handleCoordinator with overrides', () => {
       // Standard handleCoordinator parameters 
       // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
       await coordinator.handleCoordinator(
-        {}, // r parameter
-        { workflow_id: 'wf-overrides', project_id: 'proj-overrides' }, // msg parameter
-        { repo: tempRepo } // payload parameter
+        {} as any, // transport
+        {}, // r
+        { workflow_id: 'wf-ovr', project_id: 'p1' }, // msg
+        {} // payload
       );
       workflowExecuted = true;
     } catch (error) {

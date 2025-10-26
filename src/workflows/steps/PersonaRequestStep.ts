@@ -567,7 +567,7 @@ export class PersonaRequestStep extends WorkflowStep {
     }
   }
 
-  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+  protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     const errors: string[] = [];
     const config = this.config.config as PersonaRequestConfig;
 

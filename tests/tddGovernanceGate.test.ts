@@ -27,6 +27,7 @@ describe('coordinator TDD governance gating', () => {
     
     try {
       await coordinator.handleCoordinator(
+        {} as any, // transport
         {},
         { 
           workflow_id: 'wf', 

@@ -67,7 +67,7 @@ export class VariableSetStep extends WorkflowStep {
     return template;
   }
 
-  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+  protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     const config = this.config.config as VariableSetStepConfig;
     const errors: string[] = [];
 

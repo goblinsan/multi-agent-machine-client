@@ -152,7 +152,7 @@ export class PlanEvaluationStep extends WorkflowStep {
     }
   }
 
-  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+  protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     const config = this.config.config as PlanEvaluationConfig;
     const errors: string[] = [];
     

@@ -340,7 +340,7 @@ Focus on practical, actionable steps that can be executed by the development tea
     return errors;
   }
 
-  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+  protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     const config = this.config.config as any;
     const errors: string[] = [];
     const warnings: string[] = [];

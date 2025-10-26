@@ -130,7 +130,7 @@ export abstract class WorkflowStep {
   /**
    * Subclasses can override this for custom validation
    */
-  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+  protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     return { valid: true, errors: [], warnings: [] };
   }
 
