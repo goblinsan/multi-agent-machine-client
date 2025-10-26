@@ -85,7 +85,7 @@ steps:
       # timeout not set - will use persona-specific timeout from PERSONA_TIMEOUTS_JSON env (600s for lead-engineer)
       payload:
         task: "${task}"
-        plan: "${planning_loop_plan_result}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
@@ -128,7 +128,7 @@ steps:
       intent: "qa"
       payload:
         task: "${task}"
-        plan: "${planning_loop_plan_result}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         implementation: "${implementation_request_result}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
@@ -181,7 +181,7 @@ steps:
       intent: "code_review"
       payload:
         task: "${task}"
-        plan: "${planning_loop_plan_result}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         implementation: "${implementation_request_result}"
         qa_result: "${qa_request_result}"
         repo: "${repo_remote}"
@@ -228,7 +228,7 @@ steps:
       intent: "security_review"
       payload:
         task: "${task}"
-        plan: "${planning_loop_plan_result}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         implementation: "${implementation_request_result}"
         qa_result: "${qa_request_result}"
         code_review_result: "${code_review_request_result}"
@@ -276,7 +276,7 @@ steps:
       intent: "devops_review"
       payload:
         task: "${task}"
-        plan: "${planning_loop_plan_result}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         implementation: "${implementation_request_result}"
         qa_result: "${qa_request_result}"
         code_review_result: "${code_review_request_result}"
