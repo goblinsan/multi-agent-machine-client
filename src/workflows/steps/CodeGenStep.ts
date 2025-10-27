@@ -214,7 +214,7 @@ export class CodeGenStep extends WorkflowStep {
     }
   }
 
-  private buildDefaultPrompt(task: TaskData, contextData: any): string {
+  private buildDefaultPrompt(task: TaskData, _contextData: any): string {
     let prompt = `Task: ${task.type}\n`;
     prompt += `Persona: ${task.persona}\n`;
     

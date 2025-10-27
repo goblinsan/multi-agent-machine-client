@@ -6,7 +6,7 @@ import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import type { MessageTransport } from "../transport/index.js";
-import { join } from "path";
+import { join as _join } from "path";
 
 const projectAPI = new ProjectAPI();
 import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";

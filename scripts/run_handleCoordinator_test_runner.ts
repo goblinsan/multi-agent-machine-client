@@ -30,8 +30,8 @@ async function main() {
   overrides.persona = {
     sendPersonaRequest: async () => ({ ok: true }),
     waitForPersonaCompletion: async () => ({ fields: { result: {} }, id: 'evt-test' }),
-    parseEventResult: (r: any) => r,
-    interpretPersonaStatus: (r: any) => ({ status: 'pass' })
+    parseEventResult: (_r: any) => _r,
+    interpretPersonaStatus: (_r: any) => ({ status: 'pass' })
   };
 
   console.log('Running handleCoordinator with overrides (test runner)');

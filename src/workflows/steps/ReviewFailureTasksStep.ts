@@ -1,7 +1,7 @@
 import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
-import { TaskAPI, CreateTaskInput } from '../../dashboard/TaskAPI.js';
+import { TaskAPI, CreateTaskInput as _CreateTaskInput } from '../../dashboard/TaskAPI.js';
 import { ProjectAPI } from '../../dashboard/ProjectAPI.js';
 import { TaskDuplicateDetector } from './helpers/TaskDuplicateDetector.js';
 

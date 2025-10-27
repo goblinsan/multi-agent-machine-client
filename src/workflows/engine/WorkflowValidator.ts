@@ -1,4 +1,4 @@
-import { WorkflowConfig } from './WorkflowContext.js';
+import { WorkflowConfig as _WorkflowConfig } from './WorkflowContext.js';
 
 /**
  * Schema validation error

@@ -21,10 +21,10 @@ async function main() {
     fetchProjectStatusDetails: async () => ({}),
     fetchProjectNextAction: async () => ({}),
     resolveRepoFromPayload: async (p: any) => ({ repoRoot, remote: '', branch: p.branch || 'main' }),
-    getRepoMetadata: async (root: string) => ({ currentBranch: 'main', remoteSlug: null, remoteUrl: '' }),
+    getRepoMetadata: async (_root: string) => ({ currentBranch: 'main', remoteSlug: null, remoteUrl: '' }),
     checkoutBranchFromBase: async () => { /* noop */ },
     ensureBranchPublished: async () => { /* noop */ },
-    commitAndPushPaths: async (opts: any) => ({ ok: true }),
+    commitAndPushPaths: async (_opts: any) => ({ ok: true }),
     updateTaskStatus: async () => ({ ok: true }),
     selectNextMilestone: () => ({ id: 'm-sim', name: 'sim milestone', branch: 'milestone/override-sim' }),
     selectNextTask: () => ({ id: 't-sim', name: 'sim task' }),
@@ -56,8 +56,8 @@ async function main() {
     persona: {
       sendPersonaRequest: async () => ({ ok: true }),
       waitForPersonaCompletion: async () => ({ fields: { result: {} }, id: 'evt-sim' }),
-      parseEventResult: (r: any) => r,
-      interpretPersonaStatus: (r: any) => ({ status: 'pass' })
+      parseEventResult: (_r: any) => _r,
+      interpretPersonaStatus: (_r: any) => ({ status: 'pass' })
     }
   };
 

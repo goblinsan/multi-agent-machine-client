@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TaskCreateUpsertSchema, TaskStatusUpdateSchema as _TaskStatusUpdateSchema, validate as _validate } from './helpers/dashboardSchemas.js';
+import {
+  TaskCreateUpsertSchema as _TaskCreateUpsertSchema, TaskStatusUpdateSchema as _TaskStatusUpdateSchema, validate as _validate } from './helpers/dashboardSchemas.js';
 
 // Mock Redis client (uses __mocks__/redisClient.js)
 vi.mock('../src/redisClient.js');

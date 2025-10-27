@@ -267,7 +267,7 @@ export class TaskUpdateStep extends WorkflowStep {
     }
   }
 
-  private async performUpdate(url: string, payload: any, timeoutMs: number): Promise<any> {
+  private async performUpdate(url: string, payload: any, _timeoutMs: number): Promise<any> {
     // For now, simulate the update (in real implementation, this would make HTTP requests)
     logger.debug('Performing task update', {
       url,

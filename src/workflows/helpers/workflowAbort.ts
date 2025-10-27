@@ -1,5 +1,5 @@
 import { cfg } from "../../config.js";
-import { PERSONAS } from "../../personaNames.js";
+import { PERSONAS as _PERSONAS } from "../../personaNames.js";
 import type { WorkflowContext } from "../engine/WorkflowContext.js";
 
 const STREAM_NAME = cfg.requestStream;

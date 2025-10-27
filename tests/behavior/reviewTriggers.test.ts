@@ -313,7 +313,7 @@ describe('Review Trigger Logic', () => {
   describe('Scenario 5: QA Failure Loop', () => {
     it('should loop back to QA (not Code Review) after QA fix', async () => {
       // Given: QA failed, PM created immediate fix, fix implemented
-      const context = {
+      const _context = {
         task_id: 'task-123',
         qa_status: 'fail',
         pm_decision: {

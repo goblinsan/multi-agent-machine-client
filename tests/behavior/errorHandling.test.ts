@@ -18,7 +18,7 @@
  * Implementation Status: ⏳ Tests written, implementation pending Phase 4
  */
 
-import { describe, it, expect, beforeEach as _beforeEach } from 'vitest';
+import { describe, it, expect as _expect, beforeEach as _beforeEach } from 'vitest';
 import { PersonaRequestStep as _PersonaRequestStep } from '../../src/workflows/steps/PersonaRequestStep.js';
 import { makeTempRepo as _makeTempRepo } from '../makeTempRepo.js';
 

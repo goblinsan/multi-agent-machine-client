@@ -337,7 +337,7 @@ export class GitOperationStep extends WorkflowStep {
 
   protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
     const errors: string[] = [];
-    const warnings: string[] = [];
+    const _warnings: string[] = [];
     const config = this.config.config as GitOperationConfig;
 
     if (!config.operation) {

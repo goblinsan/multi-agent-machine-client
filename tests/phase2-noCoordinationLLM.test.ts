@@ -40,10 +40,10 @@ vi.mock('../src/logger.js', () => ({
 describe('Phase 2: Remove Coordination Persona LLM Call', () => {
   let coordinator: WorkflowCoordinator;
   let mockTransport: any;
-  let repoRoot: string;
+  let _repoRoot: string;
 
   beforeEach(async () => {
-    repoRoot = await makeTempRepo();
+    _repoRoot = await makeTempRepo();
 
     coordinator = new WorkflowCoordinator();
 

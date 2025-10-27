@@ -28,7 +28,7 @@ vi.mock('../src/gitUtils.js');
 
 vi.mock('../src/agents/persona.js', () => ({
   sendPersonaRequest: vi.fn().mockResolvedValue('corr-unblock-123'),
-  waitForPersonaCompletion: vi.fn().mockImplementation(async (redis, workflowId, corrId, persona, timeout) => {
+  waitForPersonaCompletion: vi.fn().mockImplementation(async (redis, workflowId, corrId, persona, _timeout) => {
     // Different responses based on persona
     if (persona === 'context') {
       return {

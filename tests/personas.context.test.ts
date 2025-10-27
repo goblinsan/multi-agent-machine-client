@@ -75,7 +75,7 @@ describe('Contextual Persona Prompts', () => {
     it('all prompts include expected JSON response format', () => {
       const evaluatorPrompts = CONTEXT_SPECIFIC_PROMPTS['plan-evaluator']
       
-      for (const [context, prompt] of Object.entries(evaluatorPrompts)) {
+      for (const [_context, prompt] of Object.entries(evaluatorPrompts)) {
         expect(prompt).toContain('status')
         expect(prompt).toContain('pass')
         expect(prompt).toContain('fail')

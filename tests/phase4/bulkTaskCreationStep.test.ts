@@ -55,7 +55,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         return originalMethod.apply(step, args);
       };
 
-      const result = await step.execute(context);
+      const _result = await step.execute(context);
 
       const duration = Date.now() - startTime;
       
