@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi as _vi } from 'vitest';
 import { GitArtifactStep } from '../src/workflows/steps/GitArtifactStep.js';
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
 import { makeTempRepo } from './makeTempRepo.js';
@@ -209,7 +209,7 @@ describe('GitArtifactStep', () => {
       });
 
       // Act
-      const result = await step.execute(context);
+      const _result = await step.execute(context);
 
       // Assert
       const log = await runGit(['log', '--oneline', '-1'], { cwd: repoDir });

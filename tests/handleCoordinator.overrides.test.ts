@@ -24,7 +24,7 @@ describe('handleCoordinator with overrides', () => {
   });
 
   it('executes workflow without hanging (business outcome test)', async () => {
-    const tempRepo = await makeTempRepo();
+    const _tempRepo = await makeTempRepo();
     let workflowExecuted = false;
     
     // Mock the coordinator to track execution without getting into DiffApplyStep architecture issues

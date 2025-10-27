@@ -3,7 +3,7 @@ import { ContextStep } from '../src/workflows/steps/ContextStep.js';
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
 import { logger } from '../src/logger.js';
 import fs from 'fs/promises';
-import path from 'path';
+import _path from 'path';
 
 // Mock external dependencies
 vi.mock('fs/promises');

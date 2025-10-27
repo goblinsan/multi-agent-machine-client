@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import path from 'path';
-import fs from 'fs/promises';
+import _path from 'path';
+import _fs from 'fs/promises';
 import { makeTempRepo } from './makeTempRepo.js';
 import { scanRepositoryForContext } from '../src/git/contextScanner.js';
 

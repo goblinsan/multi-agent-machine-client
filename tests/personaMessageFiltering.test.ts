@@ -40,7 +40,7 @@ describe('PersonaConsumer message filtering', () => {
     });
 
     // Start consumers for multiple personas
-    const startPromise = consumer.start({
+    const _startPromise = consumer.start({
       personas: ['context', 'plan-evaluator', 'implementation-planner'],
       blockMs: 100, // Short timeout for test
       batchSize: 10

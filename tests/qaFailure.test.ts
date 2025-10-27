@@ -41,13 +41,13 @@ describe('Coordinator QA failure plan evaluation', () => {
     ]);
     await taskMocking.setupDashboardMocks();
     
-    const tempRepo = await makeTempRepo();
+    const _tempRepo = await makeTempRepo();
     let workflowExecuted = false;
     
     const coordinator = createFastCoordinator();
     
     // Mock processTask to mark tasks as done when processed
-    vi.spyOn(coordinator as any, 'processTask').mockImplementation(async (task: any, context: any) => {
+    vi.spyOn(coordinator as any, 'processTask').mockImplementation(async (task: any, _context: any) => {
       // Mark task as done so coordinator loop exits
       taskMocking.markDone(task.id);
       return { success: true, taskId: task.id };

@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi as _vi, beforeEach, afterEach } from 'vitest';
 import { commitAndPushPaths } from '../src/gitUtils.js';
 import { makeTempRepo } from './makeTempRepo.js';
 import fs from 'fs/promises';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync as _execSync } from 'child_process';
 
 describe('commitAndPushPaths - remote branch check', () => {
   let tmpRepo: string;

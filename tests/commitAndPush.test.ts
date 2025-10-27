@@ -41,7 +41,7 @@ describe('Coordinator commit and push (integration-ish)', () => {
     vi.spyOn(gitUtils, 'ensureBranchPublished').mockResolvedValue(undefined as any);
     
     // Mock file operations to track when they would be called (if tasks exist)
-    vi.spyOn(fileops, 'applyEditOps').mockImplementation(async (jsonText: string, opts: any) => {
+    vi.spyOn(fileops, 'applyEditOps').mockImplementation(async (_jsonText: string, _opts: any) => {
       // Create the expected file structure for integration testing
       await fs.mkdir(path.join(tmp, 'src'), { recursive: true });
       await fs.writeFile(path.join(tmp, 'src', 'test.ts'), 'console.log("hello world");');
