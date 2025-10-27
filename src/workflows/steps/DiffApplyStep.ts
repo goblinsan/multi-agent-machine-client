@@ -1,6 +1,6 @@
 import { WorkflowStep, WorkflowStepConfig, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { DiffParser, DiffParseResult } from '../../agents/parsers/DiffParser.js';
+import { DiffParser, DiffParseResult as _DiffParseResult } from '../../agents/parsers/DiffParser.js';
 import { applyEditOps } from '../../fileops.js';
 
 /**

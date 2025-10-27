@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'fs/promises'
 import path from 'path'
-import os from 'os'
+import _os from 'os'
 import { applyEditOps } from '../src/fileops'
 import { cfg } from '../src/config'
 import { makeTempRepo } from './makeTempRepo'

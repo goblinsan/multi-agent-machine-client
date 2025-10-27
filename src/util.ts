@@ -1,4 +1,4 @@
-import { cfg } from "./config.js";
+import { cfg as _cfg } from "./config.js";
 
 export const CODING_PERSONA_SET = new Set([
   "lead-engineer", 

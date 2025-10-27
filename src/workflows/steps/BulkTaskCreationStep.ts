@@ -2,7 +2,7 @@ import { WorkflowStep, StepResult, ValidationResult, WorkflowStepConfig } from '
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 import { DashboardClient, type TaskCreateInput } from '../../services/DashboardClient.js';
-import { TaskPriorityCalculator, TaskPriority, DEFAULT_PRIORITY_MAPPING } from './helpers/TaskPriorityCalculator.js';
+import { TaskPriorityCalculator, TaskPriority, DEFAULT_PRIORITY_MAPPING as _DEFAULT_PRIORITY_MAPPING } from './helpers/TaskPriorityCalculator.js';
 import { TaskDuplicateDetector, type ExistingTask as DetectorExistingTask, type DuplicateMatchStrategy } from './helpers/TaskDuplicateDetector.js';
 import { TaskRouter, type MilestoneStrategy, type ParentTaskMapping } from './helpers/TaskRouter.js';
 import { sleep, isRetryableError } from '../../util/retry.js';

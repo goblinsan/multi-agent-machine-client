@@ -19,7 +19,7 @@
  * Implementation Status: ⏳ Tests written, implementation pending Phase 4-6
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect as _expect } from 'vitest';
 
 describe('Cross-Review Consistency', () => {
   describe('QA Severity Model', () => {

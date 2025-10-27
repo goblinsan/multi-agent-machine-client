@@ -346,7 +346,7 @@ export class DiffParser {
   /**
    * Extract file content from diff lines
    */
-  private static extractFileContentFromDiff(lines: string[], startIndex: number, filename: string): string | null {
+  private static extractFileContentFromDiff(lines: string[], startIndex: number, _filename: string): string | null {
     const contentLines: string[] = [];
     
     for (let i = startIndex; i < lines.length; i++) {

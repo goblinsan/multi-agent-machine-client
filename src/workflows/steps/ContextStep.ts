@@ -2,7 +2,7 @@ import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowSt
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 import { scanRepo, ScanSpec, FileInfo } from '../../scanRepo.js';
-import { Artifacts } from '../../artifacts.js';
+import { Artifacts as _Artifacts } from '../../artifacts.js';
 import fs from 'fs/promises';
 import path from 'path';
 

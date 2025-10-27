@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach as _beforeEach, afterEach } from 'vitest';
 import { makeTempRepo } from './makeTempRepo.js';
 import { isLastCommitContextOnly, hasCommitsSinceLastContextScan } from '../src/git/contextCommitCheck.js';
 import { runGit } from '../src/gitUtils.js';
