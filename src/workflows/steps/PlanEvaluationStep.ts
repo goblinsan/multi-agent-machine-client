@@ -478,7 +478,7 @@ export class PlanEvaluationStep extends WorkflowStep {
     return true;
   }
 
-  async cleanup(context: WorkflowContext): Promise<void> {
+  async cleanup(_context: WorkflowContext): Promise<void> {
     // No cleanup needed for plan evaluation
     logger.debug('Plan evaluation step cleanup completed', { stepName: this.config.name });
   }

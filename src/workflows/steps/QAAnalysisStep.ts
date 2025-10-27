@@ -271,7 +271,7 @@ export class QAAnalysisStep extends WorkflowStep {
     return analysis;
   }
 
-  async cleanup(context: WorkflowContext): Promise<void> {
+  async cleanup(_context: WorkflowContext): Promise<void> {
     // No cleanup needed for QA analysis
     logger.debug('QA analysis step cleanup completed', { stepName: this.config.name });
   }

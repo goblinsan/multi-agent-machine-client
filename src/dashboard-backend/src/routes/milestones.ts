@@ -17,7 +17,7 @@ const milestoneUpdateSchema = z.object({
 
 export function registerMilestoneRoutes(fastify: FastifyInstance) {
   // List milestones for a project
-  fastify.get('/projects/:projectId/milestones', async (request: any, reply: any) => {
+  fastify.get('/projects/:projectId/milestones', async (request: any, _reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
     const db = await getDb();
     

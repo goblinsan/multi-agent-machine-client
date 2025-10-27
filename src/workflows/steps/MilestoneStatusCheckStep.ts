@@ -166,7 +166,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
     };
   }
   
-  async cleanup(context: WorkflowContext): Promise<void> {
+  async cleanup(_context: WorkflowContext): Promise<void> {
     // No cleanup needed
     logger.debug('Milestone status check cleanup completed', { stepName: this.config.name });
   }

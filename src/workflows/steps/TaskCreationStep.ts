@@ -348,7 +348,7 @@ export class TaskCreationStep extends WorkflowStep {
     return description;
   }
 
-  async cleanup(context: WorkflowContext): Promise<void> {
+  async cleanup(_context: WorkflowContext): Promise<void> {
     // No cleanup needed for task creation
     logger.debug('Task creation step cleanup completed', { stepName: this.config.name });
   }

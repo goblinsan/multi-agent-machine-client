@@ -15,7 +15,7 @@ const taskCreateSchema = z.object({
 
 export function registerTaskRoutes(fastify: FastifyInstance) {
   // GET list
-  fastify.get('/projects/:projectId/tasks', async (request: any, reply: any) => {
+  fastify.get('/projects/:projectId/tasks', async (request: any, _reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
     const db = await getDb();
 
