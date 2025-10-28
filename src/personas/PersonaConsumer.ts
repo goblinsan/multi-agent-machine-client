@@ -320,6 +320,36 @@ export class PersonaConsumer {
   }): Promise<any> {
     const { persona, workflowId, intent, payload, repo, branch } = params;
 
+    // SPECIAL CASE: coordination persona routes to WorkflowCoordinator instead of LLM
+    if (persona === 'coordination') {
+      logger.info('PersonaConsumer: Routing coordination request to WorkflowCoordinator', {
+        workflowId,
+        projectId: payload.project_id || params.projectId,
+        intent
+      });
+      
+      const { WorkflowCoordinator } = await import('../workflows/WorkflowCoordinator.js');
+      const coordinator = new WorkflowCoordinator();
+      
+      // Call handleCoordinator with appropriate parameters
+      await coordinator.handleCoordinator(
+        this.transport,
+        {} as any, // redis client (not used with transport abstraction)
+        {
+          workflow_id: workflowId,
+          project_id: payload.project_id || params.projectId,
+          repo: payload.repo || repo,
+          base_branch: payload.base_branch || branch
+        },
+        payload
+      );
+      
+      return {
+        status: 'success',
+        message: 'WorkflowCoordinator execution completed'
+      };
+    }
+
     // Get persona configuration
     const model = cfg.personaModels[persona];
     if (!model) {

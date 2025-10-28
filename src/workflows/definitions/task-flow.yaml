@@ -40,21 +40,42 @@ steps:
     config:
       status: "in_progress"
 
-  # Context gathering
+  # Context gathering - scan repository and commit artifacts to git
+  - name: context_scan
+    type: ContextStep
+    description: "Scan repository structure and create context snapshot"
+    depends_on: ["mark_task_in_progress"]
+    config:
+      repoPath: "${repo_root}"
+      includePatterns: ["**/*"]
+      excludePatterns: ["node_modules/**", ".git/**", "dist/**", "build/**", ".ma/**"]
+      maxFiles: 1000
+      maxBytes: 10485760  # 10MB
+      maxDepth: 10
+      trackLines: true
+      trackHash: false
+      forceRescan: false
+
+  # Context analysis - send scan data to context persona for analysis
+  # ONLY if context was NOT reused (i.e., fresh scan performed)
   - name: context_request
     type: PersonaRequestStep
-    description: "Request context gathering from context persona"
-    depends_on: ["mark_task_in_progress"]
+    description: "Request context analysis from context persona"
+    depends_on: ["context_scan"]
+    condition: "${context_scan.reused_existing} != true"  # Skip LLM call if reusing existing context
     config:
       step: "1-context"
       persona: "context"
-      intent: "context_gathering"
+      intent: "context_analysis"
       payload:
         task: "${task}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
         milestone: "${milestone}"
         milestone_name: "${milestone_name}"
+        repoScan: "${repoScan}"
+        context_metadata: "${context.metadata}"
+        reused_existing: "${context_scan.reused_existing}"
 
   # Planning with evaluation loop (encapsulates plan creation and evaluation)
   - name: planning_loop
@@ -133,6 +154,17 @@ steps:
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
+  # Commit QA results to git for distributed access
+  - name: commit_qa_result
+    type: GitArtifactStep
+    description: "Commit QA review result to .ma/tasks/{id}/reviews/qa.json"
+    depends_on: ["qa_request"]
+    config:
+      source_output: "qa_request_result"
+      artifact_path: ".ma/tasks/${task.id}/reviews/qa.json"
+      commit_message: "test(ma): QA review for task ${task.id}"
+      format: "json"
+
   # Handle QA failures with unified review-failure-handling sub-workflow
   # NOTE: existing_tasks will be populated by dashboard integration in future
   - name: handle_qa_failure
@@ -189,6 +221,17 @@ steps:
         tdd_aware: "${tdd_aware}"
         tdd_stage: "${tdd_stage}"
 
+  # Commit code review results to git
+  - name: commit_code_review_result
+    type: GitArtifactStep
+    description: "Commit code review result to .ma/tasks/{id}/reviews/code-review.json"
+    depends_on: ["code_review_request"]
+    config:
+      source_output: "code_review_request_result"
+      artifact_path: ".ma/tasks/${task.id}/reviews/code-review.json"
+      commit_message: "refactor(ma): code review for task ${task.id}"
+      format: "json"
+
   # Handle code review failures with PM prioritization and task creation
   - name: handle_code_review_failure
     type: SubWorkflowStep
@@ -237,6 +280,17 @@ steps:
         tdd_aware: "${tdd_aware}"
         tdd_stage: "${tdd_stage}"
 
+  # Commit security review results to git
+  - name: commit_security_result
+    type: GitArtifactStep
+    description: "Commit security review result to .ma/tasks/{id}/reviews/security.json"
+    depends_on: ["security_request"]
+    config:
+      source_output: "security_request_result"
+      artifact_path: ".ma/tasks/${task.id}/reviews/security.json"
+      commit_message: "security(ma): security review for task ${task.id}"
+      format: "json"
+
   # Handle security review failures with PM prioritization and task creation
   - name: handle_security_failure
     type: SubWorkflowStep
@@ -283,6 +337,17 @@ steps:
         security_result: "${security_request_result}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
+
+  # Commit DevOps review results to git
+  - name: commit_devops_result
+    type: GitArtifactStep
+    description: "Commit DevOps review result to .ma/tasks/{id}/reviews/devops.json"
+    depends_on: ["devops_request"]
+    config:
+      source_output: "devops_request_result"
+      artifact_path: ".ma/tasks/${task.id}/reviews/devops.json"
+      commit_message: "ci(ma): DevOps review for task ${task.id}"
+      format: "json"
 
   # Handle DevOps review failures with unified review-failure-handling sub-workflow
   - name: handle_devops_failure

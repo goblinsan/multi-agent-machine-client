@@ -24,6 +24,7 @@ steps:
       intent: "code_review"
       payload:
         task: "${task}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         repo: "${repo_remote}"
         branch: "${featureBranchName}"
         project_id: "${projectId}"
@@ -31,6 +32,17 @@ steps:
         tdd_aware: "${tdd_aware}"
         tdd_stage: "${tdd_stage}"
       timeout: 300000  # 5 minutes
+
+  # Commit code review results to git
+  - name: commit_code_review_result
+    type: GitArtifactStep
+    description: "Commit code review result to .ma/tasks/{id}/reviews/code-review.json"
+    depends_on: ["code_review_request"]
+    config:
+      source_output: "code_review_request_result"
+      artifact_path: ".ma/tasks/${task.id}/reviews/code-review.json"
+      commit_message: "refactor(ma): code review for task ${task.id}"
+      format: "json"
 
   # Handle code review failures with unified sub-workflow
   - name: handle_code_review_failure
@@ -71,6 +83,7 @@ steps:
       intent: "security_review"
       payload:
         task: "${task}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         code_review_result: "${code_review_request_result}"
         repo: "${repo_remote}"
         branch: "${featureBranchName}"
@@ -79,6 +92,17 @@ steps:
         tdd_aware: "${tdd_aware}"
         tdd_stage: "${tdd_stage}"
       timeout: 300000  # 5 minutes
+
+  # Commit security review results to git
+  - name: commit_security_result
+    type: GitArtifactStep
+    description: "Commit security review result to .ma/tasks/{id}/reviews/security.json"
+    depends_on: ["security_request"]
+    config:
+      source_output: "security_request_result"
+      artifact_path: ".ma/tasks/${task.id}/reviews/security.json"
+      commit_message: "security(ma): security review for task ${task.id}"
+      format: "json"
 
   # Handle security review failures with unified sub-workflow
   - name: handle_security_failure
@@ -119,6 +143,7 @@ steps:
       intent: "devops_review"
       payload:
         task: "${task}"
+        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         code_review_result: "${code_review_request_result}"
         security_result: "${security_request_result}"
         repo: "${repo_remote}"
@@ -126,6 +151,17 @@ steps:
         project_id: "${projectId}"
         resume_review: true
       timeout: 300000  # 5 minutes
+
+  # Commit DevOps review results to git
+  - name: commit_devops_result
+    type: GitArtifactStep
+    description: "Commit DevOps review result to .ma/tasks/{id}/reviews/devops.json"
+    depends_on: ["devops_request"]
+    config:
+      source_output: "devops_request_result"
+      artifact_path: ".ma/tasks/${task.id}/reviews/devops.json"
+      commit_message: "ci(ma): DevOps review for task ${task.id}"
+      format: "json"
 
   # Handle DevOps review failures with unified sub-workflow
   - name: handle_devops_failure

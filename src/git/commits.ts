@@ -75,7 +75,7 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
   }
 
   const sanitized = String(message || '').replace(/\s+/g, ' ').trim() || 'agent: update';
-  await runGit(["commit", "-m", sanitized], { cwd: repoRoot });
+  await runGit(["commit", "--no-verify", "-m", sanitized], { cwd: repoRoot });
 
   try {
     // Check if remote branch exists

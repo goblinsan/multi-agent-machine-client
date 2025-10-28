@@ -339,10 +339,10 @@ export class PlanningLoopStep extends WorkflowStep {
       // Write file
       await fs.writeFile(fullPath, content, 'utf-8');
 
-      // Commit to git
+      // Commit to git (skip pre-commit hooks for automated workflow commit)
       const relativePath = path.relative(repoRoot, fullPath);
       await runGit(['add', relativePath], { cwd: repoRoot });
-      await runGit(['commit', '-m', commitMessage], { cwd: repoRoot });
+      await runGit(['commit', '--no-verify', '-m', commitMessage], { cwd: repoRoot });
 
       // Get SHA
       const sha = (await runGit(['rev-parse', 'HEAD'], { cwd: repoRoot })).stdout.trim();

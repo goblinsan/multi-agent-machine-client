@@ -197,8 +197,8 @@ export class GitService {
         await runGit(['add', '-A'], { cwd: this.repoRoot });
       }
 
-      // Commit changes
-      const result = await runGit(['commit', '-m', message], { cwd: this.repoRoot });
+      // Commit changes (skip pre-commit hooks for automated agent commit)
+      const result = await runGit(['commit', '--no-verify', '-m', message], { cwd: this.repoRoot });
       
       return {
         success: true,

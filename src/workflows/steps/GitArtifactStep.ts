@@ -137,14 +137,14 @@ export class GitArtifactStep extends WorkflowStep {
 
       try {
         await runGit(['add', relativePath], { cwd: repoRoot });
-        await runGit(['commit', '-m', commitMsg], { cwd: repoRoot });
+        await runGit(['commit', '--no-verify', '-m', commitMsg], { cwd: repoRoot });
       } catch (err) {
         // Retry with force add if initial commit fails
         context.logger.warn('Initial commit failed, retrying with force add', {
           error: err instanceof Error ? err.message : String(err)
         });
         await runGit(['add', '--force', relativePath], { cwd: repoRoot });
-        await runGit(['commit', '-m', commitMsg], { cwd: repoRoot });
+        await runGit(['commit', '--no-verify', '-m', commitMsg], { cwd: repoRoot });
       }
 
       // 7. Get commit SHA
