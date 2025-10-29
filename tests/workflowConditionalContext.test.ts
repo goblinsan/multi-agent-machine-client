@@ -15,7 +15,7 @@ describe('Workflow Conditional Context Optimization', () => {
 
     // CRITICAL: Must have condition to skip when context is reused
     expect(contextRequestStep).toContain('condition:');
-    expect(contextRequestStep).toMatch(/condition:.*context_scan\.reused_existing.*!= {2}true/);
+    expect(contextRequestStep).toMatch(/condition:.*context_scan\.reused_existing.*!=\s+true/);
     
     // CRITICAL: Should be PersonaRequestStep (LLM call)
     expect(contextRequestStep).toContain('type: PersonaRequestStep');

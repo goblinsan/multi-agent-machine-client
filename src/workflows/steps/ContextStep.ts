@@ -332,7 +332,6 @@ export class ContextStep extends WorkflowStep {
 
     // Verify the resolved path is a valid directory
     try {
-      const fs = await import('fs/promises');
       const stats = await fs.stat(repoPath);
       if (!stats.isDirectory()) {
         const error = `FATAL: Resolved repo_root is not a directory: ${repoPath}`;

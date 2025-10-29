@@ -40,6 +40,12 @@ describe('ContextStep Change Detection', () => {
       setVariable: vi.fn(),
       logger: logger
     } as any;
+
+    // Mock fs.stat to validate repoPath exists and is a directory
+    (fs.stat as any).mockResolvedValue({
+      isDirectory: () => true,
+      mtime: new Date(Date.now() - 60000)
+    });
   });
 
   it('should rescan when context files do not exist', async () => {
@@ -72,10 +78,16 @@ describe('ContextStep Change Detection', () => {
     // Mock context files exist
     (fs.access as any).mockResolvedValue(undefined);
     
-    // Mock snapshot file stat
-    (fs.stat as any).mockResolvedValue({
-      mtime: new Date(lastScanTime)
-    });
+    // Mock snapshot file stat - need different mock for context file vs repo stat
+    (fs.stat as any)
+      .mockResolvedValueOnce({
+        isDirectory: () => true,
+        mtime: new Date()
+      })
+      .mockResolvedValueOnce({
+        isDirectory: () => false,
+        mtime: new Date(lastScanTime)
+      });
 
     // Mock quick scan to find newer files
     const { scanRepo } = await import('../src/scanRepo.js');
@@ -106,10 +118,16 @@ describe('ContextStep Change Detection', () => {
     // Mock context files exist
     (fs.access as any).mockResolvedValue(undefined);
     
-    // Mock snapshot file stat
-    (fs.stat as any).mockResolvedValue({
-      mtime: new Date(lastScanTime)
-    });
+    // Mock stats: first for repoPath validation, then for snapshot file
+    (fs.stat as any)
+      .mockResolvedValueOnce({
+        isDirectory: () => true,
+        mtime: new Date()
+      })
+      .mockResolvedValueOnce({
+        isDirectory: () => false,
+        mtime: new Date(lastScanTime)
+      });
 
     // Mock quick scan to find no newer files
     const { scanRepo } = await import('../src/scanRepo.js');
@@ -175,9 +193,15 @@ describe('ContextStep Change Detection', () => {
   });
 
   it('should handle errors gracefully and fall back to rescan', async () => {
-    // Mock context files exist but reading fails
+    // Mock repoPath validation to succeed
+    (fs.stat as any).mockResolvedValueOnce({
+      isDirectory: () => true,
+      mtime: new Date()
+    });
+    
+    // Mock context files exist but reading snapshot stats fails
     (fs.access as any).mockResolvedValue(undefined);
-    (fs.stat as any).mockRejectedValue(new Error('Permission denied'));
+    (fs.stat as any).mockRejectedValueOnce(new Error('Permission denied'));
 
     // Mock scanRepo for the full scan
     const { scanRepo } = await import('../src/scanRepo.js');

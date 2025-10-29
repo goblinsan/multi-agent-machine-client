@@ -71,6 +71,34 @@ vi.mock('../src/scanRepo.js', () => ({
   ])
 }));
 
+vi.mock('fs/promises', () => ({
+  default: {
+    access: vi.fn().mockRejectedValue(new Error('File not found')),
+    stat: vi.fn().mockResolvedValue({
+      isDirectory: () => true,
+      mtime: new Date()
+    }),
+    readFile: vi.fn().mockResolvedValue('{}'),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    mkdir: vi.fn().mockResolvedValue(undefined)
+  }
+}));
+
+vi.mock('../src/gitUtils.js', () => ({
+  runGit: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+  getCurrentBranch: vi.fn().mockResolvedValue('main'),
+  ensureGitRepo: vi.fn().mockResolvedValue(undefined),
+  describeWorkingTree: vi.fn().mockResolvedValue({
+    dirty: false,
+    branch: 'main',
+    entries: [],
+    summary: { staged: 0, unstaged: 0, untracked: 0, total: 0 },
+    porcelain: []
+  }),
+  commitAndPushPaths: vi.fn().mockResolvedValue(undefined),
+  checkoutBranchFromBase: vi.fn().mockResolvedValue(undefined)
+}));
+
 vi.mock('../src/lmstudio.js', () => ({
   callLMStudio: vi.fn().mockResolvedValue({
     content: 'Generated code response with diffs\n```diff\n--- a/test.ts\n+++ b/test.ts\n@@ -1,1 +1,2 @@\n console.log("hello");\n+console.log("world");\n```',
@@ -199,6 +227,10 @@ describe('Workflow Steps', () => {
       const step = new ContextStep(config);
       const result = await step.execute(context);
 
+      if (result.status === 'failure') {
+        console.error('ContextStep failed:', result.error);
+      }
+      
       expect(result.status).toBe('success');
       expect(result.data).toBeDefined();
       expect(result.outputs?.context).toBeDefined();
