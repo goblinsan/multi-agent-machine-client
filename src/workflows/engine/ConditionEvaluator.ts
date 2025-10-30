@@ -1,139 +1,75 @@
 import type { WorkflowContext } from './WorkflowContext';
+import { evaluateCondition } from './conditionUtils';
 import { logger } from '../../logger.js';
 
 /**
- * Handles evaluation of workflow conditions and expressions
+ * Handles evaluation of workflow trigger conditions.
+ * 
+ * ARCHITECTURE NOTE:
+ * This class delegates to conditionUtils.evaluateCondition() to ensure
+ * ALL condition evaluation logic lives in one place (conditionUtils.ts).
+ * This prevents duplication and ensures trigger conditions and step conditions
+ * use identical evaluation logic.
+ * 
+ * For step conditions during workflow execution, use WorkflowStep.shouldExecute()
+ * which also uses conditionUtils.evaluateCondition().
  */
 export class ConditionEvaluator {
   /**
-   * Evaluate a simple condition string against context
+   * Evaluate a condition string against context.
+   * Delegates to conditionUtils.evaluateCondition() for consistency.
+   * 
+   * DEPRECATED: This method exists only for backward compatibility.
+   * For step conditions, use WorkflowStep.shouldExecute() instead.
+   * 
    * Supports:
-   * - Single equality: "${var} == 'value'"
+   * - Equality: "${var} == 'value'" or "${var} == true"
+   * - Inequality: "${var} != 'value'" or "${var} != false"
    * - OR conditions: "${var} == 'value1' || ${var} == 'value2'"
    * - AND conditions: "${var1} == 'value1' && ${var2} == 'value2'"
+   * - Dot notation: "${step_name.output_property} == 'value'"
+   * - Boolean values: true, false (without quotes)
    */
   evaluateSimpleCondition(condition: string, context: WorkflowContext): boolean {
-    try {
-      // Handle OR conditions (||)
-      if (condition.includes('||')) {
-        const parts = condition.split('||').map(s => s.trim());
-        return parts.some(part => this.evaluateSingleComparison(part, context));
-      }
-      
-      // Handle AND conditions (&&)
-      if (condition.includes('&&')) {
-        const parts = condition.split('&&').map(s => s.trim());
-        return parts.every(part => this.evaluateSingleComparison(part, context));
-      }
-      
-      // Single comparison
-      return this.evaluateSingleComparison(condition, context);
-    } catch (error: any) {
-      console.warn(`Failed to evaluate condition '${condition}': ${error.message}`);
-      return false;
-    }
+    return evaluateCondition(condition, context);
   }
 
   /**
-   * Evaluate a single comparison expression
-   */
-  private evaluateSingleComparison(condition: string, context: WorkflowContext): boolean {
-    if (condition.includes('==')) {
-      const [left, right] = condition.split('==').map(s => s.trim());
-      
-      // Handle ${variable} syntax in left side
-      let leftVariableName = left.replace(/['"]/g, '');
-      if (leftVariableName.startsWith('${') && leftVariableName.endsWith('}')) {
-        leftVariableName = leftVariableName.slice(2, -1);
-      }
-      
-      const leftValue = this.getNestedValue(context, leftVariableName);
-      const rightValue = right.replace(/['"]/g, '');
-      
-      const result = String(leftValue) === rightValue;
-      
-      logger.debug('Condition comparison', {
-        condition,
-        variableName: leftVariableName,
-        leftValue,
-        rightValue,
-        result,
-        workflowId: context.workflowId
-      });
-      
-      return result;
-    }
-    
-    return true; // Default to true for unhandled conditions
-  }
-
-  /**
-   * Evaluate workflow trigger condition
+   * Evaluate workflow trigger condition.
+   * This is the primary use case for ConditionEvaluator - matching workflows to tasks.
+   * 
+   * Creates a temporary context with task_type and scope variables, then delegates
+   * to the standard condition evaluation logic in WorkflowStep.
    */
   evaluateTriggerCondition(condition: string, taskType: string, scope?: string): boolean {
     try {
-      // Replace variables in condition
-      const resolved = condition
-        .replace(/task_type/g, `"${taskType}"`)
-        .replace(/scope/g, `"${scope || ''}"`);
-      
-      // Simple condition evaluation
-      if (resolved.includes('||')) {
-        return resolved.split('||').some(part => this.evaluateSimpleTriggerComparison(part.trim()));
-      } else if (resolved.includes('&&')) {
-        return resolved.split('&&').every(part => this.evaluateSimpleTriggerComparison(part.trim()));
-      } else {
-        return this.evaluateSimpleTriggerComparison(resolved);
-      }
+      // Create a minimal context with trigger variables
+      // We need this to evaluate trigger conditions like "task_type == 'feature'"
+      const tempContext = {
+        workflowId: '__trigger_evaluation__',
+        variables: new Map([
+          ['task_type', taskType],
+          ['scope', scope || '']
+        ]),
+        getVariable(name: string) {
+          return this.variables.get(name);
+        },
+        getStepOutput(_name: string) {
+          return undefined;
+        },
+        logger
+      } as any as WorkflowContext;
+
+      // Use the unified condition evaluator
+      return this.evaluateSimpleCondition(condition, tempContext);
     } catch (error: any) {
-      console.warn(`Failed to evaluate trigger condition '${condition}': ${error.message}`);
+      logger.warn('Failed to evaluate trigger condition', {
+        condition,
+        taskType,
+        scope,
+        error: error.message
+      });
       return false;
     }
-  }
-
-  /**
-   * Evaluate simple comparison for trigger conditions
-   */
-  private evaluateSimpleTriggerComparison(comparison: string): boolean {
-    if (comparison.includes('==')) {
-      const [left, right] = comparison.split('==').map(s => s.trim().replace(/['"]/g, ''));
-      return left === right;
-    }
-    return false;
-  }
-
-  /**
-   * Get nested value from context
-   */
-  private getNestedValue(context: WorkflowContext, path: string): any {
-    // Handle special context variables
-    if (path === 'REPO_PATH') {
-      logger.warn('REPO_PATH is deprecated. Use repo_remote for distributed agent coordination.');
-      return context.repoRoot;
-    }
-    if (path === 'repoRoot') {
-      logger.warn('repoRoot reference in workflow. Using repo_remote for distributed coordination.');
-      return context.getVariable('repo_remote') || context.repoRoot;
-    }
-    if (path === 'REDIS_STREAM_NAME') return context.getVariable('REDIS_STREAM_NAME') || process.env.REDIS_STREAM_NAME || 'workflow-tasks';
-    if (path === 'CONSUMER_GROUP') return context.getVariable('CONSUMER_GROUP') || process.env.CONSUMER_GROUP || 'workflow-consumers';
-    if (path === 'CONSUMER_ID') return context.getVariable('CONSUMER_ID') || process.env.CONSUMER_ID || 'workflow-engine';
-    
-    // Try to get from variables first
-    const variable = context.getVariable(path);
-    if (variable !== undefined) {
-      return variable;
-    }
-    
-    // Try to get from step outputs
-    if (path.includes('.')) {
-      const [stepName, ...propertyPath] = path.split('.');
-      const stepOutput = context.getStepOutput(stepName);
-      if (stepOutput) {
-        return propertyPath.reduce((current, key) => current?.[key], stepOutput);
-      }
-    }
-    
-    return undefined;
   }
 }
