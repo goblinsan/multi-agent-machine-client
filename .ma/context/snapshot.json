@@ -1,5 +1,5 @@
 {
-  "timestamp": 1761695175914,
+  "timestamp": 1761863927808,
   "files": [
     {
       "path": ".DS_Store",
@@ -153,9 +153,9 @@
     },
     {
       "path": ".husky/pre-commit",
-      "bytes": 401,
-      "mtime": 1761493942167.5706,
-      "lines": 21
+      "bytes": 711,
+      "mtime": 1761863878791.9287,
+      "lines": 35
     },
     {
       "path": ".vscode/tasks.json",
@@ -200,15 +200,21 @@
       "lines": 200
     },
     {
+      "path": "docs/CONDITION_EVALUATION_REFACTOR.md",
+      "bytes": 7579,
+      "mtime": 1761844845298.1797,
+      "lines": 202
+    },
+    {
       "path": "docs/CONTEXT_CACHE_OPTIMIZATION.md",
       "bytes": 3727,
-      "mtime": 1761685481634.39,
+      "mtime": 1761844845264.7878,
       "lines": 123
     },
     {
       "path": "docs/DISTRIBUTED_GIT_ARCHITECTURE.md",
       "bytes": 7867,
-      "mtime": 1761666394249.64,
+      "mtime": 1761844845265.078,
       "lines": 243
     },
     {
@@ -262,7 +268,7 @@
     {
       "path": "docs/TESTING_STRATEGY.md",
       "bytes": 13342,
-      "mtime": 1761666394331.732,
+      "mtime": 1761844845265.3374,
       "lines": 417
     },
     {
@@ -351,9 +357,9 @@
     },
     {
       "path": "machine-client.log",
-      "bytes": 141859,
-      "mtime": 1761695175885.08,
-      "lines": 624
+      "bytes": 1699089,
+      "mtime": 1761863927782.0183,
+      "lines": 7364
     },
     {
       "path": "package-lock.json",
@@ -586,7 +592,7 @@
     {
       "path": "src/dashboard-backend/data/dashboard.db",
       "bytes": 118784,
-      "mtime": 1761672511890.5046,
+      "mtime": 1761862468430.507,
       "lines": 477
     },
     {
@@ -627,8 +633,8 @@
     }
   ],
   "totals": {
-    "files": 104,
-    "bytes": 3501237,
+    "files": 105,
+    "bytes": 5066356,
     "depth": 10
   }
 }

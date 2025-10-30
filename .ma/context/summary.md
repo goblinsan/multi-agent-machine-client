@@ -1,11 +1,11 @@
 # Repository Context Summary
 
-Generated: 2025-10-28T23:46:15.914Z
+Generated: 2025-10-30T22:38:47.808Z
 
 ## Statistics
 
-- **Total Files**: 104
-- **Total Size**: 3419.18 KB
+- **Total Files**: 105
+- **Total Size**: 4947.61 KB
 - **Max Depth**: 10
 
 ## Directory Structure
@@ -25,13 +25,13 @@ Generated: 2025-10-28T23:46:15.914Z
   dashboard-actions.log (2.1KB)
   debug-transport.log (2642.9KB)
   eslint.config.js (1.3KB)
-  machine-client.log (138.5KB)
+  machine-client.log (1659.3KB)
   package-lock.json (129.0KB)
   package.json (1.4KB)
 .github/
   copilot-instructions.md (1.1KB)
 .husky/
-  pre-commit (0.4KB)
+  pre-commit (0.7KB)
 .husky/_/
   .gitignore (0.0KB)
   applypatch-msg (0.0KB)
@@ -54,6 +54,7 @@ Generated: 2025-10-28T23:46:15.914Z
   tasks.json (0.7KB)
 docs/
   ARCHITECTURE.md (6.0KB)
+  CONDITION_EVALUATION_REFACTOR.md (7.4KB)
   CONTEXT_CACHE_OPTIMIZATION.md (3.6KB)
   DISTRIBUTED_GIT_ARCHITECTURE.md (7.7KB)
   ESLINT_CLEANUP_EXECUTIVE_SUMMARY.md (5.0KB)
@@ -141,6 +142,7 @@ src/dashboard-backend/node_modules/.bin/
 
 - `CHANGELOG.md` (13.6KB, 468 lines)
 - `debug-transport.log` (2642.9KB, 60291 lines)
+- `docs/CONDITION_EVALUATION_REFACTOR.md` (7.4KB, 202 lines)
 - `docs/DISTRIBUTED_GIT_ARCHITECTURE.md` (7.7KB, 243 lines)
 - `docs/ESLINT_CLEANUP_SESSION_RESULTS.md` (8.5KB, 274 lines)
 - `docs/ESLINT_SETUP.md` (4.9KB, 212 lines)
@@ -157,7 +159,7 @@ src/dashboard-backend/node_modules/.bin/
 - `examples/multi-agent-log-summarizer.json` (14.3KB, 398 lines)
 - `examples/project-setup-example.json` (13.4KB, 366 lines)
 - `examples/transport-examples.ts` (9.1KB, 329 lines)
-- `machine-client.log` (138.5KB, 624 lines)
+- `machine-client.log` (1659.3KB, 7364 lines)
 - `package-lock.json` (129.0KB, 3819 lines)
 - `scripts/monitor-redis-streams.ts` (7.4KB, 250 lines)
 - `src/agents/parsers/DiffParser.ts` (12.2KB, 467 lines)
@@ -169,7 +171,7 @@ src/dashboard-backend/node_modules/.bin/
 
 ## File Types
 
-- .md: 25 files
+- .md: 26 files
 - (no extension): 23 files
 - .ts: 20 files
 - .sh: 7 files
