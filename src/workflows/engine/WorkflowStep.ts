@@ -1,4 +1,5 @@
-import { WorkflowContext } from './WorkflowContext.js';
+import type { WorkflowContext } from './WorkflowContext';
+import { evaluateCondition as evaluateConditionUtil } from './conditionUtils';
 
 /**
  * Result of a workflow step execution
@@ -115,8 +116,9 @@ export abstract class WorkflowStep {
     }
 
     try {
-      // Simple condition evaluation - can be enhanced with a proper expression engine
-      const result = this.evaluateCondition(this.config.condition, context);
+      // Delegate to shared condition evaluation utility
+      // This ensures all condition evaluation uses the same logic
+      const result = evaluateConditionUtil(this.config.condition, context);
       
       // Debug logging for conditional execution
       context.logger.info('Condition evaluated', {
@@ -142,107 +144,6 @@ export abstract class WorkflowStep {
    */
   protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     return { valid: true, errors: [], warnings: [] };
-  }
-
-  /**
-   * Simple condition evaluation - can be enhanced with a proper expression engine
-   */
-  private evaluateCondition(condition: string, context: WorkflowContext): boolean {
-    // Remove template syntax if present: ${var} -> var
-    let cleanCondition = condition.replace(/\$\{([^}]+)\}/g, '$1').trim();
-    
-    // Support inequality with boolean: "context_scan.reused_existing != true"
-    const neqBoolMatch = cleanCondition.match(/^([\w.]+)\s*!=\s*(true|false)$/);
-    if (neqBoolMatch) {
-      const [, varPath, boolStr] = neqBoolMatch;
-      const expectedValue = boolStr === 'true';
-      const actualValue = this.resolveVariablePath(varPath, context);
-      return actualValue !== expectedValue;
-    }
-    
-    // Support equality with boolean: "context_scan.reused_existing == true"
-    const eqBoolMatch = cleanCondition.match(/^([\w.]+)\s*==\s*(true|false)$/);
-    if (eqBoolMatch) {
-      const [, varPath, boolStr] = eqBoolMatch;
-      const expectedValue = boolStr === 'true';
-      const actualValue = this.resolveVariablePath(varPath, context);
-      return actualValue === expectedValue;
-    }
-    
-    // Support simple equality checks with strings: "plan_status == 'pass'"
-    const eqMatch = cleanCondition.match(/^([\w.]+)\s*==\s*'([^']*)'$/);
-    if (eqMatch) {
-      const [, varPath, value] = eqMatch;
-      const contextValue = this.resolveVariablePath(varPath, context);
-      return contextValue === value;
-    }
-    
-    // Support inequality checks with strings: "plan_status != 'fail'"
-    const neqMatch = cleanCondition.match(/^([\w.]+)\s*!=\s*'([^']*)'$/);
-    if (neqMatch) {
-      const [, varPath, value] = neqMatch;
-      const contextValue = this.resolveVariablePath(varPath, context);
-      return contextValue !== value;
-    }
-
-    // Add more condition types as needed
-    throw new Error(`Unsupported condition format: ${condition}`);
-  }
-  
-  /**
-   * Resolve a variable path like "context_scan.reused_existing" from context
-   * Supports both step outputs (step_name.output_field) and direct variables
-   */
-  private resolveVariablePath(varPath: string, context: WorkflowContext): any {
-    const parts = varPath.split('.');
-    
-    if (parts.length === 1) {
-      // Simple variable: just get from context
-      const value = context.getVariable(parts[0]);
-      context.logger.info('Resolved simple variable', { varPath, value });
-      return value;
-    }
-    
-    if (parts.length === 2) {
-      // Could be step_name.output_field
-      const [stepName, outputField] = parts;
-      const stepOutput = context.getStepOutput(stepName);
-      
-      context.logger.info('Resolving step output path', {
-        varPath,
-        stepName,
-        outputField,
-        stepOutput: stepOutput ? JSON.stringify(stepOutput).substring(0, 200) : 'null',
-        hasField: stepOutput && outputField in stepOutput
-      });
-      
-      if (stepOutput && outputField in stepOutput) {
-        return stepOutput[outputField];
-      }
-      
-      // Or could be a nested variable
-      const value = context.getVariable(parts[0]);
-      if (value && typeof value === 'object' && outputField in value) {
-        return value[outputField];
-      }
-    }
-    
-    // For deeper paths, try step output first, then nested variable
-    const [firstPart, ...restParts] = parts;
-    const stepOutput = context.getStepOutput(firstPart);
-    if (stepOutput) {
-      let current = stepOutput;
-      for (const part of restParts) {
-        if (current && typeof current === 'object' && part in current) {
-          current = current[part];
-        } else {
-          return undefined;
-        }
-      }
-      return current;
-    }
-    
-    return undefined;
   }
 }
 
