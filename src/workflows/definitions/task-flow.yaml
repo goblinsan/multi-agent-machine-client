@@ -81,7 +81,7 @@ steps:
   - name: planning_loop
     type: PlanningLoopStep
     description: "Plan creation and evaluation loop with max 5 iterations"
-    depends_on: ["context_request"]
+    depends_on: ["context_scan"]  # Changed from context_request - planning can proceed with cached context
     config:
       maxIterations: 5
       plannerPersona: "implementation-planner"
