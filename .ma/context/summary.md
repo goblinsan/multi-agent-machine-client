@@ -1,11 +1,11 @@
 # Repository Context Summary
 
-Generated: 2025-10-30T22:38:47.808Z
+Generated: 2025-10-30T23:22:08.533Z
 
 ## Statistics
 
 - **Total Files**: 105
-- **Total Size**: 4947.61 KB
+- **Total Size**: 5240.32 KB
 - **Max Depth**: 10
 
 ## Directory Structure
@@ -25,13 +25,13 @@ Generated: 2025-10-30T22:38:47.808Z
   dashboard-actions.log (2.1KB)
   debug-transport.log (2642.9KB)
   eslint.config.js (1.3KB)
-  machine-client.log (1659.3KB)
+  machine-client.log (1951.9KB)
   package-lock.json (129.0KB)
   package.json (1.4KB)
 .github/
   copilot-instructions.md (1.1KB)
 .husky/
-  pre-commit (0.7KB)
+  pre-commit (0.8KB)
 .husky/_/
   .gitignore (0.0KB)
   applypatch-msg (0.0KB)
@@ -159,7 +159,7 @@ src/dashboard-backend/node_modules/.bin/
 - `examples/multi-agent-log-summarizer.json` (14.3KB, 398 lines)
 - `examples/project-setup-example.json` (13.4KB, 366 lines)
 - `examples/transport-examples.ts` (9.1KB, 329 lines)
-- `machine-client.log` (1659.3KB, 7364 lines)
+- `machine-client.log` (1951.9KB, 8663 lines)
 - `package-lock.json` (129.0KB, 3819 lines)
 - `scripts/monitor-redis-streams.ts` (7.4KB, 250 lines)
 - `src/agents/parsers/DiffParser.ts` (12.2KB, 467 lines)
