@@ -3,8 +3,7 @@ import { cfg } from '../config.js';
 import { buildPersonaMessages, callPersonaModel } from './PersonaRequestHandler.js';
 import { SYSTEM_PROMPTS } from '../personas.js';
 import { logger } from '../logger.js';
-import fs from 'fs/promises';
-import path from 'path';
+import { ContextExtractor } from './context/ContextExtractor.js';
 
 export type PersonaConsumerConfig = {
   /** List of personas this consumer should handle */
@@ -37,12 +36,14 @@ export class PersonaConsumer {
   private batchSize: number;
   private isShuttingDown: boolean = false;
   private personaLoops: Map<string, Promise<void>> = new Map();
+  private contextExtractor: ContextExtractor;
 
-  constructor(transport: MessageTransport) {
+  constructor(transport: MessageTransport, contextExtractor?: ContextExtractor) {
     this.transport = transport;
     this.consumerId = cfg.consumerId;
     this.blockMs = 5000; // 5 second blocking reads
     this.batchSize = 1;  // Process one message at a time for now
+    this.contextExtractor = contextExtractor || new ContextExtractor();
   }
 
   /**
@@ -359,148 +360,17 @@ export class PersonaConsumer {
     // Get system prompt for this persona
     const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} persona.`;
 
-    // Build user text from intent and payload
-    // Priority: user_text > artifact paths > task.description > description > task.title > intent
-    let userText = intent || 'Process this request';
-    
-    if (payload.user_text) {
-      // Explicit user text takes highest priority
-      userText = payload.user_text;
-    } 
-    else if (payload.plan_artifact) {
-      // Read approved plan from git
-      try {
-        const artifactPath = this.resolveArtifactPath(payload.plan_artifact, payload);
-        userText = await this.readArtifactFromGit(artifactPath, repo);
-        logger.info('Loaded plan artifact from git', {
-          persona,
-          artifactPath,
-          contentLength: userText.length
-        });
-      } catch (error) {
-        logger.error('Failed to read plan_artifact from git', {
-          persona,
-          artifactPath: payload.plan_artifact,
-          error: error instanceof Error ? error.message : String(error)
-        });
-        // Fallback to other sources
-        userText = intent || 'Process this request';
-      }
-    }
-    else if (payload.qa_result_artifact) {
-      // Read QA result from git
-      try {
-        const artifactPath = this.resolveArtifactPath(payload.qa_result_artifact, payload);
-        userText = await this.readArtifactFromGit(artifactPath, repo);
-        logger.info('Loaded QA result artifact from git', {
-          persona,
-          artifactPath,
-          contentLength: userText.length
-        });
-      } catch (error) {
-        logger.error('Failed to read qa_result_artifact from git', {
-          persona,
-          artifactPath: payload.qa_result_artifact,
-          error: error instanceof Error ? error.message : String(error)
-        });
-        // Fallback to other sources
-        userText = intent || 'Process this request';
-      }
-    }
-    else if (payload.context_artifact) {
-      // Read context scan from git
-      try {
-        const artifactPath = this.resolveArtifactPath(payload.context_artifact, payload);
-        userText = await this.readArtifactFromGit(artifactPath, repo);
-        logger.info('Loaded context artifact from git', {
-          persona,
-          artifactPath,
-          contentLength: userText.length
-        });
-      } catch (error) {
-        logger.error('Failed to read context_artifact from git', {
-          persona,
-          artifactPath: payload.context_artifact,
-          error: error instanceof Error ? error.message : String(error)
-        });
-        // Fallback to other sources
-        userText = intent || 'Process this request';
-      }
-    }
-    else if (payload.task && payload.task.description) {
-      // Extract task description for planning/implementation context
-      userText = `Task: ${payload.task.title || 'Untitled'}\n\nDescription: ${payload.task.description}`;
-      
-      logger.info('PersonaConsumer: Using task description', {
-        persona,
-        workflowId,
-        taskId: payload.task.id,
-        taskTitle: payload.task.title,
-        hasDescription: true,
-        descriptionLength: payload.task.description.length
-      });
-      
-      // Add task type/scope context if available
-      if (payload.task.type) {
-        userText += `\n\nType: ${payload.task.type}`;
-      }
-      if (payload.task.scope) {
-        userText += `\nScope: ${payload.task.scope}`;
-      }
-    } else if (payload.description) {
-      userText = payload.description;
-      logger.info('PersonaConsumer: Using payload.description', {
-        persona,
-        workflowId,
-        descriptionLength: payload.description.length
-      });
-    } else if (payload.task && payload.task.title) {
-      // Task exists but has no description - this is a critical error for planner personas
-      logger.error('PersonaConsumer: CRITICAL - Task has no description', {
-        persona,
-        workflowId,
-        taskId: payload.task.id,
-        taskTitle: payload.task.title,
-        taskKeys: Object.keys(payload.task),
-        reason: 'Task description is required for planning and implementation'
-      });
-      throw new Error(`Task ${payload.task.id} ("${payload.task.title}") has no description. Cannot proceed with planning.`);
-    } else {
-      logger.error('PersonaConsumer: No task context found in payload', {
-        persona,
-        workflowId,
-        intent,
-        payloadKeys: Object.keys(payload),
-        hasTask: !!payload.task,
-        taskKeys: payload.task ? Object.keys(payload.task) : []
-      });
-      userText = intent || 'planning';
-    }
+    // Extract context using ContextExtractor
+    const context = await this.contextExtractor.extractContext({
+      persona,
+      workflowId,
+      intent,
+      payload,
+      repo,
+      branch
+    });
 
-    // Get scan summary if repo is provided
-    let scanSummaryForPrompt: string | null = null;
-    if (repo && cfg.injectDashboardContext) {
-      try {
-        // For now, we don't have the local repo path in the persona worker
-        // This would need to be enhanced to clone/fetch repos in distributed mode
-        // For local development, the repo is already cloned by the coordinator
-        logger.debug('PersonaConsumer: Repo context requested but not yet implemented', {
-          persona,
-          repo,
-          branch
-        });
-      } catch (error: any) {
-        logger.warn('PersonaConsumer: Failed to get scan summary', {
-          persona,
-          repo,
-          error: error.message
-        });
-      }
-    }
-
-    // Get dashboard context if project/task provided
-    // TODO: Implement dashboard context fetching when needed
-    let dashboardContext: string | null = null;
+    const { userText, scanSummary: scanSummaryForPrompt, dashboardContext } = context;
 
     // Build messages for LLM
     const messages = buildPersonaMessages({
@@ -554,60 +424,5 @@ export class PersonaConsumer {
   async waitForCompletion(): Promise<void> {
     const loops = Array.from(this.personaLoops.values());
     await Promise.allSettled(loops);
-  }
-
-  /**
-   * Resolve artifact path with variable placeholders
-   * Supports ${task.id}, ${milestone.id}, etc.
-   */
-  private resolveArtifactPath(artifactPath: string, payload: any): string {
-    return artifactPath.replace(/\$\{([^}]+)\}/g, (match, varPath) => {
-      const parts = varPath.split('.');
-      let value: any = payload;
-      
-      for (const part of parts) {
-        if (value && typeof value === 'object' && part in value) {
-          value = value[part];
-        } else {
-          // Keep placeholder if not found
-          return match;
-        }
-      }
-      
-      return value !== undefined && value !== null ? String(value) : match;
-    });
-  }
-
-  /**
-   * Read artifact content from git repository
-   * Converts remote URL to local PROJECT_BASE path
-   */
-  private async readArtifactFromGit(artifactPath: string, repoUrl: string | undefined): Promise<string> {
-    if (!repoUrl) {
-      throw new Error('Cannot read artifact: no repository URL provided');
-    }
-
-    // Convert remote URL to local path using PROJECT_BASE
-    const projectBase = cfg.projectBase || process.env.PROJECT_BASE || '/tmp/projects';
-    
-    // Extract repo name from URL (e.g., "git@github.com:owner/repo.git" → "repo")
-    const repoName = repoUrl.split('/').pop()?.replace(/\.git$/, '') || 'unknown';
-    const repoLocalPath = path.join(projectBase, repoName);
-
-    const fullPath = path.join(repoLocalPath, artifactPath);
-
-    logger.debug('Reading artifact from git', {
-      artifactPath,
-      repoUrl,
-      repoLocalPath,
-      fullPath
-    });
-
-    try {
-      const content = await fs.readFile(fullPath, 'utf-8');
-      return content;
-    } catch (error) {
-      throw new Error(`Failed to read artifact from ${fullPath}: ${error instanceof Error ? error.message : String(error)}`);
-    }
   }
 }
