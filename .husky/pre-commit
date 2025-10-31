@@ -15,6 +15,20 @@ npx lint-staged || exit 1
 
 # Run tests
 echo "🧪 Running tests..."
-npm test || exit 1
+TEST_OUTPUT=$(npm test 2>&1)
+TEST_EXIT=$?
+
+# Check for skipped tests in the summary line (e.g., "Tests  391 passed | 12 skipped")
+if echo "$TEST_OUTPUT" | grep -E "^\s+Tests\s+" | grep -qE "[0-9]+ skipped"; then
+  echo "❌ Error: Skipped tests detected!"
+  echo "$TEST_OUTPUT" | grep -E "^\s+(Test Files|Tests)\s+"
+  exit 1
+fi
+
+# Check if tests failed
+if [ $TEST_EXIT -ne 0 ]; then
+  echo "❌ Tests failed!"
+  exit 1
+fi
 
 echo "✅ All pre-commit checks passed!"
