@@ -48,55 +48,10 @@ interface ReviewFailureTasksConfig {
 }
 
 /**
- * ReviewFailureTasksStep creates follow-up tasks based on PM review failure prioritization
+ * Creates follow-up tasks based on PM review failure prioritization.
+ * Requires normalized PM decision from PMDecisionParserStep.
  * 
- * **IMPORTANT:** This step requires normalized PM decision from PMDecisionParserStep.
- * The old parsePMDecision() method has been REMOVED (44% code reduction).
- * 
- * This step:
- * 1. Gets normalized PM decision from PMDecisionParserStep (via context variable)
- * 2. Creates high-priority urgent tasks for critical/high priority issues
- * 3. Optionally creates backlog tasks for medium/low priority issues
- * 4. Returns summary of created tasks
- * 
- * Expected PM decision format (from PMDecisionParserStep):
- * {
- *   "decision": "immediate_fix" | "defer",
- *   "reasoning": "...",
- *   "immediate_issues": ["issue1", "issue2"],
- *   "deferred_issues": ["issue3", "issue4"],
- *   "follow_up_tasks": [
- *     {"title": "...", "description": "...", "priority": "critical|high|medium|low"}
- *   ]
- * }
- * 
- * **Assignee Logic (Simplified):**
- * All follow-up tasks are assigned to 'implementation-planner' persona.
- * This must precede engineering work. Review-type-specific assignee logic removed.
- * 
- * **Priority Tiers:**
- * - QA urgent: 1200 (test failures block all work)
- * - Code/Security/DevOps urgent: 1000
- * - All deferred: 50
- * 
- * **Workflow Integration:**
- * ```yaml
- * # In review-failure-handling.yaml:
- * - name: parse_pm_decision
- *   type: PMDecisionParserStep
- *   config:
- *     input: "${pm_evaluation}"
- *     normalize: true
- *     review_type: "${review_type}"
- *   outputs:
- *     pm_decision: parsed_decision
- * 
- * - name: create_follow_up_tasks
- *   type: ReviewFailureTasksStep
- *   config:
- *     pmDecisionVariable: "pm_decision"  # Uses PMDecisionParserStep output
- *     reviewType: "${review_type}"
- * ```
+ * @see docs/steps/REVIEW_FAILURE_TASKS_STEP.md for detailed documentation
  */
 export class ReviewFailureTasksStep extends WorkflowStep {
   /**

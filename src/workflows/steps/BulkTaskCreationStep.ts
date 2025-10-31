@@ -71,60 +71,9 @@ interface BulkCreationResult {
 }
 
 /**
- * Step that creates multiple tasks in a single bulk operation
+ * Creates multiple tasks in bulk with idempotency, duplicate detection, and retry logic.
  * 
- * This solves the N+1 problem by creating all tasks in one API call
- * instead of sequential individual calls.
- * 
- * **Idempotency Support (NEW in Phase 4):**
- * - Automatically generates `external_id` for each task
- * - Format: `${workflow_run_id}:${step_name}:${task_index}`
- * - Enables safe workflow re-runs (duplicate prevention via external_id)
- * - Custom templates supported via `external_id_template` config
- * 
- * **Priority-Based Routing:**
- * - `critical` / `high` priority → immediate milestone
- * - `medium` / `low` priority → deferred milestone
- * - Configurable priority scores (default: critical=1500, high=1200, medium=800, low=50)
- * 
- * **Duplicate Detection:**
- * - Three strategies: external_id (100%), title (80%), title_and_milestone (70%)
- * - Detailed match scoring with overlap percentages
- * - Automatic duplicate skipping
- * 
- * **Retry Logic:**
- * - Exponential backoff (default: 3 attempts, 1s/2s/4s delays)
- * - Smart retryable error detection (timeouts, rate limits, 5xx errors)
- * - Workflow abort signal on partial failure (opt-in)
- * 
- * Example usage in YAML:
- * ```yaml
- * - name: create_tasks_bulk
- *   type: BulkTaskCreationStep
- *   config:
- *     project_id: "${project_id}"
- *     workflow_run_id: "${workflow_run_id}"  # For idempotency
- *     tasks: "${follow_up_tasks}"
- *     priority_mapping:
- *       critical: 1500
- *       high: 1200
- *       medium: 800
- *       low: 50
- *     milestone_strategy:
- *       urgent: "${milestone_id}"
- *       deferred: "future-enhancements"
- *     retry:
- *       max_attempts: 3
- *       initial_delay_ms: 1000
- *       backoff_multiplier: 2
- *     options:
- *       create_milestone_if_missing: true
- *       upsert_by_external_id: true  # Enable idempotency
- *       external_id_template: "${workflow_run_id}:${step_name}:${task_index}"
- *       check_duplicates: true
- *       duplicate_match_strategy: "external_id"
- *       abort_on_partial_failure: false
- * ```
+ * @see docs/steps/BULK_TASK_CREATION_STEP.md for detailed documentation
  */
 export class BulkTaskCreationStep extends WorkflowStep {
   private priorityCalculator: TaskPriorityCalculator;
