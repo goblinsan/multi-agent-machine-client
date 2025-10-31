@@ -1,5 +1,5 @@
 {
-  "timestamp": 1761866528533,
+  "timestamp": 1761872234413,
   "files": [
     {
       "path": ".DS_Store",
@@ -154,7 +154,7 @@
     {
       "path": ".husky/pre-commit",
       "bytes": 804,
-      "mtime": 1761863957350.2197,
+      "mtime": 1761870541103.98,
       "lines": 35
     },
     {
@@ -357,9 +357,9 @@
     },
     {
       "path": "machine-client.log",
-      "bytes": 1998725,
-      "mtime": 1761866528502.811,
-      "lines": 8663
+      "bytes": 91077,
+      "mtime": 1761872234381.029,
+      "lines": 399
     },
     {
       "path": "package-lock.json",
@@ -592,7 +592,7 @@
     {
       "path": "src/dashboard-backend/data/dashboard.db",
       "bytes": 118784,
-      "mtime": 1761862468430.507,
+      "mtime": 1761872158164.9714,
       "lines": 477
     },
     {
@@ -634,7 +634,7 @@
   ],
   "totals": {
     "files": 105,
-    "bytes": 5366085,
+    "bytes": 3458437,
     "depth": 10
   }
 }

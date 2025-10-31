@@ -22,7 +22,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     // JOIN with milestones to include milestone data in task response
     const result = db.exec(`
       SELECT 
-        t.id, t.title, t.status, t.priority_score, t.milestone_id, t.labels,
+        t.id, t.title, t.description, t.status, t.priority_score, t.milestone_id, t.labels,
         m.name as milestone_name, m.slug as milestone_slug, m.status as milestone_status
       FROM tasks t
       LEFT JOIN milestones m ON t.milestone_id = m.id
@@ -31,10 +31,11 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     `, [projectId]);
     
     const tasks = result[0] ? result[0].values.map((row: any) => {
-      const [id, title, status, priority_score, milestone_id, labels, milestone_name, milestone_slug, milestone_status] = row;
+      const [id, title, description, status, priority_score, milestone_id, labels, milestone_name, milestone_slug, milestone_status] = row;
       return { 
         id, 
         title, 
+        description,
         status, 
         priority_score, 
         milestone_id, 
