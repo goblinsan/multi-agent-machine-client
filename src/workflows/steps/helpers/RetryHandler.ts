@@ -1,5 +1,5 @@
 import { logger } from '../../../logger.js';
-import { sleep, isRetryableError as utilIsRetryableError } from '../../../util/retry.js';
+import { sleep } from '../../../util/retry.js';
 
 export interface RetryConfig {
   max_attempts?: number;
@@ -91,7 +91,20 @@ export class RetryHandler {
       return false;
     }
 
-    const patterns = retryableErrorPatterns || ['timeout', 'network', 'connection', 'ECONNREFUSED', 'ETIMEDOUT'];
+    const patterns = retryableErrorPatterns || [
+      'timeout',
+      'network',
+      'connection',
+      'ECONNREFUSED',
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'rate limit',
+      'HTTP 429',
+      'HTTP 500',
+      'HTTP 502',
+      'HTTP 503',
+      'HTTP 504'
+    ];
 
     return errors.some(error => 
       patterns.some(pattern => 

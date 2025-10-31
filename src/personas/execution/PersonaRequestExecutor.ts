@@ -147,10 +147,11 @@ export class PersonaRequestExecutor {
     });
 
     // Return response in expected format
+    // NOTE: Do NOT add status here - it should be interpreted from the LLM output
+    // by interpretPersonaStatus() in the workflow step
     return {
       output: response.content,
-      duration_ms: response.duration_ms,
-      status: 'pass'
+      duration_ms: response.duration_ms
     };
   }
 }

@@ -1,7 +1,6 @@
 import { TaskPriorityCalculator, TaskPriority } from './TaskPriorityCalculator.js';
 import { TaskDuplicateDetector, type ExistingTask, type DuplicateMatchStrategy } from './TaskDuplicateDetector.js';
 import { TaskRouter, type MilestoneStrategy, type ParentTaskMapping } from './TaskRouter.js';
-import { logger } from '../../../logger.js';
 
 export interface TaskToEnrich {
   title: string;
@@ -30,6 +29,8 @@ export interface EnrichmentConfig {
   check_duplicates?: boolean;
   existing_tasks?: ExistingTask[];
   duplicate_match_strategy?: DuplicateMatchStrategy;
+  workflow_run_id?: string;
+  step_name?: string;
   upsert_by_external_id?: boolean;
   external_id_template?: string;
 }
@@ -68,8 +69,15 @@ export class TaskEnricher {
       }
 
       if (config.check_duplicates && config.existing_tasks && config.existing_tasks.length > 0) {
+        const taskForDuplication = { 
+          title: enrichedTask.title, 
+          description: task.description || '', 
+          external_id: task.external_id,
+          milestone_slug: task.milestone_slug
+        };
+        
         const duplicateResult = this.duplicateDetector.findDuplicateWithDetails(
-          { title: enrichedTask.title, description: task.description || '', external_id: task.external_id },
+          taskForDuplication,
           config.existing_tasks,
           config.duplicate_match_strategy || 'title'
         );
@@ -104,10 +112,11 @@ export class TaskEnricher {
         enrichedTask.external_id = this.generateExternalId(
           config.external_id_template,
           task,
-          enriched.length
+          enriched.length,
+          config
         );
       } else if (config.upsert_by_external_id && !enrichedTask.external_id) {
-        enrichedTask.external_id = this.generateDefaultExternalId(task, enriched.length);
+        enrichedTask.external_id = this.generateDefaultExternalId(task, enriched.length, config);
       }
 
       enriched.push(enrichedTask);
@@ -116,14 +125,25 @@ export class TaskEnricher {
     return enriched;
   }
 
-  private generateExternalId(template: string, task: TaskToEnrich, index: number): string {
+  private generateExternalId(
+    template: string, 
+    task: TaskToEnrich, 
+    index: number, 
+    config: EnrichmentConfig
+  ): string {
     return template
-      .replace('${task.title}', task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
-      .replace('${task.priority}', task.priority || 'medium')
-      .replace('${task_index}', String(index));
+      .replace(/\$\{workflow_run_id\}/g, config.workflow_run_id || '')
+      .replace(/\$\{step_name\}/g, config.step_name || '')
+      .replace(/\$\{task\.title\}/g, task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+      .replace(/\$\{task\.priority\}/g, task.priority || 'medium')
+      .replace(/\$\{task\.milestone_slug\}/g, task.milestone_slug || '')
+      .replace(/\$\{task_index\}/g, String(index));
   }
 
-  private generateDefaultExternalId(task: TaskToEnrich, index: number): string {
+  private generateDefaultExternalId(task: TaskToEnrich, index: number, config: EnrichmentConfig): string {
+    if (config.workflow_run_id && config.step_name) {
+      return `${config.workflow_run_id}:${config.step_name}:${index}`;
+    }
     const sanitizedTitle = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50);
     return `${sanitizedTitle}-${index}`;
   }

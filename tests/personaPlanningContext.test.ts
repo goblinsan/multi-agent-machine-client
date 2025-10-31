@@ -53,7 +53,7 @@ describe('Persona planning context validation', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Send request with full task object as it comes from dashboard API
+    // Send request with ACTUAL dashboard API structure (task.data.description)
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-critical-test',
       to_persona: 'implementation-planner',
@@ -63,12 +63,18 @@ describe('Persona planning context validation', () => {
       payload: JSON.stringify({
         task: {
           id: 1,
-          title: 'Config loader and schema validation',
-          description: 'Implement hierarchical config (env, file, CLI) with JSON schema validation',
-          status: 'open',
-          priority_score: 0,
-          milestone_id: 1,
-          labels: ['backend', 'config']
+          type: 'feature',
+          persona: 'lead_engineer',
+          data: {
+            id: 1,
+            title: 'Config loader and schema validation',
+            description: 'Implement hierarchical config (env, file, CLI) with JSON schema validation',
+            status: 'open',
+            priority_score: 0,
+            milestone_id: 1,
+            labels: ['backend', 'config']
+          },
+          timestamp: Date.now()
         },
         project_id: '1',
         repo: 'https://example.com/repo.git',

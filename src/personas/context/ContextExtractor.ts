@@ -88,12 +88,17 @@ export class ContextExtractor {
       if (content) return content;
     }
 
-    // Priority 5: task.description
-    if (payload.task && payload.task.description) {
+    // Priority 5: task.data.description (standard task structure from dashboard)
+    if (payload.task?.data?.description) {
+      return this.buildTaskText(persona, workflowId, payload.task.data);
+    }
+
+    // Priority 6: task.description (legacy/direct structure)
+    if (payload.task?.description) {
       return this.buildTaskText(persona, workflowId, payload.task);
     }
 
-    // Priority 6: payload.description
+    // Priority 7: payload.description
     if (payload.description) {
       logger.info('PersonaConsumer: Using payload.description', {
         persona,
@@ -103,17 +108,20 @@ export class ContextExtractor {
       return payload.description;
     }
 
-    // Priority 7: task.title only (ERROR - missing description)
-    if (payload.task && payload.task.title) {
+    // Priority 8: task.data.title or task.title only (ERROR - missing description)
+    const taskTitle = payload.task?.data?.title || payload.task?.title;
+    const taskId = payload.task?.data?.id || payload.task?.id;
+    if (taskTitle) {
       logger.error('PersonaConsumer: CRITICAL - Task has no description', {
         persona,
         workflowId,
-        taskId: payload.task.id,
-        taskTitle: payload.task.title,
-        taskKeys: Object.keys(payload.task),
+        taskId,
+        taskTitle,
+        taskKeys: Object.keys(payload.task || {}),
+        taskDataKeys: payload.task?.data ? Object.keys(payload.task.data) : [],
         reason: 'Task description is required for planning and implementation'
       });
-      throw new Error(`Task ${payload.task.id} ("${payload.task.title}") has no description. Cannot proceed with planning.`);
+      throw new Error(`Task ${taskId} ("${taskTitle}") has no description. Cannot proceed with planning.`);
     }
 
     // Priority 8: Fallback to intent (log error)

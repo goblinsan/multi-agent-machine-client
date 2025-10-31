@@ -5,7 +5,7 @@ import { DashboardClient, type TaskCreateInput } from '../../services/DashboardC
 import { TaskPriority } from './helpers/TaskPriorityCalculator.js';
 import { type ExistingTask as DetectorExistingTask, type DuplicateMatchStrategy } from './helpers/TaskDuplicateDetector.js';
 import { type MilestoneStrategy, type ParentTaskMapping } from './helpers/TaskRouter.js';
-import { RetryHandler, type RetryConfig } from './helpers/RetryHandler.js';
+import { RetryHandler } from './helpers/RetryHandler.js';
 import { TaskEnricher, type EnrichmentConfig, type EnrichedTask } from './helpers/TaskEnricher.js';
 import { sleep } from '../../util/retry.js';
 
@@ -159,7 +159,9 @@ export class BulkTaskCreationStep extends WorkflowStep {
         existing_tasks: stepConfig.options?.existing_tasks,
         duplicate_match_strategy: stepConfig.options?.duplicate_match_strategy,
         upsert_by_external_id: stepConfig.options?.upsert_by_external_id,
-        external_id_template: stepConfig.options?.external_id_template
+        external_id_template: stepConfig.options?.external_id_template,
+        workflow_run_id: stepConfig.workflow_run_id,
+        step_name: this.config.name
       };
 
       const enrichedTasks = this.taskEnricher.enrichTasks(stepConfig.tasks, enrichmentConfig);
@@ -364,7 +366,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
   private async createTasksViaDashboard(
     projectId: string,
     tasks: EnrichedTask[],
-    options: { 
+    _options: { 
       create_milestone_if_missing?: boolean; 
       upsert_by_external_id?: boolean;
       check_duplicates?: boolean;

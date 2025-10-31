@@ -81,6 +81,44 @@ describe('ContextExtractor', () => {
       expect(userText).toBe('Simple description from payload');
     });
 
+    it('should extract from task.data.description (dashboard structure)', async () => {
+      // This tests the ACTUAL structure returned by the dashboard API
+      const userText = await extractor.extractUserText({
+        persona: 'implementation-planner',
+        workflowId: 'wf-1',
+        intent: 'planning',
+        payload: {
+          task: {
+            id: 1,
+            type: 'feature',
+            persona: 'lead_engineer',
+            data: {
+              id: 1,
+              title: 'Config loader and schema validation',
+              description: 'Implement hierarchical config (env, file, CLI) with JSON schema validation and a .example.env. Include defaults for log paths, store, and LM Studio endpoint.',
+              status: 'in_progress',
+              priority_score: 0,
+              milestone_id: 1,
+              labels: ['backend', 'config', 'infra'],
+              milestone: {
+                id: 1,
+                name: 'Foundation & Config',
+                slug: 'foundation-config',
+                status: 'active'
+              },
+              requirements: []
+            },
+            timestamp: 1761884350933
+          }
+        }
+      });
+
+      expect(userText).toContain('Task: Config loader and schema validation');
+      expect(userText).toContain('Description: Implement hierarchical config');
+      expect(userText).toContain('JSON schema validation');
+      expect(userText).toContain('.example.env');
+    });
+
     it('should throw error if task has no description', async () => {
       await expect(
         extractor.extractUserText({
@@ -91,6 +129,32 @@ describe('ContextExtractor', () => {
             task: {
               id: 5,
               title: 'Task without description'
+            }
+          }
+        })
+      ).rejects.toThrow('has no description');
+    });
+
+    it('should throw error if task.data exists but has no description', async () => {
+      // Test dashboard structure without description
+      await expect(
+        extractor.extractUserText({
+          persona: 'implementation-planner',
+          workflowId: 'wf-1',
+          intent: 'planning',
+          payload: {
+            task: {
+              id: 5,
+              type: 'feature',
+              persona: 'lead_engineer',
+              data: {
+                id: 5,
+                title: 'Task without description',
+                status: 'open',
+                priority_score: 0,
+                milestone_id: 1
+              },
+              timestamp: Date.now()
             }
           }
         })

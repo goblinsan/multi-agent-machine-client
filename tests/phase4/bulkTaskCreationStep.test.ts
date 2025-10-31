@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BulkTaskCreationStep } from '../../src/workflows/steps/BulkTaskCreationStep.js';
 import { WorkflowContext } from '../../src/workflows/engine/WorkflowContext.js';
+import { type EnrichedTask } from '../../src/workflows/steps/helpers/TaskEnricher.js';
 
 describe('Phase 4 - BulkTaskCreationStep', () => {
   let context: WorkflowContext;
@@ -335,12 +336,23 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      // Spy on enrichTasks to verify external_id generation
-      const enrichTasksSpy = vi.spyOn(step as any, 'enrichTasks');
+      // Spy on createTasksViaDashboard to verify external_id was set on enriched tasks
+      const createTasksSpy = vi.spyOn(step as any, 'createTasksViaDashboard');
+      createTasksSpy.mockResolvedValue({
+        tasks_created: 2,
+        urgent_tasks_created: 2,
+        deferred_tasks_created: 0,
+        task_ids: ['task-1', 'task-2'],
+        duplicate_task_ids: [],
+        skipped_duplicates: 0,
+        errors: []
+      });
 
       await step.execute(context);
 
-      const enrichedTasks = enrichTasksSpy.mock.results[0]?.value;
+      // Verify the enriched tasks passed to createTasksViaDashboard have external_ids
+      expect(createTasksSpy).toHaveBeenCalled();
+      const enrichedTasks = createTasksSpy.mock.calls[0][1] as EnrichedTask[];
       
       expect(enrichedTasks).toBeDefined();
       expect(enrichedTasks[0]?.external_id).toBe('wf-550e8400-e29b:create_tasks_bulk:0');
@@ -364,11 +376,20 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      const enrichTasksSpy = vi.spyOn(step as any, 'enrichTasks');
+      const createTasksSpy = vi.spyOn(step as any, 'createTasksViaDashboard');
+      createTasksSpy.mockResolvedValue({
+        tasks_created: 2,
+        urgent_tasks_created: 2,
+        deferred_tasks_created: 0,
+        task_ids: ['task-1', 'task-2'],
+        duplicate_task_ids: [],
+        skipped_duplicates: 0,
+        errors: []
+      });
 
       await step.execute(context);
 
-      const enrichedTasks = enrichTasksSpy.mock.results[0]?.value;
+      const enrichedTasks = createTasksSpy.mock.calls[0][1] as EnrichedTask[];
       
       expect(enrichedTasks[0]?.external_id).toBe('wf-abc123:critical:0');
       expect(enrichedTasks[1]?.external_id).toBe('wf-abc123:high:1');
@@ -394,11 +415,20 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      const enrichTasksSpy = vi.spyOn(step as any, 'enrichTasks');
+      const createTasksSpy = vi.spyOn(step as any, 'createTasksViaDashboard');
+      createTasksSpy.mockResolvedValue({
+        tasks_created: 1,
+        urgent_tasks_created: 1,
+        deferred_tasks_created: 0,
+        task_ids: ['task-1'],
+        duplicate_task_ids: [],
+        skipped_duplicates: 0,
+        errors: []
+      });
 
       await step.execute(context);
 
-      const enrichedTasks = enrichTasksSpy.mock.results[0]?.value;
+      const enrichedTasks = createTasksSpy.mock.calls[0][1] as EnrichedTask[];
       
       expect(enrichedTasks[0]?.external_id).toBe('wf-test:create_tasks:high:sprint-1:0');
     });
@@ -423,11 +453,20 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      const enrichTasksSpy = vi.spyOn(step as any, 'enrichTasks');
+      const createTasksSpy = vi.spyOn(step as any, 'createTasksViaDashboard');
+      createTasksSpy.mockResolvedValue({
+        tasks_created: 1,
+        urgent_tasks_created: 1,
+        deferred_tasks_created: 0,
+        task_ids: ['task-1'],
+        duplicate_task_ids: [],
+        skipped_duplicates: 0,
+        errors: []
+      });
 
       await step.execute(context);
 
-      const enrichedTasks = enrichTasksSpy.mock.results[0]?.value;
+      const enrichedTasks = createTasksSpy.mock.calls[0][1] as EnrichedTask[];
       
       // Should keep custom external_id, not generate new one
       expect(enrichedTasks[0]?.external_id).toBe('custom-external-id-123');
