@@ -9,33 +9,31 @@ const projectAPI = new ProjectAPI();
 export class TaskFetcher {
   /**
    * Fetch project tasks from the dashboard API
+   * CRITICAL: This is the ONLY source of truth for task data
+   * No fallbacks, no fake data - fail loudly if dashboard is unavailable
    */
   async fetchTasks(projectId: string): Promise<any[]> {
-    return await projectAPI.fetchProjectTasks(projectId);
-  }
-
-  /**
-   * Extract tasks from project information
-   */
-  extractTasks(details: any, projectInfo: any): any[] {
-    const tasks: any[] = [];
+    const tasks = await projectAPI.fetchProjectTasks(projectId);
     
-    // Extract from milestones first
-    if (details && Array.isArray(details.milestones) && details.milestones.length) {
-      for (const milestone of details.milestones) {
-        const milestoneTasks = Array.isArray(milestone?.tasks) ? milestone.tasks : [];
-        for (const task of milestoneTasks) {
-          tasks.push({ ...task, milestone });
-        }
-      }
-    } else {
-      // Fallback to direct tasks
-      const directTasks = Array.isArray(projectInfo?.tasks) ? projectInfo.tasks : [];
-      tasks.push(...directTasks);
-    }
+    logger.debug('TaskFetcher: Fetched tasks from dashboard', {
+      projectId,
+      taskCount: tasks.length,
+      taskIds: tasks.map(t => t?.id).filter(Boolean).slice(0, 10)
+    });
     
     return tasks;
   }
+
+  /**
+   * REMOVED: extractTasks() fallback
+   * 
+   * This method was creating fake milestone structures when the dashboard API failed,
+   * which corrupted data and caused silent failures. The workflow should abort immediately
+   * if the dashboard is unavailable, not proceed with fabricated data.
+   * 
+   * If you need this functionality, the dashboard API should be fixed to return
+   * properly structured tasks, not worked around with client-side data manipulation.
+   */
 
   /**
    * Normalize task status to standard values
@@ -146,13 +144,12 @@ export class TaskFetcher {
 
   /**
    * Get count of remaining tasks for a project
+   * Uses the dashboard API as the single source of truth
    */
   async getRemainingTaskCount(projectId: string): Promise<number> {
     try {
-      const projectInfo = await projectAPI.fetchProjectStatus(projectId);
-      const details = await projectAPI.fetchProjectStatusDetails(projectId).catch(() => null);
-      const tasks = this.extractTasks(details, projectInfo);
-      const pendingTasks = tasks.filter(task => this.normalizeTaskStatus(task?.status) !== 'done');
+      const tasks = await this.fetchTasks(projectId);
+      const pendingTasks = tasks.filter((task: any) => this.normalizeTaskStatus(task?.status) !== 'done');
       return pendingTasks.length;
     } catch (error) {
       logger.error('Failed to get remaining task count', { projectId, error });

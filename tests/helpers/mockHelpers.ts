@@ -86,6 +86,14 @@ export class DashboardMockHelper {
 
     vi.spyOn(ProjectAPI.prototype, 'fetchProjectMilestones').mockResolvedValue(this.milestones as any);
 
+    // CRITICAL: Mock fetchProjectTasks() - the actual API used by TaskFetcher
+    // This is the single source of truth for task data
+    vi.spyOn(ProjectAPI.prototype, 'fetchProjectTasks').mockImplementation(async () => {
+      // Filter out tasks that have been marked as done
+      const openTasks = this.project.tasks.filter(t => this.updatedTasks[t.id] !== 'done');
+      return openTasks as any;
+    });
+
     // Mock TaskAPI prototype methods
     vi.spyOn(TaskAPI.prototype, 'fetchTask').mockImplementation(async (taskId: string) => {
       const task = this.project.tasks.find(t => t.id === taskId);

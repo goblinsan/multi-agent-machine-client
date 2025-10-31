@@ -388,6 +388,34 @@ export class PersonaRequestStep extends WorkflowStep {
       // IMPORTANT: Set interpreted status as {step_name}_status for workflow conditions
       context.setVariable(`${this.config.name}_status`, statusInfo.status);
 
+      // CRITICAL: Return failure status when persona fails
+      // This ensures the workflow engine aborts instead of continuing with failed persona result
+      if (statusInfo.status === 'fail') {
+        logger.error(`Persona request failed - workflow will abort`, {
+          workflowId: context.workflowId,
+          step,
+          persona,
+          corrId: lastCorrId,
+          statusDetails: statusInfo.details,
+          errorFromPersona: result.error || 'Unknown error'
+        });
+
+        return {
+          status: 'failure',
+          error: new Error(statusInfo.details || result.error || 'Persona request failed'),
+          data: {
+            step,
+            persona,
+            corrId: lastCorrId,
+            totalAttempts: attempt,
+            result,
+            completion,
+            personaFailureReason: statusInfo.details
+          },
+          outputs: result
+        };
+      }
+
       return {
         status: 'success',
         data: {

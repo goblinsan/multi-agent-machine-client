@@ -137,10 +137,20 @@ export class WorkflowCoordinator {
         // CRITICAL: Fetch fresh tasks from dashboard at each iteration
         // This allows immediate response to urgent tasks added during processing
         // (e.g., QA failures, security issues, follow-up tasks)
-  let currentTasks = await this.fetchProjectTasks(projectId);
-        if (!currentTasks.length) {
-          currentTasks = this.taskFetcher.extractTasks(details, projectInfo);
+        const currentTasks = await this.fetchProjectTasks(projectId);
+        
+        // CRITICAL: No fallbacks! If dashboard returns no tasks and we're not in test mode,
+        // something is wrong - abort immediately
+        if (!currentTasks || !Array.isArray(currentTasks)) {
+          logger.error("CRITICAL: Dashboard returned invalid task data", {
+            workflowId,
+            projectId,
+            receivedType: typeof currentTasks,
+            iterationCount
+          });
+          throw new Error(`Dashboard API returned invalid task data for project ${projectId}`);
         }
+        
         const currentPendingTasks = currentTasks
           .filter(task => this.taskFetcher.normalizeTaskStatus(task?.status) !== 'done')
           .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));
