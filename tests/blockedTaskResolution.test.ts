@@ -146,7 +146,7 @@ describe('Blocked Task Resolution Workflow', () => {
         id: 'blocked-task-max',
         name: 'Task at Max Attempts',
         status: 'blocked',
-        blocked_attempt_count: 10,  // Already at max
+        blocked_attempt_count: 10,
         blocked_reason: 'Repeated failure',
         failed_step: 'implementation'
       }],

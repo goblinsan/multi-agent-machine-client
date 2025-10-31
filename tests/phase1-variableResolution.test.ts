@@ -118,7 +118,7 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
       // ASSERT
       expect(persona.sendPersonaRequest).toHaveBeenCalled();
       const callArgs = vi.mocked(persona.sendPersonaRequest).mock.calls[0];
-      const requestOpts = callArgs[1];  // Second argument is options object
+      const requestOpts = callArgs[1];
       
       // CRITICAL: plan_artifact must have resolved ID, not template
       expect(requestOpts.payload.plan_artifact).toBe('.ma/tasks/42/03-plan-final.md');
@@ -311,7 +311,7 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
           intent: 'test',
           payload: {
             plan_artifact: '.ma/tasks/${task.id}/plan.md',
-            milestone_artifact: '.ma/milestones/${milestone.id}/info.md'  // milestone not defined
+            milestone_artifact: '.ma/milestones/${milestone.id}/info.md'
           }
         }
       };

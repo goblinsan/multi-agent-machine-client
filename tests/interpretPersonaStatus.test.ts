@@ -65,7 +65,7 @@ describe('interpretPersonaStatus - robust status parsing', () => {
       // This should NOT be interpreted as pass - no explicit status declaration
       const response = 'The tests pass successfully. Previously they would fail, but now they are fixed.';
       const result = interpretPersonaStatus(response);
-      expect(result.status).toBe('unknown'); // Changed from 'pass' - now requires explicit status
+      expect(result.status).toBe('unknown');
     });
     
     it('should find pass in JSON-like declarations first', () => {
@@ -94,7 +94,7 @@ describe('interpretPersonaStatus - robust status parsing', () => {
     
     it('should handle malformed JSON with explicit status pattern', () => {
       // Malformed JSON but has recognizable status pattern
-      const response = '{ status: pass }'; // Invalid JSON but "status: pass" at start
+      const response = '{ status: pass }';
       const result = interpretPersonaStatus(response);
       // With new strict parsing, this will look for "Status: pass" pattern at start
       // Since it's lowercase and no colon after status in pattern, should be unknown

@@ -176,7 +176,7 @@ describe('Coordination Persona Routing', () => {
     const callArgs = mockHandleCoordinator.mock.calls[0];
     
     // Check transport was passed
-    expect(callArgs[0]).toBeDefined(); // transport
+    expect(callArgs[0]).toBeDefined();
     
     // Check message parameters
     const msgParam = callArgs[2];

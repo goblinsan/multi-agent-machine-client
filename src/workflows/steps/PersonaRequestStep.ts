@@ -4,6 +4,7 @@ import { sendPersonaRequest, waitForPersonaCompletion, interpretPersonaStatus } 
 import { logger } from '../../logger.js';
 import { cfg } from '../../config.js';
 import { personaTimeoutMs, personaMaxRetries, calculateProgressiveTimeout } from '../../util.js';
+import { VariableResolver } from './helpers/VariableResolver.js';
 
 interface PersonaRequestConfig {
   step: string;
@@ -20,6 +21,12 @@ interface PersonaRequestConfig {
  * This step implements the exact persona communication pattern expected by tests
  */
 export class PersonaRequestStep extends WorkflowStep {
+  private variableResolver: VariableResolver;
+
+  constructor(config: any) {
+    super(config);
+    this.variableResolver = new VariableResolver();
+  }
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PersonaRequestConfig;
     const { step, persona, intent, payload, deadlineSeconds = 600 } = config;
@@ -411,144 +418,7 @@ export class PersonaRequestStep extends WorkflowStep {
   }
 
   private resolvePayloadVariables(payload: Record<string, any>, context: WorkflowContext): Record<string, any> {
-    const resolved: Record<string, any> = {};
-
-    for (const [key, value] of Object.entries(payload)) {
-      resolved[key] = this.resolveValue(value, context);
-    }
-
-    return resolved;
-  }
-
-  /**
-   * Recursively resolve a value, handling:
-   * - Simple variables: ${variableName}
-   * - Nested properties: ${task.id}, ${milestone.slug}, ${task.milestone.slug}
-   * - Template strings: '.ma/tasks/${task.id}/plan.md'
-   * - Arrays: recursively resolve each element
-   * - Objects: recursively resolve each property
-   */
-  private resolveValue(value: any, context: WorkflowContext): any {
-    // Handle null/undefined
-    if (value === null || value === undefined) {
-      return value;
-    }
-
-    // Handle arrays - recursively resolve each element
-    if (Array.isArray(value)) {
-      return value.map(item => this.resolveValue(item, context));
-    }
-
-    // Handle objects - recursively resolve each property
-    if (typeof value === 'object') {
-      const resolved: Record<string, any> = {};
-      for (const [k, v] of Object.entries(value)) {
-        resolved[k] = this.resolveValue(v, context);
-      }
-      return resolved;
-    }
-
-    // Handle strings with variable templates
-    if (typeof value === 'string') {
-      return this.resolveStringTemplate(value, context);
-    }
-
-    // Other primitives (numbers, booleans, etc.)
-    return value;
-  }
-
-  /**
-   * Resolve a string that may contain variable templates.
-   * Examples:
-   * - '${task}' (exact match) → returns the task object as-is
-   * - '${task.id}' → '42'
-   * - '.ma/tasks/${task.id}/plan.md' → '.ma/tasks/42/plan.md'
-   * - '${milestone.slug}' → 'phase-1'
-   * - '${task.milestone.slug}' → 'phase-1'
-   */
-  private resolveStringTemplate(template: string, context: WorkflowContext): any {
-    // Pattern to match ${variable} or ${object.property} or ${object.nested.property}
-    const variablePattern = /\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}/g;
-    
-    // Check if the entire string is a single variable reference (e.g., '${task}')
-    // In this case, return the value as-is without string conversion
-    const exactMatch = template.match(/^\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}$/);
-    if (exactMatch) {
-      const path = exactMatch[1];
-      try {
-        const parts = path.split('.');
-        let value = context.getVariable(parts[0]);
-        
-        // Navigate nested properties
-        for (let i = 1; i < parts.length; i++) {
-          if (value === null || value === undefined) {
-            return template; // Preserve template
-          }
-          if (typeof value === 'object' && parts[i] in value) {
-            value = value[parts[i]];
-          } else {
-            return template; // Preserve template
-          }
-        }
-        
-        // Return the value as-is (could be object, array, etc.)
-        return value !== undefined && value !== null ? value : template;
-      } catch (error) {
-        return template; // Preserve template on error
-      }
-    }
-    
-    // If not an exact match, perform string interpolation
-    return template.replace(variablePattern, (match, path) => {
-      try {
-        // Split path by dots: 'task.id' → ['task', 'id']
-        const parts = path.split('.');
-        
-        // Get the root variable
-        let value = context.getVariable(parts[0]);
-        
-        // Navigate nested properties
-        for (let i = 1; i < parts.length; i++) {
-          if (value === null || value === undefined) {
-            // Path doesn't exist, preserve the template
-            logger.warn(`Variable path not found, preserving template`, {
-              template: match,
-              path,
-              stoppedAt: parts.slice(0, i).join('.')
-            });
-            return match;
-          }
-          
-          if (typeof value === 'object' && parts[i] in value) {
-            value = value[parts[i]];
-          } else {
-            // Property doesn't exist, preserve the template
-            logger.warn(`Variable property not found, preserving template`, {
-              template: match,
-              path,
-              missingProperty: parts[i]
-            });
-            return match;
-          }
-        }
-        
-        // Convert value to string for interpolation
-        if (value === null || value === undefined) {
-          // Variable exists but is null/undefined, preserve template
-          return match;
-        }
-        
-        return String(value);
-      } catch (error) {
-        // Variable not found in context, preserve the template
-        logger.warn(`Failed to resolve variable, preserving template`, {
-          template: match,
-          path,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-        return match;
-      }
-    });
+    return this.variableResolver.resolvePayload(payload, context);
   }
 
   private setOutputVariables(context: WorkflowContext, result: any): void {

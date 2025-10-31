@@ -158,9 +158,9 @@ export class PlanningLoopStep extends WorkflowStep {
         const currentBranch = context.getCurrentBranch();
         
         // Determine evaluation context based on iteration count and step
-        let evalContext = 'planning'; // default for initial planning loop
+        let evalContext = 'planning';
         if (currentIteration > 3) {
-          evalContext = 'revision'; // Be more lenient after multiple iterations
+          evalContext = 'revision';
         }
         
         // Get contextual prompt for the evaluator

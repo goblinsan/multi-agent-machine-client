@@ -8,9 +8,9 @@ import { logger } from '../../logger.js';
  * Configuration for SubWorkflowStep
  */
 interface SubWorkflowConfig {
-  workflow: string;              // Name of sub-workflow to execute
-  inputs?: Record<string, any>;  // Input variables to pass to sub-workflow
-  outputs?: Record<string, string>; // Output mapping: parent_var_name → sub_workflow_var_name
+  workflow: string;
+  inputs?: Record<string, any>;
+  outputs?: Record<string, string>;
 }
 
 /**

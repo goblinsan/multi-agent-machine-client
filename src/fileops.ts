@@ -419,7 +419,7 @@ function applyHunksToLines(baseLines: string[], hunks: Hunk[]): { ok: boolean; c
   // offset tracks the shift in line indices as we modify the lines array
   let offset = 0;
   for (const h of hunks) {
-    const oldStartIdx = h.oldStart - 1 + offset; // convert to 0-based
+    const oldStartIdx = h.oldStart - 1 + offset;
     const oldCount = h.oldCount;
     // Build the new lines for this hunk from h.lines
     const newLines: string[] = [];

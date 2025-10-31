@@ -33,7 +33,7 @@ describe('Coordinator QA failure handling', () => {
     try {
       // SAFETY: Race condition with timeout protection
       const testPromise = coordinator.handleCoordinator(
-        {} as any, // transport
+        {} as any,
         {}, 
         { workflow_id: 'wf-qa-coord', project_id: 'proj-qa' }, 
         { repo: tempRepo }
@@ -41,7 +41,7 @@ describe('Coordinator QA failure handling', () => {
         qaCoordinationCompleted = true;
         return true;
       }).catch(() => {
-        qaCoordinationCompleted = true; // Even failures count as "completed" (didn't hang)
+        qaCoordinationCompleted = true;
         return true;
       });
 
@@ -70,7 +70,7 @@ describe('Coordinator QA failure handling', () => {
     try {
       // SAFETY: Race condition with timeout protection
       const testPromise = coordinator.handleCoordinator(
-        {} as any, // transport
+        {} as any,
         {}, 
         { workflow_id: 'wf-verify', project_id: 'proj-verify' }, 
         { repo: tempRepo }
@@ -78,7 +78,7 @@ describe('Coordinator QA failure handling', () => {
         diffVerificationCompleted = true;
         return true;
       }).catch(() => {
-        diffVerificationCompleted = true; // Even failures count as "completed" (didn't hang)
+        diffVerificationCompleted = true;
         return true;
       });
 

@@ -123,7 +123,7 @@ let cleanupIntervalHandle: ReturnType<typeof setInterval> | null = null;
 
 export function startMessageTrackingCleanup(): void {
   if (cleanupIntervalHandle) {
-    return; // Already started
+    return;
   }
 
   cleanupIntervalHandle = setInterval(cleanupExpiredMessages, CLEANUP_INTERVAL_MS);

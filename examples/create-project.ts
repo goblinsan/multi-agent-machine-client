@@ -195,7 +195,7 @@ function loadProjectData(filePath?: string): ProjectData {
   if (!filePath || filePath === '-') {
     // Read from stdin
     console.log('📥 Reading project data from stdin...');
-    jsonContent = readFileSync(0, 'utf-8'); // 0 = stdin
+    jsonContent = readFileSync(0, 'utf-8');
   } else {
     // Read from file
     const resolvedPath = resolve(filePath);

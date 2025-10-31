@@ -58,7 +58,7 @@ describe('Context Cache Reuse', () => {
 
     expect(result.status).toBe('success');
     expect(result.outputs?.reused_existing).toBe(false);
-    expect(result.outputs?.repoScan).toHaveLength(3); // README, index.ts, utils.ts
+    expect(result.outputs?.repoScan).toHaveLength(3);
 
     // Verify context artifacts were created
     const snapshotPath = path.join(tempRepoDir, '.ma/context/snapshot.json');
@@ -85,7 +85,7 @@ describe('Context Cache Reuse', () => {
       config: {
         repoPath: tempRepoDir,
         includePatterns: ['**/*'],
-        excludePatterns: ['node_modules/**', '.git/**', '.ma/**'], // Exclude .ma to avoid detecting own artifacts
+        excludePatterns: ['node_modules/**', '.git/**', '.ma/**'],
         maxFiles: 100,
         maxBytes: 1024 * 1024,
         maxDepth: 10,
@@ -109,7 +109,7 @@ describe('Context Cache Reuse', () => {
       config: {
         repoPath: tempRepoDir,
         includePatterns: ['**/*'],
-        excludePatterns: ['node_modules/**', '.git/**', '.ma/**'], // Same excludes
+        excludePatterns: ['node_modules/**', '.git/**', '.ma/**'],
         maxFiles: 100,
         maxBytes: 1024 * 1024,
         maxDepth: 10,
@@ -124,7 +124,7 @@ describe('Context Cache Reuse', () => {
     // CRITICAL: Should reuse existing context
     expect(result2.status).toBe('success');
     expect(result2.outputs?.reused_existing).toBe(true);
-    expect(result2.outputs?.repoScan).toHaveLength(3); // Same files
+    expect(result2.outputs?.repoScan).toHaveLength(3);
   });
 
   it('should rescan when source files are modified', async () => {
@@ -276,7 +276,7 @@ describe('Context Cache Reuse', () => {
         maxDepth: 10,
         trackLines: true,
         trackHash: false,
-        forceRescan: true // Force rescan
+        forceRescan: true
       }
     });
 

@@ -143,7 +143,7 @@ export class WorkflowCoordinator {
         }
         const currentPendingTasks = currentTasks
           .filter(task => this.taskFetcher.normalizeTaskStatus(task?.status) !== 'done')
-          .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));  // Priority: priority_score (desc) > blocked > in_review > in_progress > open
+          .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));
         
         // Debug logging to see extracted tasks
         logger.info("Fetched tasks debug", {
@@ -357,9 +357,9 @@ export class WorkflowCoordinator {
       task: {
         id: task?.id || task?.key || 'unknown',
         type: this.workflowSelector.determineTaskType(task),
-        persona: 'lead_engineer', // Default persona
+        persona: 'lead_engineer',
         data: {
-          ...task, // Include all original task properties
+          ...task,
           description: task?.description || task?.summary || task?.name || 'No description provided',
           requirements: task?.requirements || []
         },
@@ -410,7 +410,7 @@ export class WorkflowCoordinator {
       context.projectId,
       context.repoRoot,
       context.branch,
-      transport, // MessageTransport instance passed from handleCoordinator
+      transport,
       initialVariables
     );
 

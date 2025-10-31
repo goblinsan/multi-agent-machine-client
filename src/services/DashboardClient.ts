@@ -37,19 +37,19 @@ export interface TaskCreateInput {
   title: string;
   description?: string;
   status?: 'open' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'archived';
-  priority_score?: number;  // Changed from 'priority' to match dashboard backend
+  priority_score?: number;
   milestone_id?: number;
   parent_task_id?: number;
   external_id?: string;
   labels?: string[];
-  assignee_persona?: string;  // Note: Dashboard backend doesn't have this field yet
+  assignee_persona?: string;
 }
 
 export interface TaskUpdateInput {
   title?: string;
   description?: string;
   status?: 'open' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'archived';
-  priority_score?: number;  // Changed from 'priority' to match dashboard backend
+  priority_score?: number;
   milestone_id?: number;
   parent_task_id?: number;
   labels?: string[];

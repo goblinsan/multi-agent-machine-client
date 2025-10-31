@@ -7,7 +7,7 @@ const projectAPI = new ProjectAPI();
 
 export interface MilestoneStatusCheckConfig {
   check_type?: 'incomplete_tasks' | 'all_tasks' | 'milestone_complete';
-  include_cancelled?: boolean; // Include cancelled tasks in incomplete count
+  include_cancelled?: boolean;
 }
 
 /**
@@ -138,7 +138,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
         status: 'failure',
         error: new Error(`Failed to check milestone status: ${errorMessage}`),
         data: {
-          has_remaining_tasks: true, // Assume there are tasks if we can't check
+          has_remaining_tasks: true,
           remaining_tasks: [],
           total_tasks: 0,
           completion_percentage: 0

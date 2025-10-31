@@ -15,7 +15,7 @@ async function testDashboardIntegration() {
   console.log('=== Day 4 Dashboard Integration Test ===\n');
   
   const dashboardClient = new DashboardClient({ baseUrl: 'http://localhost:8080' });
-  const testProjectId = 1; // Use fixed project ID (dashboard backend doesn't have project creation endpoint yet)
+  const testProjectId = 1;
   
   try {
     // Test 1: Verify dashboard is running
@@ -36,7 +36,7 @@ async function testDashboardIntegration() {
       title: 'Test Task 1',
       description: 'First test task',
       status: 'open',
-      priority_score: 1500, // critical
+      priority_score: 1500,
       external_id: `test-task-${Date.now()}-1`
     });
     console.log('✅ Task created:', task1.id, task1.title);
@@ -49,35 +49,35 @@ async function testDashboardIntegration() {
           title: 'Bulk Task 1',
           description: 'First bulk task',
           status: 'open',
-          priority_score: 1200, // high
+          priority_score: 1200,
           external_id: `bulk-test-${Date.now()}-1`
         },
         {
           title: 'Bulk Task 2',
           description: 'Second bulk task',
           status: 'open',
-          priority_score: 800, // medium
+          priority_score: 800,
           external_id: `bulk-test-${Date.now()}-2`
         },
         {
           title: 'Bulk Task 3',
           description: 'Third bulk task',
           status: 'open',
-          priority_score: 50, // low
+          priority_score: 50,
           external_id: `bulk-test-${Date.now()}-3`
         },
         {
           title: 'Bulk Task 4',
           description: 'Fourth bulk task',
           status: 'open',
-          priority_score: 1500, // critical
+          priority_score: 1500,
           external_id: `bulk-test-${Date.now()}-4`
         },
         {
           title: 'Bulk Task 5',
           description: 'Fifth bulk task',
           status: 'open',
-          priority_score: 1200, // high
+          priority_score: 1200,
           external_id: `bulk-test-${Date.now()}-5`
         }
       ]
@@ -104,7 +104,7 @@ async function testDashboardIntegration() {
       description: 'Should return existing',
       status: 'open',
       priority_score: 800,
-      external_id: externalId // SAME external_id
+      external_id: externalId
     });
     console.log('✅ Second create - Task ID:', task3.id);
     
@@ -139,7 +139,7 @@ async function testDashboardIntegration() {
         description: `Should be skipped`,
         status: 'open',
         priority_score: 1200,
-        external_id: id // SAME external_ids
+        external_id: id
       }))
     });
     console.log('✅ Second bulk create - Created:', bulkResponse2.created.length);

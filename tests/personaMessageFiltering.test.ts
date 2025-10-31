@@ -42,7 +42,7 @@ describe('PersonaConsumer message filtering', () => {
     // Start consumers for multiple personas
     const _startPromise = consumer.start({
       personas: ['context', 'plan-evaluator', 'implementation-planner'],
-      blockMs: 100, // Short timeout for test
+      blockMs: 100,
       batchSize: 10
     });
 
@@ -155,7 +155,7 @@ describe('PersonaConsumer message filtering', () => {
     // Planner message should be acked but NOT executed by context consumer
     expect(ackedMessages).toContain(plannerMsgId);
     expect(executedPersonas).not.toContain('implementation-planner');
-    expect(executedPersonas.length).toBe(1); // Only context executed
+    expect(executedPersonas.length).toBe(1);
   });
 
   it('should prevent race condition where all personas process coordinator messages', async () => {

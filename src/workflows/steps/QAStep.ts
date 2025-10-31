@@ -7,8 +7,8 @@ export interface QAConfig {
   testPath?: string;
   timeout?: number;
   retryCount?: number;
-  failureThreshold?: number; // Percentage of tests that can fail (0-100)
-  requiredCoverage?: number; // Minimum test coverage percentage
+  failureThreshold?: number;
+  requiredCoverage?: number;
   skipOnNoTests?: boolean;
 }
 
@@ -62,7 +62,7 @@ export class QAStep extends WorkflowStep {
     const {
       testCommand = 'npm test',
       testPath,
-      timeout = 300000, // 5 minutes
+      timeout = 300000,
       retryCount = 1,
       failureThreshold = 0,
       requiredCoverage,
@@ -90,7 +90,7 @@ export class QAStep extends WorkflowStep {
       for (let attempt = 0; attempt <= retryCount; attempt++) {
         try {
           qaResult = await this.executeTests(workingDir, testCommand, testPath, timeout);
-          break; // Success
+          break;
         } catch (error: any) {
           lastError = error;
           logger.warn(`QA execution attempt ${attempt + 1} failed`, {

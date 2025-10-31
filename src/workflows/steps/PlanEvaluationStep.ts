@@ -39,7 +39,7 @@ interface PlanEvaluationConfig {
   customCriteria?: Array<{
     name: string;
     description: string;
-    weight: number; // 0-1
+    weight: number;
   }>;
 }
 
@@ -238,7 +238,7 @@ export class PlanEvaluationStep extends WorkflowStep {
       qualityScore * 0.25 +
       completenessScore * 0.25 +
       riskScore * 0.15 +
-      (1 - complexityScore) * 0.1 // Lower complexity is better
+      (1 - complexityScore) * 0.1
     );
     
     return {
@@ -250,7 +250,7 @@ export class PlanEvaluationStep extends WorkflowStep {
       riskScore,
       issues,
       recommendations,
-      approved: false // Will be set by isPlanApproved
+      approved: false
     };
   }
 

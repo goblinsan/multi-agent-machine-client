@@ -11,7 +11,7 @@ export interface FailureAnalysis {
   severity: 'low' | 'medium' | 'high';
   rootCause: string;
   suggestedFix: string;
-  confidence: number; // 0-1
+  confidence: number;
   pattern: string;
   relatedFailures: string[];
 }

@@ -30,7 +30,7 @@ vi.mock('../src/config.js', () => ({
     personaMaxRetries: {
       'context': 3,
       'lead-engineer': 5,
-      'qa-engineer': null // unlimited
+      'qa-engineer': null
     },
     personaDefaultTimeoutMs: 60000,
     personaDefaultMaxRetries: 3,
@@ -154,22 +154,22 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       // Verify progressive timeout values
       expect(timeoutValues.length).toBe(3);
-      expect(timeoutValues[0]).toBe(90000);  // Base: 90s
-      expect(timeoutValues[1]).toBe(120000); // Base + 30s: 120s
-      expect(timeoutValues[2]).toBe(150000); // Base + 60s: 150s
+      expect(timeoutValues[0]).toBe(90000);
+      expect(timeoutValues[1]).toBe(120000);
+      expect(timeoutValues[2]).toBe(150000);
       
       expect(result.status).toBe('success');
       expect(result.data?.totalAttempts).toBe(3);
     });
 
     it('should calculate timeouts correctly using calculateProgressiveTimeout', () => {
-      const baseTimeout = 60000; // 60s
-      const increment = 30000; // 30s
+      const baseTimeout = 60000;
+      const increment = 30000;
 
-      expect(calculateProgressiveTimeout(baseTimeout, 1, increment)).toBe(60000);  // 60s
-      expect(calculateProgressiveTimeout(baseTimeout, 2, increment)).toBe(90000);  // 90s
-      expect(calculateProgressiveTimeout(baseTimeout, 3, increment)).toBe(120000); // 120s
-      expect(calculateProgressiveTimeout(baseTimeout, 4, increment)).toBe(150000); // 150s
+      expect(calculateProgressiveTimeout(baseTimeout, 1, increment)).toBe(60000);
+      expect(calculateProgressiveTimeout(baseTimeout, 2, increment)).toBe(90000);
+      expect(calculateProgressiveTimeout(baseTimeout, 3, increment)).toBe(120000);
+      expect(calculateProgressiveTimeout(baseTimeout, 4, increment)).toBe(150000);
     });
 
     it('should not have delays between retry attempts', async () => {
@@ -225,7 +225,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'qa-engineer', // Configured with 120000ms timeout
+          persona: 'qa-engineer',
           intent: 'test',
           payload: { test: 'data' }
         }
@@ -233,7 +233,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       await step.execute(context);
 
-      expect(capturedTimeout).toBe(120000); // 2 minutes
+      expect(capturedTimeout).toBe(120000);
     });
 
     it('should use persona-specific max retries from config', async () => {
@@ -246,7 +246,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'lead-engineer', // Configured with 5 max retries
+          persona: 'lead-engineer',
           intent: 'test',
           payload: { test: 'data' }
         }
@@ -277,7 +277,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'unknown-persona', // Not in config
+          persona: 'unknown-persona',
           intent: 'test',
           payload: { test: 'data' }
         }
@@ -285,7 +285,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       await step.execute(context);
 
-      expect(capturedTimeout).toBe(60000); // Default 1 minute
+      expect(capturedTimeout).toBe(60000);
     });
 
     it('should allow per-step timeout override', async () => {
@@ -306,16 +306,16 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'lead-engineer', // Default 90000ms
+          persona: 'lead-engineer',
           intent: 'test',
-          timeout: 300000, // Override with 5 minutes
+          timeout: 300000,
           payload: { test: 'data' }
         }
       });
 
       await step.execute(context);
 
-      expect(capturedTimeout).toBe(300000); // Override value
+      expect(capturedTimeout).toBe(300000);
     });
 
     it('should allow per-step maxRetries override', async () => {
@@ -328,9 +328,9 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'context', // Default 3 retries
+          persona: 'context',
           intent: 'test',
-          maxRetries: 1, // Override with 1 retry
+          maxRetries: 1,
           payload: { test: 'data' }
         }
       });
@@ -366,7 +366,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'qa-engineer', // Configured with unlimited retries
+          persona: 'qa-engineer',
           intent: 'test',
           payload: { test: 'data' }
         }
@@ -403,7 +403,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
           step: '1-test',
           persona: 'context',
           intent: 'test',
-          maxRetries: 999, // Very large number simulates unlimited
+          maxRetries: 999,
           payload: { test: 'data' }
         }
       });
@@ -519,7 +519,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'context', // 3 max retries
+          persona: 'context',
           intent: 'test',
           payload: { test: 'data' }
         }
@@ -546,7 +546,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
         type: 'persona_request',
         config: {
           step: '1-test',
-          persona: 'lead-engineer', // 90s base timeout
+          persona: 'lead-engineer',
           intent: 'test',
           maxRetries: 2,
           payload: { test: 'data' }
@@ -557,7 +557,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       expect(result.status).toBe('failure');
       expect(result.data?.baseTimeoutMs).toBe(90000);
-      expect(result.data?.finalTimeoutMs).toBe(150000); // 90s + 2*30s
+      expect(result.data?.finalTimeoutMs).toBe(150000);
       expect(result.error?.message).toContain('Base timeout: 1.50min');
       expect(result.error?.message).toContain('Final timeout: 2.50min');
     });
@@ -656,7 +656,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
       vi.mocked(persona.waitForPersonaCompletion)
         .mockRejectedValueOnce(new Error('Timed out waiting for context completion'))
-        .mockRejectedValueOnce(new Error('Network error')) // Non-timeout error - doesn't match "Timed out waiting"
+        .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce({
           fields: { result: JSON.stringify({ status: 'success' }) }
         } as any);
@@ -694,13 +694,13 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       expect(personaMaxRetries('lead-engineer', mockCfg)).toBe(5);
       expect(personaMaxRetries('context', mockCfg)).toBe(3);
-      expect(personaMaxRetries('unknown', mockCfg)).toBe(3); // Default
+      expect(personaMaxRetries('unknown', mockCfg)).toBe(3);
     });
 
     it('personaMaxRetries should handle unlimited (null) correctly', () => {
       const mockCfg = {
         personaMaxRetries: {
-          'qa-engineer': null // unlimited
+          'qa-engineer': null
         },
         personaDefaultMaxRetries: 3
       };
@@ -719,7 +719,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       expect(personaTimeoutMs('lead-engineer', mockCfg)).toBe(90000);
       expect(personaTimeoutMs('context', mockCfg)).toBe(60000);
-      expect(personaTimeoutMs('unknown', mockCfg)).toBe(60000); // Default
+      expect(personaTimeoutMs('unknown', mockCfg)).toBe(60000);
     });
   });
 });

@@ -48,7 +48,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
     const explicitQaFeedback = (basePayload as any)?.qa_feedback || null;
 
     for (let planAttempt = 0; planAttempt < effectiveMax; planAttempt += 1) {
-        logger.info("plan approval attempt", { planAttempt }); // New log
+        logger.info("plan approval attempt", { planAttempt });
         const feedbackTextParts = [] as string[];
         if (baseFeedbackText.length) feedbackTextParts.push(baseFeedbackText);
         if (planFeedbackNotes.length) feedbackTextParts.push(...planFeedbackNotes);
@@ -192,7 +192,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
             (basePayload as any).require_plan_changes_mapping = true;
             (basePayload as any).mapping_key = 'plan_changes_mapping';
             (basePayload as any).mapping_instructions = "Provide an array 'plan_changes_mapping' where each item maps one evaluator point to concrete plan changes (fields: evaluator_point, change, justification).";
-            continue; // retry loop
+            continue;
         }
 
         // Passed evaluation and has steps -> approve

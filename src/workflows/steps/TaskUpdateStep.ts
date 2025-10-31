@@ -7,7 +7,7 @@ export interface TaskUpdateConfig {
   updateType: 'status' | 'progress' | 'result' | 'failure';
   status?: 'pending' | 'in_progress' | 'completed' | 'failed' | 'blocked';
   message?: string;
-  progress?: number; // 0-100
+  progress?: number;
   metadata?: Record<string, any>;
   retryCount?: number;
   timeoutMs?: number;
@@ -110,7 +110,7 @@ export class TaskUpdateStep extends WorkflowStep {
             updatePayload,
             timeoutMs
           );
-          break; // Success
+          break;
         } catch (error: any) {
           lastError = error;
           logger.warn(`Task update attempt ${attempt + 1} failed`, {

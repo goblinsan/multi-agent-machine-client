@@ -24,7 +24,7 @@ describe('GitArtifactStep', () => {
         version: '1.0.0',
         steps: []
       },
-      {} as any, // transport not needed for these tests
+      {} as any,
       {}
     );
   });
@@ -371,7 +371,7 @@ describe('GitArtifactStep', () => {
         type: 'GitArtifactStep',
         config: {
           source_output: 'plan',
-          artifact_path: 'dangerous/path/plan.md', // Security violation
+          artifact_path: 'dangerous/path/plan.md',
           commit_message: 'docs(ma): plan'
         }
       });

@@ -197,7 +197,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
               description: taskDescription,
               priorityScore,
               options: {
-                create_milestone_if_missing: !isUrgent // Only auto-create backlog milestone
+                create_milestone_if_missing: !isUrgent
               }
             });
             
@@ -290,7 +290,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     
     // Prepare task for duplicate detection
     const taskForDetection = {
-      title: formattedTitle, // Use formatted title for consistent comparison
+      title: formattedTitle,
       description: followUpTask.description || '',
       external_id: followUpTask.external_id,
       milestone_id: followUpTask.milestone_id

@@ -21,11 +21,11 @@ export function normalizeTitle(title: string): string {
   
   return title
     .toLowerCase()
-    .replace(/🚨|📋|⚠️|✅|❌|✓|⚡|🔥/g, '')  // Remove common emojis
-    .replace(/\[.*?\]/g, '')                 // Remove [Code Review] etc
-    .replace(/\(.*?\)/g, '')                 // Remove (parenthetical) notes
-    .replace(/urgent/gi, '')                 // Remove urgent markers
-    .replace(/\s+/g, ' ')                    // Normalize whitespace
+    .replace(/🚨|📋|⚠️|✅|❌|✓|⚡|🔥/g, '')
+    .replace(/\[.*?\]/g, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/urgent/gi, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 

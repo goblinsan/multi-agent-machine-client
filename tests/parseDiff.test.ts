@@ -74,12 +74,12 @@ index 3c6a0d8..9f4b7e1 100644
 +
 +describe('Ingestion API', () => {
 +  it('should read a single JSON file and return a parsed object', async () => {
-+    // This test is intentionally failing to drive development
++
 +    
 +    const mockFilePath = 'test-data.json';
 +    const expectedData = { key: 'value', number: 42 };
 +    
-+    // For now, we'll fail this test as the functionality doesn't exist yet
++
 +    const result = null;
 +    
 +    expect(result).toEqual(expectedData);
@@ -94,7 +94,7 @@ index d76787e..51d3ad1 100644
    it('renders learn react link', () => {
      render(<App />);
      const linkElement = screen.getByText(/learn react/i);
-+    // Updated to ensure test passes with current implementation
++
      expect(linkElement).toBeInTheDocument();
    });
  });`

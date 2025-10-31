@@ -166,8 +166,8 @@ export class VariableResolutionStep extends WorkflowStep {
     let match: RegExpExecArray | null;
 
     while ((match = variablePattern.exec(expression)) !== null) {
-      const fullMatch = match[0]; // ${variable}
-      const variablePath = match[1]; // variable or variable.path
+      const fullMatch = match[0];
+      const variablePath = match[1];
 
       // Handle complex expressions (e.g., ${a || b || 'default'})
       const resolvedValue = this.evaluateExpression(variablePath, context);

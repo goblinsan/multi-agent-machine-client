@@ -108,7 +108,7 @@ const origSpawnSync = childProcess.spawnSync;
 function ensureTmpCwd(opts?: any) {
   // Only enforce when an explicit cwd is provided (to avoid false positives)
   const cwd = opts && typeof opts === 'object' && 'cwd' in opts ? (opts.cwd || '') : '';
-  if (!cwd) return; // no explicit cwd passed, skip guard
+  if (!cwd) return;
   const allowed = String(cwd).startsWith(os.tmpdir());
   if (!allowed) {
     throw new Error(`Test guard: git command attempted outside tmp dir. cwd=${cwd}`);

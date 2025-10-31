@@ -64,7 +64,7 @@ index e69de29..4b825dc 100644
 +++ b/.env
 @@ -0,0 +1,2 @@
 +API_KEY=secret123
-+DATABASE_URL=postgres://localhost
++DATABASE_URL=postgres:
 `;
     const warnings: string[] = [];
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });

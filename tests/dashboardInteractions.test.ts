@@ -126,11 +126,11 @@ describe('dashboard interactions', () => {
     expect(resp?.status).toBe(400);
   });
 
-  it('fetchProjectMilestones uses /projects/{id}/milestones', async () => { // Fixed test name
+  it('fetchProjectMilestones uses /projects/{id}/milestones', async () => {
     const { fetch } = await import('undici');
     (fetch as any).mockImplementation(async (url: string, init?: any) => {
       calls.push({ url, init, method: init?.method || 'GET' });
-      if (url.includes('/projects/') && url.includes('/milestones')) return makeResponse(200, { milestones: [] }); // Fixed: removed /v1
+      if (url.includes('/projects/') && url.includes('/milestones')) return makeResponse(200, { milestones: [] });
       return makeResponse(200, {});
     });
     const { ProjectAPI } = await import('../src/dashboard/ProjectAPI.js');
@@ -139,7 +139,7 @@ describe('dashboard interactions', () => {
     const pid = '33333333-3333-3333-3333-333333333333';
     const res = await fetchProjectMilestones(pid);
     expect(Array.isArray(res)).toBe(true);
-    const call = calls.find(c => c.url.includes(`/projects/${pid}/milestones`)); // Fixed: removed /v1 prefix
+    const call = calls.find(c => c.url.includes(`/projects/${pid}/milestones`));
     expect(call).toBeTruthy();
   });
 

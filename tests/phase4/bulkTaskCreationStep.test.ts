@@ -31,7 +31,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
           ],
           retry: {
             max_attempts: 3,
-            initial_delay_ms: 100, // Shorter for testing
+            initial_delay_ms: 100,
             backoff_multiplier: 2
           }
         }
@@ -49,7 +49,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
             task_ids: [],
             duplicate_task_ids: [],
             skipped_duplicates: 0,
-            errors: ['Network timeout'] // Retryable error
+            errors: ['Network timeout']
           };
         }
         return originalMethod.apply(step, args);
@@ -91,7 +91,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
           task_ids: [],
           duplicate_task_ids: [],
           skipped_duplicates: 0,
-          errors: ['Validation error: Invalid task title'] // Non-retryable
+          errors: ['Validation error: Invalid task title']
         };
       };
 
@@ -127,7 +127,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
             tasks: [{ title: 'Task 1', priority: 'high' as const }],
             retry: {
               max_attempts: 2,
-              initial_delay_ms: 1 // Very short for testing
+              initial_delay_ms: 1
             }
           }
         });
@@ -159,7 +159,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
 
         const result = await step.execute(context);
 
-        expect(attempts).toBe(2); // Should have retried
+        expect(attempts).toBe(2);
         expect(result.status).toBe('success');
       }
     });
@@ -177,7 +177,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
             { title: 'Task 2', priority: 'high' as const }
           ],
           retry: {
-            max_attempts: 1 // No retries for faster test
+            max_attempts: 1
           },
           options: {
             abort_on_partial_failure: true
@@ -218,7 +218,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
             max_attempts: 1
           },
           options: {
-            abort_on_partial_failure: false // Default
+            abort_on_partial_failure: false
           }
         }
       });
@@ -235,7 +235,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
 
       const result = await step.execute(context);
 
-      expect(result.status).toBe('failure'); // Still fails
+      expect(result.status).toBe('failure');
       expect(result.outputs?.workflow_abort_requested).toBeUndefined();
       expect(context.getVariable('workflow_abort_requested')).toBeUndefined();
     });
@@ -299,7 +299,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
             { 
               title: 'Different Title',
               priority: 'high' as const,
-              external_id: 'wf-abc:create_tasks:0' // Same external_id
+              external_id: 'wf-abc:create_tasks:0'
             }
           ],
           options: {
@@ -480,7 +480,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
             task_ids: [],
             duplicate_task_ids: [],
             skipped_duplicates: 0,
-            errors: ['timeout'] // Retryable
+            errors: ['timeout']
           };
         }
         return {
@@ -496,7 +496,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
 
       const result = await step.execute(context);
 
-      expect(attempts).toBe(2); // Retried once
+      expect(attempts).toBe(2);
       expect(result.status).toBe('success');
       expect(result.outputs?.tasks_created).toBe(3);
       expect(result.outputs?.urgent_tasks_created).toBe(2);

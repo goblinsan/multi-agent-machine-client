@@ -94,7 +94,7 @@ describe('Conditional Step Execution', () => {
       });
 
       const shouldExecute = await step.shouldExecute(context);
-      expect(shouldExecute).toBe(true); // undefined != true is true
+      expect(shouldExecute).toBe(true);
     });
   });
 

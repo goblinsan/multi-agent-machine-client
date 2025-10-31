@@ -46,8 +46,8 @@ export class PersonaConsumer {
   ) {
     this.transport = transport;
     this.consumerId = cfg.consumerId;
-    this.blockMs = 5000; // 5 second blocking reads
-    this.batchSize = 1;  // Process one message at a time for now
+    this.blockMs = 5000;
+    this.batchSize = 1;
     
     // Initialize dependencies
     const contextExtractor = new ContextExtractor();

@@ -112,7 +112,7 @@ export class TaskDuplicateDetector {
             matchScore = titleOverlap * 100;
           }
 
-          if (matchScore >= 80) { // 80% title match threshold
+          if (matchScore >= 80) {
             return {
               duplicate: existing,
               strategy: 'title',
@@ -151,7 +151,7 @@ export class TaskDuplicateDetector {
               }
             }
 
-            if (matchScore >= 60) { // 60% match threshold with same milestone
+            if (matchScore >= 60) {
               return {
                 duplicate: existing,
                 strategy: 'title_and_milestone',

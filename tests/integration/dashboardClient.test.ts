@@ -109,7 +109,7 @@ describe('DashboardClient Integration', () => {
     await expect(
       client.createTask(projectId, {
         title: 'Invalid task',
-        status: 'invalid_status' as any, // Invalid enum value
+        status: 'invalid_status' as any,
       })
     ).rejects.toThrow('Dashboard API error (400)');
   });

@@ -59,7 +59,7 @@ describe('Coordinator commit and push (integration-ish)', () => {
     try {
       // SAFETY: Race condition with timeout protection  
       const testPromise = coordinator.handleCoordinator(
-        {} as any, // transport
+        {} as any,
         {}, 
         { workflow_id: 'wf-commit', project_id: 'proj-commit' },
         { repo: tmp }
@@ -67,7 +67,7 @@ describe('Coordinator commit and push (integration-ish)', () => {
         workflowCompleted = true;
         return true;
       }).catch(() => {
-        workflowCompleted = true; // Even failures count as "completed" (didn't hang)
+        workflowCompleted = true;
         return true;
       });
 

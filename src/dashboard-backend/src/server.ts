@@ -34,7 +34,7 @@ if (require.main === module) {
   // Run migrations before starting (async)
   getDb().then(async db => {
     runMigrations(db);
-    await saveDb(db);  // Save migrations to disk
+    await saveDb(db);
     console.log('Migrations applied and saved');
     
     const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;

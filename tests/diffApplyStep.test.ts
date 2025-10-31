@@ -97,7 +97,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
     // Mock applyEditOps to return no changes
     const { applyEditOps } = await import('../src/fileops.js');
     (applyEditOps as any).mockResolvedValue({
-      changed: [], // No files changed
+      changed: [],
       branch: 'test-branch',
       sha: 'test-sha'
     });
@@ -135,9 +135,9 @@ describe('DiffApplyStep Critical Error Handling', () => {
     // Mock applyEditOps to return changes but no commit SHA
     const { applyEditOps } = await import('../src/fileops.js');
     (applyEditOps as any).mockResolvedValue({
-      changed: ['test.ts'], // Files changed
+      changed: ['test.ts'],
       branch: 'test-branch',
-      sha: '' // No commit SHA
+      sha: ''
     });
 
     // Should return failure with critical error
@@ -173,9 +173,9 @@ describe('DiffApplyStep Critical Error Handling', () => {
     // Mock applyEditOps to return successful result
     const { applyEditOps } = await import('../src/fileops.js');
     (applyEditOps as any).mockResolvedValue({
-      changed: ['test.ts'], // Files changed
+      changed: ['test.ts'],
       branch: 'test-branch',
-      sha: 'commit-sha-123' // Valid commit SHA
+      sha: 'commit-sha-123'
     });
 
     const result = await diffApplyStep.execute(mockContext);

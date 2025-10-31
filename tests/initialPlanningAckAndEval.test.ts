@@ -42,7 +42,7 @@ describe('Initial planning loop evaluates and requests acknowledgement', () => {
         planningCompleted = true;
         return true;
       }).catch(() => {
-        planningCompleted = true; // Even failures count as "completed" (didn't hang)
+        planningCompleted = true;
         return true;
       });
 

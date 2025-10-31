@@ -104,7 +104,7 @@ export abstract class WorkflowStep {
    * Get estimated execution time for planning purposes
    */
   getEstimatedDuration(): number {
-    return this.config.timeout || 60000; // Default 1 minute
+    return this.config.timeout || 60000;
   }
 
   /**

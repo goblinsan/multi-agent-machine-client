@@ -40,7 +40,7 @@ vi.mock('../src/redisClient.js', () => {
 
   return {
     makeRedis: vi.fn().mockResolvedValue(redisMock),
-    redisMock // Export for test access
+    redisMock
   };
 });
 
@@ -605,7 +605,7 @@ describe('Workflow Steps', () => {
         plan: {
           title: 'Bad',
           description: 'Too short',
-          steps: [], // No steps
+          steps: [],
           complexity: 'high'
           // Missing required fields
         }
@@ -635,13 +635,13 @@ describe('Workflow Steps', () => {
         name: 'plan-evaluation',
         type: 'PlanEvaluationStep',
         config: {
-          minFeasibilityScore: 1.5, // Invalid: > 1
-          minQualityScore: -0.1,    // Invalid: < 0
+          minFeasibilityScore: 1.5,
+          minQualityScore: -0.1,
           customCriteria: [
             {
               name: 'test',
               description: 'test criteria',
-              weight: 2.0 // Invalid: > 1
+              weight: 2.0
             }
           ]
         }
@@ -802,11 +802,11 @@ describe('Workflow Steps', () => {
         name: 'qa-analysis',
         type: 'QAAnalysisStep',
         config: {
-          maxFailuresToAnalyze: 0, // Invalid
+          maxFailuresToAnalyze: 0,
           customCategories: [
             {
-              name: '', // Invalid: empty name
-              patterns: [], // Invalid: empty patterns
+              name: '',
+              patterns: [],
               severity: 'high',
               description: ''
             }
@@ -1045,7 +1045,7 @@ describe('Workflow Steps', () => {
         type: 'TaskCreationStep',
         config: {
           dataSource: 'qa-analysis',
-          minConfidenceThreshold: 0.95 // Very high threshold
+          minConfidenceThreshold: 0.95
         }
       };
 
@@ -1125,11 +1125,11 @@ describe('Workflow Steps', () => {
         name: 'task-creation',
         type: 'TaskCreationStep',
         config: {
-          maxTasks: 0, // Invalid
-          minConfidenceThreshold: 1.5, // Invalid
+          maxTasks: 0,
+          minConfidenceThreshold: 1.5,
           taskTemplates: {
             'test': {
-              title: '', // Invalid: empty title
+              title: '',
               description: ''
             }
           }

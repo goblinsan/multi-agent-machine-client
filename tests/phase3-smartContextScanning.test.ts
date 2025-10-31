@@ -124,7 +124,7 @@ describe('Phase 3: Smart Context Scanning', () => {
       expect(result.status).toBe('success');
       expect(context.getVariable('context_exists')).toBe(true);
       expect(context.getVariable('has_new_files')).toBe(false);
-      expect(context.getVariable('needs_rescan')).toBe(false);  // ✅ SKIP SCAN
+      expect(context.getVariable('needs_rescan')).toBe(false);
     });
 
     it('should trigger rescan when new files added outside .ma/', async () => {
@@ -165,7 +165,7 @@ describe('Phase 3: Smart Context Scanning', () => {
       expect(result.status).toBe('success');
       expect(context.getVariable('context_exists')).toBe(true);
       expect(context.getVariable('has_new_files')).toBe(true);
-      expect(context.getVariable('needs_rescan')).toBe(true);  // ✅ RESCAN NEEDED
+      expect(context.getVariable('needs_rescan')).toBe(true);
     });
 
     it('should NOT trigger rescan for changes inside .ma/ directory', async () => {
@@ -210,8 +210,8 @@ describe('Phase 3: Smart Context Scanning', () => {
       // ASSERT
       expect(result.status).toBe('success');
       expect(context.getVariable('context_exists')).toBe(true);
-      expect(context.getVariable('has_new_files')).toBe(false);  // .ma/ changes ignored
-      expect(context.getVariable('needs_rescan')).toBe(false);  // ✅ SKIP SCAN
+      expect(context.getVariable('has_new_files')).toBe(false);
+      expect(context.getVariable('needs_rescan')).toBe(false);
     });
   });
 
@@ -267,15 +267,15 @@ describe('Phase 3: Smart Context Scanning', () => {
 
       // Simulate YAML condition: "${needs_rescan} == true"
       const shouldRunContextPersona = needsRescan === true;
-      expect(shouldRunContextPersona).toBe(false);  // ✅ SKIP PERSONA
+      expect(shouldRunContextPersona).toBe(false);
     });
   });
 
   describe('Performance Expectations', () => {
     it('should validate that skipping context saves ~45 seconds', async () => {
       // This is a documentation test to validate the expected time savings
-      const CONTEXT_PERSONA_DURATION_MS = 45000;  // From logs: ~45s
-      const GIT_CHECK_DURATION_MS = 100;  // Estimated: <100ms for git diff
+      const CONTEXT_PERSONA_DURATION_MS = 45000;
+      const GIT_CHECK_DURATION_MS = 100;
       
       const timeSavedMs = CONTEXT_PERSONA_DURATION_MS - GIT_CHECK_DURATION_MS;
       const timeSavedSeconds = timeSavedMs / 1000;
@@ -371,7 +371,7 @@ describe('Phase 3: Smart Context Scanning', () => {
       // Should not throw, should default to needs_rescan=true for safety
       const result = await step.execute(context);
       expect(result.status).toBe('success');
-      expect(context.getVariable('needs_rescan')).toBe(true);  // Safe default
+      expect(context.getVariable('needs_rescan')).toBe(true);
     });
   });
 

@@ -89,7 +89,7 @@ export class CodeGenStep extends WorkflowStep {
       // Add context information if available
       if (contextData && contextData.repoScan) {
         const fileList = contextData.repoScan
-          .slice(0, 50) // Limit to first 50 files to avoid token limit
+          .slice(0, 50)
           .map((file: any) => `${file.path} (${file.bytes} bytes)`)
           .join('\n');
         
@@ -130,11 +130,11 @@ export class CodeGenStep extends WorkflowStep {
             model || 'default',
             messages,
             temperature,
-            { timeoutMs, retries: 0 } // Handle retries in this loop
+            { timeoutMs, retries: 0 }
           );
           
           response = llmResponse.content;
-          break; // Success
+          break;
         } catch (error: any) {
           lastError = error;
           logger.warn(`Code generation attempt ${attempt + 1} failed`, {
@@ -167,7 +167,7 @@ export class CodeGenStep extends WorkflowStep {
         metadata: {
           persona,
           model: model || 'default',
-          tokens: response.length, // Approximate token count
+          tokens: response.length,
           duration_ms,
           temperature,
           generatedAt: Date.now()
@@ -258,7 +258,7 @@ export class CodeGenStep extends WorkflowStep {
     // Look for file path in diff header
     for (const line of lines) {
       if (line.startsWith('--- a/') || line.startsWith('+++ b/')) {
-        filePath = line.substring(6); // Remove "--- a/" or "+++ b/"
+        filePath = line.substring(6);
         break;
       }
     }

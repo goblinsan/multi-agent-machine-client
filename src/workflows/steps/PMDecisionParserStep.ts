@@ -14,10 +14,10 @@ export type { PMDecision } from './pm/DecisionParser.js';
  * Configuration for PMDecisionParserStep
  */
 interface PMDecisionParserConfig {
-  input: any;         // PM persona output (can be various formats)
-  normalize: boolean; // Whether to normalize to standard format
-  review_type?: string; // Type of review for context (qa, code_review, security, etc.)
-  parent_milestone_id?: number; // Parent milestone ID for validation (optional)
+  input: any;
+  normalize: boolean;
+  review_type?: string;
+  parent_milestone_id?: number;
 }
 
 /**
@@ -162,7 +162,7 @@ export class PMDecisionParserStep extends WorkflowStep {
         status: 'success',
         data: { parsed_decision: behaviorCompatDecision },
         outputs: {
-          pm_decision: behaviorCompatDecision  // Output the complete decision object
+          pm_decision: behaviorCompatDecision
         },
         metrics: {
           duration_ms: Date.now() - startTime

@@ -126,7 +126,7 @@ describe('WorkflowCoordinator Task Processing', () => {
         workflowCompleted = true;
         return true;
       }).catch(() => {
-        workflowCompleted = true; // Even failures count as "completed" (didn't hang)
+        workflowCompleted = true;
         return true;
       });
 
@@ -161,7 +161,7 @@ describe('WorkflowCoordinator Task Processing', () => {
         workflowCompleted = true;
         return true;
       }).catch(() => {
-        workflowCompleted = true; // Even failures count as "completed" (didn't hang)
+        workflowCompleted = true;
         return true;
       });
 
@@ -264,7 +264,7 @@ describe('WorkflowCoordinator Task Processing', () => {
         projectSlug: 'project',
         repoRoot: '/tmp/repo',
         branch: 'main',
-        remote: 'https://github.com/test/repo.git'  // Now required for distributed coordination
+        remote: 'https://github.com/test/repo.git'
       }
     );
 

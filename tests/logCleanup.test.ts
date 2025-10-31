@@ -130,7 +130,7 @@ describe('Log Cleanup', () => {
     }
 
     matchingFiles.sort((a, b) => b.mtime - a.mtime);
-    const filesToDelete = matchingFiles.slice(5); // Will be empty
+    const filesToDelete = matchingFiles.slice(5);
 
     expect(filesToDelete.length).toBe(0);
 

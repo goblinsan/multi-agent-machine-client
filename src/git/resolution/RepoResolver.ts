@@ -66,7 +66,7 @@ function projectHintFromPayload(payload: any): string | null {
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length) {
       const trimmed = candidate.trim();
-      if (isUuidLike(trimmed)) continue; // skip UUIDs and numeric ids
+      if (isUuidLike(trimmed)) continue;
       return trimmed;
     }
   }
@@ -114,7 +114,7 @@ export async function resolveRepoFromPayload(payload: any): Promise<RepoResoluti
     if (!cand || typeof cand !== 'string') continue;
     const trimmed = cand.trim();
     if (!trimmed) continue;
-    if (!/^(?:[A-Za-z]:[/\\]|\\\\|\/)/.test(trimmed)) continue; // not an absolute local path
+    if (!/^(?:[A-Za-z]:[/\\]|\\\\|\/)/.test(trimmed)) continue;
     const gitDir = path.join(trimmed, ".git");
     if (await directoryExists(gitDir).catch(() => false)) {
       // Avoid mutating the current workspace by default

@@ -213,7 +213,7 @@ describe('PersonaConsumer task context extraction', () => {
       })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 200)); // Give time for processing
+    await new Promise(resolve => setTimeout(resolve, 200));
     await consumer.stop();
 
     expect(errorLogged).toBe(true);
@@ -291,7 +291,7 @@ describe('PersonaConsumer task context extraction', () => {
       workflow_id: 'wf-real-scenario',
       to_persona: 'implementation-planner',
       step: '2-plan',
-      intent: 'planning', // This was being used as userText before the fix!
+      intent: 'planning',
       corr_id: 'real-corr',
       payload: JSON.stringify({
         task: {

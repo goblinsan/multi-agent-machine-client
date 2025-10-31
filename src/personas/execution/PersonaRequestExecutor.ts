@@ -65,7 +65,7 @@ export class PersonaRequestExecutor {
     // Call handleCoordinator with appropriate parameters
     await coordinator.handleCoordinator(
       this.transport,
-      {} as any, // redis client (not used with transport abstraction)
+      {} as any,
       {
         workflow_id: workflowId,
         project_id: payload.project_id || params.projectId,
@@ -150,7 +150,7 @@ export class PersonaRequestExecutor {
     return {
       output: response.content,
       duration_ms: response.duration_ms,
-      status: 'pass' // Default to pass - coordinator will interpret the response
+      status: 'pass'
     };
   }
 }

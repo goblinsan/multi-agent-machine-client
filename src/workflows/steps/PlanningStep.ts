@@ -164,7 +164,7 @@ export class PlanningStep extends WorkflowStep {
           plannedAt: Date.now(),
           persona,
           model: model || 'default',
-          approved: !requireApproval, // Auto-approve if approval not required
+          approved: !requireApproval,
           planVersion: `v1.0-${Date.now()}`
         }
       };

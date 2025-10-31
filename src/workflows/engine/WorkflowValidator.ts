@@ -206,11 +206,11 @@ export class WorkflowValidator {
 
     const hasCircularDependency = (stepName: string): boolean => {
       if (recursionStack.has(stepName)) {
-        return true; // Circular dependency found
+        return true;
       }
 
       if (visited.has(stepName)) {
-        return false; // Already processed
+        return false;
       }
 
       visited.add(stepName);
@@ -236,7 +236,7 @@ export class WorkflowValidator {
           message: `Circular dependency detected involving step '${step.name}'`,
           value: step.name
         });
-        break; // Only report one circular dependency
+        break;
       }
     }
 

@@ -96,7 +96,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         cols.forEach((col, idx) => { existing[col] = row[idx]; });
         if (existing.labels) existing.labels = JSON.parse(existing.labels);
         
-        return reply.status(200).send(existing); // 200 OK (idempotent, not created)
+        return reply.status(200).send(existing);
       }
     }
 
@@ -113,7 +113,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     cols.forEach((col, idx) => { created[col] = row[idx]; });
     if (created.labels) created.labels = JSON.parse(created.labels);
     
-    return reply.status(201).send(created); // 201 Created (new task)
+    return reply.status(201).send(created);
   });
 
   // POST bulk
@@ -125,7 +125,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
 
     const db = await getDb();
     const created: any[] = [];
-    const skipped: any[] = []; // Idempotent: track existing tasks
+    const skipped: any[] = [];
     
     try {
       db.run('BEGIN TRANSACTION');
@@ -153,7 +153,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
               reason: 'duplicate_external_id',
               external_id: parsed.external_id
             });
-            continue; // Skip to next task
+            continue;
           }
         }
         

@@ -48,7 +48,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       '1',
       tempRepoDir,
       'main',
-      { name: 'test', version: '1.0', steps: [] }, // Minimal valid WorkflowConfig
+      { name: 'test', version: '1.0', steps: [] },
       transport,
       {
         task: { id: '1', title: 'Test Task', description: 'Test', type: 'feature' }

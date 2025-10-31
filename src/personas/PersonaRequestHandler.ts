@@ -8,12 +8,12 @@ export type BuildMessagesInput = {
   systemPrompt: string;
   userText: string;
   scanSummaryForPrompt?: string | null;
-  labelForScanSummary?: string; // e.g., 'Authoritative file scan summary' or 'File scan summary'
+  labelForScanSummary?: string;
   dashboardContext?: string | null;
   qaHistory?: string | null;
   planningHistory?: string | null;
   promptFileSnippets?: Array<{ path: string; content: string }>;
-  extraSystemMessages?: string[]; // Additional instructions (e.g., planning or coding guidance)
+  extraSystemMessages?: string[];
 };
 
 export function buildPersonaMessages(input: BuildMessagesInput): ChatMessage[] {

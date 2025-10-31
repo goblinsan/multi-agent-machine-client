@@ -70,7 +70,7 @@ describe('Architecture Validation', () => {
     
     function checkFile(filePath: string) {
       if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) return;
-      if (filePath.includes('test') || filePath.includes('Test')) return; // Skip test files
+      if (filePath.includes('test') || filePath.includes('Test')) return;
       
       const content = readFileSync(filePath, 'utf-8');
       const lines = content.split('\n');

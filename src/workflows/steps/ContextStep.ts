@@ -80,8 +80,8 @@ export class ContextStep extends WorkflowStep {
         repo_root: repoPath,
         include: includePatterns,
         exclude: excludePatterns,
-        max_files: 50, // Small sample for modification time check
-        max_bytes: 1024 * 1024, // 1MB limit for quick check
+        max_files: 50,
+        max_bytes: 1024 * 1024,
         max_depth: 5,
         track_lines: false,
         track_hash: false
@@ -134,7 +134,7 @@ export class ContextStep extends WorkflowStep {
           repoPath,
           fileCount: snapshot.totals?.files || 0,
           totalBytes: snapshot.totals?.bytes || 0,
-          maxDepth: 10 // Default fallback
+          maxDepth: 10
         }
       };
 
@@ -305,7 +305,7 @@ export class ContextStep extends WorkflowStep {
       includePatterns = ["**/*"],
       excludePatterns = ["node_modules/**", ".git/**", "dist/**", "build/**"],
       maxFiles = 1000,
-      maxBytes = 10 * 1024 * 1024, // 10MB
+      maxBytes = 10 * 1024 * 1024,
       maxDepth = 10,
       trackLines = true,
       trackHash = false,

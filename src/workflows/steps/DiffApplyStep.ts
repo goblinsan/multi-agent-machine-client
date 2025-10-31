@@ -7,8 +7,8 @@ import { applyEditOps } from '../../fileops.js';
  * Configuration for diff apply step
  */
 interface DiffApplyStepConfig {
-  source_output?: string;           // Step output key containing diffs
-  source_variable?: string;         // Context variable containing diffs
+  source_output?: string;
+  source_variable?: string;
   validation?: 'none' | 'syntax_check' | 'full';
   backup?: boolean;
   max_file_size?: number;

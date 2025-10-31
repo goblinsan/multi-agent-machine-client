@@ -190,8 +190,8 @@ describe('Review Trigger Logic', () => {
           summary: 'Test created successfully, failing as expected (TDD Red phase)',
           tdd_red_phase_detected: true,
           findings: {
-            severe: [], // No compile errors
-            high: [],   // Failing tests expected in Red phase
+            severe: [],
+            high: [],
             medium: [],
             low: []
           }

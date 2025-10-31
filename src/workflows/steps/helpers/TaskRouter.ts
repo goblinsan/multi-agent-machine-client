@@ -11,16 +11,16 @@ import { TaskPriority } from './TaskPriorityCalculator.js';
  * Milestone routing strategy configuration
  */
 export interface MilestoneStrategy {
-  urgent?: string;    // Milestone slug for urgent tasks
-  deferred?: string;  // Milestone slug for deferred tasks
+  urgent?: string;
+  deferred?: string;
 }
 
 /**
  * Parent task mapping configuration
  */
 export interface ParentTaskMapping {
-  urgent?: string;    // Parent task ID for urgent tasks
-  deferred?: string | null;  // Parent task ID for deferred tasks
+  urgent?: string;
+  deferred?: string | null;
 }
 
 /**

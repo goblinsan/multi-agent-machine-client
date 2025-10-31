@@ -29,7 +29,7 @@ export class RedisTransport implements MessageTransport {
 
   async connect(): Promise<void> {
     if (this.client) {
-      return;  // Already connected
+      return;
     }
 
     this.client = createClient({

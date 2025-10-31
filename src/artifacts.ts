@@ -44,7 +44,7 @@ export async function writeArtifacts(options: {
     const editSpec = { ops: commitOps.map(f => ({ action: "upsert", path: f.rel, content: f.content })) };
     const res = await applyEditOps(JSON.stringify(editSpec), {
       repoRoot,
-      branchName: 'feat/agent-edit',  // Not used for branch operations
+      branchName: 'feat/agent-edit',
       commitMessage
     });
     const ndPath = path.resolve(repoRoot, files[1].rel);

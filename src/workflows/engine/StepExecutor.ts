@@ -123,7 +123,7 @@ export class StepExecutor {
       // Sum formula: n * (n + 1) / 2
       const totalBackoffMs = maxRetries > 0 ? (30 * 1000 * maxRetries * (maxRetries + 1)) / 2 : 0;
       const totalPersonaTimeMs = (maxRetries + 1) * personaTimeout;
-      const calculatedTimeout = totalPersonaTimeMs + totalBackoffMs + 30000; // +30s buffer
+      const calculatedTimeout = totalPersonaTimeMs + totalBackoffMs + 30000;
       
       logger.info('Calculated PersonaRequestStep timeout to accommodate retries', {
         step: stepDef.name,
@@ -142,7 +142,7 @@ export class StepExecutor {
     }
     
     // Default timeout
-    return timeouts.default_step || 300000; // 5 minutes
+    return timeouts.default_step || 300000;
   }
 
   /**

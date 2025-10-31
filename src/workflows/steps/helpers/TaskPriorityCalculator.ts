@@ -45,7 +45,7 @@ export class TaskPriorityCalculator {
    */
   calculateScore(priority?: TaskPriority): number {
     if (!priority) {
-      return 500; // Default priority for unspecified
+      return 500;
     }
 
     return this.priorityMapping[priority] ?? 500;
@@ -88,7 +88,7 @@ export class TaskPriorityCalculator {
    */
   calculateWithTitleInference(title: string, priority?: TaskPriority): number {
     if (!this.isUrgent(priority)) {
-      return 50; // deferred tasks
+      return 50;
     }
 
     const type = this.inferTaskType(title);

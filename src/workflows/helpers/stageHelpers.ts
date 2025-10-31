@@ -118,7 +118,7 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
         }
       } catch (err) {
         logger.warn("handleFailureMiniCycle: failed to forward created tasks to planner or planner failed", { workflowId, stage, error: err });
-        throw err; // escalate since coordinator requested blocking behavior
+        throw err;
       }
     }
 

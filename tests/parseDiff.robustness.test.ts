@@ -218,7 +218,7 @@ just random text
 --- a/src/file.ts
 +++ b/src/file.ts
 @@ -1,100 +1,200 @@
-+// 100 lines of additions but no context lines - suspicious
++
 +...
 \`\`\`
 `

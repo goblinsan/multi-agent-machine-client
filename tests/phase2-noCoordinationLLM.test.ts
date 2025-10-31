@@ -157,7 +157,7 @@ describe('Phase 2: Remove Coordination Persona LLM Call', () => {
       // First call returns tasks, second call returns empty (all done)
       vi.spyOn(coordinator, 'fetchProjectTasks')
         .mockResolvedValueOnce(mockTasks)
-        .mockResolvedValueOnce([]);  // Second iteration returns empty
+        .mockResolvedValueOnce([]);
 
       const msg = { workflow_id: 'wf-test', project_id: '1' };
       const payload = { project_id: '1' };
@@ -169,8 +169,8 @@ describe('Phase 2: Remove Coordination Persona LLM Call', () => {
       // Should execute workflow for task 2 (highest priority_score: 500)
       expect(mockEngine.executeWorkflowDefinition).toHaveBeenCalled();
       const executeCall = vi.mocked(mockEngine.executeWorkflowDefinition).mock.calls[0];
-      const initialVars = executeCall[5];  // 6th argument is initialVariables
-      expect(initialVars.task.id).toBe(2);  // Highest priority task
+      const initialVars = executeCall[5];
+      expect(initialVars.task.id).toBe(2);
       expect(initialVars.taskName).toBe('High priority');
       
       // CRITICAL: No LLM coordination call
@@ -181,9 +181,9 @@ describe('Phase 2: Remove Coordination Persona LLM Call', () => {
       // ARRANGE
       // Test that priority_score is primary, but status is secondary tie-breaker
       const mockTasks = [
-        { id: 1, status: 'open', priority_score: 100 },  // Same score as task 2
-        { id: 2, status: 'blocked', priority_score: 100 },  // Same score but blocked (higher priority)
-        { id: 3, status: 'in_review', priority_score: 50 }  // Lower score
+        { id: 1, status: 'open', priority_score: 100 },
+        { id: 2, status: 'blocked', priority_score: 100 },
+        { id: 3, status: 'in_review', priority_score: 50 }
       ];
 
       const mockWorkflow = { name: 'task-flow', version: '3.0.0', steps: [], trigger: { condition: "task_type == 'task' || task_type == 'feature'" } };
@@ -218,8 +218,8 @@ describe('Phase 2: Remove Coordination Persona LLM Call', () => {
       // Should execute workflow for task 2 (blocked status takes priority)
       expect(mockEngine.executeWorkflowDefinition).toHaveBeenCalled();
       const executeCall = vi.mocked(mockEngine.executeWorkflowDefinition).mock.calls[0];
-      const initialVars = executeCall[5];  // 6th argument is initialVariables
-      expect(initialVars.task.id).toBe(2);  // Blocked task (highest priority by status)
+      const initialVars = executeCall[5];
+      expect(initialVars.task.id).toBe(2);
       
       // No coordination LLM call
       expect(persona.sendPersonaRequest).not.toHaveBeenCalled();

@@ -35,7 +35,7 @@ export class WorkflowSelector {
       return 'documentation';
     }
     
-    return 'feature'; // Default to feature
+    return 'feature';
   }
 
   /**

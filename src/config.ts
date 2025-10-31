@@ -86,7 +86,7 @@ function parsePersonaMaxRetries(raw: Record<string, unknown>) {
     if (typeof value === "string") {
       const normalized = value.trim().toLowerCase();
       if (["unlimited", "infinite", "inf", "none", "no-limit", "nolimit"].includes(normalized)) {
-        out[normalizedKey] = null; // null means unlimited retries
+        out[normalizedKey] = null;
         continue;
       }
       // Try to parse as number
@@ -138,7 +138,7 @@ function parseRevisionLimit(value: string | undefined, fallback: number): number
 
 const coordinatorMaxRevisionAttempts = parseRevisionLimit(process.env.COORDINATOR_MAX_REVISION_ATTEMPTS, 5);
 const coordinatorMaxApprovalRetries = parseRevisionLimit(process.env.COORDINATOR_MAX_APPROVAL_RETRIES, 3);
-const coordinatorMaxIterations = parseRevisionLimit(process.env.COORDINATOR_MAX_ITERATIONS, 500); // Allow large projects
+const coordinatorMaxIterations = parseRevisionLimit(process.env.COORDINATOR_MAX_ITERATIONS, 500);
 const planMaxIterationsPerStage = parseRevisionLimit(process.env.PLAN_MAX_ITERATIONS_PER_STAGE, 5);
 const blockedMaxAttempts = parseRevisionLimit(process.env.BLOCKED_MAX_ATTEMPTS, 10);
 const personaTimeoutMaxRetries = parseRevisionLimit(process.env.PERSONA_TIMEOUT_MAX_RETRIES, 3);
@@ -236,7 +236,7 @@ export const cfg = {
   coordinatorMaxIterations,
   planMaxIterationsPerStage,
   blockedMaxAttempts,
-  personaTimeoutMaxRetries, // Global default
+  personaTimeoutMaxRetries,
   personaRetryBackoffIncrementMs,
   // Plan citation and relevance budget settings
   planRequireCitations,

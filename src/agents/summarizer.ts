@@ -4,9 +4,9 @@ import { logger } from "../logger.js";
 import { PERSONAS } from "../personaNames.js";
 
 export type SummarizeOptions = {
-  concise?: boolean; // if true, request very brief direct next steps
+  concise?: boolean;
   maxTokens?: number;
-  persona?: string; // persona name to use, default 'summarization'
+  persona?: string;
 };
 
 // Summarize a single task description via the summarizer persona. Returns the condensed text.

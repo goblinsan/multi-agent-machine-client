@@ -35,7 +35,7 @@ interface StoredMessage {
 interface ConsumerGroupState {
   name: string;
   lastDeliveredId: string;
-  consumers: Map<string, Set<string>>;  // consumer -> pending message IDs
+  consumers: Map<string, Set<string>>;
 }
 
 /**
@@ -43,14 +43,14 @@ interface ConsumerGroupState {
  */
 export class LocalTransport implements MessageTransport {
   private emitter: EventEmitter;
-  private streams: Map<string, StoredMessage[]>;  // stream -> messages
-  private groups: Map<string, Map<string, ConsumerGroupState>>;  // stream -> group -> state
+  private streams: Map<string, StoredMessage[]>;
+  private groups: Map<string, Map<string, ConsumerGroupState>>;
   private messageIdCounter: number = 0;
   private connected: boolean = false;
 
   constructor() {
     this.emitter = new EventEmitter();
-    this.emitter.setMaxListeners(100);  // Support many listeners
+    this.emitter.setMaxListeners(100);
     this.streams = new Map();
     this.groups = new Map();
   }

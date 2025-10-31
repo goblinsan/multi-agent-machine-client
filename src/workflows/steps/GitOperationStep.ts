@@ -209,7 +209,7 @@ export class GitOperationStep extends WorkflowStep {
           const fullArtifactPath = path.join(repoRoot, artifactPath);
           
           let contextExists = false;
-          let hasNewFiles = true;  // Default to true (needs scan) if we can't determine
+          let hasNewFiles = true;
           
           try {
             await fs.access(fullArtifactPath);
@@ -263,7 +263,7 @@ export class GitOperationStep extends WorkflowStep {
           } catch (accessError) {
             // Context artifact doesn't exist
             contextExists = false;
-            hasNewFiles = true;  // No context = needs scan
+            hasNewFiles = true;
             logger.info('Context artifact does not exist', { artifactPath });
           }
           

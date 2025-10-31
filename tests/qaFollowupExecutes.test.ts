@@ -42,7 +42,7 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
         qaFollowupExecuted = true;
         return true;
       }).catch(() => {
-        qaFollowupExecuted = true; // Even failures count as "executed" (didn't hang)
+        qaFollowupExecuted = true;
         return true;
       });
 

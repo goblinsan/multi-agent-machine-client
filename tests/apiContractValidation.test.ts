@@ -29,7 +29,7 @@ describe('API Contract Validation', () => {
       const routes: string[] = [];
       let match;
       while ((match = routePattern.exec(content)) !== null) {
-        routes.push(match[2]); // The route path
+        routes.push(match[2]);
       }
       return routes;
     };

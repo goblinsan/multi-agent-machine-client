@@ -53,7 +53,7 @@ export function slugify(value: string) {
 
   export function normalizeRepoPath(p: string | undefined, fallback: string) {
     if (!p || typeof p !== "string") return fallback;
-    const unescaped = p.replace(/\\/g, "/"); // collapse escaped backslashes
+    const unescaped = p.replace(/\\/g, "/");
     const m = /^([A-Za-z]):\\(.*)$/.exec(unescaped);
     if (m) {
       const drive = m[1].toLowerCase();

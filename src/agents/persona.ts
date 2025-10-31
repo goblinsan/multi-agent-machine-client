@@ -18,7 +18,7 @@ export async function waitForPersonaCompletion(
     ? timeoutMs
     : personaTimeoutMs(persona, cfg);
   const started = Date.now();
-  const transport = r; // Use the passed transport instead of creating a new Redis client
+  const transport = r;
 
   try {
     const streamKey = cfg.eventStream;

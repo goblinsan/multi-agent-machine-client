@@ -36,9 +36,9 @@ describe('PM gating when canonical QA follow-up exists', () => {
     try {
       // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
       await coordinator.handleCoordinator(
-        {}, // r parameter
-        { workflow_id: 'wf-qa-gating', project_id: 'proj-gate' }, // msg parameter
-        { repo: tempRepo } // payload parameter
+        {},
+        { workflow_id: 'wf-qa-gating', project_id: 'proj-gate' },
+        { repo: tempRepo }
       );
       workflowExecuted = true;
     } catch (error) {

@@ -35,7 +35,7 @@ export async function scanRepositoryForContext(repoRoot: string, opts: ContextSc
   const include = opts.include || ['**/*'];
   const exclude = opts.exclude || ['**/.git/**'];
   const max_files = opts.maxFiles ?? 5000;
-  const max_bytes = opts.maxBytes ?? 10 * 1024 * 1024; // 10 MB default cap
+  const max_bytes = opts.maxBytes ?? 10 * 1024 * 1024;
   const max_depth = opts.maxDepth ?? 128;
   const track_lines = opts.trackLines ?? true;
   const track_hash = opts.trackHash ?? false;

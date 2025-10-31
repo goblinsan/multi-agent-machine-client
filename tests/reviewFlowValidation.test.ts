@@ -46,7 +46,7 @@ describe('Review Flow Validation', () => {
     const codeReview = steps['code_review_request'];
     expect(codeReview).toBeDefined();
     expect(codeReview?.depends_on).toEqual(['mark_task_in_review']);
-    expect(codeReview?.condition).toBeUndefined(); // No condition - always runs after mark_in_review
+    expect(codeReview?.condition).toBeUndefined();
     expect(codeReview?.outputs).toContain('code_review_request_status');
 
     // Validate PM handles code review failures (modern workflow uses SubWorkflowStep)
@@ -157,10 +157,10 @@ describe('Review Flow Validation', () => {
 
     function hasCycle(stepName: string): boolean {
       if (recursionStack.has(stepName)) {
-        return true; // Found a cycle
+        return true;
       }
       if (visited.has(stepName)) {
-        return false; // Already checked this path
+        return false;
       }
 
       visited.add(stepName);

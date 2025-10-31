@@ -72,8 +72,8 @@ describe('ContextStep Change Detection', () => {
   });
 
   it('should rescan when source files have been modified since last scan', async () => {
-    const lastScanTime = Date.now() - 60000; // 1 minute ago
-    const newerFileTime = Date.now() - 30000; // 30 seconds ago
+    const lastScanTime = Date.now() - 60000;
+    const newerFileTime = Date.now() - 30000;
 
     // Mock context files exist
     (fs.access as any).mockResolvedValue(undefined);
@@ -112,8 +112,8 @@ describe('ContextStep Change Detection', () => {
   });
 
   it('should reuse existing context when source files unchanged', async () => {
-    const lastScanTime = Date.now() - 60000; // 1 minute ago
-    const olderFileTime = Date.now() - 120000; // 2 minutes ago
+    const lastScanTime = Date.now() - 60000;
+    const olderFileTime = Date.now() - 120000;
 
     // Mock context files exist
     (fs.access as any).mockResolvedValue(undefined);

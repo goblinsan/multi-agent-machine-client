@@ -53,7 +53,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
   }
   
   function taskStatusPriority(status: string) {
-    if (!status) return 3;  // Default to "open" priority
+    if (!status) return 3;
     const normalized = normalizeTaskStatus(status);
     if (normalized in TASK_STATUS_PRIORITY) return TASK_STATUS_PRIORITY[normalized];
     // Fallback pattern matching (in priority order)
@@ -62,7 +62,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     if (status.includes("progress") || status.includes("doing") || status.includes("work") || status.includes("active")) return 2;
     if (status.includes("done") || status.includes("complete") || status.includes("closed")) return 5;
     if (status.includes("cancel")) return 6;
-    return 3;  // Default to "open" priority
+    return 3;
   }
   
   function taskDue(value: any): number {
@@ -141,7 +141,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       for (const task of taskCandidates(source)) {
         const status = normalizeTaskStatus(task?.status ?? task?.state ?? task?.phase ?? task?.stage ?? task?.progress);
         const priority = taskStatusPriority(status);
-        if (priority >= 5) continue; // skip completed/cancelled tasks
+        if (priority >= 5) continue;
         candidates.push({
           task,
           priority,
@@ -308,7 +308,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       }
 
       // derive project_slug if available (use provided projectName or fallback to known project slug)
-      const derivedProjectSlug = options.projectName || undefined; // prefer projectName for slug
+      const derivedProjectSlug = options.projectName || undefined;
       // Use deterministic external id for QA follow-ups to prevent duplicates across retries
       const externalId = options.stage === 'qa'
         ? computeQaFollowupExternalId(options.projectId, options.parentTaskDescriptor)

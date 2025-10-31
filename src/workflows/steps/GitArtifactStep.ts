@@ -8,12 +8,12 @@ import path from 'path';
  * Configuration for git artifact step
  */
 interface GitArtifactStepConfig {
-  source_output: string;              // Step output key or variable containing data
-  artifact_path: string;              // Path in .ma/ directory (e.g., ".ma/tasks/${task.id}/03-plan-final.md")
-  commit_message: string;             // Git commit message
-  format?: 'markdown' | 'json';       // Output format (default: markdown)
-  extract_field?: string;             // Optional: extract nested field from source data
-  template?: string;                  // Optional: template path for formatting
+  source_output: string;
+  artifact_path: string;
+  commit_message: string;
+  format?: 'markdown' | 'json';
+  extract_field?: string;
+  template?: string;
 }
 
 /**

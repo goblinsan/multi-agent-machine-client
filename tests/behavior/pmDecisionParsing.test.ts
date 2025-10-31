@@ -64,8 +64,8 @@ describe('PM Decision Parsing', () => {
         follow_up_tasks: [
           {
             title: '🚨 [QA] Fix authentication test',
-            priority: 1200, // Critical QA = 1200
-            milestone_id: 'milestone-123', // Same milestone
+            priority: 1200,
+            milestone_id: 'milestone-123',
             assignee_persona: 'implementation-planner'
           }
         ]
@@ -103,8 +103,8 @@ describe('PM Decision Parsing', () => {
         follow_up_tasks: [
           {
             title: '📋 [Code] Refactor validation logic',
-            priority: 50, // Low priority = 50
-            milestone_id: 'backlog-milestone', // Deferred to backlog
+            priority: 50,
+            milestone_id: 'backlog-milestone',
             assignee_persona: 'implementation-planner'
           }
         ]
@@ -147,7 +147,7 @@ This should be addressed before deployment.
         follow_up_tasks: [
           {
             title: '🚨 [Security] Fix SQL injection in query builder',
-            priority: 1000, // Critical Security = 1000
+            priority: 1000,
             milestone_id: 'milestone-123'
           }
         ]
@@ -235,16 +235,16 @@ This should be addressed before deployment.
       // Should route correctly
       const tasks = result.context.pm_decision.follow_up_tasks;
       expect(tasks.find(t => t.title.includes('QA'))).toMatchObject({
-        priority: 1200, // Critical QA
-        milestone_id: 'milestone-123' // Immediate
+        priority: 1200,
+        milestone_id: 'milestone-123'
       });
       expect(tasks.find(t => t.title.includes('Security'))).toMatchObject({
-        priority: 1000, // High Security
-        milestone_id: 'milestone-123' // Immediate
+        priority: 1000,
+        milestone_id: 'milestone-123'
       });
       expect(tasks.find(t => t.title.includes('Refactor'))).toMatchObject({
-        priority: 50, // Medium deferred
-        milestone_id: 'backlog-milestone' // Backlog
+        priority: 50,
+        milestone_id: 'backlog-milestone'
       });
 
       // Should log warning about both fields
@@ -337,7 +337,7 @@ No immediate action required.
       const result = await parser.execute(context);
 
       result.context.pm_decision.follow_up_tasks.forEach(task => {
-        expect(task.priority).toBe(1200); // QA always 1200
+        expect(task.priority).toBe(1200);
       });
     });
 
@@ -371,7 +371,7 @@ No immediate action required.
       const result = await parser.execute(context);
 
       result.context.pm_decision.follow_up_tasks.forEach(task => {
-        expect(task.priority).toBe(1000); // Code/Security/DevOps = 1000
+        expect(task.priority).toBe(1000);
       });
     });
 
@@ -400,7 +400,7 @@ No immediate action required.
       const result = await parser.execute(context);
 
       result.context.pm_decision.follow_up_tasks.forEach(task => {
-        expect(task.priority).toBe(50); // Deferred = 50
+        expect(task.priority).toBe(50);
         expect(task.milestone_id).toBe('backlog-milestone');
       });
     });
@@ -428,7 +428,7 @@ No immediate action required.
       const result = await parser.execute(context);
 
       expect(result.context.pm_decision.follow_up_tasks[0]).toMatchObject({
-        milestone_id: 'milestone-123', // Same as parent
+        milestone_id: 'milestone-123',
         priority: 1200
       });
     });
@@ -454,7 +454,7 @@ No immediate action required.
       const result = await parser.execute(context);
 
       expect(result.context.pm_decision.follow_up_tasks[0]).toMatchObject({
-        milestone_id: 'backlog-999', // Routed to backlog
+        milestone_id: 'backlog-999',
         priority: 50
       });
     });
@@ -473,7 +473,7 @@ No immediate action required.
 
       const context: WorkflowContext = {
         pm_response: pmResponse,
-        milestone_id: null, // Missing!
+        milestone_id: null,
         backlog_milestone_id: 'backlog-999'
       };
 
@@ -495,7 +495,7 @@ No immediate action required.
           {
             title: '🚨 [QA] Test failure',
             priority: 'critical',
-            assignee_persona: 'tester-qa' // Wrong! Should be overridden
+            assignee_persona: 'tester-qa'
           },
           {
             title: '🚨 [Code] Code issue',

@@ -79,7 +79,7 @@ export class TaskFetcher {
     const scoreB = b?.priority_score ?? b?.priorityScore ?? 0;
     
     if (scoreA !== scoreB) {
-      return scoreB - scoreA;  // Higher score first (descending)
+      return scoreB - scoreA;
     }
     
     // SECOND: Use status-based priority
@@ -104,7 +104,7 @@ export class TaskFetcher {
    */
   private getTaskPriority(task: any): number {
     const status = task?.status;
-    if (!status) return 3;  // Default to "open" priority
+    if (!status) return 3;
     
     const normalized = String(status).toLowerCase().trim().replace(/[^a-z0-9]+/g, '_');
     
@@ -141,7 +141,7 @@ export class TaskFetcher {
     if (normalized.includes('review')) return 1;
     if (normalized.includes('progress') || normalized.includes('doing') || normalized.includes('work') || normalized.includes('active')) return 2;
     
-    return 3;  // Default to "open" priority
+    return 3;
   }
 
   /**

@@ -14,8 +14,8 @@
  * Message data structure
  */
 export interface Message {
-  id: string;  // Unique message ID (Redis stream ID or generated UUID)
-  fields: Record<string, string>;  // Message payload
+  id: string;
+  fields: Record<string, string>;
 }
 
 /**
@@ -53,15 +53,15 @@ export interface Subscription {
  * Options for creating a consumer group
  */
 export interface CreateGroupOptions {
-  MKSTREAM?: boolean;  // Create stream if it doesn't exist
+  MKSTREAM?: boolean;
 }
 
 /**
  * Options for reading from a stream
  */
 export interface ReadOptions {
-  COUNT?: number;    // Maximum number of messages to read
-  BLOCK?: number;    // Block for N milliseconds if no messages available
+  COUNT?: number;
+  BLOCK?: number;
 }
 
 /**
