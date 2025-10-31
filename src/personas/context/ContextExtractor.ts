@@ -33,7 +33,7 @@ export class ContextExtractor {
    * Extract all context needed for a persona request
    */
   async extractContext(params: ContextExtractionParams): Promise<ExtractedContext> {
-    const { persona, workflowId, intent, payload, repo, branch } = params;
+    const { persona, repo, branch } = params;
 
     // Extract user text from payload (priority order)
     const userText = await this.extractUserText(params);
@@ -41,8 +41,8 @@ export class ContextExtractor {
     // Get scan summary if repo provided
     const scanSummary = await this.extractScanSummary(persona, repo, branch);
 
-    // Get dashboard context if project/task provided
-    const dashboardContext = await this.extractDashboardContext(persona, payload);
+    // Get dashboard context if project/task provided (stub for now)
+    const dashboardContext = await this.extractDashboardContext(persona, params.payload);
 
     return {
       userText,
@@ -223,8 +223,8 @@ export class ContextExtractor {
    * TODO: Implement dashboard context fetching when needed
    */
   private async extractDashboardContext(
-    persona: string,
-    payload: any
+    _persona: string,
+    _payload: any
   ): Promise<string | null> {
     // Future: Fetch context from dashboard API
     return null;

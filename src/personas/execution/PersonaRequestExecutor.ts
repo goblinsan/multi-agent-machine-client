@@ -36,7 +36,7 @@ export class PersonaRequestExecutor {
    * Execute a persona request by calling LLM or routing to coordinator
    */
   async execute(params: PersonaRequestParams): Promise<any> {
-    const { persona, workflowId, intent, payload, repo, branch } = params;
+    const { persona } = params;
 
     // SPECIAL CASE: coordination persona routes to WorkflowCoordinator instead of LLM
     if (persona === 'coordination') {

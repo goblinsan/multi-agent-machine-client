@@ -72,7 +72,7 @@ describe('Coordination Persona Routing', () => {
     });
 
     // Start consumer for coordination persona
-    const startPromise = consumer.start({
+    await consumer.start({
       personas: ['coordination'],
       consumerId: 'test-consumer',
       blockMs: 1000
@@ -115,7 +115,7 @@ describe('Coordination Persona Routing', () => {
     });
 
     // Start consumer for context persona
-    const startPromise = consumer.start({
+    await consumer.start({
       personas: ['context'],
       consumerId: 'test-consumer',
       blockMs: 1000
@@ -159,7 +159,7 @@ describe('Coordination Persona Routing', () => {
     });
 
     // Start consumer
-    const startPromise = consumer.start({
+    await consumer.start({
       personas: ['coordination'],
       consumerId: 'test-consumer',
       blockMs: 1000
