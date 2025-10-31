@@ -167,16 +167,24 @@ describe('PersonaConsumer task context extraction', () => {
     expect(capturedUserText).toBe('Analyze the repository structure');
   });
 
-  it('should use task.title if task.description is missing', async () => {
-    let capturedUserText: string | undefined;
+  it('should log error if task.description is missing', async () => {
+    let errorLogged = false;
+    let errorDetails: any = null;
     
-    const buildMessagesModule = await import('../src/personas/PersonaRequestHandler.js');
-    const originalBuildMessages = buildMessagesModule.buildPersonaMessages;
-    vi.spyOn(buildMessagesModule, 'buildPersonaMessages').mockImplementation((input: any) => {
-      capturedUserText = input.userText;
-      return originalBuildMessages(input);
+    // Spy on logger to catch the error
+    const loggerModule = await import('../src/logger.js');
+    const originalError = loggerModule.logger.error;
+    vi.spyOn(loggerModule.logger, 'error').mockImplementation((msg: string, meta?: any) => {
+      if (msg === 'PersonaConsumer: CRITICAL - Task has no description') {
+        errorLogged = true;
+        errorDetails = meta;
+      }
+      return originalError(msg, meta);
     });
 
+    const buildMessagesModule = await import('../src/personas/PersonaRequestHandler.js');
+    
+    // Mock to prevent actual LLM call
     vi.spyOn(buildMessagesModule, 'callPersonaModel').mockResolvedValue({
       content: 'test response',
       duration_ms: 100
@@ -188,7 +196,7 @@ describe('PersonaConsumer task context extraction', () => {
       batchSize: 1
     });
 
-    await new Promise(resolve => setTimeout(resolve, 5));
+    await new Promise(resolve => setTimeout(resolve, 10));
 
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-test-4',
@@ -205,10 +213,13 @@ describe('PersonaConsumer task context extraction', () => {
       })
     });
 
-    await new Promise(resolve => setTimeout(resolve, 1));
+    await new Promise(resolve => setTimeout(resolve, 200)); // Give time for processing
     await consumer.stop();
 
-    expect(capturedUserText).toBe('Task: Implement logging system');
+    expect(errorLogged).toBe(true);
+    expect(errorDetails).toBeDefined();
+    expect(errorDetails.taskTitle).toBe('Implement logging system');
+    expect(errorDetails.reason).toContain('Task description is required');
   });
 
   it('should fall back to intent if no other context available', async () => {

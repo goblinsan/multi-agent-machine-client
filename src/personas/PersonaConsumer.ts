@@ -431,6 +431,15 @@ export class PersonaConsumer {
       // Extract task description for planning/implementation context
       userText = `Task: ${payload.task.title || 'Untitled'}\n\nDescription: ${payload.task.description}`;
       
+      logger.info('PersonaConsumer: Using task description', {
+        persona,
+        workflowId,
+        taskId: payload.task.id,
+        taskTitle: payload.task.title,
+        hasDescription: true,
+        descriptionLength: payload.task.description.length
+      });
+      
       // Add task type/scope context if available
       if (payload.task.type) {
         userText += `\n\nType: ${payload.task.type}`;
@@ -440,8 +449,32 @@ export class PersonaConsumer {
       }
     } else if (payload.description) {
       userText = payload.description;
+      logger.info('PersonaConsumer: Using payload.description', {
+        persona,
+        workflowId,
+        descriptionLength: payload.description.length
+      });
     } else if (payload.task && payload.task.title) {
-      userText = `Task: ${payload.task.title}`;
+      // Task exists but has no description - this is a critical error for planner personas
+      logger.error('PersonaConsumer: CRITICAL - Task has no description', {
+        persona,
+        workflowId,
+        taskId: payload.task.id,
+        taskTitle: payload.task.title,
+        taskKeys: Object.keys(payload.task),
+        reason: 'Task description is required for planning and implementation'
+      });
+      throw new Error(`Task ${payload.task.id} ("${payload.task.title}") has no description. Cannot proceed with planning.`);
+    } else {
+      logger.error('PersonaConsumer: No task context found in payload', {
+        persona,
+        workflowId,
+        intent,
+        payloadKeys: Object.keys(payload),
+        hasTask: !!payload.task,
+        taskKeys: payload.task ? Object.keys(payload.task) : []
+      });
+      userText = intent || 'planning';
     }
 
     // Get scan summary if repo is provided
