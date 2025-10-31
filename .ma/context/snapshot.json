@@ -1,5 +1,5 @@
 {
-  "timestamp": 1761874438142,
+  "timestamp": 1761874845874,
   "files": [
     {
       "path": ".DS_Store",
@@ -154,13 +154,13 @@
     {
       "path": ".husky/check-file-size.sh",
       "bytes": 1514,
-      "mtime": 1761874020243.898,
+      "mtime": 1761874758261.139,
       "lines": 54
     },
     {
       "path": ".husky/pre-commit",
       "bytes": 860,
-      "mtime": 1761874040004.372,
+      "mtime": 1761874757954.407,
       "lines": 38
     },
     {
@@ -268,7 +268,7 @@
     {
       "path": "docs/MAINTAINABILITY_GUIDELINES.md",
       "bytes": 4133,
-      "mtime": 1761874254973.7263,
+      "mtime": 1761874758339.2373,
       "lines": 169
     },
     {
@@ -280,7 +280,7 @@
     {
       "path": "docs/REFACTORING_PLAN_PERSONA_CONSUMER.md",
       "bytes": 5390,
-      "mtime": 1761874092043.416,
+      "mtime": 1761874758298.173,
       "lines": 160
     },
     {
@@ -375,9 +375,9 @@
     },
     {
       "path": "machine-client.log",
-      "bytes": 1776839,
-      "mtime": 1761874438116.3547,
-      "lines": 7820
+      "bytes": 2463406,
+      "mtime": 1761874845848.0205,
+      "lines": 10833
     },
     {
       "path": "package-lock.json",
@@ -652,7 +652,7 @@
   ],
   "totals": {
     "files": 108,
-    "bytes": 5155292,
+    "bytes": 5841859,
     "depth": 10
   }
 }

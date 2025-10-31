@@ -1,11 +1,11 @@
 # Repository Context Summary
 
-Generated: 2025-10-31T01:33:58.142Z
+Generated: 2025-10-31T01:40:45.874Z
 
 ## Statistics
 
 - **Total Files**: 108
-- **Total Size**: 5034.46 KB
+- **Total Size**: 5704.94 KB
 - **Max Depth**: 10
 
 ## Directory Structure
@@ -25,7 +25,7 @@ Generated: 2025-10-31T01:33:58.142Z
   dashboard-actions.log (2.1KB)
   debug-transport.log (2642.9KB)
   eslint.config.js (1.3KB)
-  machine-client.log (1735.2KB)
+  machine-client.log (2405.7KB)
   package-lock.json (129.0KB)
   package.json (1.4KB)
 .github/
@@ -162,7 +162,7 @@ src/dashboard-backend/node_modules/.bin/
 - `examples/multi-agent-log-summarizer.json` (14.3KB, 398 lines)
 - `examples/project-setup-example.json` (13.4KB, 366 lines)
 - `examples/transport-examples.ts` (9.1KB, 329 lines)
-- `machine-client.log` (1735.2KB, 7820 lines)
+- `machine-client.log` (2405.7KB, 10833 lines)
 - `package-lock.json` (129.0KB, 3819 lines)
 - `scripts/monitor-redis-streams.ts` (7.4KB, 250 lines)
 - `src/agents/parsers/DiffParser.ts` (12.2KB, 467 lines)
