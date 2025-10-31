@@ -1,9 +1,9 @@
 import { MessageTransport } from '../transport/index.js';
 import { cfg } from '../config.js';
-import { buildPersonaMessages, callPersonaModel } from './PersonaRequestHandler.js';
-import { SYSTEM_PROMPTS } from '../personas.js';
 import { logger } from '../logger.js';
 import { ContextExtractor } from './context/ContextExtractor.js';
+import { MessageFormatter } from './messaging/MessageFormatter.js';
+import { PersonaRequestExecutor } from './execution/PersonaRequestExecutor.js';
 
 export type PersonaConsumerConfig = {
   /** List of personas this consumer should handle */
@@ -36,14 +36,23 @@ export class PersonaConsumer {
   private batchSize: number;
   private isShuttingDown: boolean = false;
   private personaLoops: Map<string, Promise<void>> = new Map();
-  private contextExtractor: ContextExtractor;
+  private requestExecutor: PersonaRequestExecutor;
+  private messageFormatter: MessageFormatter;
 
-  constructor(transport: MessageTransport, contextExtractor?: ContextExtractor) {
+  constructor(
+    transport: MessageTransport,
+    requestExecutor?: PersonaRequestExecutor,
+    messageFormatter?: MessageFormatter
+  ) {
     this.transport = transport;
     this.consumerId = cfg.consumerId;
     this.blockMs = 5000; // 5 second blocking reads
     this.batchSize = 1;  // Process one message at a time for now
-    this.contextExtractor = contextExtractor || new ContextExtractor();
+    
+    // Initialize dependencies
+    const contextExtractor = new ContextExtractor();
+    this.requestExecutor = requestExecutor || new PersonaRequestExecutor(transport, contextExtractor);
+    this.messageFormatter = messageFormatter || new MessageFormatter();
   }
 
   /**
@@ -253,21 +262,23 @@ export class PersonaConsumer {
       });
 
       // Publish result to event stream
-      await this.transport.xAdd(cfg.eventStream, '*', {
-        workflow_id: workflowId,
-        from_persona: persona,
-        status: 'done',
-        corr_id: corrId,
-        step: step,
-        result: JSON.stringify(result),
-        duration_ms: String(Date.now() - started)
+      const durationMs = Date.now() - started;
+      const message = this.messageFormatter.formatSuccessResponse({
+        workflowId,
+        persona,
+        corrId,
+        step,
+        result,
+        durationMs
       });
+      
+      await this.transport.xAdd(cfg.eventStream, '*', message);
 
       logger.info('PersonaConsumer: Published result', {
         persona,
         workflowId,
         corrId,
-        durationMs: Date.now() - started
+        durationMs
       });
 
       // Acknowledge the message
@@ -285,19 +296,16 @@ export class PersonaConsumer {
       });
 
       // Publish error result to event stream
-      await this.transport.xAdd(cfg.eventStream, '*', {
-        workflow_id: workflowId,
-        from_persona: persona,
-        status: 'done',
-        corr_id: corrId,
-        step: step,
-        result: JSON.stringify({
-          status: 'fail',
-          error: error.message,
-          details: 'Persona execution failed - check logs for details'
-        }),
-        duration_ms: String(durationMs)
+      const errorMessage = this.messageFormatter.formatErrorResponse({
+        workflowId,
+        persona,
+        corrId,
+        step,
+        error,
+        durationMs
       });
+      
+      await this.transport.xAdd(cfg.eventStream, '*', errorMessage);
 
       // Acknowledge the message even on error to prevent infinite retries
       await this.transport.xAck(cfg.requestStream, group, messageId);
@@ -305,8 +313,7 @@ export class PersonaConsumer {
   }
 
   /**
-   * Execute a persona request by calling LM Studio
-   * This is where the actual AI work happens
+   * Execute a persona request - delegates to PersonaRequestExecutor
    */
   private async executePersonaRequest(params: {
     persona: string;
@@ -319,103 +326,7 @@ export class PersonaConsumer {
     projectId?: string;
     taskId?: string;
   }): Promise<any> {
-    const { persona, workflowId, intent, payload, repo, branch } = params;
-
-    // SPECIAL CASE: coordination persona routes to WorkflowCoordinator instead of LLM
-    if (persona === 'coordination') {
-      logger.info('PersonaConsumer: Routing coordination request to WorkflowCoordinator', {
-        workflowId,
-        projectId: payload.project_id || params.projectId,
-        intent
-      });
-      
-      const { WorkflowCoordinator } = await import('../workflows/WorkflowCoordinator.js');
-      const coordinator = new WorkflowCoordinator();
-      
-      // Call handleCoordinator with appropriate parameters
-      await coordinator.handleCoordinator(
-        this.transport,
-        {} as any, // redis client (not used with transport abstraction)
-        {
-          workflow_id: workflowId,
-          project_id: payload.project_id || params.projectId,
-          repo: payload.repo || repo,
-          base_branch: payload.base_branch || branch
-        },
-        payload
-      );
-      
-      return {
-        status: 'success',
-        message: 'WorkflowCoordinator execution completed'
-      };
-    }
-
-    // Get persona configuration
-    const model = cfg.personaModels[persona];
-    if (!model) {
-      throw new Error(`No model configured for persona '${persona}'`);
-    }
-
-    // Get system prompt for this persona
-    const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} persona.`;
-
-    // Extract context using ContextExtractor
-    const context = await this.contextExtractor.extractContext({
-      persona,
-      workflowId,
-      intent,
-      payload,
-      repo,
-      branch
-    });
-
-    const { userText, scanSummary: scanSummaryForPrompt, dashboardContext } = context;
-
-    // Build messages for LLM
-    const messages = buildPersonaMessages({
-      persona,
-      systemPrompt,
-      userText,
-      scanSummaryForPrompt,
-      dashboardContext,
-      qaHistory: payload.qa_history,
-      planningHistory: payload.planning_history,
-      promptFileSnippets: payload.snippets,
-      extraSystemMessages: payload.extra_system_messages
-    });
-
-    // Get timeout for this persona
-    const timeoutMs = payload.timeout_ms || cfg.personaTimeouts[persona] || cfg.personaDefaultTimeoutMs;
-
-    logger.debug('PersonaConsumer: Calling LLM', {
-      persona,
-      model,
-      messageCount: messages.length,
-      timeoutMs
-    });
-
-    // Call the model
-    const response = await callPersonaModel({
-      persona,
-      model,
-      messages,
-      timeoutMs
-    });
-
-    logger.info('PersonaConsumer: LLM call completed', {
-      persona,
-      workflowId,
-      durationMs: response.duration_ms,
-      contentLength: response.content.length
-    });
-
-    // Return response in expected format
-    return {
-      output: response.content,
-      duration_ms: response.duration_ms,
-      status: 'pass' // Default to pass - coordinator will interpret the response
-    };
+    return await this.requestExecutor.execute(params);
   }
 
   /**
