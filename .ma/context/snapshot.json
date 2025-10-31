@@ -1,5 +1,5 @@
 {
-  "timestamp": 1761872234413,
+  "timestamp": 1761874438142,
   "files": [
     {
       "path": ".DS_Store",
@@ -152,10 +152,16 @@
       "lines": 2
     },
     {
+      "path": ".husky/check-file-size.sh",
+      "bytes": 1514,
+      "mtime": 1761874020243.898,
+      "lines": 54
+    },
+    {
       "path": ".husky/pre-commit",
-      "bytes": 804,
-      "mtime": 1761870541103.98,
-      "lines": 35
+      "bytes": 860,
+      "mtime": 1761874040004.372,
+      "lines": 38
     },
     {
       "path": ".vscode/tasks.json",
@@ -260,10 +266,22 @@
       "lines": 642
     },
     {
+      "path": "docs/MAINTAINABILITY_GUIDELINES.md",
+      "bytes": 4133,
+      "mtime": 1761874254973.7263,
+      "lines": 169
+    },
+    {
       "path": "docs/PRE_COMMIT_HOOKS_SETUP.md",
       "bytes": 5370,
       "mtime": 1761503513988.0874,
       "lines": 216
+    },
+    {
+      "path": "docs/REFACTORING_PLAN_PERSONA_CONSUMER.md",
+      "bytes": 5390,
+      "mtime": 1761874092043.416,
+      "lines": 160
     },
     {
       "path": "docs/TESTING_STRATEGY.md",
@@ -357,9 +375,9 @@
     },
     {
       "path": "machine-client.log",
-      "bytes": 91077,
-      "mtime": 1761872234381.029,
-      "lines": 399
+      "bytes": 1776839,
+      "mtime": 1761874438116.3547,
+      "lines": 7820
     },
     {
       "path": "package-lock.json",
@@ -592,7 +610,7 @@
     {
       "path": "src/dashboard-backend/data/dashboard.db",
       "bytes": 118784,
-      "mtime": 1761872158164.9714,
+      "mtime": 1761872537662.0793,
       "lines": 477
     },
     {
@@ -633,8 +651,8 @@
     }
   ],
   "totals": {
-    "files": 105,
-    "bytes": 3458437,
+    "files": 108,
+    "bytes": 5155292,
     "depth": 10
   }
 }

@@ -1,11 +1,11 @@
 # Repository Context Summary
 
-Generated: 2025-10-31T00:57:14.413Z
+Generated: 2025-10-31T01:33:58.142Z
 
 ## Statistics
 
-- **Total Files**: 105
-- **Total Size**: 3377.38 KB
+- **Total Files**: 108
+- **Total Size**: 5034.46 KB
 - **Max Depth**: 10
 
 ## Directory Structure
@@ -25,12 +25,13 @@ Generated: 2025-10-31T00:57:14.413Z
   dashboard-actions.log (2.1KB)
   debug-transport.log (2642.9KB)
   eslint.config.js (1.3KB)
-  machine-client.log (88.9KB)
+  machine-client.log (1735.2KB)
   package-lock.json (129.0KB)
   package.json (1.4KB)
 .github/
   copilot-instructions.md (1.1KB)
 .husky/
+  check-file-size.sh (1.5KB)
   pre-commit (0.8KB)
 .husky/_/
   .gitignore (0.0KB)
@@ -64,7 +65,9 @@ docs/
   ESLINT_WARNING_ANALYSIS.md (8.3KB)
   GIT_ARTIFACT_IMPLEMENTATION_COMPLETE.md (7.2KB)
   GIT_ARTIFACT_PERSISTENCE_STRATEGY.md (21.6KB)
+  MAINTAINABILITY_GUIDELINES.md (4.0KB)
   PRE_COMMIT_HOOKS_SETUP.md (5.2KB)
+  REFACTORING_PLAN_PERSONA_CONSUMER.md (5.3KB)
   TESTING_STRATEGY.md (13.0KB)
   WORKFLOW_OPTIMIZATION_COMPLETE.md (13.1KB)
   WORKFLOW_REDESIGN_REQUIREMENTS.md (16.0KB)
@@ -159,7 +162,7 @@ src/dashboard-backend/node_modules/.bin/
 - `examples/multi-agent-log-summarizer.json` (14.3KB, 398 lines)
 - `examples/project-setup-example.json` (13.4KB, 366 lines)
 - `examples/transport-examples.ts` (9.1KB, 329 lines)
-- `machine-client.log` (88.9KB, 399 lines)
+- `machine-client.log` (1735.2KB, 7820 lines)
 - `package-lock.json` (129.0KB, 3819 lines)
 - `scripts/monitor-redis-streams.ts` (7.4KB, 250 lines)
 - `src/agents/parsers/DiffParser.ts` (12.2KB, 467 lines)
@@ -171,10 +174,10 @@ src/dashboard-backend/node_modules/.bin/
 
 ## File Types
 
-- .md: 26 files
+- .md: 28 files
 - (no extension): 23 files
 - .ts: 20 files
-- .sh: 7 files
+- .sh: 8 files
 - .json: 7 files
 - .js: 7 files
 - .log: 3 files
