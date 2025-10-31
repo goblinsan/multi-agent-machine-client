@@ -23,19 +23,26 @@ export class WorkflowLoader {
     if (this.defaultWorkflowsLoaded) return;
     
     const baseDir = process.cwd();
-    const defsDir = join(baseDir, 'src', 'workflows', 'definitions');
+    const legacyDir = join(baseDir, 'src', 'workflows', 'definitions');
+    const v3Dir = join(baseDir, 'src', 'workflows', 'definitions-v3');
     const subDir = join(baseDir, 'src', 'workflows', 'sub-workflows');
     
     try {
-      await this.loadWorkflowsFromDirectory(defsDir);
-    } catch (e) {
-      // no-op
+      await this.loadWorkflowsFromDirectory(legacyDir);
+    } catch {
+      void 0;
+    }
+    
+    try {
+      await this.loadWorkflowsFromDirectory(v3Dir);
+    } catch {
+      void 0;
     }
     
     try {
       await this.loadWorkflowsFromDirectory(subDir);
-    } catch (e) {
-      // no-op
+    } catch {
+      void 0;
     }
     
     this.defaultWorkflowsLoaded = true;
@@ -121,7 +128,8 @@ export class WorkflowLoader {
     
     // Validate step types
     for (const step of definition.steps) {
-      if (!this.stepRegistry.has(step.type)) {
+      const hasTemplate = !!(step as any).template;
+      if (!hasTemplate && !this.stepRegistry.has(step.type)) {
         throw new Error(`Unknown step type '${step.type}' in step '${step.name}'`);
       }
     }

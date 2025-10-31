@@ -23,7 +23,7 @@ steps:
       persona: "code-reviewer"
       intent: "code_review"
       payload:
-        task: "${task}"
+        task: ${task}
         plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         repo: "${repo_remote}"
         branch: "${featureBranchName}"
@@ -82,7 +82,7 @@ steps:
       persona: "security-review"
       intent: "security_review"
       payload:
-        task: "${task}"
+        task: ${task}
         plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         code_review_result: "${code_review_request_result}"
         repo: "${repo_remote}"
@@ -142,7 +142,7 @@ steps:
       persona: "devops"
       intent: "devops_review"
       payload:
-        task: "${task}"
+        task: ${task}
         plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
         code_review_result: "${code_review_request_result}"
         security_result: "${security_request_result}"

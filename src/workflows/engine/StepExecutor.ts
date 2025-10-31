@@ -2,13 +2,16 @@ import type { WorkflowStep, WorkflowStepConfig } from './WorkflowStep';
 import type { WorkflowContext } from './WorkflowContext';
 import type { WorkflowDefinition, WorkflowStepDefinition } from '../WorkflowEngine';
 import { ConfigResolver } from './ConfigResolver';
+import { templateLoader } from './TemplateLoader.js';
 import { personaTimeoutMs } from '../../util.js';
 import { cfg } from '../../config.js';
 import { logger } from '../../logger.js';
 
-/**
- * Handles step execution, timeout management, and instance creation
- */
+interface ExtendedStepDefinition extends WorkflowStepDefinition {
+  template?: string;
+  overrides?: Partial<WorkflowStepConfig>;
+}
+
 export class StepExecutor {
   private stepRegistry: Map<string, new (...args: any[]) => WorkflowStep>;
   private configResolver: ConfigResolver;
@@ -73,29 +76,44 @@ export class StepExecutor {
     }
   }
 
-  /**
-   * Create a step instance from definition
-   */
   private createStepInstance(stepDef: WorkflowStepDefinition, context: WorkflowContext): WorkflowStep {
-    const StepClass = this.stepRegistry.get(stepDef.type);
-    if (!StepClass) {
-      throw new Error(`Unknown step type: ${stepDef.type}`);
+    const extendedDef = stepDef as ExtendedStepDefinition;
+    
+    let finalStepConfig: WorkflowStepConfig;
+
+    if (extendedDef.template) {
+      const expanded = templateLoader.expandTemplate(
+        extendedDef.template,
+        stepDef.name,
+        extendedDef.overrides
+      );
+      
+      finalStepConfig = {
+        ...expanded,
+        depends_on: stepDef.depends_on,
+        condition: stepDef.condition
+      };
+    } else {
+      finalStepConfig = {
+        name: stepDef.name,
+        type: stepDef.type || 'undefined',
+        description: stepDef.description,
+        depends_on: stepDef.depends_on,
+        condition: stepDef.condition,
+        config: stepDef.config,
+        outputs: stepDef.outputs
+      };
     }
 
-    // Resolve configuration values from context
-    const resolvedConfig = this.configResolver.resolveConfiguration(stepDef.config, context);
+    const StepClass = this.stepRegistry.get(finalStepConfig.type);
+    if (!StepClass) {
+      throw new Error(`Unknown step type '${finalStepConfig.type}' in step '${stepDef.name}'`);
+    }
 
-    const stepConfig: WorkflowStepConfig = {
-      name: stepDef.name,
-      type: stepDef.type,
-      description: stepDef.description,
-      depends_on: stepDef.depends_on,
-      condition: stepDef.condition,
-      config: resolvedConfig,
-      outputs: stepDef.outputs
-    };
+    const resolvedConfig = this.configResolver.resolveConfiguration(finalStepConfig.config || {}, context);
+    finalStepConfig.config = resolvedConfig;
 
-    return new StepClass(stepConfig);
+    return new StepClass(finalStepConfig);
   }
 
   /**

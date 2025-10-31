@@ -1,0 +1,148 @@
+name: in-review-task-flow
+description: Resume workflow for tasks already in review status
+version: 3.0.0
+
+trigger:
+  condition: status == 'in_review' || status == 'review' || status == 'in-code-review'
+
+context:
+  repo_required: true
+
+steps:
+  - template: code_review
+    name: code_review_request
+    overrides:
+      config:
+        payload:
+          resume_review: true
+
+  - name: commit_code_review_result
+    type: GitArtifactStep
+    depends_on: [code_review_request]
+    config:
+      source_output: code_review_request_result
+      artifact_path: .ma/tasks/${task.id}/reviews/code-review.json
+      commit_message: "refactor(ma): code review for task ${task.id}"
+      format: json
+
+  - name: handle_code_review_failure
+    type: SubWorkflowStep
+    depends_on: [code_review_request]
+    condition: ${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'
+    config:
+      workflow: review-failure-handling
+      inputs:
+        review_type: code_review
+        review_result: ${code_review_request_result}
+        review_status: ${code_review_request_status}
+        milestone_context: ${milestone}
+        task: ${task}
+        parent_task_id: ${taskId}
+        priority_scores:
+          urgent: 1000
+          deferred: 50
+        config:
+          block_original_task: true
+        project_id: ${projectId}
+        repo: ${repo_remote}
+        tdd_aware: ${tdd_aware || false}
+        tdd_stage: ${tdd_stage || 'implementation'}
+        existing_tasks: []
+
+  - template: security_review
+    name: security_request
+    depends_on: [code_review_request]
+    condition: ${code_review_request_status} == 'pass'
+    overrides:
+      config:
+        payload:
+          resume_review: true
+
+  - name: commit_security_result
+    type: GitArtifactStep
+    depends_on: [security_request]
+    config:
+      source_output: security_request_result
+      artifact_path: .ma/tasks/${task.id}/reviews/security.json
+      commit_message: "security(ma): security review for task ${task.id}"
+      format: json
+
+  - name: handle_security_failure
+    type: SubWorkflowStep
+    depends_on: [security_request]
+    condition: ${security_request_status} == 'fail' || ${security_request_status} == 'unknown'
+    config:
+      workflow: review-failure-handling
+      inputs:
+        review_type: security_review
+        review_result: ${security_request_result}
+        review_status: ${security_request_status}
+        milestone_context: ${milestone}
+        task: ${task}
+        parent_task_id: ${taskId}
+        priority_scores:
+          urgent: 1500
+          deferred: 50
+        config:
+          block_original_task: true
+        project_id: ${projectId}
+        repo: ${repo_remote}
+        tdd_aware: ${tdd_aware || false}
+        tdd_stage: ${tdd_stage || 'implementation'}
+        existing_tasks: []
+
+  - template: devops_review
+    name: devops_request
+    depends_on: [security_request]
+    condition: ${security_request_status} == 'pass'
+
+  - name: commit_devops_result
+    type: GitArtifactStep
+    depends_on: [devops_request]
+    config:
+      source_output: devops_request_result
+      artifact_path: .ma/tasks/${task.id}/reviews/devops.json
+      commit_message: "ci(ma): DevOps review for task ${task.id}"
+      format: json
+
+  - name: handle_devops_failure
+    type: SubWorkflowStep
+    depends_on: [devops_request]
+    condition: ${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'
+    config:
+      workflow: review-failure-handling
+      inputs:
+        review_type: devops_review
+        review_result: ${devops_request_result}
+        review_status: ${devops_request_status}
+        milestone_context: ${milestone}
+        task: ${task}
+        parent_task_id: ${taskId}
+        priority_scores:
+          urgent: 1100
+          deferred: 50
+        config:
+          block_original_task: true
+        project_id: ${projectId}
+        repo: ${repo_remote}
+        tdd_aware: ${tdd_aware || false}
+        tdd_stage: ${tdd_stage || 'implementation'}
+        existing_tasks: []
+
+  - name: mark_task_done
+    type: SimpleTaskStatusStep
+    depends_on: [devops_request]
+    condition: ${security_request_status} == 'pass' && ${devops_request_status} == 'pass'
+    config:
+      status: done
+
+failure_handling:
+  on_workflow_failure:
+    - name: mark_task_blocked
+      type: SimpleTaskStatusStep
+      config:
+        status: blocked
+        comment: Review workflow failed at step: ${failed_step}
+
+timeouts:
+  default_step: 300000
