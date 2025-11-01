@@ -413,10 +413,22 @@ export class PlanningLoopStep extends WorkflowStep {
     const resultText = fields.result || "";
     const parsed = parseEventResult(resultText);
 
+    let planData = parsed;
+    if (parsed?.output && typeof parsed.output === "string") {
+      const jsonMatch = parsed.output.match(/```json\s*\n([\s\S]*?)\n```/);
+      if (jsonMatch) {
+        try {
+          planData = JSON.parse(jsonMatch[1]);
+        } catch {
+          planData = parsed;
+        }
+      }
+    }
+
     let content = `# Plan Iteration ${iteration}\n\n`;
     content += `Generated: ${new Date().toISOString()}\n\n`;
 
-    if (parsed?.plan && Array.isArray(parsed.plan)) {
+    if (planData?.plan && Array.isArray(planData.plan)) {
       content += `## Implementation Plan\n\n`;
       parsed.plan.forEach((step: any, idx: number) => {
         content += `### Step ${idx + 1}: ${step.goal || "Untitled Step"}\n\n`;
@@ -446,15 +458,15 @@ export class PlanningLoopStep extends WorkflowStep {
         }
       });
     } else {
-      const planText = typeof parsed?.plan === "string" ? parsed.plan : resultText;
+      const planText = typeof planData?.plan === "string" ? planData.plan : resultText;
       if (planText) {
         content += `## Plan\n\n${planText}\n\n`;
       }
     }
 
-    if (parsed?.risks && Array.isArray(parsed.risks) && parsed.risks.length > 0) {
+    if (planData?.risks && Array.isArray(planData.risks) && planData.risks.length > 0) {
       content += `## Risks\n\n`;
-      parsed.risks.forEach((risk: any, idx: number) => {
+      planData.risks.forEach((risk: any, idx: number) => {
         if (typeof risk === "object") {
           content += `${idx + 1}. **${risk.risk || risk.description || "Unknown Risk"}**\n`;
           if (risk.mitigation) {
@@ -467,9 +479,9 @@ export class PlanningLoopStep extends WorkflowStep {
       content += `\n`;
     }
 
-    if (parsed?.open_questions && Array.isArray(parsed.open_questions) && parsed.open_questions.length > 0) {
+    if (planData?.open_questions && Array.isArray(planData.open_questions) && planData.open_questions.length > 0) {
       content += `## Open Questions\n\n`;
-      parsed.open_questions.forEach((q: any, idx: number) => {
+      planData.open_questions.forEach((q: any, idx: number) => {
         if (typeof q === "object") {
           content += `${idx + 1}. ${q.question || q.description || JSON.stringify(q)}\n`;
           if (q.answer) {
@@ -482,9 +494,9 @@ export class PlanningLoopStep extends WorkflowStep {
       content += `\n`;
     }
 
-    if (parsed?.notes && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+    if (planData?.notes && Array.isArray(planData.notes) && planData.notes.length > 0) {
       content += `## Notes\n\n`;
-      parsed.notes.forEach((note: any, idx: number) => {
+      planData.notes.forEach((note: any, idx: number) => {
         if (typeof note === "object") {
           content += `${idx + 1}. ${note.note || note.description || JSON.stringify(note)}\n`;
           if (note.author) {
@@ -497,8 +509,8 @@ export class PlanningLoopStep extends WorkflowStep {
       content += `\n`;
     }
 
-    if (parsed?.metadata) {
-      content += `## Metadata\n\n\`\`\`json\n${JSON.stringify(parsed.metadata, null, 2)}\n\`\`\`\n`;
+    if (planData?.metadata) {
+      content += `## Metadata\n\n\`\`\`json\n${JSON.stringify(planData.metadata, null, 2)}\n\`\`\`\n`;
     }
 
     return content;
