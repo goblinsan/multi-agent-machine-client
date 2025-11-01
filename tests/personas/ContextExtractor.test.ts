@@ -160,15 +160,15 @@ describe("ContextExtractor", () => {
       ).rejects.toThrow("has no description");
     });
 
-    it("should fallback to intent if no other source available", async () => {
-      const userText = await extractor.extractUserText({
-        persona: "test",
-        workflowId: "wf-1",
-        intent: "custom_intent",
-        payload: {},
-      });
-
-      expect(userText).toBe("custom_intent");
+    it("should throw error instead of falling back to intent when no task context available", async () => {
+      await expect(
+        extractor.extractUserText({
+          persona: "test",
+          workflowId: "wf-1",
+          intent: "custom_intent",
+          payload: {},
+        }),
+      ).rejects.toThrow("CRITICAL: No task context found");
     });
   });
 
@@ -333,19 +333,19 @@ describe("ContextExtractor", () => {
       }
     });
 
-    it("should fallback to intent if artifact reading fails", async () => {
-      const userText = await extractor.extractUserText({
-        persona: "test",
-        workflowId: "wf-1",
-        intent: "fallback_intent",
-        payload: {
-          plan_artifact: "nonexistent/file.md",
+    it("should throw error instead of falling back to intent when artifact reading fails and no task context", async () => {
+      await expect(
+        extractor.extractUserText({
+          persona: "test",
+          workflowId: "wf-1",
+          intent: "fallback_intent",
+          payload: {
+            plan_artifact: "nonexistent/file.md",
+            repo: "https://github.com/test/repo.git",
+          },
           repo: "https://github.com/test/repo.git",
-        },
-        repo: "https://github.com/test/repo.git",
-      });
-
-      expect(userText).toBe("fallback_intent");
+        }),
+      ).rejects.toThrow("CRITICAL: No task context found");
     });
   });
 

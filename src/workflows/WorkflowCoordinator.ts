@@ -377,6 +377,32 @@ export class WorkflowCoordinator {
       remote?: string | null;
     },
   ): Promise<any> {
+    if (!task || typeof task !== "object" || Array.isArray(task)) {
+      logger.error("CRITICAL: Invalid task data received", {
+        workflowId: context.workflowId,
+        projectId: context.projectId,
+        taskType: typeof task,
+        isArray: Array.isArray(task),
+        reason:
+          "Task must be a valid object with id, title, and description fields",
+      });
+      throw new Error(
+        `CRITICAL: Invalid task data - received ${typeof task}${Array.isArray(task) ? " (array)" : ""}. Cannot proceed with workflow execution.`,
+      );
+    }
+
+    if (!task.id) {
+      logger.error("CRITICAL: Task missing required 'id' field", {
+        workflowId: context.workflowId,
+        projectId: context.projectId,
+        taskKeys: Object.keys(task),
+        reason: "Task ID is required for workflow execution",
+      });
+      throw new Error(
+        "CRITICAL: Task missing required 'id' field. Cannot proceed with workflow execution.",
+      );
+    }
+
     logger.debug("Preparing workflow initial variables", {
       workflowId: context.workflowId,
       taskId: task?.id,

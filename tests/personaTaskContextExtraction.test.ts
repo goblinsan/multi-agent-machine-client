@@ -261,7 +261,7 @@ describe("PersonaConsumer task context extraction", () => {
     await new Promise((resolve) => setTimeout(resolve, 1));
     await consumer.stop();
 
-    expect(capturedUserText).toBe("context_gathering");
+    expect(capturedUserText).toBeUndefined();
   });
 
   it("should prevent bug where personas get generic prompts instead of task requirements", async () => {

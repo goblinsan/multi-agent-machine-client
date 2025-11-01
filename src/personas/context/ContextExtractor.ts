@@ -114,15 +114,18 @@ export class ContextExtractor {
       );
     }
 
-    logger.error("PersonaConsumer: No task context found in payload", {
+    logger.error("PersonaConsumer: CRITICAL - No task context found in payload", {
       persona,
       workflowId,
       intent,
       payloadKeys: Object.keys(payload),
       hasTask: !!payload.task,
       taskKeys: payload.task ? Object.keys(payload.task) : [],
+      reason: "Cannot proceed without task context - would result in hallucinated/invalid data",
     });
-    return intent || "planning";
+    throw new Error(
+      `CRITICAL: No task context found in payload for ${intent}. Cannot proceed without valid task data - would result in LLM hallucination.`,
+    );
   }
 
   private async readArtifact(
