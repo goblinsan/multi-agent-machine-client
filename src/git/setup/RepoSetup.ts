@@ -64,8 +64,8 @@ export function remoteWithCredentials(remote: string): RemoteInfo {
       const host = parsed.host.replace(/^https?:/i, "");
       const sshRemote = `git@${host}:${parsed.path}`;
       return { remote: sshRemote, sanitized: sshRemote };
-    } catch {
-      
+    } catch (e) {
+      logger.debug('Failed to convert HTTP(S) remote to SSH', { remote: maskRemote(remote), error: String(e) });
     }
   }
 
@@ -94,7 +94,9 @@ export async function configureCredentialStore(repoRoot: string, credentialUrl?:
 
   try {
     await fs.mkdir(path.dirname(credentialsPath), { recursive: true });
-  } catch {  }
+  } catch (e) {
+    logger.warn('Failed to create credentials directory', { path: path.dirname(credentialsPath), error: String(e) });
+  }
 
   const username = credentialUrl.username || (cfg.git.username || (cfg.git.token ? "git" : ""));
   const password = credentialUrl.password || cfg.git.token || cfg.git.password;
@@ -137,7 +139,9 @@ export async function ensureRepo(remote: string, branch: string | null, projectH
     logger.info("git fetch", { remote: displayRemote, repoRoot });
     try {
       await runGit(["remote", "set-url", "origin", remoteInfo.sanitized], { cwd: repoRoot });
-    } catch {  }
+    } catch (e) {
+      logger.debug('Failed to set remote origin URL', { repoRoot, error: String(e) });
+    }
     await runGit(["fetch", "--all", "--tags"], { cwd: repoRoot });
   }
 
@@ -193,7 +197,9 @@ export async function ensureRepo(remote: string, branch: string | null, projectH
     let current = "";
     try {
       current = (await runGit(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot })).stdout.trim();
-    } catch {  }
+    } catch (e) {
+      logger.debug('Failed to get current branch', { repoRoot, error: String(e) });
+    }
 
     if (!current || current === "HEAD") {
       const fallback = (await detectRemoteDefaultBranch(repoRoot)) || cfg.git.defaultBranch;

@@ -1,5 +1,6 @@
 import path from "path";
 import { cfg } from "../../config.js";
+import { logger } from "../../logger.js";
 import { parseRemote } from "../utils/remoteUtils.js";
 import { sanitizeSegment, directoryExists } from "../utils/fsUtils.js";
 import { ensureRepo } from "../setup/RepoSetup.js";
@@ -75,7 +76,9 @@ function repoUrlFromPayload(payload: any): string | null {
       
       parseRemote(trimmed);
       return trimmed;
-    } catch {  }
+    } catch (e) {
+      logger.debug('Invalid remote URL format', { url: trimmed, error: String(e) });
+    }
   }
   return null;
 }

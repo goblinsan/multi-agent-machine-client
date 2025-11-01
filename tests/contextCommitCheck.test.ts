@@ -12,7 +12,7 @@ describe('contextCommitCheck', () => {
     if (repoRoot) {
       try {
         await fs.rm(repoRoot, { recursive: true, force: true });
-      } catch {  }
+      } catch (_e) { void 0; }
     }
   });
 

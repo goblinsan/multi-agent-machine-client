@@ -1,4 +1,5 @@
 import { cfg } from "../../config.js";
+import { logger } from "../../logger.js";
 import { PERSONAS as _PERSONAS } from "../../personaNames.js";
 import type { WorkflowContext } from "../engine/WorkflowContext.js";
 
@@ -31,10 +32,14 @@ async function purgeWorkflowRedisQueues(
         
         try {
           acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:lead-engineer`, id);
-        } catch {  }
+        } catch (e) {
+          logger.debug('Failed to ack message in lead-engineer group', { id, error: String(e) });
+        }
         try {
           acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:coordination`, id);
-        } catch {  }
+        } catch (e) {
+          logger.debug('Failed to ack message in coordination group', { id, error: String(e) });
+        }
       }
     }
 

@@ -28,8 +28,8 @@ export class DecisionParser {
       if (typeof parsed === 'object' && parsed !== null) {
         return this.parseFromObject(parsed, reviewType, warnings);
       }
-    } catch {
-      
+    } catch (e) {
+      logger.debug('Failed to parse PM decision as JSON', { error: String(e) });
     }
 
     
@@ -42,8 +42,8 @@ export class DecisionParser {
           return this.parseFromObject(parsed, reviewType, warnings);
         }
       }
-    } catch {
-      
+    } catch (e) {
+      logger.debug('Failed to extract and parse JSON from text', { error: String(e) });
     }
 
     
@@ -174,7 +174,8 @@ export class DecisionParser {
           priority: this.normalizePriority(task.priority)
         }));
       }
-    } catch {
+    } catch (e) {
+      logger.debug('Failed to parse tasks array from JSON', { error: String(e) });
     }
 
     const taskMatches = str.matchAll(/\{[^}]+\}/g);
@@ -186,7 +187,8 @@ export class DecisionParser {
           description: task.description || '',
           priority: this.normalizePriority(task.priority)
         });
-      } catch {
+      } catch (e) {
+        logger.debug('Failed to parse individual task JSON', { match: match[0], error: String(e) });
       }
     }
 

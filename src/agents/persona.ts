@@ -62,8 +62,8 @@ export async function waitForPersonaCompletion(
         if (messages.length) lastId = messages[messages.length - 1].id;
       }
     }
-  } finally {
-    
+  } catch (e) {
+    logger.warn('Error while polling for persona completion', { persona, workflowId, corrId, error: String(e) });
   }
 
   const timeoutSec = Math.round(effectiveTimeout / 100) / 10;
@@ -130,13 +130,21 @@ export function extractJsonPayloadFromText(text: string | undefined): any | null
   let match: RegExpExecArray | null;
   while ((match = fenceRegex.exec(text))) {
     const snippet = match[1];
-    try { return JSON.parse(snippet); } catch {  }
+    try { 
+      return JSON.parse(snippet); 
+    } catch (e) { 
+      logger.debug('JSON parse failed for fenced code block', { error: String(e), snippet: snippet.slice(0, 100) });
+    }
   }
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     const candidate = text.slice(firstBrace, lastBrace + 1);
-    try { return JSON.parse(candidate); } catch {  }
+    try { 
+      return JSON.parse(candidate); 
+    } catch (e) { 
+      logger.debug('JSON parse failed for brace-extracted content', { error: String(e), candidate: candidate.slice(0, 100) });
+    }
   }
   return null;
 }

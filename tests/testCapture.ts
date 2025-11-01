@@ -31,7 +31,7 @@ export function suppressConsoleDuringCapture(): () => void {
       console.error = _orig.error;
       (console as any).debug = _orig.debug;
     } catch (e) {
-      
+      console.error('Failed to restore console:', e);
     }
   };
 }
@@ -59,14 +59,14 @@ export function annotateCaptured(s: any[]) {
 export function writeCapturedOutputs(kind: 'default' | 'coordinator' = 'default', extraAnnotate?: (s: any[]) => any[]) {
   if (!isCaptureEnabled()) return;
   const outDir = path.resolve(process.cwd(), 'tests', 'outputs');
-  try { fs.mkdirSync(outDir, { recursive: true }); } catch (e) {  }
+  try { fs.mkdirSync(outDir, { recursive: true }); } catch (_e) { void 0; }
 
   const jsonPath = path.join(outDir, kind === 'coordinator' ? 'last_run_prompts_coordinator.json' : 'last_run_prompts.json');
   try {
     const toWrite = extraAnnotate ? extraAnnotate(sent) : sent;
     fs.writeFileSync(jsonPath, JSON.stringify({ generatedAt: new Date().toISOString(), requests: toWrite }, null, 2));
-  } catch (e) {
-    
+  } catch (_e) {
+    void 0;
   }
 
   if (kind === 'default') {
@@ -88,6 +88,6 @@ export function writeCapturedOutputs(kind: 'default' | 'coordinator' = 'default'
       }
       lines.push('');
     }
-    try { fs.writeFileSync(txtPath, lines.join('\n')); } catch (e) {  }
+    try { fs.writeFileSync(txtPath, lines.join('\n')); } catch (_e) { void 0; }
   }
 }

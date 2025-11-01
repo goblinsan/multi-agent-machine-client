@@ -94,7 +94,7 @@ afterAll(() => {
   
   try {
     fs.rmSync(tmpBase, { recursive: true, force: true });
-  } catch {  }
+  } catch (_e) { void 0; }
 });
 
 
@@ -171,8 +171,8 @@ try {
       return (origSpawnSync as any).apply(childProcess, args);
     });
   }
-} catch (e) {
-  
+} catch (_e) {
+  void 0;
 }
 
 

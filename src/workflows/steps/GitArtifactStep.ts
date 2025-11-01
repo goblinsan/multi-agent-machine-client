@@ -1,6 +1,7 @@
 import { WorkflowStep, WorkflowStepConfig, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { runGit } from '../../gitUtils.js';
+import { logger } from '../../logger.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -39,7 +40,8 @@ export class GitArtifactStep extends WorkflowStep {
     const skipGitOps = ((): boolean => {
       try {
         return context.getVariable('SKIP_GIT_OPERATIONS') === true;
-      } catch {
+      } catch (e) {
+        logger.debug('Error checking SKIP_GIT_OPERATIONS variable', { error: String(e) });
         return false;
       }
     })();
@@ -240,16 +242,10 @@ export class GitArtifactStep extends WorkflowStep {
   }
 
   
-  private formatMarkdown(data: any, template?: string): string {
+  private formatMarkdown(data: any, _template?: string): string {
     
     if (typeof data === 'string') {
       return data;
-    }
-
-    
-    if (template) {
-      
-      
     }
 
     
@@ -283,8 +279,8 @@ export class GitArtifactStep extends WorkflowStep {
           return match;
         }
         return String(value);
-      } catch {
-        
+      } catch (e) {
+        logger.debug('Failed to resolve template variable', { match, error: String(e) });
         return match;
       }
     });

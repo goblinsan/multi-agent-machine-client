@@ -21,8 +21,8 @@ describe('ContextExtractor', () => {
     
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
-    } catch (error) {
-      
+    } catch (_error) {
+      void 0;
     }
     vi.restoreAllMocks();
   });
@@ -395,8 +395,8 @@ describe('ContextExtractor', () => {
             }
           }
         });
-      } catch (error) {
-        
+      } catch (_error) {
+        void 0;
       }
 
       expect(errorSpy).toHaveBeenCalledWith(

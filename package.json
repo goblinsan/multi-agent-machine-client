@@ -11,7 +11,7 @@
     "coordinator": "tsx src/tools/run_coordinator.ts",
     "local": "tsx src/tools/run_local.ts",
     "test": "vitest tests --run",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "precommit": "npm run typecheck && npm run lint && npm test",
     "monitor": "tsx scripts/monitor-redis-streams.ts",

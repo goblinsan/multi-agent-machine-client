@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { runGit } from "./gitUtils.js";
 import { cfg } from "./config.js";
+import { logger } from "./logger.js";
 
 export type Hunk = { oldStart:number, oldCount:number, newStart:number, newCount:number, lines: string[] };
 export type UpsertOp = { action: "upsert"; path: string; content?: string; hunks?: Hunk[] };
@@ -114,13 +115,14 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
                   baseSample: baseLines.slice(0, 50).join('\n')
                 });
               } catch (e) {
-                
+                logger.warn('Failed to write diagnostic for hunk context mismatch', { path: u.path, error: String(e) });
               }
               
             }
           }
         } catch (err) {
-          
+          logger.error('Failed to read or apply diff hunks', { path: u.path, error: String(err) });
+          throw err;
         }
       }
       if (typeof contentToWrite !== 'string') throw new Error("No content available for upsert");
@@ -132,7 +134,11 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
       if (typeof d.path !== 'string') throw new Error('Bad delete op fields');
       const full = insideRepo(repoRoot, d.path);
       
-      try { await fs.unlink(full); } catch (err) {  }
+      try { 
+        await fs.unlink(full); 
+      } catch (err) {
+        logger.debug('Failed to delete file (may not exist)', { path: d.path, error: String(err) });
+      }
       
       changed.push(path.relative(repoRoot, full).replace(/\\/g, '/'));
     } else {
@@ -161,13 +167,19 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
         
         try {
           await writeDiagnostic(repoRoot, 'apply-commit-broad-attempt.json', { changed, note: 'attempting git add -A and commit as fallback', error: String(err2) });
-        } catch (e) {  }
+        } catch (e) {
+          logger.warn('Failed to write diagnostic for commit broad attempt', { error: String(e) });
+        }
         try {
           await runGit(["add", "-A"], { cwd: repoRoot });
           await runGit(["commit", "--no-verify", "-m", sanitizedCommitMsg], { cwd: repoRoot });
         } catch (err3) {
-          
-          try { await writeDiagnostic(repoRoot, 'apply-commit-failure.json', { changed, error: String(err3), stdout: (err3 && (err3 as any).stdout) ? String((err3 as any).stdout) : undefined }); } catch (e) {  }
+          logger.error('Final commit attempt failed', { changed, error: String(err3) });
+          try { 
+            await writeDiagnostic(repoRoot, 'apply-commit-failure.json', { changed, error: String(err3), stdout: (err3 && (err3 as any).stdout) ? String((err3 as any).stdout) : undefined }); 
+          } catch (e) {
+            logger.warn('Failed to write diagnostic for commit failure', { error: String(e) });
+          }
           throw err3;
         }
       }
@@ -191,7 +203,9 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
             changed,
             note: 'No remote configured - skipping push (test environment?)'
           });
-        } catch (e) {  }
+        } catch (e) {
+          logger.debug('Failed to write diagnostic for no-remote', { repoRoot, error: String(e) });
+        }
       }
     } catch (pushErr) {
       
@@ -202,7 +216,9 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
           changed,
           error: String(pushErr)
         });
-      } catch (e) {  }
+      } catch (e) {
+        logger.debug('Failed to write diagnostic for push-failure', { repoRoot, error: String(e) });
+      }
       
       throw new Error(`Failed to push branch ${branch}: ${pushErr}`);
     }
@@ -342,13 +358,9 @@ export function parseUnifiedDiffToEditSpec(diffText: string, opts?: { allowedExt
         if (!hl) continue;
         if (hl.startsWith('+')) {
           outParts.push(hl.slice(1));
-        } else if (hl.startsWith('-')) {
-          
         } else if (hl.startsWith(' ')) {
-          
           outParts.push(hl.slice(1));
-        } else {
-          
+        } else if (!hl.startsWith('-')) {
           outParts.push(hl);
         }
       }
@@ -404,7 +416,7 @@ export function parseUnifiedDiffToEditSpec(diffText: string, opts?: { allowedExt
       if (fallbackOps.length) return { ops: fallbackOps, warnings } as EditSpec;
     }
   } catch (err) {
-    
+    logger.warn('Error parsing edit spec, returning partial ops', { error: String(err), opsCount: ops.length });
   }
 
   return { ops, warnings } as EditSpec;
@@ -425,10 +437,8 @@ function applyHunksToLines(baseLines: string[], hunks: Hunk[]): { ok: boolean; c
     const newLines: string[] = [];
     for (const l of h.lines) {
       if (l.startsWith('+')) newLines.push(l.slice(1));
-      else if (l.startsWith('-')) {
-        
-      } else if (l.startsWith(' ')) newLines.push(l.slice(1));
-      else newLines.push(l);
+      else if (l.startsWith(' ')) newLines.push(l.slice(1));
+      else if (!l.startsWith('-')) newLines.push(l);
     }
 
     
@@ -441,12 +451,8 @@ function applyHunksToLines(baseLines: string[], hunks: Hunk[]): { ok: boolean; c
         contextLines.push({ idx: scanIdx, text: l.slice(1) });
         scanIdx += 1;
       } else if (l.startsWith('-')) {
-        
         scanIdx += 1;
-      } else if (l.startsWith('+')) {
-        
-      } else {
-        
+      } else if (!l.startsWith('+')) {
         contextLines.push({ idx: scanIdx, text: l });
         scanIdx += 1;
       }

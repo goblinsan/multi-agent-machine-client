@@ -152,7 +152,9 @@ function parseJsonArray(value: string | undefined, fallback: string[]): string[]
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) return parsed.map(String);
-  } catch {  }
+  } catch (_e) {
+    void 0;
+  }
   
   return splitCsv(value, fallback);
 }

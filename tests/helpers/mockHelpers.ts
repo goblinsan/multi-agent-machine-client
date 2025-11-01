@@ -188,26 +188,12 @@ export class PersonaMockHelper {
       }
 
       if (match.toPersona === 'project-manager') {
-        const task = match.payload?.task;
-        if (task) {
-          
-          
-        }
         return { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-pm' };
       }
 
       
       if (this.completions[step]) {
         const completion = this.completions[step];
-        
-        
-        if (step === '3-devops') {
-          const task = match.payload?.task;
-          if (task && task.id) {
-            
-            
-          }
-        }
         
         return completion;
       }

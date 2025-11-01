@@ -39,7 +39,9 @@ export class PersonaRequestStep extends WorkflowStep {
           const explicit = context.getVariable('SKIP_PERSONA_OPERATIONS');
           
           if (explicit === false) return false;
-        } catch {  }
+        } catch (e) {
+          logger.debug('Error checking SKIP_PERSONA_OPERATIONS in test mode', { error: String(e) });
+        }
         
         return true;
       }
@@ -47,7 +49,9 @@ export class PersonaRequestStep extends WorkflowStep {
       
       try {
         return context.getVariable('SKIP_PERSONA_OPERATIONS') === true;
-      } catch {  }
+      } catch (e) {
+        logger.debug('Error checking SKIP_PERSONA_OPERATIONS variable', { error: String(e) });
+      }
       return false;
     })();
 

@@ -107,7 +107,9 @@ export class PMDecisionParserStep extends WorkflowStep {
       
       try {
         (context as any).pm_decision = behaviorCompatDecision as any;
-      } catch {  }
+      } catch (e) {
+        logger.debug('Failed to set pm_decision on context', { error: String(e) });
+      }
 
       return ({
         status: 'success',

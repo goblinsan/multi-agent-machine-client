@@ -26,7 +26,9 @@ export class WorkflowCoordinator {
       if (process.env.NODE_ENV === 'test') return true;
       if (process.env.VITEST) return true;
       if (typeof (globalThis as any).vi !== 'undefined') return true;
-    } catch {  }
+    } catch (e) {
+      logger.debug('Error checking test environment', { error: String(e) });
+    }
     return false;
   }
 

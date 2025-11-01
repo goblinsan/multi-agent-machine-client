@@ -37,8 +37,8 @@ describe('coordinator TDD governance gating', () => {
         },
         { project_id: 'p1', repo: 'https://github.com/example/tdd.git' }
       );
-    } catch (error) {
-      
+    } catch (_error) {
+      void 0;
     }
 
     

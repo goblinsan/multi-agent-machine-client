@@ -303,7 +303,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
             }
           }
         } catch (err) {
-          
+          logger.warn('Failed to resolve milestone from dashboard', { taskId: task.id, error: String(err) });
         }
       }
 

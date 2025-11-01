@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { Minimatch } from "minimatch";
+import { logger } from "./logger.js";
 
 export type ScanSpec = {
   repo_root: string;
@@ -48,7 +49,9 @@ export async function scanRepo(spec: ScanSpec): Promise<FileInfo[]> {
             const txt = await fs.readFile(abs, "utf8");
             fi.lines = txt.split(/\r?\n/).length;
             if (spec.track_hash) fi.sha1 = crypto.createHash("sha1").update(txt).digest("hex");
-          } catch {  }
+          } catch (e) {
+            logger.debug('Failed to read file for scanning', { path: rel, error: String(e) });
+          }
         }
         results.push(fi);
       }

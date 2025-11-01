@@ -28,18 +28,26 @@ function ensureStream() {
   if (stream) return stream;
   try {
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
-  } catch {  }
+  } catch (e) {
+    console.error('[logger] failed to create log directory', e);
+  }
   try {
     
     const header = `# machine-client log (level=${configuredLevel}) started ${new Date().toISOString()}\n`;
     try {
       fs.appendFileSync(logFile, header);
-    } catch {  }
+    } catch (e) {
+      console.error('[logger] failed to write log header', e);
+    }
     stream = fs.createWriteStream(logFile, { flags: "a" });
     
     stream.on('error', (err) => {
       console.error('[logger] write stream error', err);
-      try { stream?.end(); } catch {  }
+      try { 
+        stream?.end(); 
+      } catch (e) {
+        console.error('[logger] failed to close stream', e);
+      }
       stream = null;
     });
     stream.on('open', () => {
