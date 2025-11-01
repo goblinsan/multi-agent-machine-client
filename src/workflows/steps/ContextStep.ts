@@ -287,10 +287,14 @@ export class ContextStep extends WorkflowStep {
       maxDepth = 10,
       trackLines = true,
       trackHash = false,
-      forceRescan = false,
+      forceRescan: rawForceRescan = false,
     } = config;
 
     const repoPath = this.resolveVariables(rawRepoPath, context);
+    const forceRescan =
+      typeof rawForceRescan === "string"
+        ? this.resolveVariables(rawForceRescan, context) === "true"
+        : Boolean(rawForceRescan);
 
     if (!repoPath || repoPath.includes("${")) {
       const error = `FATAL: repo_root variable not resolved! Got: "${repoPath}" from config: "${rawRepoPath}"`;

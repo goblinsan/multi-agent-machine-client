@@ -85,6 +85,7 @@ export class PlanningLoopStep extends WorkflowStep {
         const currentBranch = context.getCurrentBranch();
 
         const contextDir = await loadContextDirectory(context.repoRoot);
+        const contextAnalysis = context.getVariable("context_request_result");
 
         const payloadWithContext = {
           ...payload,
@@ -97,6 +98,7 @@ export class PlanningLoopStep extends WorkflowStep {
           branch: currentBranch,
           project_id: context.projectId,
           context_directory: contextDir,
+          context_analysis: contextAnalysis || payload.context,
         };
 
         const planCorrId = await sendPersonaRequest(transport, {

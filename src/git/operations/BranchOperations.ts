@@ -58,6 +58,10 @@ export async function checkoutBranchFromBase(
         await runGit(["pull", "--ff-only", "origin", newBranch], {
           cwd: repoRoot,
         });
+        logger.debug("git pull successful", {
+          repoRoot,
+          branch: newBranch,
+        });
       } catch (error) {
         logger.warn("git pull branch failed", {
           repoRoot,
