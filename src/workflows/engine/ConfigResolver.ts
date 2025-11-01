@@ -17,6 +17,12 @@ export class ConfigResolver {
 
   private resolveValue(value: any, context: WorkflowContext): any {
     if (typeof value === "string" && value.includes("${")) {
+      const exactMatch = value.match(/^\$\{([^}]+)\}$/);
+      if (exactMatch) {
+        const contextValue = this.getNestedValue(context, exactMatch[1]);
+        return contextValue !== undefined ? contextValue : value;
+      }
+
       return value.replace(/\$\{([^}]+)\}/g, (match, path) => {
         const contextValue = this.getNestedValue(context, path);
         return contextValue !== undefined ? String(contextValue) : match;

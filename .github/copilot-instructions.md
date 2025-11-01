@@ -25,6 +25,12 @@ This is a Redis-based multi-agent machine client written in TypeScript that:
 - Persona system handles different agent types
 - Redis streams for async communication
 
+## Git Commit Guidelines
+
+- Use single-line commit messages only (no multi-line messages)
+- Format: Brief imperative description (e.g., "Fix task payload conversion bug")
+- Do not add additional body or footer text
+
 ## Testing Guidelines
 
 - Use vitest framework
