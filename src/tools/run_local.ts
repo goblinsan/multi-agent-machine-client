@@ -2,7 +2,6 @@ import { spawn, ChildProcess } from "child_process";
 import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
-import { WorkflowCoordinator } from "../workflows/WorkflowCoordinator.js";
 import { PersonaConsumer } from "../personas/PersonaConsumer.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -102,33 +101,6 @@ async function startDashboard(): Promise<void> {
       }
     }, 3000);
   });
-}
-
-async function processCoordinatorLoop(
-  transport: any,
-  initialMessage: any,
-): Promise<void> {
-  console.log("Starting coordinator message processing...");
-
-  const initialPayload = JSON.parse(initialMessage.payload || "{}");
-
-  try {
-    const coordinator = new WorkflowCoordinator();
-    await coordinator.handleCoordinator(
-      transport,
-      transport,
-      initialMessage,
-      initialPayload,
-    );
-    console.log("Initial coordinator workflow completed");
-  } catch (error: any) {
-    console.error(
-      "Error processing initial coordinator message:",
-      error.message,
-    );
-  }
-
-  console.log("Coordinator processing complete");
 }
 
 async function shutdown(transport: any) {
@@ -247,14 +219,12 @@ async function main() {
 
   const entryId = await transport.xAdd(cfg.requestStream, "*", msg);
   console.log(`Coordinator message dispatched: ${entryId}`);
+  console.log(
+    "Local stack running. PersonaConsumer will handle coordination requests.",
+  );
+  console.log("Press Ctrl+C to shutdown.\n");
 
-  try {
-    await processCoordinatorLoop(transport, msg);
-  } catch (error: any) {
-    console.error("Error in coordinator loop:", error.message);
-  }
-
-  await shutdown(transport);
+  await new Promise(() => {});
 }
 
 main().catch((err) => {

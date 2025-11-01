@@ -25,6 +25,7 @@ This is a multi-agent machine client written in TypeScript that:
 
 ## Development Patterns
 
+- No comments in code (linting rule)
 - Use existing TypeScript patterns from src/
 - Follow test patterns in tests/ directory
 - Git operations must use temp directories in tests
