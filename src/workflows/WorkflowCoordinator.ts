@@ -213,6 +213,7 @@ export class WorkflowCoordinator {
               repoRoot: repoResolution.repoRoot,
               branch: repoResolution.branch || "main",
               remote: repoResolution.remote || null,
+              force_rescan: payload?.force_rescan || false,
             });
             results.push(result);
 
@@ -324,6 +325,7 @@ export class WorkflowCoordinator {
       repoRoot: string;
       branch: string;
       remote?: string | null;
+      force_rescan?: boolean;
     },
   ): Promise<any> {
     if (arguments.length === 2) {
@@ -401,6 +403,7 @@ export class WorkflowCoordinator {
       repoRoot: string;
       branch: string;
       remote?: string | null;
+      force_rescan?: boolean;
     },
   ): Promise<any> {
     if (!task || typeof task !== "object" || Array.isArray(task)) {
@@ -480,6 +483,7 @@ export class WorkflowCoordinator {
 
       repo_remote: context.remote,
       effective_repo_path: context.remote,
+      force_rescan: context.force_rescan || false,
     };
 
     if (!context.remote) {
