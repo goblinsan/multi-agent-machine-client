@@ -274,11 +274,12 @@ export class PersonaRequestStep extends WorkflowStep {
         step,
         persona,
         error: error.message,
+        stack: error.stack,
       });
 
       return {
         status: "failure",
-        error: new Error(error.message),
+        error: error instanceof Error ? error : new Error(error.message),
         data: { step, persona },
       };
     }

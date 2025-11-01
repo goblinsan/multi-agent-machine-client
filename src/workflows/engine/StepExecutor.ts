@@ -131,17 +131,36 @@ export class StepExecutor {
   ): number {
     const timeouts = workflowDef.timeouts || {};
 
-    const stepTimeout =
-      timeouts[`${stepDef.name}_timeout`] ||
-      timeouts[`${stepDef.type.toLowerCase()}_step`];
+    const stepTimeout = timeouts[`${stepDef.name}_timeout`];
     if (stepTimeout) {
       return stepTimeout;
     }
 
-    if (stepDef.type === "PersonaRequestStep" && stepDef.config.persona) {
-      const persona = String(stepDef.config.persona).toLowerCase();
+    const extendedDef = stepDef as ExtendedStepDefinition;
+    let stepType = stepDef.type;
+    let stepConfig = stepDef.config;
+
+    if (extendedDef.template) {
+      const expanded = templateLoader.expandTemplate(
+        extendedDef.template,
+        stepDef.name,
+        extendedDef.overrides,
+      );
+      stepType = expanded.type;
+      stepConfig = expanded.config || stepConfig;
+    }
+
+    if (stepType) {
+      const typeTimeout = timeouts[`${stepType.toLowerCase()}_step`];
+      if (typeTimeout) {
+        return typeTimeout;
+      }
+    }
+
+    if (stepType === "PersonaRequestStep" && stepConfig?.persona) {
+      const persona = String(stepConfig.persona).toLowerCase();
       const maxRetries =
-        stepDef.config.maxRetries ?? cfg.personaTimeoutMaxRetries ?? 3;
+        stepConfig.maxRetries ?? cfg.personaTimeoutMaxRetries ?? 3;
 
       const personaTimeout = personaTimeoutMs(persona, cfg);
 
