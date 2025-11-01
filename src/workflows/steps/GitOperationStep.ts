@@ -15,13 +15,10 @@ interface GitOperationConfig {
   artifactPath?: string;
 }
 
-/**
- * GitOperationStep - Handles git operations like checkout, commit, push, verification
- * This step performs git operations that tests expect to be called during workflows
- */
+
 export class GitOperationStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
-    // Test mode: allow skipping git operations entirely
+    
     if (context.getVariable('SKIP_GIT_OPERATIONS') === true) {
       return {
         status: 'success',
@@ -39,10 +36,10 @@ export class GitOperationStep extends WorkflowStep {
     });
 
     try {
-      // Import git utilities dynamically
+      
       const gitUtils = await import('../../gitUtils.js');
       
-      // Resolve variables from context
+      
       const repoRoot = this.resolveVariable(config.repoRoot, context) || context.repoRoot;
       const baseBranch = this.resolveVariable(config.baseBranch, context) || context.getVariable('baseBranch') || 'main';
       const newBranch = this.resolveVariable(config.newBranch, context) || context.getVariable('newBranch') || context.getVariable('branch') || 'feat/task';
@@ -111,7 +108,7 @@ export class GitOperationStep extends WorkflowStep {
           await gitUtils.checkoutBranchFromBase(repoRoot, baseBranch, newBranch);
           result = { repoRoot, baseBranch, newBranch };
           
-          // Set branch context for subsequent steps
+          
           context.setVariable('branch', newBranch);
           context.setVariable('currentBranch', newBranch);
           context.setVariable('baseBranch', baseBranch);
@@ -133,7 +130,7 @@ export class GitOperationStep extends WorkflowStep {
             paths
           });
           
-          // Set commit result in context
+          
           context.setVariable('commitResult', result);
           context.setVariable('committed', result.committed);
           context.setVariable('pushed', result.pushed);
@@ -174,7 +171,7 @@ export class GitOperationStep extends WorkflowStep {
             baseBranch
           });
           
-          // Set verification result in context
+          
           context.setVariable('diffVerification', result);
           context.setVariable('hasDiff', result.hasDiff);
           context.setVariable('diffSummary', result.diffSummary);
@@ -199,11 +196,11 @@ export class GitOperationStep extends WorkflowStep {
             workflowId: context.workflowId
           });
           
-          // Check if context artifact exists
+          
           const fs = await import('fs/promises');
           const path = await import('path');
           
-          // Resolve taskId and artifact path
+          
           const taskId = this.resolveVariable(config.taskId?.toString(), context) || context.getVariable('taskId') || context.getVariable('task_id') || context.getVariable('task')?.id;
           const artifactPath = this.resolveVariable(config.artifactPath, context) || `.ma/tasks/${taskId}/01-context.md`;
           const fullArtifactPath = path.join(repoRoot, artifactPath);
@@ -216,29 +213,29 @@ export class GitOperationStep extends WorkflowStep {
             contextExists = true;
             logger.info('Context artifact exists', { artifactPath, fullArtifactPath });
             
-            // Get the commit time when the artifact was last modified using git log
+            
             try {
-              // Get the commit hash of the last commit that modified this artifact
+              
               const artifactGitArgs = ['log', '-1', '--pretty=format:%H', '--', artifactPath];
               const artifactGitResult = await gitUtils.runGit(artifactGitArgs, { cwd: repoRoot });
               const artifactCommitHash = artifactGitResult.stdout.trim();
               
               if (!artifactCommitHash) {
-                // Artifact exists but isn't in git history - default to needing scan
+                
                 logger.warn('Artifact exists but not in git history', { artifactPath });
                 hasNewFiles = true;
               } else {
-                // Get all commits after the artifact commit, excluding .ma/ changes
-                // Using commit_hash..HEAD gets commits after (not including) the artifact commit
+                
+                
                 const newCommitsArgs = ['log', `${artifactCommitHash}..HEAD`, '--name-status', '--pretty=format:', '--', '.', ':(exclude).ma/'];
                 const newCommitsResult = await gitUtils.runGit(newCommitsArgs, { cwd: repoRoot });
                 const newCommitsOutput = newCommitsResult.stdout.trim();
                 
                 if (!newCommitsOutput) {
-                  // No new commits after artifact
+                  
                   hasNewFiles = false;
                 } else {
-                  // Check if there are any file additions or modifications
+                  
                   const lines = newCommitsOutput.split('\n').filter((line: string) => line.trim());
                   hasNewFiles = lines.some((line: string) => {
                     const trimmed = line.trim();
@@ -257,17 +254,17 @@ export class GitOperationStep extends WorkflowStep {
                 artifactPath,
                 error: gitError.message
               });
-              // Default to true (needs rescan) if git check fails
+              
               hasNewFiles = true;
             }
           } catch (accessError) {
-            // Context artifact doesn't exist
+            
             contextExists = false;
             hasNewFiles = true;
             logger.info('Context artifact does not exist', { artifactPath });
           }
           
-          // Set context variables for workflow conditions
+          
           const needsRescan = !contextExists || hasNewFiles;
           context.setVariable('context_exists', contextExists);
           context.setVariable('has_new_files', hasNewFiles);
@@ -349,7 +346,7 @@ export class GitOperationStep extends WorkflowStep {
       errors.push(`GitOperationStep: operation must be one of: ${validOperations.join(', ')}`);
     }
 
-    // Validate operation-specific requirements
+    
     if (config.operation === 'checkoutBranchFromBase') {
       if (!config.baseBranch && !context.getVariable('baseBranch')) {
         errors.push('GitOperationStep: checkoutBranchFromBase requires baseBranch');

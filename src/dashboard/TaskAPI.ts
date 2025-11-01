@@ -27,9 +27,7 @@ export type CreateTaskResult = {
   createdId?: string | null;
 };
 
-/**
- * Task CRUD operations for Dashboard API
- */
+
 export class TaskAPI extends DashboardClient {
   private projectAPI: ProjectAPI;
 
@@ -38,16 +36,14 @@ export class TaskAPI extends DashboardClient {
     this.projectAPI = new ProjectAPI();
   }
 
-  /**
-   * Create a new dashboard task with comprehensive error handling and milestone resolution
-   */
+  
   async createDashboardTask(input: CreateTaskInput): Promise<CreateTaskResult | null> {
     if (!this.baseUrl) {
       logger.warn("dashboard task creation skipped: dashboard base URL not configured");
       return null;
     }
 
-    // ProjectId is REQUIRED for backend routes
+    
     const projectId = input.projectId;
     if (!projectId) {
       logger.warn("dashboard task creation failed: projectId required");
@@ -56,7 +52,7 @@ export class TaskAPI extends DashboardClient {
 
     const endpoint = `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/tasks`;
 
-    // Sanitize inputs
+    
     const maxTitleLen = 180;
     const maxDescLen = 10000;
     const safeTitle = String(input.title || "").slice(0, maxTitleLen);
@@ -68,20 +64,20 @@ export class TaskAPI extends DashboardClient {
       description: safeDesc,
     };
 
-    // Note: projectId is in the URL path, not the body
+    
 
-    // Resolve milestone slug to ID if needed
+    
     let resolvedMilestoneId = input.milestoneId ?? null;
     if (!resolvedMilestoneId && input.milestoneSlug && projectId) {
       resolvedMilestoneId = await this.resolveMilestoneSlug(projectId, input.milestoneSlug);
     }
 
-    // Handle milestone ID
+    
     if (resolvedMilestoneId) {
       body.milestone_id = Number(resolvedMilestoneId);
     }
 
-    // Handle parent task ID
+    
     if (input.parentTaskId) {
       const isUuid = /^(?:[0-9a-fA-F]{8})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{12})$/.test(
         String(input.parentTaskId)
@@ -89,7 +85,7 @@ export class TaskAPI extends DashboardClient {
       if (isUuid) {
         body.parent_task_id = Number(input.parentTaskId);
       } else {
-        // Backend doesn't support parent_task_external_id - would need to resolve first
+        
         logger.warn("parent_task_external_id not supported by backend, skipping", { 
           parentTaskId: input.parentTaskId 
         });
@@ -154,10 +150,7 @@ export class TaskAPI extends DashboardClient {
     }
   }
 
-  /**
-   * Fetch a task by ID
-   * Note: Requires projectId since backend uses /projects/:projectId/tasks/:taskId
-   */
+  
   async fetchTask(taskId: string, projectId?: string): Promise<any | null> {
     if (!this.baseUrl) return null;
     if (!projectId) {
@@ -173,9 +166,7 @@ export class TaskAPI extends DashboardClient {
     }
   }
 
-  /**
-   * Update task status with optimistic concurrency control
-   */
+  
   async updateTaskStatus(
     taskId: string,
     status: string,
@@ -187,7 +178,7 @@ export class TaskAPI extends DashboardClient {
       return { ok: false, status: 0, body: null };
     }
 
-    // ProjectId is REQUIRED for backend routes
+    
     if (!projectId) {
       throw new Error("updateTaskStatus: projectId is required");
     }
@@ -195,14 +186,14 @@ export class TaskAPI extends DashboardClient {
     const endpoint = `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;
 
     try {
-      // First attempt with provided lockVersion
+      
       const first = await this.patchTaskStatus(endpoint, status, lockVersion ?? undefined);
       if (first.statusCode >= 200 && first.statusCode < 300) {
         logger.info("dashboard task updated", { taskId, projectId, status, statusCode: first.statusCode });
         return { ok: true, status: first.statusCode, body: first.responseBody } as any;
       }
 
-      // Handle concurrency conflict: retry with fresh lock version
+      
       if (first.statusCode === 409 || first.statusCode === 422) {
         const retryResult = await this.retryWithFreshLock(endpoint, taskId, status, projectId);
         if (retryResult) return retryResult;
@@ -222,9 +213,7 @@ export class TaskAPI extends DashboardClient {
     }
   }
 
-  /**
-   * Resolve milestone slug to ID
-   */
+  
   private async resolveMilestoneSlug(projectId: string, milestoneSlug: string): Promise<string | null> {
     try {
       const milestones: any = await this.projectAPI.fetchProjectMilestones(projectId);
@@ -254,9 +243,7 @@ export class TaskAPI extends DashboardClient {
     }
   }
 
-  /**
-   * Extract created task ID from response
-   */
+  
   private extractCreatedId(res: any, responseBody: any): string | null {
     try {
       if (responseBody && (responseBody.id || responseBody.task_id || (responseBody.task && responseBody.task.id))) {
@@ -275,9 +262,7 @@ export class TaskAPI extends DashboardClient {
     return null;
   }
 
-  /**
-   * PATCH task status
-   */
+  
   private async patchTaskStatus(
     endpoint: string,
     status: string,
@@ -307,9 +292,7 @@ export class TaskAPI extends DashboardClient {
     return { statusCode, responseBody };
   }
 
-  /**
-   * Retry update with fresh lock version
-   */
+  
   private async retryWithFreshLock(
     endpoint: string,
     taskId: string,

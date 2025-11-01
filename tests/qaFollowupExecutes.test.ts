@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeTempRepo } from './makeTempRepo.js';
 
-// Mock Redis client (uses __mocks__/redisClient.js)
+
 vi.mock('../src/redisClient.js');
 
-// Mock dashboard functions to prevent HTTP calls
+
 vi.mock('../src/dashboard.js', () => ({
   fetchProjectStatus: vi.fn().mockResolvedValue({
     id: 'proj-qa-exec',
@@ -28,11 +28,11 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
     const tempRepo = await makeTempRepo();
     let qaFollowupExecuted = false;
     
-    // Test business outcome: QA follow-up execution logic should complete without hanging
+    
     const coordinator = createFastCoordinator();
     
     try {
-      // SAFETY: Race condition with timeout protection
+      
       const testPromise = coordinator.handleCoordinator(
         {} as any,
         {} as any,
@@ -52,12 +52,12 @@ describe('Coordinator routes approved QA follow-up plan to engineer', () => {
 
       await Promise.race([testPromise, timeoutPromise]);
     } catch (error) {
-      // May fail due to other issues, but we're testing that QA follow-up doesn't hang
+      
       qaFollowupExecuted = true;
     }
 
-    // Business outcome: QA follow-up execution logic completed without hanging
-    // This validates that the declarative QA follow-up workflow executes properly
+    
+    
     expect(qaFollowupExecuted).toBe(true);
   });
 });

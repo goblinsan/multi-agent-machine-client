@@ -2,10 +2,7 @@ import { fetch } from "undici";
 import { logger } from "../logger.js";
 import { cfg } from "../config.js";
 
-/**
- * Base HTTP client for Dashboard API
- * Handles authentication, endpoint construction, and error handling
- */
+
 export class DashboardClient {
   protected readonly baseUrl: string;
   protected readonly apiKey: string;
@@ -15,9 +12,7 @@ export class DashboardClient {
     this.apiKey = cfg.dashboardApiKey || "";
   }
 
-  /**
-   * Make an authenticated request to the dashboard API
-   */
+  
   protected async request<T = any>(
     path: string,
     options: {
@@ -67,24 +62,18 @@ export class DashboardClient {
     }
   }
 
-  /**
-   * Make a GET request
-   */
+  
   protected async get<T = any>(path: string): Promise<T | null> {
     const { ok, data } = await this.request<T>(path, { method: "GET" });
     return ok ? data : null;
   }
 
-  /**
-   * Make a POST request
-   */
+  
   protected async post<T = any>(path: string, body?: any): Promise<{ ok: boolean; status: number; data: T | null; error?: any }> {
     return this.request<T>(path, { method: "POST", body });
   }
 
-  /**
-   * Make a PATCH request
-   */
+  
   protected async patch<T = any>(path: string, body?: any): Promise<{ ok: boolean; status: number; data: T | null; error?: any }> {
     return this.request<T>(path, { method: "PATCH", body });
   }

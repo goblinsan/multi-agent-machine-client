@@ -1,14 +1,4 @@
-/**
- * DashboardClient - Thin HTTP client for dashboard backend API
- * 
- * This is the ONLY integration point with the dashboard backend.
- * The dashboard backend is a self-contained service that exposes HTTP endpoints.
- * 
- * Architecture:
- * - Dashboard backend runs independently (e.g., http://localhost:3000)
- * - This client communicates via HTTP only (no direct imports)
- * - Clean separation: workflows use this client, not dashboard code directly
- */
+
 
 export interface Task {
   id: number;
@@ -93,15 +83,7 @@ export interface DashboardClientConfig {
   timeout?: number;
 }
 
-/**
- * HTTP client for dashboard backend API
- * 
- * Methods:
- * - createTask: Create single task
- * - bulkCreateTasks: Create multiple tasks in one request (fixes N+1 problem)
- * - updateTask: Update existing task
- * - listTasks: Query tasks with filters
- */
+
 export class DashboardClient {
   private baseUrl: string;
   private timeout: number;
@@ -111,13 +93,7 @@ export class DashboardClient {
     this.timeout = config.timeout || 5000;
   }
 
-  /**
-   * Create a single task
-   * 
-   * @param projectId - Project ID
-   * @param task - Task data
-   * @returns Created task with ID
-   */
+  
   async createTask(projectId: number, task: TaskCreateInput): Promise<Task> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks`;
     
@@ -138,18 +114,7 @@ export class DashboardClient {
     return response.json();
   }
 
-  /**
-   * Create multiple tasks in one request (bulk operation)
-   * 
-   * This solves the N+1 problem where workflows create many tasks sequentially.
-   * Instead of N HTTP calls, this makes 1 call with all tasks.
-   * 
-   * The dashboard backend creates all tasks in a transaction.
-   * 
-   * @param projectId - Project ID
-   * @param input - Array of tasks to create
-   * @returns Summary of created tasks
-   */
+  
   async bulkCreateTasks(projectId: number, input: BulkTaskCreateInput): Promise<BulkTaskCreateResponse> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks:bulk`;
     
@@ -170,14 +135,7 @@ export class DashboardClient {
     return response.json();
   }
 
-  /**
-   * Update an existing task
-   * 
-   * @param projectId - Project ID
-   * @param taskId - Task ID
-   * @param updates - Fields to update
-   * @returns Updated task
-   */
+  
   async updateTask(projectId: number, taskId: number, updates: TaskUpdateInput): Promise<Task> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks/${taskId}`;
     
@@ -198,13 +156,7 @@ export class DashboardClient {
     return response.json();
   }
 
-  /**
-   * List tasks with optional filters
-   * 
-   * @param projectId - Project ID
-   * @param filters - Optional filters (status, milestone_id, labels, etc.)
-   * @returns Array of tasks (minimal projection)
-   */
+  
   async listTasks(projectId: number, filters?: {
     status?: string;
     milestone_id?: number;
@@ -241,13 +193,7 @@ export class DashboardClient {
     return response.json();
   }
 
-  /**
-   * Get a single task by ID
-   * 
-   * @param projectId - Project ID
-   * @param taskId - Task ID
-   * @returns Full task details
-   */
+  
   async getTask(projectId: number, taskId: number): Promise<Task> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks/${taskId}`;
     
@@ -265,15 +211,7 @@ export class DashboardClient {
   }
 }
 
-/**
- * Create a configured dashboard client
- * 
- * Usage in workflows:
- * ```typescript
- * const dashboardClient = createDashboardClient();
- * const task = await dashboardClient.createTask(1, { title: 'Fix bug' });
- * ```
- */
+
 export function createDashboardClient(config?: Partial<DashboardClientConfig>): DashboardClient {
   const baseUrl = config?.baseUrl || process.env.DASHBOARD_API_URL || 'http://localhost:3000';
   const timeout = config?.timeout || 5000;

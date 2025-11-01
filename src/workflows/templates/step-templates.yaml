@@ -39,6 +39,7 @@ templates:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
         implementation: ${implementation_request_result}
+        qa_result: ${qa_request_result}
         repo: ${repo_remote}
         project_id: ${projectId}
         tdd_aware: ${tdd_aware}
@@ -54,6 +55,8 @@ templates:
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
+        implementation: ${implementation_request_result}
+        qa_result: ${qa_request_result}
         repo: ${repo_remote}
         branch: ${featureBranchName}
         project_id: ${projectId}
@@ -71,6 +74,8 @@ templates:
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
+        implementation: ${implementation_request_result}
+        qa_result: ${qa_request_result}
         code_review_result: ${code_review_request_result}
         repo: ${repo_remote}
         branch: ${featureBranchName}
@@ -89,6 +94,8 @@ templates:
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
+        implementation: ${implementation_request_result}
+        qa_result: ${qa_request_result}
         code_review_result: ${code_review_request_result}
         security_result: ${security_request_result}
         repo: ${repo_remote}

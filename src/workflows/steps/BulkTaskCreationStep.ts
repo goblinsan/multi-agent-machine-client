@@ -9,9 +9,7 @@ import { RetryHandler } from './helpers/RetryHandler.js';
 import { TaskEnricher, type EnrichmentConfig, type EnrichedTask } from './helpers/TaskEnricher.js';
 import { sleep } from '../../util/retry.js';
 
-/**
- * Task to create in bulk operation
- */
+
 interface TaskToCreate {
   title: string;
   description?: string;
@@ -26,14 +24,10 @@ interface TaskToCreate {
   skip_reason?: string;
 }
 
-/**
- * Existing task from dashboard (for duplicate detection)
- */
+
 type ExistingTask = DetectorExistingTask;
 
-/**
- * Configuration for BulkTaskCreationStep
- */
+
 interface BulkTaskCreationConfig {
   project_id: string;
   tasks: TaskToCreate[];
@@ -59,9 +53,7 @@ interface BulkTaskCreationConfig {
   };
 }
 
-/**
- * Result of bulk task creation
- */
+
 interface BulkCreationResult {
   tasks_created: number;
   urgent_tasks_created: number;
@@ -72,11 +64,7 @@ interface BulkCreationResult {
   errors: string[];
 }
 
-/**
- * Creates multiple tasks in bulk with idempotency, duplicate detection, and retry logic.
- * 
- * @see docs/steps/BULK_TASK_CREATION_STEP.md for detailed documentation
- */
+
 export class BulkTaskCreationStep extends WorkflowStep {
   private retryHandler: RetryHandler;
   private taskEnricher: TaskEnricher;
@@ -87,9 +75,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
     this.taskEnricher = new TaskEnricher();
   }
 
-  /**
-   * Validate configuration
-   */
+  
   protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -110,9 +96,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
     return { valid: errors.length === 0, errors, warnings };
   }
 
-  /**
-   * Execute bulk task creation with retry logic
-   */
+  
   async execute(context: WorkflowContext): Promise<StepResult> {
     const stepConfig = this.config.config as BulkTaskCreationConfig;
     const startTime = Date.now();
@@ -124,7 +108,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
         taskCount: stepConfig.tasks.length
       });
 
-      // If no tasks, return early
+      
       if (!stepConfig.tasks || stepConfig.tasks.length === 0) {
         return {
           status: 'success',
@@ -166,7 +150,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
 
       const enrichedTasks = this.taskEnricher.enrichTasks(stepConfig.tasks, enrichmentConfig);
 
-      // Create tasks with retry logic
+      
       const retryConfig = stepConfig.retry || {};
       const maxAttempts = retryConfig.max_attempts || 3;
       const initialDelay = retryConfig.initial_delay_ms || 1000;
@@ -178,7 +162,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           if (attempt > 1) {
-            // Exponential backoff: 1s, 2s, 4s, 8s, ...
+            
             const delay = initialDelay * Math.pow(backoffMultiplier, attempt - 2);
             context.logger.info('Retrying bulk task creation', {
               stepName: this.config.name,
@@ -196,14 +180,14 @@ export class BulkTaskCreationStep extends WorkflowStep {
             taskCount: enrichedTasks.length
           });
 
-          // Create tasks via dashboard API
+          
           result = await this.createTasksViaDashboard(
             stepConfig.project_id,
             enrichedTasks,
             stepConfig.options || {}
           );
 
-          // Success if no errors
+          
           if (result.errors.length === 0) {
             context.logger.info('Bulk task creation succeeded', {
               stepName: this.config.name,
@@ -216,7 +200,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
             break;
           }
 
-          // Partial success - check if we should retry
+          
           const hasRetryableErrors = this.hasRetryableErrors(
             result.errors,
             retryConfig.retryable_errors
@@ -255,13 +239,13 @@ export class BulkTaskCreationStep extends WorkflowStep {
           });
 
           if (attempt === maxAttempts) {
-            // Final attempt failed
+            
             break;
           }
         }
       }
 
-      // Check final result
+      
       if (!result) {
         throw lastError || new Error('Bulk task creation failed after all retry attempts');
       }
@@ -283,7 +267,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
           errors: result.errors
         });
 
-        // Check if we should abort workflow on partial failure
+        
         if (stepConfig.options?.abort_on_partial_failure && result.errors.length > 0) {
           context.logger.error('Aborting workflow due to partial failure after retries', {
             stepName: this.config.name,
@@ -291,7 +275,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
             tasksFailed: result.errors.length
           });
           
-          // Signal workflow abort
+          
           if (typeof (context as any).setVariable === 'function') {
             context.setVariable('workflow_abort_requested', true);
             context.setVariable('workflow_abort_reason', `BulkTaskCreationStep: ${result.errors.length} tasks failed after retries`);
@@ -357,12 +341,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
     return this.retryHandler.hasRetryableErrors(errors, retryablePatterns);
   }
 
-  /**
-   * Create tasks via dashboard API (bulk endpoint)
-   * 
-   * TODO: This is a placeholder - implement actual dashboard bulk API call
-   * For now, falls back to sequential creation with duplicate tracking
-   */
+  
   private async createTasksViaDashboard(
     projectId: string,
     tasks: EnrichedTask[],
@@ -383,13 +362,13 @@ export class BulkTaskCreationStep extends WorkflowStep {
       errors: []
     };
 
-    // Get dashboard client configuration from environment or config
+    
     const dashboardBaseUrl = process.env.DASHBOARD_API_URL || 'http://localhost:8080';
     const dashboardClient = new DashboardClient({ baseUrl: dashboardBaseUrl });
 
     const createCandidates: EnrichedTask[] = tasks.filter(t => !t.is_duplicate);
 
-    // Convert tasks to dashboard API format
+    
     const tasksToCreate: TaskCreateInput[] = createCandidates
       .map(task => ({
         title: task.title,
@@ -402,7 +381,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
         labels: task.metadata?.labels as string[] | undefined
       }));
 
-    // Handle tasks already marked as duplicates
+    
     for (const task of tasks.filter(t => t.is_duplicate)) {
       result.skipped_duplicates++;
       if (task.duplicate_of_task_id) {
@@ -415,7 +394,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
       });
     }
 
-    // If no tasks to create, return early
+    
     if (tasksToCreate.length === 0) {
       logger.info('No tasks to create (all duplicates or empty)', {
         totalTasks: tasks.length,
@@ -425,12 +404,12 @@ export class BulkTaskCreationStep extends WorkflowStep {
     }
 
     try {
-      // Call dashboard bulk create endpoint
+      
       const response = await dashboardClient.bulkCreateTasks(parseInt(projectId), {
         tasks: tasksToCreate
       });
 
-      // Process created tasks
+      
       for (const createdTask of response.created) {
         result.task_ids.push(String(createdTask.id));
         result.tasks_created++;
@@ -451,7 +430,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
         });
       }
 
-      // Process skipped tasks (idempotent duplicates from dashboard)
+      
       if (response.skipped) {
         for (const skipped of response.skipped) {
           result.skipped_duplicates++;

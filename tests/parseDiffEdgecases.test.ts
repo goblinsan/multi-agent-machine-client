@@ -32,7 +32,7 @@ index e69..abc 100644
     const spec = parseUnifiedDiffToEditSpec(diff);
     const up = spec.ops.find((o: any) => o.action === 'upsert' && o.path === 'src/multi.js');
     expect(up).toBeDefined();
-    // Narrow the type and assert content
+    
     const upsert = up as any;
     expect(upsert.content).toBeDefined();
     expect(upsert.content).toContain("console.log('line1')");
@@ -126,7 +126,7 @@ index e69de29..4b825dc 100644
 `;
     const warnings: string[] = [];
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
-    // Should have 2 ops (src/app.ts and package.json) and 1 warning (.git/config)
+    
     expect(spec.ops.length).toBe(2);
     expect(spec.ops.map((o: any) => o.path)).toContain('src/app.ts');
     expect(spec.ops.map((o: any) => o.path)).toContain('package.json');

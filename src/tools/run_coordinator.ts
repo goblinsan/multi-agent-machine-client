@@ -14,7 +14,7 @@ function printUsage() {
   console.error("  npm run coordinator -- PROJECT_ID                # Send coordinator message");
 }
 
-// Clear messages from streams while preserving consumer groups
+
 async function drainStreams(redis: any) {
   const streams = [cfg.requestStream, cfg.eventStream];
   
@@ -22,15 +22,15 @@ async function drainStreams(redis: any) {
     try {
       console.log(`Draining messages from stream: ${stream}`);
       
-      // Check if stream exists
+      
       const len = await redis.xLen(stream).catch(() => 0);
       if (len === 0) {
         console.log(`Stream ${stream} is empty or doesn't exist`);
         continue;
       }
       
-      // Delete the stream (removes all messages but not consumer groups)
-      // Consumer groups will remain and can continue working when stream is recreated
+      
+      
       const removed = await redis.del(stream);
       console.log(`Deleted stream ${stream} - removed ${len} messages`, { removed });
       
@@ -42,7 +42,7 @@ async function drainStreams(redis: any) {
   console.log("Stream drain complete - all messages cleared, consumer groups preserved");
 }
 
-// Nuclear option: destroy everything including consumer groups
+
 async function nukeStreams(redis: any) {
   const streams = [cfg.requestStream, cfg.eventStream];
   
@@ -50,17 +50,17 @@ async function nukeStreams(redis: any) {
     try {
       console.log(`Nuking stream: ${stream}`);
       
-      // 1. Get all consumer groups for this stream
+      
       let groups: any[] = [];
       try {
         groups = await redis.xInfoGroups(stream);
         console.log(`Found ${groups.length} consumer groups for ${stream}`);
       } catch (error) {
-        // Stream might not exist or have no groups
+        
         console.log(`No consumer groups found for ${stream}:`, (error as Error).message);
       }
       
-      // 2. For each group, destroy it (this removes all pending messages)
+      
       for (const group of groups) {
         try {
           await redis.xGroupDestroy(stream, group.name);
@@ -70,7 +70,7 @@ async function nukeStreams(redis: any) {
         }
       }
       
-      // 3. Delete the entire stream
+      
       const removed = await redis.del(stream);
       console.log(`Deleted stream ${stream}`, { removed });
       
@@ -79,7 +79,7 @@ async function nukeStreams(redis: any) {
     }
   }
   
-  // 4. Also clean up any persona-specific groups that might exist
+  
   console.log("Cleaning up persona-specific consumer groups...");
   const personas = cfg.allowedPersonas || [];
   for (const persona of personas) {
@@ -92,7 +92,7 @@ async function nukeStreams(redis: any) {
     }
   }
   
-  // 5. Clean up coordination group on event stream
+  
   try {
     const coordGroupName = `${cfg.groupPrefix}:coordinator`;
     await redis.xGroupDestroy(cfg.eventStream, coordGroupName);

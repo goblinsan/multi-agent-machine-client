@@ -1,19 +1,8 @@
 import type { EditSpec, UpsertOp } from '../../../fileops.js';
 
-/**
- * EditSpecValidator - Validates edit specifications
- * 
- * Responsibilities:
- * - Validate EditSpec structure
- * - Check operation types and required fields
- * - Validate paths and content
- * - Collect errors and warnings
- */
 
-/**
- * Validate edit specification
- * Returns validation result with errors and warnings
- */
+
+
 export function validateEditSpec(spec: EditSpec): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];

@@ -48,17 +48,13 @@ interface QAAnalysisResult {
   nextActions: string[];
 }
 
-/**
- * Generates recommendations and next actions based on QA analysis results
- */
+
 export class RecommendationGenerator {
-  /**
-   * Generate recommendations based on QA results and analysis
-   */
+  
   generateRecommendations(qaResults: QAResults, analysis: QAAnalysisResult): QAAnalysisResult['recommendations'] {
     const recommendations: QAAnalysisResult['recommendations'] = [];
 
-    // High-priority recommendations based on critical issues
+    
     const criticalFailures = analysis.failureAnalyses.filter(f => f.severity === 'high');
     if (criticalFailures.length > 0) {
       recommendations.push({
@@ -69,7 +65,7 @@ export class RecommendationGenerator {
       });
     }
 
-    // Medium-priority recommendations
+    
     const failureRate = qaResults.failedTests / qaResults.totalTests;
     if (failureRate > 0.2) {
       recommendations.push({
@@ -87,7 +83,7 @@ export class RecommendationGenerator {
       });
     }
 
-    // Coverage recommendations
+    
     if (analysis.coverageAnalysis?.status === 'poor') {
       recommendations.push({
         priority: 'medium',
@@ -97,7 +93,7 @@ export class RecommendationGenerator {
       });
     }
 
-    // Pattern-based recommendations
+    
     const timeoutFailures = analysis.failureAnalyses.filter(f => f.pattern === 'timeout');
     if (timeoutFailures.length > 2) {
       recommendations.push({
@@ -111,14 +107,12 @@ export class RecommendationGenerator {
     return recommendations;
   }
 
-  /**
-   * Generate next actions based on QA results and analysis
-   */
+  
   generateNextActions(qaResults: QAResults, analysis: QAAnalysisResult): string[] {
     const actions: string[] = [];
 
     if (qaResults.status === 'failed') {
-      // Prioritize actions based on severity and count
+      
       const criticalIssues = analysis.failureAnalyses.filter(f => f.severity === 'high').length;
       const mediumIssues = analysis.failureAnalyses.filter(f => f.severity === 'medium').length;
 
@@ -132,12 +126,12 @@ export class RecommendationGenerator {
         actions.push(`Review and fix ${mediumIssues} medium-severity issue(s)`);
       }
 
-      // Coverage actions
+      
       if (analysis.coverageAnalysis?.criticalGaps.length) {
         actions.push('Add tests for critical uncovered code paths');
       }
 
-      // Pattern-specific actions
+      
       const topCategory = analysis.failureCategories[0];
       if (topCategory && topCategory.count > 1) {
         actions.push(`Focus on ${topCategory.name} issues (${topCategory.count} occurrences)`);
@@ -149,9 +143,7 @@ export class RecommendationGenerator {
     return actions;
   }
 
-  /**
-   * Assess overall QA status
-   */
+  
   assessOverallStatus(qaResults: QAResults): QAAnalysisResult['overallAssessment'] {
     const failureRate = qaResults.failedTests / qaResults.totalTests;
     const hasFailures = qaResults.failedTests > 0;

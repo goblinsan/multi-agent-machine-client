@@ -1,25 +1,4 @@
-/**
- * Test Group 2: PM Decision Parsing - Consolidated Behavior Tests
- * 
- * Based on: docs/test-rationalization/TEST_GROUP_2_PM_DECISION_PARSING.md
- * 
- * This test file consolidates behavior from:
- * - tests/productionCodeReviewFailure.test.ts (154 lines)
- * - tests/initialPlanningAckAndEval.test.ts (100 lines)
- * - tests/qaPmGating.test.ts (100 lines)
- * - src/workflows/steps/PMDecisionParserStep.ts (347 lines - modern implementation)
- * - src/workflows/steps/ReviewFailureTasksStep.ts (540 lines - old parser)
- * 
- * Key Validated Behaviors:
- * 1. Single consolidated parser (PMDecisionParserStep only)
- * 2. 7 PM response formats handled (JSON, text, nested, markdown, status vs decision)
- * 3. Backlog field deprecated (merge with follow_up_tasks if both present)
- * 4. Follow-up task routing (critical/high → same milestone, medium/low → backlog)
- * 5. Priority validation (QA=1200, Code/Security/DevOps=1000, deferred=50)
- * 6. Production bug fix (backlog + follow_up_tasks both present → merge arrays)
- * 
- * Implementation Status: ⏳ Tests written, implementation pending Phase 4
- */
+
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PMDecisionParserStep } from '../../src/workflows/steps/PMDecisionParserStep.js';
@@ -177,11 +156,11 @@ This should be addressed before deployment.
 
       const result = await parser.execute(context);
 
-      // Should move to follow_up_tasks
+      
       expect(result.context.pm_decision.follow_up_tasks).toHaveLength(1);
       expect(result.context.pm_decision.backlog).toBeUndefined();
 
-      // Should log deprecation warning
+      
       expect(result.warnings).toContainEqual(
         expect.stringContaining('PM used deprecated "backlog" field')
       );
@@ -190,9 +169,9 @@ This should be addressed before deployment.
 
   describe('Format 5: Production Bug - Both backlog AND follow_up_tasks', () => {
     it('should merge both arrays when PM returns both fields', async () => {
-      // This is the PRODUCTION BUG we found:
-      // PM returned BOTH backlog (1 task) and follow_up_tasks (2 tasks)
-      // Result: 0 tasks created (parser chose backlog, but it was wrong field)
+      
+      
+      
       
       const pmResponse = JSON.stringify({
         immediate_fix: true,
@@ -229,10 +208,10 @@ This should be addressed before deployment.
 
       const result = await parser.execute(context);
 
-      // BUG FIX: Should merge both arrays (3 total tasks)
+      
       expect(result.context.pm_decision.follow_up_tasks).toHaveLength(3);
 
-      // Should route correctly
+      
       const tasks = result.context.pm_decision.follow_up_tasks;
       expect(tasks.find(t => t.title.includes('QA'))).toMatchObject({
         priority: 1200,
@@ -247,7 +226,7 @@ This should be addressed before deployment.
         milestone_id: 'backlog-milestone'
       });
 
-      // Should log warning about both fields
+      
       expect(result.warnings).toContainEqual(
         expect.stringContaining('PM returned both "backlog" and "follow_up_tasks"')
       );
@@ -303,10 +282,10 @@ No immediate action required.
 
       const result = await parser.execute(context);
 
-      // Should infer immediate_fix = false from text analysis
+      
       expect(result.context.pm_decision.immediate_fix).toBe(false);
 
-      // Should have empty follow_up_tasks array (no structured data)
+      
       expect(result.context.pm_decision.follow_up_tasks).toEqual([]);
     });
   });
@@ -479,7 +458,7 @@ No immediate action required.
 
       const result = await parser.execute(context);
 
-      // Should fall back to backlog milestone with warning
+      
       expect(result.context.pm_decision.follow_up_tasks[0].milestone_id).toBe('backlog-999');
       expect(result.warnings).toContainEqual(
         expect.stringContaining('Parent milestone not found')
@@ -500,7 +479,7 @@ No immediate action required.
           {
             title: '🚨 [Code] Code issue',
             priority: 'high'
-            // Missing assignee_persona, should be added
+            
           }
         ]
       });

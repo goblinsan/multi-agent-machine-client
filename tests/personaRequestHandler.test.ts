@@ -3,7 +3,7 @@ import { buildPersonaMessages, callPersonaModel } from '../src/personas/PersonaR
 
 vi.mock('../src/lmstudio.js', () => ({
   callLMStudio: vi.fn(async (_model: string, messages: any[]) => {
-    // Echo back a tiny response using the last user message content
+    
     const user = messages.filter((m: any) => m.role === 'user').pop();
     return { content: `ok: ${user?.content?.slice(0, 10) || ''}` };
   })
@@ -28,7 +28,7 @@ describe('PersonaRequestHandler', () => {
       extraSystemMessages: ['Extra guidance here']
     });
 
-    // order: system prompt, scan summary, dashboard, QA, planning, snippets, extra, user
+    
     expect(msgs[0].role).toBe('system');
     expect(msgs[0].content).toContain('You are a planner');
     expect(msgs.some(m => m.content.includes('File scan summary'))).toBe(true);

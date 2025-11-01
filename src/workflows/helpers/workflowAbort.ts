@@ -4,12 +4,12 @@ import type { WorkflowContext } from "../engine/WorkflowContext.js";
 
 const STREAM_NAME = cfg.requestStream;
 
-// Purge any pending persona requests related to the aborted workflow from Redis stream
-// Expected behavior (per tests):
-// - XRANGE to list entries
-// - XACK for each matching entry for both lead-engineer and coordination groups
-// - XDEL to remove the entries
-// Note: Transport lifecycle is managed by the caller (WorkflowContext)
+
+
+
+
+
+
 async function purgeWorkflowRedisQueues(
   transport: any,
   workflowId: string
@@ -28,13 +28,13 @@ async function purgeWorkflowRedisQueues(
       const message = (entry as any).message || (entry as any).fields || {};
       if (message.workflow_id === workflowId) {
         toRemove.push(id);
-        // Ack for expected groups
+        
         try {
           acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:lead-engineer`, id);
-        } catch { /* xAck may fail if message already acked */ }
+        } catch {  }
         try {
           acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:coordination`, id);
-        } catch { /* xAck may fail if message already acked */ }
+        } catch {  }
       }
     }
 
@@ -44,7 +44,7 @@ async function purgeWorkflowRedisQueues(
     }
     return { removed, acked };
   } catch (err) {
-    // Silently fail if transport operations fail
+    
     return { removed: 0, acked: 0 };
   }
 }
@@ -83,7 +83,7 @@ export async function abortWorkflowWithReason(
       acked: cleanupResult.acked
     });
   } catch (err) {
-    // Downgrade severity in test environments to reduce noisy logs
+    
     const level = process.env.NODE_ENV === 'test' ? 'debug' : 'warn';
     (context.logger as any)[level]("failed to purge redis queues during workflow abort", {
       workflowId,

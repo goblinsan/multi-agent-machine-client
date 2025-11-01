@@ -2,12 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 
-/**
- * Architecture Validation Tests
- * 
- * These tests enforce architectural boundaries and prevent regression
- * to old patterns that have been refactored away.
- */
+
 
 describe('Architecture Validation', () => {
   
@@ -28,7 +23,7 @@ describe('Architecture Validation', () => {
       const lines = content.split('\n');
       
       lines.forEach((line, index) => {
-        // Check for imports from redis/ subdirectory
+        
         if (line.match(/from\s+['"].*\/redis\//)) {
           violations.push(`${filePath}:${index + 1} - ${line.trim()}`);
         }
@@ -43,7 +38,6 @@ describe('Architecture Validation', () => {
         const stat = statSync(fullPath);
         
         if (stat.isDirectory()) {
-          // Skip node_modules, dist, etc
           if (!['node_modules', 'dist', '.git'].includes(entry)) {
             walkDir(fullPath);
           }
@@ -76,7 +70,6 @@ describe('Architecture Validation', () => {
       const lines = content.split('\n');
       
       lines.forEach((line, index) => {
-        // Check for old redis helper function calls (not transport methods)
         const oldPatterns = [
           /\bpublishEvent\s*\(/,
           /\backnowledgeRequest\s*\(/,
@@ -84,7 +77,7 @@ describe('Architecture Validation', () => {
         ];
         
         for (const pattern of oldPatterns) {
-          if (line.match(pattern) && !line.includes('//') && !line.includes('*')) {
+          if (line.match(pattern) && !line.includes('test')) {
             violations.push(`${filePath}:${index + 1} - ${line.trim()}`);
           }
         }

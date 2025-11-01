@@ -3,39 +3,25 @@ import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { logger } from '../../logger.js';
 
 interface PlanEvaluationConfig {
-  /**
-   * The plan to evaluate (either from context or explicit plan data)
-   */
+  
   planSource?: 'context' | 'input';
   
-  /**
-   * Minimum feasibility score (0-1) to consider the plan acceptable
-   */
+  
   minFeasibilityScore?: number;
   
-  /**
-   * Minimum quality score (0-1) to consider the plan acceptable  
-   */
+  
   minQualityScore?: number;
   
-  /**
-   * Whether to require risk assessment in the plan
-   */
+  
   requireRiskAssessment?: boolean;
   
-  /**
-   * Maximum complexity score (0-1) to allow
-   */
+  
   maxComplexityScore?: number;
   
-  /**
-   * Whether to validate that the plan addresses all requirements
-   */
+  
   validateRequirements?: boolean;
   
-  /**
-   * Custom evaluation criteria
-   */
+  
   customCriteria?: Array<{
     name: string;
     description: string;
@@ -91,7 +77,7 @@ export class PlanEvaluationStep extends WorkflowStep {
     try {
       logger.info('Starting plan evaluation', { stepName: this.config.name });
       
-      // Extract plan data
+      
       const planData = this.extractPlanData(context, config);
       if (!planData) {
         return {
@@ -101,10 +87,10 @@ export class PlanEvaluationStep extends WorkflowStep {
         };
       }
       
-      // Perform evaluation
+      
       const evaluation = this.evaluatePlan(planData, config);
       
-      // Determine if plan is approved
+      
       const approved = this.isPlanApproved(evaluation, config);
       evaluation.approved = approved;
       
@@ -190,13 +176,13 @@ export class PlanEvaluationStep extends WorkflowStep {
     const source = config.planSource || 'context';
     
     if (source === 'context') {
-      // Look for plan data in context from previous steps
+      
       const planningData = context.getStepOutput('planning');
       if (planningData?.plan) {
         return planningData.plan;
       }
       
-      // Check other common step names that might contain plans
+      
       const stepNames = ['plan', 'implementation-plan', 'code-generation'];
       for (const stepName of stepNames) {
         const stepOutput = context.getStepOutput(stepName);
@@ -207,8 +193,8 @@ export class PlanEvaluationStep extends WorkflowStep {
       
       return null;
     } else {
-      // Look for plan in step input (this would need to be passed via workflow)
-      // For now, return null as this would require additional context setup
+      
+      
       return null;
     }
   }
@@ -217,22 +203,22 @@ export class PlanEvaluationStep extends WorkflowStep {
     const issues: EvaluationResult['issues'] = [];
     const recommendations: string[] = [];
     
-    // Evaluate feasibility
+    
     const feasibilityScore = this.evaluateFeasibility(planData, issues, recommendations);
     
-    // Evaluate quality
+    
     const qualityScore = this.evaluateQuality(planData, issues, recommendations);
     
-    // Evaluate complexity
+    
     const complexityScore = this.evaluateComplexity(planData, issues, recommendations);
     
-    // Evaluate completeness
+    
     const completenessScore = this.evaluateCompleteness(planData, config, issues, recommendations);
     
-    // Evaluate risk assessment
+    
     const riskScore = this.evaluateRiskAssessment(planData, config, issues, recommendations);
     
-    // Calculate overall score (weighted average)
+    
     const overallScore = (
       feasibilityScore * 0.25 +
       qualityScore * 0.25 +
@@ -257,7 +243,7 @@ export class PlanEvaluationStep extends WorkflowStep {
   private evaluateFeasibility(planData: PlanData, issues: EvaluationResult['issues'], recommendations: string[]): number {
     let score = 1.0;
     
-    // Check if steps are realistic
+    
     if (!planData.steps || planData.steps.length === 0) {
       issues.push({
         type: 'error',
@@ -267,7 +253,7 @@ export class PlanEvaluationStep extends WorkflowStep {
       });
       score -= 0.5;
     } else {
-      // Check for overly complex or vague steps
+      
       for (const step of planData.steps) {
         if (!step.description || step.description.length < 10) {
           issues.push({
@@ -281,7 +267,7 @@ export class PlanEvaluationStep extends WorkflowStep {
       }
     }
     
-    // Check timeline realism
+    
     if (planData.timeline) {
       if (planData.timeline.estimated_hours < 1) {
         issues.push({
@@ -305,7 +291,7 @@ export class PlanEvaluationStep extends WorkflowStep {
   private evaluateQuality(planData: PlanData, issues: EvaluationResult['issues'], recommendations: string[]): number {
     let score = 1.0;
     
-    // Check for clear title and description
+    
     if (!planData.title || planData.title.length < 5) {
       issues.push({
         type: 'warning',
@@ -326,7 +312,7 @@ export class PlanEvaluationStep extends WorkflowStep {
       score -= 0.2;
     }
     
-    // Check step quality
+    
     if (planData.steps) {
       let stepsWithRationale = 0;
       for (const step of planData.steps) {
@@ -346,25 +332,25 @@ export class PlanEvaluationStep extends WorkflowStep {
   }
 
   private evaluateComplexity(planData: PlanData, issues: EvaluationResult['issues'], recommendations: string[]): number {
-    // Returns complexity score (0 = simple, 1 = very complex)
+    
     let complexityFactors = 0;
     
-    // Number of steps
+    
     if (planData.steps) {
       if (planData.steps.length > 10) complexityFactors += 0.3;
       else if (planData.steps.length > 5) complexityFactors += 0.1;
     }
     
-    // Declared complexity
+    
     if (planData.complexity === 'high') complexityFactors += 0.4;
     else if (planData.complexity === 'medium') complexityFactors += 0.2;
     
-    // Dependencies
+    
     if (planData.dependencies && planData.dependencies.length > 3) {
       complexityFactors += 0.2;
     }
     
-    // Timeline uncertainty
+    
     if (planData.timeline?.confidence === 'low') {
       complexityFactors += 0.1;
     }
@@ -381,7 +367,7 @@ export class PlanEvaluationStep extends WorkflowStep {
   private evaluateCompleteness(planData: PlanData, config: PlanEvaluationConfig, issues: EvaluationResult['issues'], recommendations: string[]): number {
     let score = 1.0;
     
-    // Check required elements
+    
     if (config.validateRequirements && (!planData.requirements || planData.requirements.length === 0)) {
       issues.push({
         type: 'error',
@@ -433,7 +419,7 @@ export class PlanEvaluationStep extends WorkflowStep {
         });
         score -= 0.5;
       } else {
-        // Check risk quality
+        
         let risksWithMitigation = 0;
         for (const risk of planData.risks) {
           if (risk.mitigation && risk.mitigation.length > 10) {
@@ -464,12 +450,12 @@ export class PlanEvaluationStep extends WorkflowStep {
     const minQuality = config.minQualityScore || 0.6;
     const maxComplexity = config.maxComplexityScore || 0.8;
     
-    // Check minimum thresholds
+    
     if (evaluation.feasibilityScore < minFeasibility) return false;
     if (evaluation.qualityScore < minQuality) return false;
     if (evaluation.complexityScore > maxComplexity) return false;
     
-    // Check for critical errors
+    
     const criticalErrors = evaluation.issues.filter(
       issue => issue.type === 'error' && issue.severity === 'high'
     );
@@ -479,7 +465,7 @@ export class PlanEvaluationStep extends WorkflowStep {
   }
 
   async cleanup(_context: WorkflowContext): Promise<void> {
-    // No cleanup needed for plan evaluation
+    
     logger.debug('Plan evaluation step cleanup completed', { stepName: this.config.name });
   }
 }

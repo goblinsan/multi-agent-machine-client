@@ -4,30 +4,12 @@ import fs from 'node:fs/promises';
 import { makeTempRepo } from './makeTempRepo.js';
 import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-/**
- * Task-Goal-Aware Review System Tests
- * 
- * These tests validate that ALL review personas (code-reviewer, security-review, 
- * devops, qa) check implementation against BOTH:
- * 1. The approved plan (from plan_artifact)
- * 2. The original task goal (from task.description)
- * 
- * Architecture:
- * - Reviews receive plan_artifact in payload (path to approved plan in .ma/tasks/{id})
- * - PersonaConsumer reads plan from git and includes in LLM context
- * - System prompts instruct reviews to validate alignment with plan AND task goal
- * - Severe findings flagged when implementation deviates from plan or task goal
- * 
- * Test Strategy:
- * - Uses mocked persona responses to simulate review behavior
- * - Validates workflow configuration passes plan_artifact to ALL reviews
- * - Validates system prompts reference task goals and plans
- */
 
-// Mock Redis client
+
+
 vi.mock('../src/redisClient.js');
 
-// Mock dashboard to prevent HTTP calls
+
 vi.mock('../src/dashboard.js', () => ({
   fetchProjectStatus: vi.fn().mockResolvedValue({
     id: 'proj-review-test',
@@ -41,7 +23,7 @@ vi.mock('../src/dashboard.js', () => ({
   updateTaskStatus: vi.fn().mockResolvedValue({ ok: true, status: 200 })
 }));
 
-// Mock persona with controlled responses
+
 let mockPersonaResponses = new Map<string, any>();
 
 vi.mock('../src/agents/persona.js', () => ({
@@ -69,7 +51,7 @@ describe('Task-Goal-Aware Review System', () => {
     it('should include plan_artifact in code review payload during workflow execution', async () => {
       const tempRepo = await makeTempRepo();
       
-      // Create task directory with approved plan
+      
       const taskId = 'task-123';
       const taskDir = path.join(tempRepo, '.ma', 'tasks', taskId);
       await fs.mkdir(taskDir, { recursive: true });
@@ -88,7 +70,7 @@ Add comprehensive logging to user authentication module
         planContent
       );
 
-      // Mock code review to fail when plan doesn't match implementation
+      
       mockPersonaResponses.set('code-reviewer', {
         status: 'fail',
         summary: 'Implementation deviates from approved plan',
@@ -141,7 +123,7 @@ Add logging to authentication module
         planContent
       );
 
-      // Mock code review to pass when implementation matches
+      
       mockPersonaResponses.set('code-reviewer', {
         status: 'pass',
         summary: 'Implementation aligns with approved plan and task goals',
@@ -173,8 +155,8 @@ Add logging to authentication module
 
   describe('All Review Personas - Task Goal Awareness', () => {
     it('should validate ALL review personas have task-goal-aware prompts', async () => {
-      // Validate that system prompts for ALL review personas
-      // instruct them to check against task goals and plans
+      
+      
       
       const reviewPersonas = [
         'code-reviewer',
@@ -183,22 +165,22 @@ Add logging to authentication module
         'tester-qa'
       ];
 
-      // Read system prompts from personas.ts
+      
       const { SYSTEM_PROMPTS } = await import('../src/personas.js');
 
       for (const persona of reviewPersonas) {
         const prompt = SYSTEM_PROMPTS[persona];
         expect(prompt, `${persona} prompt should exist`).toBeDefined();
         
-        // After implementation, prompts should reference validating against plans/goals
-        // For now, we're documenting the requirement
+        
+        
         const hasValidationInstruction = 
           prompt.toLowerCase().includes('plan') ||
           prompt.toLowerCase().includes('task') ||
           prompt.toLowerCase().includes('goal') ||
           prompt.toLowerCase().includes('requirement');
 
-        // This will initially fail - that's expected and drives implementation
+        
         expect(
           hasValidationInstruction,
           `${persona} prompt should reference validating against task goals, plans, or requirements`
@@ -229,7 +211,7 @@ Implement rate limiting for API endpoints
         planContent
       );
 
-      // Mock security review to fail when rate limiting not implemented
+      
       mockPersonaResponses.set('security-review', {
         status: 'fail',
         summary: 'Critical security controls from plan not implemented',

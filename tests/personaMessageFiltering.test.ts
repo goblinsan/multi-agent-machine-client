@@ -3,16 +3,7 @@ import { PersonaConsumer } from '../src/personas/PersonaConsumer.js';
 import { LocalTransport } from '../src/transport/LocalTransport.js';
 import { cfg } from '../src/config.js';
 
-/**
- * Tests that PersonaConsumer correctly filters messages by to_persona field
- * to prevent race conditions where all personas process all messages.
- * 
- * CRITICAL: Without this filtering, all personas would process every request
- * from the shared request stream, causing:
- * - Wrong personas responding to requests
- * - Race conditions breaking workflow step sequencing
- * - Multiple concurrent responses to same request
- */
+
 describe('PersonaConsumer message filtering', () => {
   let transport: LocalTransport;
   let consumer: PersonaConsumer;
@@ -23,10 +14,10 @@ describe('PersonaConsumer message filtering', () => {
   });
 
   it('should only process messages addressed to the correct persona', async () => {
-    // Track which personas actually processed requests
+    
     const processedRequests: Array<{ persona: string; toPersona: string; messageId: string }> = [];
 
-    // Mock the persona execution to track processing
+    
     vi.spyOn(consumer as any, 'executePersonaRequest').mockImplementation(async (opts: any) => {
       processedRequests.push({
         persona: opts.persona,
@@ -39,17 +30,17 @@ describe('PersonaConsumer message filtering', () => {
       };
     });
 
-    // Start consumers for multiple personas
+    
     const _startPromise = consumer.start({
       personas: ['context', 'plan-evaluator', 'implementation-planner'],
       blockMs: 100,
       batchSize: 10
     });
 
-    // Give consumers time to set up
+    
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Send messages to different personas
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-1',
       to_persona: 'context',
@@ -77,13 +68,13 @@ describe('PersonaConsumer message filtering', () => {
       payload: JSON.stringify({ task: 'test' })
     });
 
-    // Give consumers time to process messages
+    
     await new Promise(resolve => setTimeout(resolve, 1));
 
-    // Stop consumers
+    
     await consumer.stop();
 
-    // Verify each persona only processed its own message
+    
     expect(processedRequests.length).toBe(3);
 
     const contextRequests = processedRequests.filter(r => r.persona === 'context');
@@ -102,21 +93,21 @@ describe('PersonaConsumer message filtering', () => {
   it('should acknowledge but not process messages for other personas', async () => {
     const ackedMessages: string[] = [];
     
-    // Mock xAck to track acknowledgments
+    
     const originalXAck = transport.xAck.bind(transport);
     vi.spyOn(transport, 'xAck').mockImplementation(async (stream, group, messageId) => {
       ackedMessages.push(messageId);
       return originalXAck(stream, group, messageId);
     });
 
-    // Track execution
+    
     const executedPersonas: string[] = [];
     vi.spyOn(consumer as any, 'executePersonaRequest').mockImplementation(async (opts: any) => {
       executedPersonas.push(opts.persona);
       return { status: 'pass', result: 'test' };
     });
 
-    // Start only context consumer
+    
     await consumer.start({
       personas: ['context'],
       blockMs: 100,
@@ -125,7 +116,7 @@ describe('PersonaConsumer message filtering', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Send message for context (should process)
+    
     const contextMsgId = await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-context',
       to_persona: 'context',
@@ -135,7 +126,7 @@ describe('PersonaConsumer message filtering', () => {
       payload: JSON.stringify({})
     });
 
-    // Send message for different persona (should ack but not process)
+    
     const plannerMsgId = await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-planner',
       to_persona: 'implementation-planner',
@@ -148,11 +139,11 @@ describe('PersonaConsumer message filtering', () => {
     await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
-    // Context message should be acked and executed
+    
     expect(ackedMessages).toContain(contextMsgId);
     expect(executedPersonas).toContain('context');
 
-    // Planner message should be acked but NOT executed by context consumer
+    
     expect(ackedMessages).toContain(plannerMsgId);
     expect(executedPersonas).not.toContain('implementation-planner');
     expect(executedPersonas.length).toBe(1);
@@ -170,7 +161,7 @@ describe('PersonaConsumer message filtering', () => {
       return { status: 'pass', result: 'test' };
     });
 
-    // Start all 11 personas (like run_local does)
+    
     await consumer.start({
       personas: [
         'context',
@@ -191,8 +182,8 @@ describe('PersonaConsumer message filtering', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Simulate coordinator sending request to context persona
-    // (This is what caused the race condition bug)
+    
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf_coord_test',
       to_persona: 'context',
@@ -206,17 +197,17 @@ describe('PersonaConsumer message filtering', () => {
     await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
-    // CRITICAL: Only context persona should have processed this
-    // Bug was: all 11 personas processed it
+    
+    
     const contextProcessed = processLog.filter(p => p.persona === 'context');
     expect(contextProcessed.length).toBe(1);
     expect(contextProcessed[0].workflowId).toBe('wf_coord_test');
 
-    // No other personas should have executed this request
+    
     const otherPersonas = processLog.filter(p => p.persona !== 'context');
     expect(otherPersonas.length).toBe(0);
 
-    // Total should be exactly 1 execution
+    
     expect(processLog.length).toBe(1);
   });
 
@@ -236,21 +227,21 @@ describe('PersonaConsumer message filtering', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Send message without to_persona field (edge case)
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-no-target',
       step: '1-context',
       intent: 'context_gathering',
       corr_id: 'corr-no-target',
       payload: JSON.stringify({})
-      // to_persona field missing
+      
     });
 
     await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
-    // Without to_persona, message should still be processed
-    // (backwards compatibility / fail-open behavior)
+    
+    
     expect(executedWorkflows).toContain('wf-no-target');
   });
 });

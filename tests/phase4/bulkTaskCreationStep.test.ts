@@ -38,7 +38,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      // Mock createTasksViaDashboard to fail first 2 attempts
+      
       const originalMethod = (step as any).createTasksViaDashboard;
       (step as any).createTasksViaDashboard = async (...args: any[]) => {
         attempts++;
@@ -60,10 +60,10 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
 
       const duration = Date.now() - startTime;
       
-      // Should have retried 3 times
+      
       expect(attempts).toBe(3);
       
-      // Should have waited: 100ms + 200ms = 300ms minimum
+      
       expect(duration).toBeGreaterThanOrEqual(300);
     });
 
@@ -82,7 +82,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      // Mock to return non-retryable error
+      
       (step as any).createTasksViaDashboard = async () => {
         attempts++;
         return {
@@ -98,7 +98,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
 
       await step.execute(context);
 
-      // Should only attempt once (no retries)
+      
       expect(attempts).toBe(1);
     });
 
@@ -146,7 +146,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
               errors: [errorMsg]
             };
           }
-          // Success on retry
+          
           return {
             tasks_created: 1,
             urgent_tasks_created: 1,
@@ -186,7 +186,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      // Mock partial failure
+      
       (step as any).createTasksViaDashboard = async () => ({
         tasks_created: 1,
         urgent_tasks_created: 1,
@@ -278,7 +278,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
       expect(result.status).toBe('success');
       expect(result.outputs?.skipped_duplicates).toBe(1);
       expect(result.outputs?.tasks_created).toBe(0);
-      // Match score and overlap logged internally
+      
     });
 
     it('should use external_id match strategy (100% match)', async () => {
@@ -336,7 +336,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      // Spy on createTasksViaDashboard to verify external_id was set on enriched tasks
+      
       const createTasksSpy = vi.spyOn(step as any, 'createTasksViaDashboard');
       createTasksSpy.mockResolvedValue({
         tasks_created: 2,
@@ -350,7 +350,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
 
       await step.execute(context);
 
-      // Verify the enriched tasks passed to createTasksViaDashboard have external_ids
+      
       expect(createTasksSpy).toHaveBeenCalled();
       const enrichedTasks = createTasksSpy.mock.calls[0][1] as EnrichedTask[];
       
@@ -468,7 +468,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
 
       const enrichedTasks = createTasksSpy.mock.calls[0][1] as EnrichedTask[];
       
-      // Should keep custom external_id, not generate new one
+      
       expect(enrichedTasks[0]?.external_id).toBe('custom-external-id-123');
     });
   });
@@ -508,7 +508,7 @@ describe('Phase 4 - BulkTaskCreationStep', () => {
         }
       });
 
-      // Mock failure on first attempt, success on retry
+      
       (step as any).createTasksViaDashboard = async () => {
         attempts++;
         if (attempts === 1) {

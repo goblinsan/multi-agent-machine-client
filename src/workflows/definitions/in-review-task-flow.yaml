@@ -1,218 +1,148 @@
-name: "in-review-task-flow"
-description: "Resume workflow for tasks already in review status - skips to review stages"
-version: "2.0.0"
-
-# Migration History:
-# - v1.0.0: Initial version with inline PM evaluation + ReviewFailureTasksStep
-# - v2.0.0: Migrated to use review-failure-handling sub-workflow (unified pattern)
+name: in-review-task-flow
+description: Resume workflow for tasks already in review status
+version: 3.0.0
 
 trigger:
-  condition: "status == 'in_review' || status == 'review' || status == 'in-code-review'"
+  condition: status == 'in_review' || status == 'review' || status == 'in-code-review'
 
 context:
   repo_required: true
 
 steps:
-  # Step 1: Code Review
-  - name: code_review_request
-    type: PersonaRequestStep
-    description: "Request code review from code reviewer persona"
-    outputs: ["code_review_request_result", "code_review_request_status"]
-    config:
-      step: "4-code-review"
-      persona: "code-reviewer"
-      intent: "code_review"
-      payload:
-        task: ${task}
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        repo: "${repo_remote}"
-        branch: "${featureBranchName}"
-        project_id: "${projectId}"
-        resume_review: true
-        tdd_aware: "${tdd_aware}"
-        tdd_stage: "${tdd_stage}"
-      timeout: 300000  # 5 minutes
+  - template: code_review
+    name: code_review_request
+    overrides:
+      config:
+        payload:
+          resume_review: true
 
-  # Commit code review results to git
   - name: commit_code_review_result
     type: GitArtifactStep
-    description: "Commit code review result to .ma/tasks/{id}/reviews/code-review.json"
-    depends_on: ["code_review_request"]
+    depends_on: [code_review_request]
     config:
-      source_output: "code_review_request_result"
-      artifact_path: ".ma/tasks/${task.id}/reviews/code-review.json"
+      source_output: code_review_request_result
+      artifact_path: .ma/tasks/${task.id}/reviews/code-review.json
       commit_message: "refactor(ma): code review for task ${task.id}"
-      format: "json"
+      format: json
 
-  # Handle code review failures with unified sub-workflow
   - name: handle_code_review_failure
     type: SubWorkflowStep
-    description: "PM prioritization and bulk task creation for code review failures"
-    depends_on: ["code_review_request"]
-    condition: "${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'"
+    depends_on: [code_review_request]
+    condition: ${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'
     config:
-      workflow: "review-failure-handling"
+      workflow: review-failure-handling
       inputs:
-        review_type: "code_review"
-        review_result: "${code_review_request_result}"
-        review_status: "${code_review_request_status}"
-        milestone_context: "${milestone}"
-        task: "${task}"
-        parent_task_id: "${taskId}"
+        review_type: code_review
+        review_result: ${code_review_request_result}
+        review_status: ${code_review_request_status}
+        milestone_context: ${milestone}
+        task: ${task}
+        parent_task_id: ${taskId}
         priority_scores:
           urgent: 1000
           deferred: 50
         config:
           block_original_task: true
-        project_id: "${projectId}"
-        repo: "${repo_remote}"
-        tdd_aware: "${tdd_aware || false}"
-        tdd_stage: "${tdd_stage || 'implementation'}"
-        existing_tasks: []  # TODO: Populate from dashboard query
+        project_id: ${projectId}
+        repo: ${repo_remote}
+        tdd_aware: ${tdd_aware || false}
+        tdd_stage: ${tdd_stage || 'implementation'}
+        existing_tasks: []
 
-  # Step 2: Security Review (waits for code review to pass)
-  - name: security_request
-    type: PersonaRequestStep
-    description: "Request security review from security reviewer persona"
-    depends_on: ["code_review_request"]
-    condition: "${code_review_request_status} == 'pass'"
-    outputs: ["security_request_result", "security_request_status"]
-    config:
-      step: "5-security"
-      persona: "security-review"
-      intent: "security_review"
-      payload:
-        task: ${task}
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        code_review_result: "${code_review_request_result}"
-        repo: "${repo_remote}"
-        branch: "${featureBranchName}"
-        project_id: "${projectId}"
-        resume_review: true
-        tdd_aware: "${tdd_aware}"
-        tdd_stage: "${tdd_stage}"
-      timeout: 300000  # 5 minutes
+  - template: security_review
+    name: security_request
+    depends_on: [code_review_request]
+    condition: ${code_review_request_status} == 'pass'
+    overrides:
+      config:
+        payload:
+          resume_review: true
 
-  # Commit security review results to git
   - name: commit_security_result
     type: GitArtifactStep
-    description: "Commit security review result to .ma/tasks/{id}/reviews/security.json"
-    depends_on: ["security_request"]
+    depends_on: [security_request]
     config:
-      source_output: "security_request_result"
-      artifact_path: ".ma/tasks/${task.id}/reviews/security.json"
+      source_output: security_request_result
+      artifact_path: .ma/tasks/${task.id}/reviews/security.json
       commit_message: "security(ma): security review for task ${task.id}"
-      format: "json"
+      format: json
 
-  # Handle security review failures with unified sub-workflow
   - name: handle_security_failure
     type: SubWorkflowStep
-    description: "PM prioritization and bulk task creation for security review failures"
-    depends_on: ["security_request"]
-    condition: "${security_request_status} == 'fail' || ${security_request_status} == 'unknown'"
+    depends_on: [security_request]
+    condition: ${security_request_status} == 'fail' || ${security_request_status} == 'unknown'
     config:
-      workflow: "review-failure-handling"
+      workflow: review-failure-handling
       inputs:
-        review_type: "security_review"
-        review_result: "${security_request_result}"
-        review_status: "${security_request_status}"
-        milestone_context: "${milestone}"
-        task: "${task}"
-        parent_task_id: "${taskId}"
+        review_type: security_review
+        review_result: ${security_request_result}
+        review_status: ${security_request_status}
+        milestone_context: ${milestone}
+        task: ${task}
+        parent_task_id: ${taskId}
         priority_scores:
-          urgent: 1500  # Security critical
+          urgent: 1500
           deferred: 50
         config:
           block_original_task: true
-        project_id: "${projectId}"
-        repo: "${repo_remote}"
-        tdd_aware: "${tdd_aware || false}"
-        tdd_stage: "${tdd_stage || 'implementation'}"
-        existing_tasks: []  # TODO: Populate from dashboard query
+        project_id: ${projectId}
+        repo: ${repo_remote}
+        tdd_aware: ${tdd_aware || false}
+        tdd_stage: ${tdd_stage || 'implementation'}
+        existing_tasks: []
 
-  # Step 3: DevOps Review
-  - name: devops_request
-    type: PersonaRequestStep
-    description: "Request DevOps review from DevOps persona"
-    depends_on: ["security_request"]
-    condition: "${security_request_status} == 'pass'"
-    outputs: ["devops_request_result", "devops_request_status"]
-    config:
-      step: "6-devops"
-      persona: "devops"
-      intent: "devops_review"
-      payload:
-        task: ${task}
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        code_review_result: "${code_review_request_result}"
-        security_result: "${security_request_result}"
-        repo: "${repo_remote}"
-        branch: "${featureBranchName}"
-        project_id: "${projectId}"
-        resume_review: true
-      timeout: 300000  # 5 minutes
+  - template: devops_review
+    name: devops_request
+    depends_on: [security_request]
+    condition: ${security_request_status} == 'pass'
 
-  # Commit DevOps review results to git
   - name: commit_devops_result
     type: GitArtifactStep
-    description: "Commit DevOps review result to .ma/tasks/{id}/reviews/devops.json"
-    depends_on: ["devops_request"]
+    depends_on: [devops_request]
     config:
-      source_output: "devops_request_result"
-      artifact_path: ".ma/tasks/${task.id}/reviews/devops.json"
+      source_output: devops_request_result
+      artifact_path: .ma/tasks/${task.id}/reviews/devops.json
       commit_message: "ci(ma): DevOps review for task ${task.id}"
-      format: "json"
+      format: json
 
-  # Handle DevOps review failures with unified sub-workflow
   - name: handle_devops_failure
     type: SubWorkflowStep
-    description: "PM prioritization and bulk task creation for DevOps review failures"
-    depends_on: ["devops_request"]
-    condition: "${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'"
+    depends_on: [devops_request]
+    condition: ${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'
     config:
-      workflow: "review-failure-handling"
+      workflow: review-failure-handling
       inputs:
-        review_type: "devops_review"
-        review_result: "${devops_request_result}"
-        review_status: "${devops_request_status}"
-        milestone_context: "${milestone}"
-        task: "${task}"
-        parent_task_id: "${taskId}"
+        review_type: devops_review
+        review_result: ${devops_request_result}
+        review_status: ${devops_request_status}
+        milestone_context: ${milestone}
+        task: ${task}
+        parent_task_id: ${taskId}
         priority_scores:
-          urgent: 1100  # DevOps between QA and code review
+          urgent: 1100
           deferred: 50
         config:
           block_original_task: true
-        project_id: "${projectId}"
-        repo: "${repo_remote}"
-        tdd_aware: "${tdd_aware || false}"
-        tdd_stage: "${tdd_stage || 'implementation'}"
-        existing_tasks: []  # TODO: Populate from dashboard query
+        project_id: ${projectId}
+        repo: ${repo_remote}
+        tdd_aware: ${tdd_aware || false}
+        tdd_stage: ${tdd_stage || 'implementation'}
+        existing_tasks: []
 
-  # Step 4: Mark task as done only when all reviews pass
   - name: mark_task_done
     type: SimpleTaskStatusStep
-    description: "Mark task as completed on dashboard when all reviews pass"
-    depends_on: ["devops_request"]
-    condition: "${security_request_status} == 'pass' && ${devops_request_status} == 'pass'"
+    depends_on: [devops_request]
+    condition: ${security_request_status} == 'pass' && ${devops_request_status} == 'pass'
     config:
-      status: "done"
+      status: done
 
-# Failure handling - mark task as blocked when review workflow fails
 failure_handling:
   on_workflow_failure:
     - name: mark_task_blocked
       type: SimpleTaskStatusStep
-      description: "Mark task as blocked when review workflow fails"
       config:
-        status: "blocked"
+        status: blocked
         comment: "Review workflow failed at step: ${failed_step}"
 
 timeouts:
-  default_step: 300000  # 5 minutes
-
-# Architecture Notes:
-# - v2.0.0 migrates to use review-failure-handling sub-workflow (unified with task-flow.yaml)
-# - All reviews now pass TDD awareness flags
-# - Duplicate detection supported via existing_tasks (TODO: dashboard query)
-# - Reduced from 266 → ~160 lines (39% reduction)
+  default_step: 300000

@@ -1,13 +1,4 @@
-/**
- * Integration test for DashboardClient
- * 
- * This test validates that the HTTP client can communicate with the
- * dashboard backend service.
- * 
- * Prerequisites:
- * - Dashboard backend server running on http://localhost:3000
- * - Test project with ID 1 exists in database
- */
+
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { DashboardClient, createDashboardClient } from '../../src/services/DashboardClient';
@@ -57,13 +48,13 @@ describe('DashboardClient Integration', () => {
   });
 
   it('should update a task', async () => {
-    // Create task first
+    
     const created = await client.createTask(projectId, {
       title: 'Task to update',
       status: 'open',
     });
 
-    // Update it
+    
     const updated = await client.updateTask(projectId, created.id, {
       status: 'in_progress',
       labels: ['updated'],
@@ -92,13 +83,13 @@ describe('DashboardClient Integration', () => {
   });
 
   it('should get a single task', async () => {
-    // Create task first
+    
     const created = await client.createTask(projectId, {
       title: 'Task to get',
       status: 'open',
     });
 
-    // Get it
+    
     const fetched = await client.getTask(projectId, created.id);
 
     expect(fetched.id).toBe(created.id);

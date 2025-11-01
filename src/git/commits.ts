@@ -41,7 +41,7 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
     logger.warn("git identity setup failed", { repoRoot, error: configErr });
   }
 
-  // Only checkout if not already on the target branch
+  
   const currentMeta = await getRepoMetadata(repoRoot);
   if (currentMeta.currentBranch !== targetBranch) {
     try {
@@ -78,7 +78,7 @@ export async function commitAndPushPaths(options: { repoRoot: string; branch?: s
   await runGit(["commit", "--no-verify", "-m", sanitized], { cwd: repoRoot });
 
   try {
-    // Check if remote branch exists
+    
     let remoteBranchExistsFlag = false;
     try {
       await runGit(["ls-remote", "--heads", "origin", targetBranch], { cwd: repoRoot });

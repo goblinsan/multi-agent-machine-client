@@ -18,30 +18,19 @@ export interface ExtractedContext {
   dashboardContext: string | null;
 }
 
-/**
- * ContextExtractor - Extracts and builds context for persona requests
- * 
- * Responsibilities:
- * - Extract user text from various payload sources (priority: user_text > artifacts > task > description > intent)
- * - Read artifacts from git repositories
- * - Fetch scan summaries (future)
- * - Fetch dashboard context (future)
- * - Resolve artifact path variables
- */
+
 export class ContextExtractor {
-  /**
-   * Extract all context needed for a persona request
-   */
+  
   async extractContext(params: ContextExtractionParams): Promise<ExtractedContext> {
     const { persona, repo, branch } = params;
 
-    // Extract user text from payload (priority order)
+    
     const userText = await this.extractUserText(params);
 
-    // Get scan summary if repo provided
+    
     const scanSummary = await this.extractScanSummary(persona, repo, branch);
 
-    // Get dashboard context if project/task provided (stub for now)
+    
     const dashboardContext = await this.extractDashboardContext(persona, params.payload);
 
     return {
@@ -51,54 +40,44 @@ export class ContextExtractor {
     };
   }
 
-  /**
-   * Extract user text from payload with priority:
-   * 1. user_text (explicit)
-   * 2. plan_artifact (from git)
-   * 3. qa_result_artifact (from git)
-   * 4. context_artifact (from git)
-   * 5. task.description
-   * 6. description
-   * 7. task.title (ERROR - should have description)
-   * 8. intent (fallback)
-   */
+  
   async extractUserText(params: ContextExtractionParams): Promise<string> {
     const { persona, workflowId, intent, payload, repo } = params;
 
-    // Priority 1: Explicit user_text
+    
     if (payload.user_text) {
       return payload.user_text;
     }
 
-    // Priority 2: plan_artifact from git
+    
     if (payload.plan_artifact) {
       const content = await this.readArtifact(persona, 'plan_artifact', payload.plan_artifact, payload, repo);
       if (content) return content;
     }
 
-    // Priority 3: qa_result_artifact from git
+    
     if (payload.qa_result_artifact) {
       const content = await this.readArtifact(persona, 'qa_result_artifact', payload.qa_result_artifact, payload, repo);
       if (content) return content;
     }
 
-    // Priority 4: context_artifact from git
+    
     if (payload.context_artifact) {
       const content = await this.readArtifact(persona, 'context_artifact', payload.context_artifact, payload, repo);
       if (content) return content;
     }
 
-    // Priority 5: task.data.description (standard task structure from dashboard)
+    
     if (payload.task?.data?.description) {
       return this.buildTaskText(persona, workflowId, payload.task.data);
     }
 
-    // Priority 6: task.description (legacy/direct structure)
+    
     if (payload.task?.description) {
       return this.buildTaskText(persona, workflowId, payload.task);
     }
 
-    // Priority 7: payload.description
+    
     if (payload.description) {
       logger.info('PersonaConsumer: Using payload.description', {
         persona,
@@ -108,7 +87,7 @@ export class ContextExtractor {
       return payload.description;
     }
 
-    // Priority 8: task.data.title or task.title only (ERROR - missing description)
+    
     const taskTitle = payload.task?.data?.title || payload.task?.title;
     const taskId = payload.task?.data?.id || payload.task?.id;
     if (taskTitle) {
@@ -124,7 +103,7 @@ export class ContextExtractor {
       throw new Error(`Task ${taskId} ("${taskTitle}") has no description. Cannot proceed with planning.`);
     }
 
-    // Priority 8: Fallback to intent (log error)
+    
     logger.error('PersonaConsumer: No task context found in payload', {
       persona,
       workflowId,
@@ -136,9 +115,7 @@ export class ContextExtractor {
     return intent || 'planning';
   }
 
-  /**
-   * Read an artifact from git with error handling
-   */
+  
   private async readArtifact(
     persona: string,
     artifactType: string,
@@ -167,9 +144,7 @@ export class ContextExtractor {
     }
   }
 
-  /**
-   * Build task text from task object
-   */
+  
   private buildTaskText(persona: string, workflowId: string, task: any): string {
     let userText = `Task: ${task.title || 'Untitled'}\n\nDescription: ${task.description}`;
 
@@ -182,7 +157,7 @@ export class ContextExtractor {
       descriptionLength: task.description.length
     });
 
-    // Add task type/scope context if available
+    
     if (task.type) {
       userText += `\n\nType: ${task.type}`;
     }
@@ -193,10 +168,7 @@ export class ContextExtractor {
     return userText;
   }
 
-  /**
-   * Extract scan summary for the repository
-   * TODO: Implement when needed
-   */
+  
   private async extractScanSummary(
     persona: string,
     repo?: string,
@@ -207,9 +179,9 @@ export class ContextExtractor {
     }
 
     try {
-      // For now, we don't have the local repo path in the persona worker
-      // This would need to be enhanced to clone/fetch repos in distributed mode
-      // For local development, the repo is already cloned by the coordinator
+      
+      
+      
       logger.debug('PersonaConsumer: Repo context requested but not yet implemented', {
         persona,
         repo,
@@ -226,37 +198,31 @@ export class ContextExtractor {
     }
   }
 
-  /**
-   * Extract dashboard context for project/task
-   * TODO: Implement dashboard context fetching when needed
-   */
+  
   private async extractDashboardContext(
     _persona: string,
     _payload: any
   ): Promise<string | null> {
-    // Future: Fetch context from dashboard API
+    
     return null;
   }
 
-  /**
-   * Resolve artifact path with variable placeholders
-   * Variables: {repo}, {branch}, {workflow_id}
-   */
+  
   resolveArtifactPath(artifactPath: string, payload: any): string {
     let resolved = artifactPath;
 
-    // Replace {repo} with actual repo name
+    
     if (payload.repo) {
       const repoName = payload.repo.split('/').pop()?.replace('.git', '') || payload.repo;
       resolved = resolved.replace(/{repo}/g, repoName);
     }
 
-    // Replace {branch}
+    
     if (payload.branch) {
       resolved = resolved.replace(/{branch}/g, payload.branch);
     }
 
-    // Replace {workflow_id}
+    
     if (payload.workflow_id) {
       resolved = resolved.replace(/{workflow_id}/g, payload.workflow_id);
     }
@@ -264,20 +230,17 @@ export class ContextExtractor {
     return resolved;
   }
 
-  /**
-   * Read artifact file from git repository
-   * Expects the repo to be cloned under cfg.projectBase
-   */
+  
   async readArtifactFromGit(artifactPath: string, repoUrl: string | undefined): Promise<string> {
     if (!repoUrl) {
       throw new Error('Repository URL is required to read artifact');
     }
 
-    // Extract repo name from URL
+    
     const repoName = repoUrl.split('/').pop()?.replace('.git', '') || repoUrl;
     const repoPath = path.join(cfg.projectBase, repoName);
 
-    // Build full artifact path
+    
     const fullPath = path.join(repoPath, artifactPath);
 
     logger.debug('Reading artifact from git', {

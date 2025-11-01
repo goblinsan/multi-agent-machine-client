@@ -3,14 +3,7 @@ import { PersonaConsumer } from '../src/personas/PersonaConsumer.js';
 import { LocalTransport } from '../src/transport/LocalTransport.js';
 import { cfg } from '../src/config.js';
 
-/**
- * Tests that PersonaConsumer correctly extracts task context from payload
- * to provide meaningful prompts to LLMs instead of just generic intents.
- * 
- * CRITICAL: Without proper task context extraction, personas receive generic
- * prompts like "planning" instead of actual task requirements, causing them
- * to generate irrelevant responses.
- */
+
 describe('PersonaConsumer task context extraction', () => {
   let transport: LocalTransport;
   let consumer: PersonaConsumer;
@@ -23,7 +16,7 @@ describe('PersonaConsumer task context extraction', () => {
   it('should extract task description as userText when payload contains task object', async () => {
     let capturedUserText: string | undefined;
     
-    // Mock buildPersonaMessages to capture the userText
+    
     const buildMessagesModule = await import('../src/personas/PersonaRequestHandler.js');
     const originalBuildMessages = buildMessagesModule.buildPersonaMessages;
     vi.spyOn(buildMessagesModule, 'buildPersonaMessages').mockImplementation((input: any) => {
@@ -31,13 +24,13 @@ describe('PersonaConsumer task context extraction', () => {
       return originalBuildMessages(input);
     });
 
-    // Mock callPersonaModel to avoid actual LLM calls
+    
     vi.spyOn(buildMessagesModule, 'callPersonaModel').mockResolvedValue({
       content: '{"plan": [{"goal": "test"}]}',
       duration_ms: 100
     });
 
-    // Start consumer
+    
     await consumer.start({
       personas: ['implementation-planner'],
       blockMs: 100,
@@ -46,7 +39,7 @@ describe('PersonaConsumer task context extraction', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Send request with task object in payload
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-test',
       to_persona: 'implementation-planner',
@@ -65,18 +58,18 @@ describe('PersonaConsumer task context extraction', () => {
       })
     });
 
-    // Wait for processing
+    
     await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
-    // Verify userText was extracted from task
+    
     expect(capturedUserText).toBeDefined();
     expect(capturedUserText).toContain('Config loader and schema validation');
     expect(capturedUserText).toContain('Implement hierarchical config');
     expect(capturedUserText).toContain('Type: feature');
     expect(capturedUserText).toContain('Scope: medium');
     
-    // Should NOT just be the generic intent
+    
     expect(capturedUserText).not.toBe('planning');
   });
 
@@ -121,7 +114,7 @@ describe('PersonaConsumer task context extraction', () => {
     await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
-    // user_text should take priority over task.description
+    
     expect(capturedUserText).toBe('Custom explicit instruction for this persona');
     expect(capturedUserText).not.toContain('This should be ignored');
   });
@@ -171,7 +164,7 @@ describe('PersonaConsumer task context extraction', () => {
     let errorLogged = false;
     let errorDetails: any = null;
     
-    // Spy on logger to catch the error
+    
     const loggerModule = await import('../src/logger.js');
     const originalError = loggerModule.logger.error;
     vi.spyOn(loggerModule.logger, 'error').mockImplementation((msg: string, meta?: any) => {
@@ -184,7 +177,7 @@ describe('PersonaConsumer task context extraction', () => {
 
     const buildMessagesModule = await import('../src/personas/PersonaRequestHandler.js');
     
-    // Mock to prevent actual LLM call
+    
     vi.spyOn(buildMessagesModule, 'callPersonaModel').mockResolvedValue({
       content: 'test response',
       duration_ms: 100
@@ -208,7 +201,7 @@ describe('PersonaConsumer task context extraction', () => {
         task: {
           id: 5,
           title: 'Implement logging system'
-          // description missing
+          
         }
       })
     });
@@ -245,7 +238,7 @@ describe('PersonaConsumer task context extraction', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Minimal payload - only intent available
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-test-5',
       to_persona: 'context',
@@ -258,12 +251,12 @@ describe('PersonaConsumer task context extraction', () => {
     await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
-    // Should fall back to intent
+    
     expect(capturedUserText).toBe('context_gathering');
   });
 
   it('should prevent bug where personas get generic prompts instead of task requirements', async () => {
-    // This test documents the original bug scenario
+    
     let capturedUserText: string | undefined;
     
     const buildMessagesModule = await import('../src/personas/PersonaRequestHandler.js');
@@ -286,7 +279,7 @@ describe('PersonaConsumer task context extraction', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Realistic payload from PlanningLoopStep
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-real-scenario',
       to_persona: 'implementation-planner',
@@ -310,8 +303,8 @@ describe('PersonaConsumer task context extraction', () => {
     await new Promise(resolve => setTimeout(resolve, 1));
     await consumer.stop();
 
-    // BEFORE FIX: userText would be just "planning" (the intent)
-    // AFTER FIX: userText contains actual task requirements
+    
+    
     expect(capturedUserText).not.toBe('planning');
     expect(capturedUserText).toContain('Log file summarization');
     expect(capturedUserText).toContain('parse and summarize application log files');

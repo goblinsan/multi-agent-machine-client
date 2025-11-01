@@ -24,8 +24,8 @@ type MiniCycleOptions = {
   qaResult?: any;
 };
 
-// Handle failure mini-cycle for QA/DevOps/Code-Review/Security
-// suggestedTasks: array of suggestion objects returned by PM or persona
+
+
 export async function handleFailureMiniCycle(r: any, workflowId: string, stage: string, suggestedTasks: any[], options: MiniCycleOptions) {
   const policy = STAGE_POLICY[stage] || { immediate: false, initialStatus: "backlog" };
   if (!Array.isArray(suggestedTasks)) suggestedTasks = [];
@@ -35,7 +35,7 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
     return { created: [] as any[], forwarded: false };
   }
 
-  // For immediate stages we create tasks with initial_status from policy and block until creation+status OK
+  
   try {
     const createOpts = {
       stage: stage as any,
@@ -46,17 +46,17 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
       scheduleHint: options.scheduleHint
     };
 
-    // Use the existing summarizer-before-create wrapper
+    
     const created = await createDashboardTaskEntriesWithSummarizer(r, workflowId, suggestedTasks, createOpts as any);
 
-    // If policy requires immediate visibility, ensure status is set to policy.initialStatus
+    
     if (policy.immediate && Array.isArray(created) && created.length) {
       for (const c of created) {
         try {
           let key: string | null = null;
-          // Prefer a concrete created id when available
+          
           if (c.createdId) key = String(c.createdId);
-          // Otherwise resolve by external id within the project, then fall back to by-external
+          
           else if (c.externalId && options.projectId) {
             key = (await findTaskIdByExternalId(c.externalId, options.projectId)) || String(c.externalId);
           } else if (c.externalId) {
@@ -78,7 +78,7 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
       }
     }
 
-    // Forward created tasks to implementation planner for immediate stages
+    
     let plannerResult: any = null;
     if (policy.immediate && created.length) {
       logger.debug('handleFailureMiniCycle created', { created });
@@ -91,7 +91,7 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
           toPersona: implPersona,
           step: `${stage}-created-tasks`,
           intent: "handle_created_followups",
-          // include created tasks and any QA payload forwarded via options (if present)
+          
           payload: { created_tasks: created, stage, milestone: options.milestoneDescriptor, parent_task: options.parentTaskDescriptor, qa_result: (options as any).qaResult ?? null },
           corrId: corr,
           repo: options.repo,
@@ -100,7 +100,7 @@ export async function handleFailureMiniCycle(r: any, workflowId: string, stage: 
         });
         logger.info("handleFailureMiniCycle dispatched created tasks to planner", { workflowId, stage, corr, implPersona });
 
-        // Block and wait for planner to finish handling created tasks
+        
         let plannerEvent;
         try {
           logger.info("handleFailureMiniCycle waiting for planner completion", { workflowId, stage, corr, implPersona });

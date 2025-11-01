@@ -1,16 +1,4 @@
-/**
- * Phase 1: Variable Resolution in PersonaRequestStep
- * 
- * REQUIREMENT: Artifact paths with ${variable} placeholders must be resolved
- * before sending payloads to personas.
- * 
- * CURRENT BUG: Personas receive literal "${task.id}" instead of actual IDs
- * Expected: ".ma/tasks/42/03-plan-final.md"
- * Actual: ".ma/tasks/${task.id}/03-plan-final.md"
- * 
- * These tests will FAIL until PersonaRequestStep.execute() implements
- * payload variable resolution.
- */
+
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PersonaRequestStep } from '../src/workflows/steps/PersonaRequestStep.js';
@@ -18,7 +6,7 @@ import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
 import { makeTempRepo } from './makeTempRepo.js';
 import * as persona from '../src/agents/persona.js';
 
-// Mock persona module
+
 vi.mock('../src/agents/persona.js', () => ({
   sendPersonaRequest: vi.fn().mockResolvedValue('corr-123'),
   waitForPersonaCompletion: vi.fn().mockResolvedValue({
@@ -51,7 +39,7 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
   beforeEach(async () => {
     repoRoot = await makeTempRepo();
 
-    // Create mock transport
+    
     mockTransport = {
       xAdd: vi.fn().mockResolvedValue('1-0'),
       xGroupCreate: vi.fn().mockResolvedValue(null),
@@ -76,10 +64,10 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
       {}
     );
 
-    // CRITICAL: Disable persona bypass so we can spy on actual requests
+    
     context.setVariable('SKIP_PERSONA_OPERATIONS', false);
     
-    // Set required repo_remote for persona requests
+    
     context.setVariable('repo_remote', 'git@github.com:test/repo.git');
     
     vi.clearAllMocks();
@@ -87,7 +75,7 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
 
   describe('Simple Variable Resolution', () => {
     it('should resolve ${task.id} in plan_artifact path', async () => {
-      // ARRANGE
+      
       context.setVariable('task', {
         id: 42,
         name: 'Implement feature',
@@ -112,15 +100,15 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
 
       const step = new PersonaRequestStep(config);
 
-      // ACT
+      
       await step.execute(context);
 
-      // ASSERT
+      
       expect(persona.sendPersonaRequest).toHaveBeenCalled();
       const callArgs = vi.mocked(persona.sendPersonaRequest).mock.calls[0];
       const requestOpts = callArgs[1];
       
-      // CRITICAL: plan_artifact must have resolved ID, not template
+      
       expect(requestOpts.payload.plan_artifact).toBe('.ma/tasks/42/03-plan-final.md');
       expect(requestOpts.payload.plan_artifact).not.toContain('${task.id}');
     });
@@ -300,7 +288,7 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
   describe('Fallback Behavior', () => {
     it('should preserve template if variable not found', async () => {
       context.setVariable('task', { id: 20 });
-      // Note: milestone NOT set
+      
 
       const config = {
         name: 'test_step',
@@ -323,7 +311,7 @@ describe('Phase 1: Variable Resolution in Artifact Paths', () => {
       const requestOpts = callArgs[1];
       
       expect(requestOpts.payload.plan_artifact).toBe('.ma/tasks/20/plan.md');
-      // Should preserve template for undefined variables
+      
       expect(requestOpts.payload.milestone_artifact).toBe('.ma/milestones/${milestone.id}/info.md');
     });
   });

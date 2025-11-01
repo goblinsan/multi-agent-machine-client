@@ -1,35 +1,27 @@
 import { WorkflowConfig as _WorkflowConfig } from './WorkflowContext.js';
 
-/**
- * Schema validation error
- */
+
 export interface SchemaValidationError {
   path: string;
   message: string;
   value?: any;
 }
 
-/**
- * Schema validation result
- */
+
 export interface SchemaValidationResult {
   valid: boolean;
   errors: SchemaValidationError[];
   warnings: SchemaValidationError[];
 }
 
-/**
- * Workflow configuration validator
- */
+
 export class WorkflowValidator {
-  /**
-   * Validate a workflow configuration
-   */
+  
   static validateWorkflow(config: any): SchemaValidationResult {
     const errors: SchemaValidationError[] = [];
     const warnings: SchemaValidationError[] = [];
 
-    // Check required fields
+    
     if (!config.name) {
       errors.push({ path: 'name', message: 'Workflow name is required' });
     }
@@ -41,25 +33,25 @@ export class WorkflowValidator {
     if (!config.steps || !Array.isArray(config.steps)) {
       errors.push({ path: 'steps', message: 'Workflow must have steps array' });
     } else {
-      // Validate each step
+      
       config.steps.forEach((step: any, index: number) => {
         const stepErrors = this.validateStep(step, `steps[${index}]`);
         errors.push(...stepErrors.errors);
         warnings.push(...stepErrors.warnings);
       });
 
-      // Validate step dependencies
+      
       const dependencyErrors = this.validateStepDependencies(config.steps);
       errors.push(...dependencyErrors);
     }
 
-    // Validate trigger if present
+    
     if (config.trigger) {
       const triggerErrors = this.validateTrigger(config.trigger);
       errors.push(...triggerErrors);
     }
 
-    // Validate context if present
+    
     if (config.context) {
       const contextErrors = this.validateContext(config.context);
       errors.push(...contextErrors);
@@ -72,14 +64,12 @@ export class WorkflowValidator {
     };
   }
 
-  /**
-   * Validate a single workflow step
-   */
+  
   private static validateStep(step: any, path: string): SchemaValidationResult {
     const errors: SchemaValidationError[] = [];
     const warnings: SchemaValidationError[] = [];
 
-    // Required fields
+    
     if (!step.name) {
       errors.push({ path: `${path}.name`, message: 'Step name is required' });
     }
@@ -88,7 +78,7 @@ export class WorkflowValidator {
       errors.push({ path: `${path}.type`, message: 'Step type is required' });
     }
 
-    // Validate name format (alphanumeric, underscores, hyphens)
+    
     if (step.name && !/^[a-zA-Z0-9_-]+$/.test(step.name)) {
       errors.push({
         path: `${path}.name`,
@@ -97,7 +87,7 @@ export class WorkflowValidator {
       });
     }
 
-    // Validate dependencies
+    
     if (step.depends_on) {
       if (!Array.isArray(step.depends_on)) {
         errors.push({
@@ -116,7 +106,7 @@ export class WorkflowValidator {
       }
     }
 
-    // Validate outputs
+    
     if (step.outputs) {
       if (!Array.isArray(step.outputs)) {
         errors.push({
@@ -135,7 +125,7 @@ export class WorkflowValidator {
       }
     }
 
-    // Validate timeout
+    
     if (step.timeout !== undefined) {
       if (typeof step.timeout !== 'number' || step.timeout <= 0) {
         errors.push({
@@ -146,7 +136,7 @@ export class WorkflowValidator {
       }
     }
 
-    // Validate retry configuration
+    
     if (step.retry) {
       if (typeof step.retry.count !== 'number' || step.retry.count < 0) {
         errors.push({
@@ -178,14 +168,12 @@ export class WorkflowValidator {
     return { valid: errors.length === 0, errors, warnings };
   }
 
-  /**
-   * Validate step dependencies for circular references and missing steps
-   */
+  
   private static validateStepDependencies(steps: any[]): SchemaValidationError[] {
     const errors: SchemaValidationError[] = [];
     const stepNames = new Set(steps.map(step => step.name).filter(Boolean));
 
-    // Check for missing dependencies
+    
     steps.forEach((step, index) => {
       if (step.depends_on && Array.isArray(step.depends_on)) {
         step.depends_on.forEach((dep: string) => {
@@ -200,7 +188,7 @@ export class WorkflowValidator {
       }
     });
 
-    // Check for circular dependencies
+    
     const visited = new Set<string>();
     const recursionStack = new Set<string>();
 
@@ -243,9 +231,7 @@ export class WorkflowValidator {
     return errors;
   }
 
-  /**
-   * Validate workflow trigger configuration
-   */
+  
   private static validateTrigger(trigger: any): SchemaValidationError[] {
     const errors: SchemaValidationError[] = [];
 
@@ -260,9 +246,7 @@ export class WorkflowValidator {
     return errors;
   }
 
-  /**
-   * Validate workflow context configuration
-   */
+  
   private static validateContext(context: any): SchemaValidationError[] {
     const errors: SchemaValidationError[] = [];
 
@@ -285,9 +269,7 @@ export class WorkflowValidator {
     return errors;
   }
 
-  /**
-   * Validate workflow configuration against known step types
-   */
+  
   static validateWithStepTypes(config: any, availableStepTypes: string[]): SchemaValidationResult {
     const baseValidation = this.validateWorkflow(config);
     const errors = [...baseValidation.errors];

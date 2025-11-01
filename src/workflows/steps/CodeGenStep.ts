@@ -28,24 +28,7 @@ export interface CodeGenResult {
   };
 }
 
-/**
- * CodeGenStep - Generates code using LLM with persona
- * 
- * Configuration:
- * - persona: Persona to use for generation
- * - model: LLM model to use (optional, uses persona default)
- * - temperature: Sampling temperature (default: 0.7)
- * - maxTokens: Maximum tokens to generate (default: 4000)
- * - timeoutMs: Request timeout (default: 120000)
- * - retryCount: Number of retries on failure (default: 2)
- * - includeContext: Whether to include repo context (default: true)
- * - promptTemplate: Custom prompt template (optional)
- * 
- * Outputs:
- * - codeGenResult: Complete generation result
- * - response: The LLM response text
- * - diffs: Parsed diff blocks
- */
+
 export class CodeGenStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as CodeGenConfig;
@@ -68,13 +51,13 @@ export class CodeGenStep extends WorkflowStep {
     });
 
     try {
-      // Get task data from context
+      
       const task = context.getVariable('task') as TaskData;
       if (!task) {
         throw new Error('No task data found in context');
       }
 
-      // Get repository context if requested
+      
       let contextData = null;
       if (includeContext) {
         contextData = context.getVariable('context');
@@ -83,10 +66,10 @@ export class CodeGenStep extends WorkflowStep {
         }
       }
 
-      // Build prompt
+      
       let prompt = promptTemplate || this.buildDefaultPrompt(task, contextData);
       
-      // Add context information if available
+      
       if (contextData && contextData.repoScan) {
         const fileList = contextData.repoScan
           .slice(0, 50)
@@ -108,13 +91,13 @@ export class CodeGenStep extends WorkflowStep {
 
       const startTime = Date.now();
       
-      // Call LLM with retry logic
+      
       let lastError: Error | null = null;
       let response: string | null = null;
       
       for (let attempt = 0; attempt <= retryCount; attempt++) {
         try {
-          // Build messages for the LLM
+          
           const messages: ChatMessage[] = [
             {
               role: 'system',
@@ -145,7 +128,7 @@ export class CodeGenStep extends WorkflowStep {
           });
           
           if (attempt < retryCount) {
-            // Wait before retry with exponential backoff
+            
             const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
@@ -158,7 +141,7 @@ export class CodeGenStep extends WorkflowStep {
 
       const duration_ms = Date.now() - startTime;
 
-      // Parse diff blocks from response (using the DiffParser if available)
+      
       const diffs = this.parseDiffBlocks(response);
 
       const result: CodeGenResult = {
@@ -174,7 +157,7 @@ export class CodeGenStep extends WorkflowStep {
         }
       };
 
-      // Set context variables
+      
       context.setVariable('codeGenResult', result);
       context.setVariable('response', response);
       context.setVariable('diffs', diffs);
@@ -255,7 +238,7 @@ export class CodeGenStep extends WorkflowStep {
     const lines = diffContent.split('\n');
     let filePath = '';
     
-    // Look for file path in diff header
+    
     for (const line of lines) {
       if (line.startsWith('--- a/') || line.startsWith('+++ b/')) {
         filePath = line.substring(6);
@@ -315,7 +298,7 @@ export class CodeGenStep extends WorkflowStep {
   }
 
   async cleanup(context: WorkflowContext): Promise<void> {
-    // Clean up any large response data if needed
+    
     const result = context.getVariable('codeGenResult');
     if (result) {
       logger.debug('Cleaning up code generation result');

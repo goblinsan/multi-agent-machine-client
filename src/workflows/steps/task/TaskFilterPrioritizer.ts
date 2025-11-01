@@ -8,17 +8,13 @@ interface TaskCreationConfig {
   maxTasks?: number;
 }
 
-/**
- * Filters and prioritizes tasks based on configuration
- */
+
 export class TaskFilterPrioritizer {
-  /**
-   * Filter and prioritize tasks according to configuration
-   */
+  
   filterAndPrioritize(tasks: TaskDefinition[], config: TaskCreationConfig): TaskDefinition[] {
     let filteredTasks = [...tasks];
     
-    // Filter by confidence threshold
+    
     const minConfidence = config.minConfidenceThreshold || 0.3;
     const beforeConfidenceFilter = filteredTasks.length;
     filteredTasks = filteredTasks.filter(task => task.confidence >= minConfidence);
@@ -30,7 +26,7 @@ export class TaskFilterPrioritizer {
       });
     }
     
-    // Filter by priority if high priority only
+    
     if (config.highPriorityOnly) {
       const beforePriorityFilter = filteredTasks.length;
       filteredTasks = filteredTasks.filter(task => 
@@ -45,10 +41,10 @@ export class TaskFilterPrioritizer {
       }
     }
     
-    // Sort by priority and confidence
+    
     filteredTasks = this.sortByPriorityAndConfidence(filteredTasks);
     
-    // Limit number of tasks
+    
     const maxTasks = config.maxTasks || 20;
     if (filteredTasks.length > maxTasks) {
       logger.info('Limiting task count', {
@@ -62,9 +58,7 @@ export class TaskFilterPrioritizer {
     return filteredTasks;
   }
 
-  /**
-   * Sort tasks by priority (descending) then confidence (descending)
-   */
+  
   private sortByPriorityAndConfidence(tasks: TaskDefinition[]): TaskDefinition[] {
     const priorityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
     

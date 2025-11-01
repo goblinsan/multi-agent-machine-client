@@ -26,7 +26,7 @@ async function main() {
     applyEditOps: async (jsonText: string, opts: any) => { applyCalled = true; const real = await import('../src/fileops.js'); return (real as any).applyEditOps(jsonText, { repoRoot: process.cwd(), branchName: opts?.branchName || opts?.branch }); }
   };
 
-  // Provide a lightweight persona stub so coordinator doesn't call the real persona implementations
+  
   overrides.persona = {
     sendPersonaRequest: async () => ({ ok: true }),
     waitForPersonaCompletion: async () => ({ fields: { result: {} }, id: 'evt-test' }),

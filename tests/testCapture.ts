@@ -17,7 +17,7 @@ export function suppressConsoleDuringCapture(): () => void {
     error: console.error,
     debug: (console as any).debug,
   } as any;
-  // replace console methods with no-ops
+  
   (console as any).log = () => {};
   (console as any).info = () => {};
   (console as any).warn = () => {};
@@ -31,7 +31,7 @@ export function suppressConsoleDuringCapture(): () => void {
       console.error = _orig.error;
       (console as any).debug = _orig.debug;
     } catch (e) {
-      // ignore
+      
     }
   };
 }
@@ -59,14 +59,14 @@ export function annotateCaptured(s: any[]) {
 export function writeCapturedOutputs(kind: 'default' | 'coordinator' = 'default', extraAnnotate?: (s: any[]) => any[]) {
   if (!isCaptureEnabled()) return;
   const outDir = path.resolve(process.cwd(), 'tests', 'outputs');
-  try { fs.mkdirSync(outDir, { recursive: true }); } catch (e) { /* ignore */ }
+  try { fs.mkdirSync(outDir, { recursive: true }); } catch (e) {  }
 
   const jsonPath = path.join(outDir, kind === 'coordinator' ? 'last_run_prompts_coordinator.json' : 'last_run_prompts.json');
   try {
     const toWrite = extraAnnotate ? extraAnnotate(sent) : sent;
     fs.writeFileSync(jsonPath, JSON.stringify({ generatedAt: new Date().toISOString(), requests: toWrite }, null, 2));
   } catch (e) {
-    // ignore
+    
   }
 
   if (kind === 'default') {
@@ -88,6 +88,6 @@ export function writeCapturedOutputs(kind: 'default' | 'coordinator' = 'default'
       }
       lines.push('');
     }
-    try { fs.writeFileSync(txtPath, lines.join('\n')); } catch (e) { /* ignore */ }
+    try { fs.writeFileSync(txtPath, lines.join('\n')); } catch (e) {  }
   }
 }

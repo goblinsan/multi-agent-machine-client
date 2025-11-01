@@ -1,15 +1,6 @@
-/**
- * MessageFormatter - Formats messages for the event stream
- * 
- * Responsibilities:
- * - Format successful persona responses
- * - Format error responses
- * - Standardize message structure
- */
+
 export class MessageFormatter {
-  /**
-   * Format a successful persona response for the event stream
-   */
+  
   formatSuccessResponse(params: {
     workflowId: string;
     persona: string;
@@ -31,9 +22,7 @@ export class MessageFormatter {
     };
   }
 
-  /**
-   * Format an error response for the event stream
-   */
+  
   formatErrorResponse(params: {
     workflowId: string;
     persona: string;

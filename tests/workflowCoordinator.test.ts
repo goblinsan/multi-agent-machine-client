@@ -5,10 +5,10 @@ import { WorkflowContext } from '../src/workflows/engine/WorkflowContext';
 import * as gitUtils from '../src/gitUtils.js';
 import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis client (uses __mocks__/redisClient.js)
+
 vi.mock('../src/redisClient.js');
 
-// Mock dashboard functions to prevent HTTP calls
+
 vi.mock('../src/dashboard/ProjectAPI.js', () => ({
   ProjectAPI: vi.fn().mockImplementation(() => ({
     fetchProjectStatus: vi.fn().mockResolvedValue({
@@ -35,7 +35,7 @@ describe('WorkflowCoordinator Integration', () => {
   let mockEngine: WorkflowEngine;
 
   beforeEach(() => {
-    // Create a mock workflow engine
+    
     mockEngine = new WorkflowEngine();
     coordinator = new WorkflowCoordinator(mockEngine);
 
@@ -47,25 +47,25 @@ describe('WorkflowCoordinator Integration', () => {
     const projectInfo = { repo: { url: 'https://gitlab.com/test/repo.git' } };
     const payload = { repo: 'https://bitbucket.org/test/repo.git' };
 
-    // Should prefer details first
+    
     expect(coordinator['extractRepoRemote'](details, projectInfo, payload))
       .toBe('https://github.com/test/repo.git');
 
-    // Should fall back to projectInfo
+    
     expect(coordinator['extractRepoRemote']({}, projectInfo, payload))
       .toBe('https://gitlab.com/test/repo.git');
 
-    // Should fall back to payload
+    
     expect(coordinator['extractRepoRemote']({}, {}, payload))
       .toBe('https://bitbucket.org/test/repo.git');
 
-    // Should return empty string if none found
+    
     expect(coordinator['extractRepoRemote']({}, {}, {}))
       .toBe('');
   });
 
   it('should handle workflow loading', async () => {
-    // Mock the loadWorkflowsFromDirectory method
+    
     const mockDefinitions = [
       { 
         name: 'project-loop', 
@@ -112,11 +112,11 @@ describe('WorkflowCoordinator Task Processing', () => {
   it('processes tasks through workflows without hanging', async () => {
     let workflowCompleted = false;
 
-    // Test business outcome: Task processing workflows complete without hanging
+    
     const coordinator = createFastCoordinator();
     
     try {
-      // SAFETY: Race condition with timeout protection  
+      
       const testPromise = coordinator.handleCoordinator(
         {} as any,
         {} as any,
@@ -136,22 +136,22 @@ describe('WorkflowCoordinator Task Processing', () => {
 
       await Promise.race([testPromise, timeoutPromise]);
     } catch (error) {
-      // May fail due to other issues, but we're testing that workflow doesn't hang
+      
       workflowCompleted = true;
     }
 
-    // Business outcome: Task processing logic completed without hanging or hitting iteration limits
+    
     expect(workflowCompleted).toBe(true);
   });
 
   it('handles workflow execution scenarios without hanging', async () => {
     let workflowCompleted = false;
 
-    // Test business outcome: Workflow execution handling completes without hanging
+    
     const coordinator = createFastCoordinator();
     
     try {
-      // SAFETY: Race condition with timeout protection  
+      
       const testPromise = coordinator.handleCoordinator(
         {} as any,
         {} as any,
@@ -171,11 +171,11 @@ describe('WorkflowCoordinator Task Processing', () => {
 
       await Promise.race([testPromise, timeoutPromise]);
     } catch (error) {
-      // May fail due to other issues, but we're testing that workflow doesn't hang
+      
       workflowCompleted = true;
     }
 
-    // Business outcome: Workflow execution handling logic completed without hanging
+    
     expect(workflowCompleted).toBe(true);
   });
 

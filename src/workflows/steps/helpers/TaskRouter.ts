@@ -1,48 +1,28 @@
-/**
- * Task Router
- * 
- * Handles milestone and parent task assignment based on priority and configuration.
- * Routes urgent tasks to immediate milestones and deferred tasks to backlog.
- */
+
 
 import { TaskPriority } from './TaskPriorityCalculator.js';
 
-/**
- * Milestone routing strategy configuration
- */
+
 export interface MilestoneStrategy {
   urgent?: string;
   deferred?: string;
 }
 
-/**
- * Parent task mapping configuration
- */
+
 export interface ParentTaskMapping {
   urgent?: string;
   deferred?: string | null;
 }
 
-/**
- * Task routing result
- */
+
 export interface TaskRoutingResult {
   milestone_slug?: string;
   parent_task_id?: string | null;
 }
 
-/**
- * TaskRouter handles milestone and parent task assignments
- */
+
 export class TaskRouter {
-  /**
-   * Route task to appropriate milestone based on priority
-   * 
-   * @param priority - Task priority level
-   * @param milestoneStrategy - Milestone routing strategy
-   * @param currentMilestone - Current milestone assignment (if any)
-   * @returns Milestone slug to assign
-   */
+  
   routeToMilestone(
     priority: TaskPriority | undefined,
     milestoneStrategy?: MilestoneStrategy,
@@ -63,14 +43,7 @@ export class TaskRouter {
     return currentMilestone;
   }
 
-  /**
-   * Assign parent task based on priority
-   * 
-   * @param priority - Task priority level
-   * @param parentTaskMapping - Parent task mapping configuration
-   * @param currentParentId - Current parent task ID (if any)
-   * @returns Parent task ID to assign
-   */
+  
   assignParentTask(
     priority: TaskPriority | undefined,
     parentTaskMapping?: ParentTaskMapping,
@@ -91,16 +64,7 @@ export class TaskRouter {
     return currentParentId;
   }
 
-  /**
-   * Route task and assign parent in one operation
-   * 
-   * @param priority - Task priority level
-   * @param milestoneStrategy - Milestone routing strategy
-   * @param parentTaskMapping - Parent task mapping configuration
-   * @param currentMilestone - Current milestone assignment
-   * @param currentParentId - Current parent task ID
-   * @returns Complete routing result
-   */
+  
   routeTask(
     priority: TaskPriority | undefined,
     milestoneStrategy?: MilestoneStrategy,
@@ -114,15 +78,7 @@ export class TaskRouter {
     };
   }
 
-  /**
-   * Route task with behavior test logic
-   * Includes fallback to backlog milestone with warnings
-   * 
-   * @param priority - Task priority level
-   * @param context - Execution context with milestone IDs
-   * @param currentMilestone - Current milestone assignment
-   * @returns Milestone ID and warnings
-   */
+  
   routeWithFallback(
     priority: TaskPriority | undefined,
     context: {

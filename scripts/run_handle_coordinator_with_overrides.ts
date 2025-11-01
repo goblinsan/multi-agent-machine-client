@@ -6,24 +6,24 @@ async function main() {
   const previewPath = path.join(repoRoot, 'scripts', 'lead_preview_current.txt');
   const preview = (await fs.readFile(previewPath, 'utf8'));
 
-  // Minimal runtime objects
+  
   const r = {} as any;
   const msg = { workflow_id: 'sim-wf', project_id: 'sim-proj' } as any;
   const payloadObj: any = { repo: repoRoot, branch: 'milestone/override-sim' };
 
-  // Import coordinator (ESM) and call with overrides
+  
   const coord = await import('../src/workflows/coordinator.js');
 
-  // Build overrides: stub out external services and provide a runLeadCycle that
-  // returns the preview as the lead outcome so coordinator takes the parse/apply path.
+  
+  
   const overrides: any = {
     fetchProjectStatus: async (projectId: string) => ({ id: projectId, name: 'sim' }),
     fetchProjectStatusDetails: async () => ({}),
     fetchProjectNextAction: async () => ({}),
     resolveRepoFromPayload: async (p: any) => ({ repoRoot, remote: '', branch: p.branch || 'main' }),
     getRepoMetadata: async (_root: string) => ({ currentBranch: 'main', remoteSlug: null, remoteUrl: '' }),
-    checkoutBranchFromBase: async () => { /* noop */ },
-    ensureBranchPublished: async () => { /* noop */ },
+    checkoutBranchFromBase: async () => {  },
+    ensureBranchPublished: async () => {  },
     commitAndPushPaths: async (_opts: any) => ({ ok: true }),
     updateTaskStatus: async () => ({ ok: true }),
     selectNextMilestone: () => ({ id: 'm-sim', name: 'sim milestone', branch: 'milestone/override-sim' }),

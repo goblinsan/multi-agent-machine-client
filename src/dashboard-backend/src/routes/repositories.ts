@@ -1,14 +1,10 @@
-/**
- * Repository Routes
- * 
- * CRUD endpoints for Git repositories associated with projects
- */
+
 
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getDb, saveDb } from '../db/connection';
 
-// Validation schemas
+
 const repositoryCreateSchema = z.object({
   url: z.string().min(1).url('Invalid repository URL'),
   default_branch: z.string().min(1).default('main')
@@ -22,15 +18,12 @@ const repositoryUpdateSchema = z.object({
 });
 
 export function registerRepositoryRoutes(fastify: FastifyInstance) {
-  /**
-   * GET /projects/:projectId/repositories
-   * List all repositories for a project
-   */
+  
   fastify.get('/projects/:projectId/repositories', async (request: any, reply: any) => {
     const { projectId } = request.params;
     const db = await getDb();
 
-    // Check if project exists
+    
     const projectCheck = db.exec(
       'SELECT id FROM projects WHERE id = ?',
       [parseInt(projectId, 10)]
@@ -64,10 +57,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
     return reply.send(repos);
   });
 
-  /**
-   * GET /projects/:projectId/repositories/:id
-   * Get a single repository
-   */
+  
   fastify.get('/projects/:projectId/repositories/:id', async (request: any, reply: any) => {
     const { projectId, id } = request.params;
     const db = await getDb();
@@ -96,10 +86,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
     return reply.send(repo);
   });
 
-  /**
-   * POST /projects/:projectId/repositories
-   * Create a new repository for a project
-   */
+  
   fastify.post('/projects/:projectId/repositories', async (request: any, reply: any) => {
     const { projectId } = request.params;
     const db = await getDb();
@@ -111,7 +98,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
 
     const { url, default_branch } = validation.data;
 
-    // Check if project exists
+    
     const projectCheck = db.exec(
       'SELECT id FROM projects WHERE id = ?',
       [parseInt(projectId, 10)]
@@ -121,7 +108,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Project not found' });
     }
 
-    // Check if repository already exists for this project
+    
     const existingCheck = db.exec(
       'SELECT id FROM repositories WHERE project_id = ? AND url = ?',
       [parseInt(projectId, 10), url]
@@ -140,7 +127,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
 
       const newId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
 
-      // Save database
+      
       await saveDb(db);
 
       const result = db.exec(
@@ -165,10 +152,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
     }
   });
 
-  /**
-   * PATCH /projects/:projectId/repositories/:id
-   * Update a repository
-   */
+  
   fastify.patch('/projects/:projectId/repositories/:id', async (request: any, reply: any) => {
     const { projectId, id } = request.params;
     const db = await getDb();
@@ -180,7 +164,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
 
     const updates = validation.data;
 
-    // Check if repository exists
+    
     const existingCheck = db.exec(
       'SELECT id FROM repositories WHERE id = ? AND project_id = ?',
       [parseInt(id, 10), parseInt(projectId, 10)]
@@ -213,7 +197,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
         values
       );
 
-      // Save database
+      
       await saveDb(db);
 
       const result = db.exec(
@@ -238,16 +222,13 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
     }
   });
 
-  /**
-   * DELETE /projects/:projectId/repositories/:id
-   * Delete a repository
-   */
+  
   (fastify as any).delete('/projects/:projectId/repositories/:id', async (request: any, reply: any) => {
     const { projectId, id } = request.params;
     const db = await getDb();
 
     try {
-      // Check if repository exists
+      
       const existingCheck = db.exec(
         'SELECT id FROM repositories WHERE id = ? AND project_id = ?',
         [parseInt(id, 10), parseInt(projectId, 10)]
@@ -262,7 +243,7 @@ export function registerRepositoryRoutes(fastify: FastifyInstance) {
         parseInt(projectId, 10)
       ]);
 
-      // Save database
+      
       await saveDb(db);
 
       return reply.code(204).send();

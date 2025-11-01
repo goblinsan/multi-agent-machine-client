@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   TaskCreateUpsertSchema as _TaskCreateUpsertSchema, TaskStatusUpdateSchema as _TaskStatusUpdateSchema, validate as _validate } from './helpers/dashboardSchemas.js';
 
-// Mock Redis client (uses __mocks__/redisClient.js)
+
 vi.mock('../src/redisClient.js');
 
-// Mock undici fetch used by src/dashboard.ts
+
 const calls: Array<{ url: string; init?: any; body?: any; method?: string }> = [];
 function makeResponse(status: number, body: any) {
   const jsonText = body !== undefined ? JSON.stringify(body) : '';
@@ -28,7 +28,7 @@ vi.mock('undici', () => {
     let body: any = undefined;
     try { body = init?.body ? JSON.parse(init.body) : undefined; } catch { body = undefined; }
     calls.push({ url, init, method: init?.method || 'GET', body });
-    // Default no-op success
+    
     return makeResponse(200, {});
   };
   const fetch = vi.fn(defaultImpl);
@@ -42,7 +42,7 @@ describe('dashboard interactions', () => {
       let body: any = undefined;
       try { body = init?.body ? JSON.parse(init.body) : undefined; } catch { body = undefined; }
       calls.push({ url, init, method: init?.method || 'GET', body });
-      // Backend POST /projects/:projectId/tasks with idempotency check
+      
       if (url.includes('/projects/') && url.includes('/tasks') && init?.method === 'POST') {
         return makeResponse(201, { id: '12345', external_id: body.external_id });
       }
@@ -67,7 +67,7 @@ describe('dashboard interactions', () => {
     expect(call?.method).toBe('POST');
     expect(call?.body?.external_id).toBe('ext-1');
     expect(call?.body?.title).toBe('Test');
-    // Backend doesn't support parent_task_external_id, so it should warn and skip
+    
     expect(call?.body?.parent_task_id).toBeUndefined();
   });
 
@@ -78,14 +78,14 @@ describe('dashboard interactions', () => {
       try { body = init?.body ? JSON.parse(init.body) : undefined; } catch { body = undefined; }
       calls.push({ url, init, method: init?.method || 'GET', body });
       
-      // Mock milestone fetch
+      
       if (url.includes('/projects/') && url.includes('/milestones')) {
         return makeResponse(200, { 
           milestones: [{ id: 999, name: 'Future Enhancements', slug: 'future-enhancements' }] 
         });
       }
       
-      // Mock task creation
+      
       if (url.includes('/projects/') && url.includes('/tasks') && init?.method === 'POST') {
         return makeResponse(201, { id: '12346', milestone_id: body.milestone_id });
       }
@@ -147,7 +147,7 @@ describe('dashboard interactions', () => {
     const { TaskAPI } = await import('../src/dashboard/TaskAPI.js');
     const taskAPI = new TaskAPI();
     
-    // Don't provide projectId - should throw
+    
     await expect(taskAPI.updateTaskStatus('task-123', 'done')).rejects.toThrow('projectId is required');
   });
 });

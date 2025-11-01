@@ -39,23 +39,7 @@ export interface QAResult {
   };
 }
 
-/**
- * QAStep - Executes tests and quality assurance checks
- * 
- * Configuration:
- * - testCommand: Command to run tests (default: "npm test")
- * - testPath: Specific path to test files (optional)
- * - timeout: Test execution timeout in ms (default: 300000 = 5min)
- * - retryCount: Number of retries on failure (default: 1)
- * - failureThreshold: Max % of tests that can fail (default: 0)
- * - requiredCoverage: Minimum coverage % required (optional)
- * - skipOnNoTests: Skip if no tests found (default: false)
- * 
- * Outputs:
- * - qaResult: Complete QA analysis result
- * - testsPassed: Boolean indicating if tests passed
- * - failures: Array of test failures
- */
+
 export class QAStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as QAConfig;
@@ -79,14 +63,14 @@ export class QAStep extends WorkflowStep {
     });
 
     try {
-      // Get repository path from context
+      
       const contextData = context.getVariable('context');
       const workingDir = contextData?.metadata?.repoPath || process.cwd();
 
       let lastError: Error | null = null;
       let qaResult: QAResult | null = null;
 
-      // Retry logic for test execution
+      
       for (let attempt = 0; attempt <= retryCount; attempt++) {
         try {
           qaResult = await this.executeTests(workingDir, testCommand, testPath, timeout);
@@ -100,7 +84,7 @@ export class QAStep extends WorkflowStep {
           });
 
           if (attempt < retryCount) {
-            // Wait before retry
+            
             const delay = Math.min(2000 * Math.pow(2, attempt), 10000);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
@@ -118,20 +102,20 @@ export class QAStep extends WorkflowStep {
         throw lastError || new Error('QA execution failed after all retries');
       }
 
-      // Analyze results
+      
       const passRate = (qaResult.testResults.passed / qaResult.testResults.total) * 100;
       const failureRate = (qaResult.testResults.failed / qaResult.testResults.total) * 100;
       
       let qaStatus: 'success' | 'failure' = 'success';
       const issues: string[] = [];
 
-      // Check failure threshold
+      
       if (failureRate > failureThreshold) {
         qaStatus = 'failure';
         issues.push(`Test failure rate ${failureRate.toFixed(1)}% exceeds threshold ${failureThreshold}%`);
       }
 
-      // Check coverage requirement
+      
       if (requiredCoverage && qaResult.coverage) {
         if (qaResult.coverage.percentage < requiredCoverage) {
           qaStatus = 'failure';
@@ -139,7 +123,7 @@ export class QAStep extends WorkflowStep {
         }
       }
 
-      // Set context variables
+      
       context.setVariable('qaResult', qaResult);
       context.setVariable('testsPassed', qaStatus === 'success');
       context.setVariable('failures', qaResult.failures);
@@ -185,7 +169,7 @@ export class QAStep extends WorkflowStep {
   private async executeTests(workingDir: string, command: string, testPath?: string, timeoutMs: number = 300000): Promise<QAResult> {
     const startTime = Date.now();
     
-    // Build full command
+    
     let fullCommand = command;
     if (testPath) {
       fullCommand += ` ${testPath}`;
@@ -194,12 +178,12 @@ export class QAStep extends WorkflowStep {
     logger.debug('Executing test command', { command: fullCommand, workingDir, timeoutMs });
 
     try {
-      // Execute the test command directly
+      
       const testOutput = await this.runCommand(fullCommand, workingDir, timeoutMs);
 
       const duration_ms = Date.now() - startTime;
 
-      // Parse test results from output
+      
       const parsed = this.parseTestOutput(testOutput);
 
       return {
@@ -274,7 +258,7 @@ export class QAStep extends WorkflowStep {
   }
 
   private parseTestOutput(output: string): any {
-    // Parse common test output formats (Jest, Mocha, Vitest, etc.)
+    
     const lines = output.split('\n');
     
     let total = 0;
@@ -284,9 +268,9 @@ export class QAStep extends WorkflowStep {
     const failures: Array<{test: string; error: string; file?: string; line?: number}> = [];
     let coverage: any = null;
 
-    // Look for Jest/Vitest style output
+    
     for (const line of lines) {
-      // Test summary patterns
+      
       if (line.match(/Tests:\s*(\d+)\s*passed,\s*(\d+)\s*total/)) {
         const match = line.match(/Tests:\s*(\d+)\s*passed,\s*(\d+)\s*total/);
         if (match) {
@@ -296,7 +280,7 @@ export class QAStep extends WorkflowStep {
         }
       }
       
-      // Vitest style: ✓ passed | ✗ failed 
+      
       if (line.match(/✓\s*(\d+)\s*passed/)) {
         const match = line.match(/✓\s*(\d+)\s*passed/);
         if (match) passed = parseInt(match[1]);
@@ -307,7 +291,7 @@ export class QAStep extends WorkflowStep {
         if (match) failed = parseInt(match[1]);
       }
 
-      // Look for failures
+      
       if (line.includes('FAIL') || line.includes('✗')) {
         const errorMatch = line.match(/(.+?)\s+(FAIL|✗)\s+(.+)/);
         if (errorMatch) {
@@ -319,7 +303,7 @@ export class QAStep extends WorkflowStep {
         }
       }
 
-      // Coverage patterns
+      
       if (line.includes('All files') && line.includes('%')) {
         const coverageMatch = line.match(/(\d+\.?\d*)%/);
         if (coverageMatch) {
@@ -332,7 +316,7 @@ export class QAStep extends WorkflowStep {
       }
     }
 
-    // Ensure totals are consistent
+    
     if (total === 0 && (passed > 0 || failed > 0)) {
       total = passed + failed + skipped;
     }
@@ -388,7 +372,7 @@ export class QAStep extends WorkflowStep {
   }
 
   async cleanup(context: WorkflowContext): Promise<void> {
-    // Clean up any test artifacts or temporary files
+    
     const qaResult = context.getVariable('qaResult');
     if (qaResult) {
       logger.debug('Cleaning up QA test results');

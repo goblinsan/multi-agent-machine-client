@@ -1,7 +1,7 @@
 import "dotenv/config";
 import path from "path";
 
-// Expands a leading '~' in a path to the user's home directory
+
 function expandHome(p: string | undefined): string | undefined {
   if (!p) return p;
   return p.replace(/^~(?=$|\/|\\)/, process.env.HOME || process.env.USERPROFILE || "~");
@@ -19,7 +19,7 @@ function splitCsv(value: string | undefined, fallback: string[]): string[] {
 
 function jsonOr<T>(value: string | undefined, fallback: T): T {
   if (!value) return fallback;
-  // Trim and strip surrounding single or double quotes to be tolerant of .env quoting
+  
   let v = value.trim();
   if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
     v = v.slice(1, -1);
@@ -31,10 +31,10 @@ function parseDurationMs(value: string | undefined, fallbackMs: number) {
   if (!value) return fallbackMs;
   let s = value.toString().trim();
   if (!s.length) return fallbackMs;
-  // strip surrounding quotes if present
+  
   if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) s = s.slice(1, -1).trim();
 
-  // Accept human-friendly units: ms, s, m, h (e.g. "120s", "2m", "1500ms")
+  
   const m = s.match(/^([0-9]+(?:\.[0-9]+)?)\s*(ms|s|m|min|h)?$/i);
   if (m) {
     const num = Number(m[1]);
@@ -44,12 +44,12 @@ function parseDurationMs(value: string | undefined, fallbackMs: number) {
     if (unit === "s") return Math.floor(num * 1000);
     if (unit === "m" || unit === "min") return Math.floor(num * 60 * 1000);
     if (unit === "h") return Math.floor(num * 60 * 60 * 1000);
-    // no unit -> interpret number > 1000 as milliseconds, otherwise seconds
+    
     if (num > 1000) return Math.floor(num);
     return Math.floor(num * 1000);
   }
 
-  // fallback: try numeric parsing
+  
   const num = Number(s);
   if (!Number.isFinite(num) || num <= 0) return fallbackMs;
   if (num > 1000) return Math.floor(num);
@@ -65,7 +65,7 @@ function parsePersonaTimeouts(raw: Record<string, unknown>) {
     let ms: number | undefined;
     if (typeof value === "number") ms = value;
     else if (typeof value === "string") {
-      // allow values like "120s", "2m", "120000" or quoted strings
+      
       const parsed = parseDurationMs(value, -1);
       if (parsed > 0) ms = parsed;
     }
@@ -82,14 +82,14 @@ function parsePersonaMaxRetries(raw: Record<string, unknown>) {
     const normalizedKey = key.trim().toLowerCase();
     if (!normalizedKey.length) continue;
     
-    // Handle string values like "unlimited", "infinite", etc.
+    
     if (typeof value === "string") {
       const normalized = value.trim().toLowerCase();
       if (["unlimited", "infinite", "inf", "none", "no-limit", "nolimit"].includes(normalized)) {
         out[normalizedKey] = null;
         continue;
       }
-      // Try to parse as number
+      
       const num = Number(normalized);
       if (Number.isFinite(num) && num >= 0) {
         out[normalizedKey] = Math.floor(num);
@@ -97,7 +97,7 @@ function parsePersonaMaxRetries(raw: Record<string, unknown>) {
       }
     }
     
-    // Handle numeric values
+    
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
       out[normalizedKey] = Math.floor(value);
       continue;
@@ -143,17 +143,17 @@ const planMaxIterationsPerStage = parseRevisionLimit(process.env.PLAN_MAX_ITERAT
 const blockedMaxAttempts = parseRevisionLimit(process.env.BLOCKED_MAX_ATTEMPTS, 10);
 const personaTimeoutMaxRetries = parseRevisionLimit(process.env.PERSONA_TIMEOUT_MAX_RETRIES, 3);
 
-// Default retry backoff increment: 30 seconds
+
 const personaRetryBackoffIncrementMs = parseDurationMs(process.env.PERSONA_RETRY_BACKOFF_INCREMENT_MS, 30000);
 
-// Plan citation/relevance enforcement
+
 function parseJsonArray(value: string | undefined, fallback: string[]): string[] {
   if (!value) return fallback;
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) return parsed.map(String);
-  } catch { /* not JSON, fall through to CSV */ }
-  // allow CSV fallback
+  } catch {  }
+  
   return splitCsv(value, fallback);
 }
 const planRequireCitations = bool(process.env.PLAN_REQUIRE_CITATIONS, true);
@@ -191,18 +191,18 @@ const dashboardContextEndpoint = (() => {
 const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();
 const gitUserEmail = (process.env.GIT_USER_EMAIL || "machine-client@example.com").trim();
 
-// Parse per-persona timeout and retry configurations from environment
+
 const personaTimeouts = parsePersonaTimeouts(jsonOr(process.env.PERSONA_TIMEOUTS_JSON, {} as Record<string, unknown>));
 const personaMaxRetries = parsePersonaMaxRetries(jsonOr(process.env.PERSONA_MAX_RETRIES_JSON, {} as Record<string, unknown>));
 
-// Default timeout: 1 minute (60000ms)
+
 const personaDefaultTimeoutMs = parseDurationMs(process.env.PERSONA_DEFAULT_TIMEOUT_MS, 60000);
 
-// Default max retries: 3
+
 const personaDefaultMaxRetries = parseRevisionLimit(process.env.PERSONA_DEFAULT_MAX_RETRIES, 3);
 
 export const cfg = {
-  // Message Transport Configuration
+  
   transportType: (process.env.TRANSPORT_TYPE || "redis") as "redis" | "local",
   
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
@@ -217,7 +217,7 @@ export const cfg = {
   dashboardBaseUrl: process.env.DASHBOARD_BASE_URL || "http://localhost:8787",
   dashboardApiKey: process.env.DASHBOARD_API_KEY || "dev",
   dashboardContextEndpoint,
-  // Be conservative: do not auto-create milestones by default to avoid accidental duplicates.
+  
   dashboardCreateMilestoneIfMissing: bool(process.env.DASHBOARD_CREATE_MILESTONE_IF_MISSING, false),
 
   applyEdits: bool(process.env.APPLY_EDITS, false),
@@ -238,16 +238,16 @@ export const cfg = {
   blockedMaxAttempts,
   personaTimeoutMaxRetries,
   personaRetryBackoffIncrementMs,
-  // Plan citation and relevance budget settings
+  
   planRequireCitations,
   planCitationFields,
   planUncitedBudget,
   planTreatUncitedAsInvalid,
 
-  // Diagnostics writing (disabled by default)
+  
   writeDiagnostics: bool(process.env.WRITE_DIAGNOSTICS, false),
 
-  // Context scanner feature flags & defaults
+  
   contextScan: bool(process.env.CONTEXT_SCAN, false),
   scanInclude: splitCsv(process.env.SCAN_INCLUDE || "**/*", []),
   scanExclude: splitCsv(process.env.SCAN_EXCLUDE || "**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/coverage/**,**/target/**,**/.next/**,**/.nuxt/**,**/vendor/**,**/__pycache__/**,**/.pytest_cache/**,**/.venv/**,**/venv/**,**/.cargo/**,**/Cargo.lock", []),
@@ -257,10 +257,10 @@ export const cfg = {
   scanTrackLines: bool(process.env.SCAN_TRACK_LINES, true),
   scanTrackHash: bool(process.env.SCAN_TRACK_HASH, true),
 
-  // Multi-component scanning
+  
   scanComponents: jsonOr(process.env.SCAN_COMPONENTS, null as null | any),
 
-  // Summary writing mode after model call
+  
   summaryMode: (process.env.SUMMARY_MODE || "both").toLowerCase(),
 
   personaTimeouts,
@@ -278,7 +278,7 @@ export const cfg = {
     userName: gitUserName,
     userEmail: gitUserEmail
   },
-  // Guard: refuse to mutate the developer workspace repo unless explicitly allowed
+  
   allowWorkspaceGit: ["1","true","yes","on"].includes((process.env.MC_ALLOW_WORKSPACE_GIT || "").toLowerCase()),
 
   log: {
@@ -287,25 +287,25 @@ export const cfg = {
     console: logConsole
   }
   ,
-  // Max bytes for attachments the worker will send to the dashboard (base64-encoded size before transport)
+  
   dashboardMaxAttachmentBytes: Number(process.env.DASHBOARD_MAX_ATTACHMENT_BYTES || 200000)
   ,
-  // Whether the worker should inject dashboard context (project tree, hotspots) into model prompts
-  // Set to false to ensure each LM call is self-contained and no external dashboard context is added.
+  
+  
   injectDashboardContext: bool(process.env.INJECT_DASHBOARD_CONTEXT, true),
-  // When true, auto-creating milestones is only permitted for the 'Future Enhancements' milestone
+  
   dashboardAutoCreateFutureEnhancementsOnly: bool(process.env.DASHBOARD_AUTO_CREATE_FUTURE_ENHANCEMENTS_ONLY, true),
 };
 
-// Filter allowedPersonas to only include personas this worker can actually handle
+
 const quietConfigLogs = (process.env.NODE_ENV === 'test') || ["1","true","yes","on"].includes((process.env.QUIET_CONFIG_LOGS || '').toLowerCase());
-// Coordination persona doesn't need a model mapping (it's a workflow orchestrator)
+
 const rawAllowedPersonas = cfg.allowedPersonas;
 cfg.allowedPersonas = cfg.allowedPersonas.filter(persona => {
-  // Coordination persona is special - doesn't use LM Studio
+  
   if (persona === 'coordination') return true;
   
-  // All other personas need a model mapping
+  
   const hasModelMapping = !!cfg.personaModels[persona];
   
   if (!hasModelMapping) {

@@ -1,26 +1,17 @@
-/**
- * remoteUtils - Git remote URL parsing and manipulation
- * 
- * Responsibilities:
- * - Parse git remote URLs (SSH and HTTPS)
- * - Mask credentials in URLs for safe logging
- * - Validate remote URL formats
- */
+
 
 export type ParsedRemote = {
   host: string;
   path: string;
 };
 
-/**
- * Parse a git remote URL into host and path components
- */
+
 export function parseRemote(remote: string): ParsedRemote {
   const trimmed = remote.trim();
   if (!trimmed) throw new Error("Remote URL is empty");
 
-  // Guard: reject obvious local filesystem paths (Windows drive letters, UNC, POSIX absolute)
-  // when they do not include a URL scheme. These are not git remotes.
+  
+  
   const isWindowsDrive = /^[A-Za-z]:[/\\]/.test(trimmed);
   const isUnc = /^\\\\/.test(trimmed);
   const isPosixAbs = /^\//.test(trimmed);
@@ -49,9 +40,7 @@ export function parseRemote(remote: string): ParsedRemote {
   }
 }
 
-/**
- * Mask credentials in a remote URL for safe logging
- */
+
 export function maskRemote(remote: string) {
   try {
     const url = new URL(remote);

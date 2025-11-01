@@ -16,10 +16,7 @@ interface PersonaRequestConfig {
   maxRetries?: number;
 }
 
-/**
- * PersonaRequestStep - Makes persona requests via Redis with exact step names
- * This step implements the exact persona communication pattern expected by tests
- */
+
 export class PersonaRequestStep extends WorkflowStep {
   private variableResolver: VariableResolver;
 
@@ -31,31 +28,31 @@ export class PersonaRequestStep extends WorkflowStep {
     const config = this.config.config as PersonaRequestConfig;
     const { step, persona, intent, payload, deadlineSeconds = 600 } = config;
     
-    // FORCE bypass in test mode - always return immediately without any persona operations
+    
     const skipPersonaOps = ((): boolean => {
-      // Check if we're in test mode
+      
       const isTest = (process.env.NODE_ENV === 'test') || (!!process.env.VITEST) || (typeof (globalThis as any).vi !== 'undefined');
       
-      // In test mode, ALWAYS bypass unless explicitly disabled
+      
       if (isTest) {
         try {
           const explicit = context.getVariable('SKIP_PERSONA_OPERATIONS');
-          // Only allow bypass to be disabled if explicitly set to false
+          
           if (explicit === false) return false;
-        } catch { /* getVariable may throw in test setup */ }
-        // Default: ALWAYS bypass in test mode
+        } catch {  }
+        
         return true;
       }
       
-      // In production, respect the SKIP_PERSONA_OPERATIONS flag
+      
       try {
         return context.getVariable('SKIP_PERSONA_OPERATIONS') === true;
-      } catch { /* getVariable may throw, default to false */ }
+      } catch {  }
       return false;
     })();
 
     if (skipPersonaOps) {
-      // Map common review steps to pre-seeded context keys used by tests
+      
       const stepName = this.config.name || '';
       const map: Record<string, { statusKey: string; responseKey: string }> = {
         qa_request: { statusKey: 'qa_status', responseKey: 'qa_response' },
@@ -66,8 +63,8 @@ export class PersonaRequestStep extends WorkflowStep {
       };
 
       const mapping = map[stepName];
-      // Prefer explicitly seeded status variable (e.g., qa_status). If missing, derive from any pre-seeded
-      // "*_result" output (e.g., qa_request_result.status) or fallback response key (e.g., qa_response.status).
+      
+      
       const outputsList = Array.isArray(this.config.outputs) ? this.config.outputs : [];
       const resultOutputName = outputsList.find(o => o.endsWith('_result')) as string | undefined;
       const preseededResult = resultOutputName ? context.getVariable(resultOutputName) : undefined;
@@ -80,19 +77,19 @@ export class PersonaRequestStep extends WorkflowStep {
         }
       }
       const seededStatus = (derivedStatus as string) || 'pass';
-      // Choose seeded response without clobbering pre-seeded "*_result" if present
+      
       const seededResponse = (preseededResult !== undefined ? preseededResult : (fallbackResponse || {}));
 
-      // Set interpreted status as {step_name}_status for workflow conditions, and also the statusKey
+      
       context.setVariable(`${stepName}_status`, seededStatus);
       if (mapping?.statusKey) {
         context.setVariable(mapping.statusKey, seededStatus);
       }
 
-      // Also set configured outputs if present (e.g., qa_request_result)
+      
       if (this.config.outputs && Array.isArray(this.config.outputs)) {
         for (const output of this.config.outputs) {
-          // For "*_status" outputs configured, set status; otherwise set response
+          
           if (output.endsWith('_status')) {
             context.setVariable(output, seededStatus);
           } else {
@@ -120,13 +117,13 @@ export class PersonaRequestStep extends WorkflowStep {
       };
     }
     
-    // Get base timeout from config or persona-specific configuration
+    
     const baseTimeoutMs = config.timeout ?? personaTimeoutMs(persona, cfg);
     
-    // Get max retries from config (per-step override) or persona-specific/global default
+    
     const configuredMaxRetries = config.maxRetries !== undefined ? config.maxRetries : personaMaxRetries(persona, cfg);
-    // In production, unlimited retries = Number.MAX_SAFE_INTEGER
-    // The hard cap of 100 attempts will still prevent true infinite loops
+    
+    
     const effectiveMaxRetries = configuredMaxRetries === null 
       ? Number.MAX_SAFE_INTEGER
       : configuredMaxRetries;
@@ -151,12 +148,12 @@ export class PersonaRequestStep extends WorkflowStep {
 
     try {
       
-      // Resolve payload variables from context
+      
       const resolvedPayload = this.resolvePayloadVariables(payload, context);
       
-      // Send persona request with exact step name
-      // CRITICAL: Always use remote URL for distributed agents, never local path
-      // Each agent will resolve the remote to their local PROJECT_BASE location
+      
+      
+      
       const repoForPersona = context.getVariable('repo_remote')
         || context.getVariable('repo')
         || context.getVariable('effective_repo_path');
@@ -171,21 +168,21 @@ export class PersonaRequestStep extends WorkflowStep {
         throw new Error(`Cannot send persona request: no repository remote URL available. Local paths cannot be shared across distributed agents.`);
       }
 
-      // Use the current branch from context (encapsulates branch resolution logic)
+      
       const currentBranch = context.getCurrentBranch();
       
-      // Retry loop for timeout handling with progressive backoff
+      
       let lastCorrId = '';
       let attempt = 0;
       let completion = null;
       
-      // Safety: Hard cap at 100 attempts to prevent infinite loops
+      
       const HARD_CAP_ATTEMPTS = 100;
       
       while ((isUnlimitedRetries || attempt <= maxRetries) && !completion && attempt < HARD_CAP_ATTEMPTS) {
         attempt++;
         
-        // Calculate progressive timeout for this attempt
+        
         const currentTimeoutMs = calculateProgressiveTimeout(
           baseTimeoutMs,
           attempt,
@@ -214,7 +211,7 @@ export class PersonaRequestStep extends WorkflowStep {
           });
         }
         
-        // Extract task_id from payload or context
+        
         const taskId = resolvedPayload.task_id 
           || resolvedPayload.taskId 
           || context.getVariable('task_id') 
@@ -244,11 +241,11 @@ export class PersonaRequestStep extends WorkflowStep {
           timeoutMs: currentTimeoutMs
         });
 
-        // Wait for persona completion with progressive timeout
+        
         try {
           completion = await waitForPersonaCompletion(transport, persona, context.workflowId, corrId, currentTimeoutMs);
         } catch (error: any) {
-          // Check if this is a timeout error
+          
           if (error.message && error.message.includes('Timed out waiting')) {
             completion = null;
             if (isUnlimitedRetries || attempt < maxRetries) {
@@ -266,7 +263,7 @@ export class PersonaRequestStep extends WorkflowStep {
               });
             }
           } else {
-            // Non-timeout error, rethrow to be caught by outer try-catch
+            
             throw error;
           }
         }
@@ -277,7 +274,7 @@ export class PersonaRequestStep extends WorkflowStep {
         const finalTimeoutMs = calculateProgressiveTimeout(baseTimeoutMs, attempt, cfg.personaRetryBackoffIncrementMs);
         const hitHardCap = attempt >= HARD_CAP_ATTEMPTS;
         
-        // Log detailed diagnostic error for workflow abortion
+        
         logger.error(`Persona request failed after exhausting all retries - WORKFLOW WILL ABORT`, {
           workflowId: context.workflowId,
           step,
@@ -318,10 +315,10 @@ export class PersonaRequestStep extends WorkflowStep {
         };
       }
 
-      // Get raw response for status interpretation
+      
       const rawResponse = completion.fields?.result || '';
       
-      // Parse persona response (with error handling)
+      
       let result: any = {};
       try {
         result = completion.fields?.result ? JSON.parse(completion.fields.result) : {};
@@ -332,17 +329,17 @@ export class PersonaRequestStep extends WorkflowStep {
           persona,
           error: parseError instanceof Error ? parseError.message : 'Unknown error'
         });
-        // If JSON parsing fails, use raw response for interpretation
+        
         result = { raw: rawResponse };
       }
       
-      // Interpret the status from the response using proper status interpretation
+      
       let statusInfo = interpretPersonaStatus(rawResponse);
       
-      // SPECIAL VALIDATION: QA must execute tests to pass
-      // If QA returns "pass" but 0 tests were executed, override to "fail"
+      
+      
       if (persona === 'tester-qa' && statusInfo.status === 'pass') {
-        // Check for patterns indicating no tests were executed
+        
         const noTestsPatterns = [
           /0\s+passed,\s+0\s+failed/i,
           /no tests.*present/i,
@@ -382,14 +379,14 @@ export class PersonaRequestStep extends WorkflowStep {
         rawStatus: result.status || 'unknown'
       });
 
-      // Set output variables in context
+      
       this.setOutputVariables(context, result);
       
-      // IMPORTANT: Set interpreted status as {step_name}_status for workflow conditions
+      
       context.setVariable(`${this.config.name}_status`, statusInfo.status);
 
-      // CRITICAL: Return failure status when persona fails
-      // This ensures the workflow engine aborts instead of continuing with failed persona result
+      
+      
       if (statusInfo.status === 'fail') {
         logger.error(`Persona request failed - workflow will abort`, {
           workflowId: context.workflowId,
@@ -450,14 +447,14 @@ export class PersonaRequestStep extends WorkflowStep {
   }
 
   private setOutputVariables(context: WorkflowContext, result: any): void {
-    // Set the main result
+    
     if (this.config.outputs) {
       for (const output of this.config.outputs) {
         context.setVariable(output, result);
       }
     }
 
-    // Also set individual properties if result is an object
+    
     if (result && typeof result === 'object') {
       for (const [key, value] of Object.entries(result)) {
         context.setVariable(`${this.config.name}_${key}`, value);

@@ -26,15 +26,15 @@ import { render } from '@testing-library/react'
     const spec = parseUnifiedDiffToEditSpec(diff)
     expect(spec).toBeDefined()
     expect(spec.ops).toBeInstanceOf(Array)
-    // should produce at least two upsert ops
+    
     const upserts = spec.ops.filter((o: any) => o.action === 'upsert')
     expect(upserts.length).toBeGreaterThanOrEqual(2)
-    // check paths exist and content is non-empty
+    
     expect(upserts.map((u: any) => u.path)).toContain('package.json')
     expect(upserts.map((u: any) => u.path)).toContain('src/App.test.tsx')
   const pkg = upserts.find((u: any) => u.path === 'package.json')
   expect(pkg).toBeDefined()
-  // non-null assertion because we just checked it's defined
+  
   expect(pkg!.content).toContain('"name": "example"')
   })
 })
@@ -166,22 +166,22 @@ index 1111111..2222222 100644
   })
 
   it('handles multiple response formats', () => {
-    // Test direct string response
+    
     const stringResponse = { result: 'diff --git a/file.txt b/file.txt\n+added line' }
     expect(extractDiffCandidates(stringResponse)).toHaveLength(1)
 
-    // Test top-level preview field
+    
     const topLevelPreview = { preview: 'diff --git a/file.txt b/file.txt\n+added line' }
     expect(extractDiffCandidates(topLevelPreview)).toHaveLength(1)
 
-    // Test empty/null responses
+    
     expect(extractDiffCandidates({})).toHaveLength(0)
     expect(extractDiffCandidates({ result: null })).toHaveLength(0)
     expect(extractDiffCandidates({ result: { preview: null } })).toHaveLength(0)
   })
 
   it('handles direct string input and raw field response structure', () => {
-    // Test direct string input (QA execution path issue)
+    
     const directString = `Here's the fix:
 
 \`\`\`diff
@@ -200,7 +200,7 @@ index 1234567..89abcde 100644
     expect(candidates1[0]).toContain('diff --git a/src/test.js');
     expect(candidates1[0]).toContain('+console.log(\'world\');');
 
-    // Test {raw: string} response structure (parseEventResult fallback case)
+    
     const rawResponse = {
       raw: `Here's the fix:
 

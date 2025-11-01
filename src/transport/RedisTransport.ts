@@ -1,9 +1,4 @@
-/**
- * Redis Message Transport
- * 
- * Wrapper around Redis client that implements the MessageTransport interface.
- * Adapter between Redis Streams and the transport abstraction.
- */
+
 
 import { createClient, RedisClientType } from 'redis';
 import {
@@ -14,9 +9,7 @@ import {
   ReadOptions
 } from './MessageTransport.js';
 
-/**
- * Redis-based transport using Redis Streams
- */
+
 export class RedisTransport implements MessageTransport {
   private client: RedisClientType | null = null;
   private url: string;
@@ -130,13 +123,11 @@ export class RedisTransport implements MessageTransport {
   async xGroupDestroy(stream: string, group: string): Promise<boolean> {
     const client = this.ensureConnected();
     const result = await client.xGroupDestroy(stream, group);
-    // Redis client types this as boolean (though it actually returns 1/0)
+    
     return Boolean(result);
   }
 
-  /**
-   * Get the underlying Redis client (for advanced operations)
-   */
+  
   getClient(): RedisClientType {
     return this.ensureConnected();
   }

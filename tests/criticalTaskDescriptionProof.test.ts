@@ -1,11 +1,4 @@
-/**
- * PROOF TEST: Demonstrates that planner MUST receive task description or workflow aborts
- * 
- * This test provides evidence that:
- * 1. Planner receives task description when it exists in task.data.description
- * 2. Workflow aborts with error when task description is missing
- * 3. The actual LLM call includes the task description in the prompt
- */
+
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PersonaConsumer } from '../src/personas/PersonaConsumer.js';
@@ -26,7 +19,7 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
     capturedUserText = '';
     llmCallError = null;
 
-    // Mock buildPersonaMessages to capture what's sent to LLM
+    
     const buildMessagesModule = await import('../src/personas/PersonaRequestHandler.js');
     vi.spyOn(buildMessagesModule, 'buildPersonaMessages').mockImplementation((input: any) => {
       capturedUserText = input.userText;
@@ -38,7 +31,7 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
       return messages as any;
     });
 
-    // Mock callPersonaModel to avoid actual LLM calls
+    
     vi.spyOn(buildMessagesModule, 'callPersonaModel').mockImplementation(async (_input: any) => {
       if (llmCallError) {
         throw llmCallError;
@@ -96,7 +89,7 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
     };
     console.log(JSON.stringify(inputTask, null, 2));
 
-    // Send request with ACTUAL dashboard structure
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'proof-test-1',
       to_persona: 'implementation-planner',
@@ -111,7 +104,7 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
       })
     });
 
-    // Wait for processing
+    
     await new Promise(resolve => setTimeout(resolve, 150));
     
     console.log('\n─────────────────────────────────────────────────────────');
@@ -128,16 +121,16 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
     console.log('ASSERTIONS:');
     console.log('─────────────────────────────────────────────────────────');
 
-    // PROOF: User text contains the task description
+    
     expect(capturedUserText).toBeDefined();
-    expect(capturedUserText).not.toBe('planning'); // Not just the intent
+    expect(capturedUserText).not.toBe('planning'); 
     expect(capturedUserText).toContain('Config loader and schema validation');
     expect(capturedUserText).toContain('hierarchical config');
     expect(capturedUserText).toContain('JSON schema validation');
     expect(capturedUserText).toContain('.example.env');
     console.log('✓ User text contains full task description');
 
-    // PROOF: LLM received the task description in the prompt
+    
     const userMessage = capturedLLMPrompt.find(m => m.role === 'user');
     expect(userMessage).toBeDefined();
     expect(userMessage?.content).toContain('Config loader');
@@ -145,7 +138,7 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
     expect(userMessage?.content).toContain('JSON schema validation');
     console.log('✓ LLM prompt contains task description');
 
-    // PROOF: Description came from task.data.description
+    
     expect(capturedUserText).toContain(taskDescription);
     console.log('✓ Description extracted from task.data.description (dashboard structure)');
 
@@ -164,7 +157,7 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
     let personaPublishedError = false;
     let errorResultPayload: any = null;
 
-    // Capture error from ContextExtractor
+    
     const extractorModule = await import('../src/personas/context/ContextExtractor.js');
     const originalExtractUserText = extractorModule.ContextExtractor.prototype.extractUserText;
     vi.spyOn(extractorModule.ContextExtractor.prototype, 'extractUserText').mockImplementation(async function(this: any, params: any) {
@@ -177,7 +170,7 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
       }
     });
 
-    // Spy on logger to capture error details
+    
     const loggerModule = await import('../src/logger.js');
     let loggedError = false;
     vi.spyOn(loggerModule.logger, 'error').mockImplementation((msg: string, meta?: any) => {
@@ -210,13 +203,13 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
         status: 'open',
         priority_score: 0,
         milestone_id: 1
-        // description is MISSING!
+        
       },
       timestamp: Date.now()
     };
     console.log(JSON.stringify(inputTaskNoDescription, null, 2));
 
-    // Send request without description
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'proof-test-2',
       to_persona: 'implementation-planner',
@@ -231,10 +224,10 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
       })
     });
 
-    // Wait for processing and check the event stream for error result
+    
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    // Read from event stream to verify error was published
+    
     const events = await transport.xRead([{ key: cfg.eventStream, id: '0-0' }], { COUNT: 100 });
     const eventMessages = events?.[cfg.eventStream]?.messages || [];
     
@@ -275,32 +268,32 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
     console.log('ASSERTIONS:');
     console.log('─────────────────────────────────────────────────────────');
 
-    // PROOF #1: Error was thrown in ContextExtractor
+    
     expect(errorThrown).toBe(true);
     expect(errorMessage).toContain('has no description');
     expect(errorMessage).toContain('Task without description');
     console.log('✓ Error thrown with descriptive message');
 
-    // PROOF #2: Error was logged with diagnostic info
+    
     expect(loggedError).toBe(true);
     expect(errorTaskId).toBe(5);
     expect(errorTaskTitle).toBe('Task without description');
     console.log('✓ Error logged with task ID and title for debugging');
 
-    // PROOF #3: Error was published to event stream
+    
     expect(personaPublishedError).toBe(true);
     expect(errorResultPayload).toBeDefined();
     expect(errorResultPayload.status).toBe('fail');
     expect(errorResultPayload.error).toContain('has no description');
     console.log('✓ Error result published to event stream with status: "fail"');
 
-    // PROOF #4: LLM was NOT called (no generic plan generated)
+    
     expect(capturedLLMPrompt.length).toBe(0);
     console.log('✓ LLM was not called - prevented generic plan generation');
 
-    // PROOF #5: PersonaRequestStep will interpret this as failure
-    // When PersonaRequestStep calls interpretPersonaStatus() on this result,
-    // it will detect status: 'fail' and return { status: 'failure' } to workflow engine
+    
+    
+    
     console.log('✓ Workflow step will detect failure status and abort workflow');
 
     console.log('\n✅ PROOF #2 COMPLETE: Workflow aborts when description is missing\n');
@@ -420,11 +413,11 @@ describe('PROOF: Planner receives task description or workflow aborts', () => {
     console.log('ASSERTIONS:');
     console.log('─────────────────────────────────────────────────────────');
 
-    // PROOF: Uses task.data.description (CORRECT)
+    
     expect(capturedUserText).toContain('CORRECT: This is in task.data.description');
     console.log('✓ Uses task.data.description when available');
 
-    // PROOF: Does NOT use task.description (WRONG)
+    
     expect(capturedUserText).not.toContain('WRONG: This is in task.description');
     console.log('✓ Ignores task.description when task.data.description exists');
 

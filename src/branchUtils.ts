@@ -1,14 +1,6 @@
 import { firstString } from "./util.js";
 
-/**
- * Determine a sensible branch name for a milestone/task.
- * Priority:
- * 1) Explicit milestone.branch
- * 2) Explicit task.branch
- * 3) feat/{taskSlug}
- * 4) milestone/{milestoneSlug} if milestoneSlug is not the generic 'milestone'
- * 5) milestone/{projectSlug}
- */
+
 export function buildBranchName(
   selectedMilestone: any,
   selectedTask: any,

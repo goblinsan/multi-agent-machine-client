@@ -1,36 +1,21 @@
 import { vi } from 'vitest';
 import { WorkflowCoordinator } from '../../src/workflows/WorkflowCoordinator.js';
 
-/**
- * Helper utilities for coordinator integration tests
- * Provides dynamic task status mocking to prevent test hangs
- */
 
-/**
- * Creates a fast coordinator instance with fetchProjectTasks mocked.
- * This prevents slow 10+ second timeouts from dashboard API calls during tests.
- * 
- * @returns WorkflowCoordinator instance with fast mocks applied
- */
+
+
 export function createFastCoordinator(): WorkflowCoordinator {
   const coordinator = new WorkflowCoordinator();
-  // FORCE fast mode: return empty tasks immediately to prevent ANY iteration delays
+  
   vi.spyOn(coordinator as any, 'fetchProjectTasks').mockImplementation(async () => {
     return [];
   });
-  // Override loadWorkflows to do nothing
+  
   vi.spyOn(coordinator, 'loadWorkflows').mockResolvedValue(undefined);
   return coordinator;
 }
 
-/**
- * Creates a dynamic task status tracking system for coordinator tests.
- * Tasks will be automatically marked as "done" when processed, allowing
- * the coordinator loop to exit cleanly.
- * 
- * @param initialTasks Array of tasks with their initial statuses
- * @returns Object with task tracking and mock setup functions
- */
+
 export function createDynamicTaskMocking(
   initialTasks: Array<{ id: string; name: string; status: string; order?: number }>
 ) {
@@ -38,35 +23,27 @@ export function createDynamicTaskMocking(
   const taskData = new Map(initialTasks.map(t => [t.id, t]));
   
   return {
-    /**
-     * Get current status of a task
-     */
+    
     getStatus(taskId: string): string | undefined {
       return taskStatuses.get(taskId);
     },
     
-    /**
-     * Update a task's status
-     */
+    
     setStatus(taskId: string, status: string) {
       taskStatuses.set(taskId, status);
     },
     
-    /**
-     * Mark a task as done (useful in processTask mocks)
-     */
+    
     markDone(taskId: string) {
       taskStatuses.set(taskId, 'done');
     },
     
-    /**
-     * Set up dashboard mocks to return dynamic task data
-     */
+    
     async setupDashboardMocks() {
       const { ProjectAPI } = await import('../../src/dashboard/ProjectAPI.js');
       const { TaskAPI } = await import('../../src/dashboard/TaskAPI.js');
       
-      // Mock fetchProjectStatusDetails to return tasks dynamically
+      
       vi.spyOn(ProjectAPI.prototype, 'fetchProjectStatusDetails').mockImplementation(async () => ({
         tasks: Array.from(taskStatuses.entries())
           .map(([id, status]) => {
@@ -76,7 +53,7 @@ export function createDynamicTaskMocking(
         repositories: [{ url: 'https://example/repo.git' }]
       }));
       
-      // Mock updateTaskStatus to track status changes
+      
       vi.spyOn(TaskAPI.prototype, 'updateTaskStatus').mockImplementation(async (taskId: string, status: string) => {
         taskStatuses.set(taskId, status);
         return { ok: true, status: 200, body: {} };

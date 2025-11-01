@@ -1,21 +1,4 @@
-/**
- * Dashboard Client Mock Helpers
- * 
- * Provides reusable mock implementations of DashboardClient for testing.
- * This file contains mock factories, response builders, and test data generators
- * to simplify testing of code that depends on the DashboardClient.
- * 
- * Usage:
- * ```typescript
- * import { createMockDashboardClient, mockTaskResponse } from './helpers/dashboardMocks';
- * 
- * const mockClient = createMockDashboardClient();
- * mockClient.bulkCreateTasks.mockResolvedValue(mockBulkCreateResponse({
- *   created: 2,
- *   skipped: 1
- * }));
- * ```
- */
+
 
 import { vi } from 'vitest';
 import type {
@@ -26,14 +9,11 @@ import type {
   TaskListResponse
 } from '../../src/services/DashboardClient';
 
-// ============================================================================
-// Mock Client Factory
-// ============================================================================
 
-/**
- * Creates a fully mocked DashboardClient instance with all methods mocked.
- * Default behavior returns successful responses. Override specific methods as needed.
- */
+
+
+
+
 export function createMockDashboardClient() {
   return {
     createTask: vi.fn().mockResolvedValue(mockTaskResponse({ id: 1 })),
@@ -44,14 +24,11 @@ export function createMockDashboardClient() {
   };
 }
 
-// ============================================================================
-// Response Builders
-// ============================================================================
 
-/**
- * Creates a mock Task response with default values.
- * Override any fields by passing them in the options object.
- */
+
+
+
+
 export function mockTaskResponse(overrides: Partial<Task> = {}): Task {
   return {
     id: 1,
@@ -78,14 +55,7 @@ export function mockTaskResponse(overrides: Partial<Task> = {}): Task {
   };
 }
 
-/**
- * Creates a mock BulkTaskCreateResponse.
- * 
- * @param options Configuration for the response
- * @param options.created Number of tasks to create (default: 2)
- * @param options.skipped Number of tasks to skip (default: 0)
- * @param options.projectId Project ID for created tasks (default: 1)
- */
+
 export function mockBulkCreateResponse(options: {
   created?: number;
   skipped?: number;
@@ -129,12 +99,7 @@ export function mockBulkCreateResponse(options: {
   };
 }
 
-/**
- * Creates a mock TaskListResponse.
- * 
- * @param count Number of tasks to include in the list (default: 5)
- * @param projectId Project ID for all tasks (default: 1)
- */
+
 export function mockListTasksResponse(count: number = 5, _projectId: number = 1): TaskListResponse {
   const tasks = [];
   for (let i = 0; i < count; i++) {
@@ -152,13 +117,11 @@ export function mockListTasksResponse(count: number = 5, _projectId: number = 1)
   return { data: tasks };
 }
 
-// ============================================================================
-// Test Data Generators
-// ============================================================================
 
-/**
- * Generates a TaskCreateInput object with default test values.
- */
+
+
+
+
 export function mockTaskCreateInput(overrides: Partial<TaskCreateInput> = {}): TaskCreateInput {
   return {
     title: 'Test Task',
@@ -170,12 +133,7 @@ export function mockTaskCreateInput(overrides: Partial<TaskCreateInput> = {}): T
   };
 }
 
-/**
- * Generates an array of TaskCreateInput objects for bulk operations.
- * 
- * @param count Number of tasks to generate (default: 5)
- * @param priorities Array of priority scores to cycle through (default: [1500, 1200, 800, 50])
- */
+
 export function mockBulkTaskCreateInput(
   count: number = 5,
   priorities: number[] = [1500, 1200, 800, 50]
@@ -191,9 +149,7 @@ export function mockBulkTaskCreateInput(
   return tasks;
 }
 
-/**
- * Generates a TaskUpdateInput object for task updates.
- */
+
 export function mockTaskUpdateInput(overrides: Partial<TaskUpdateInput> = {}): TaskUpdateInput {
   return {
     status: 'in_progress',
@@ -201,14 +157,11 @@ export function mockTaskUpdateInput(overrides: Partial<TaskUpdateInput> = {}): T
   };
 }
 
-// ============================================================================
-// Scenario Helpers
-// ============================================================================
 
-/**
- * Configures a mock client for a successful task creation scenario.
- * Returns a single created task with the specified priority.
- */
+
+
+
+
 export function mockSuccessfulTaskCreation(
   mockClient: ReturnType<typeof createMockDashboardClient>,
   priority: 'critical' | 'high' | 'medium' | 'low' = 'high'
@@ -230,10 +183,7 @@ export function mockSuccessfulTaskCreation(
   return mockClient;
 }
 
-/**
- * Configures a mock client for a successful bulk task creation scenario.
- * Returns a mix of created and skipped tasks to simulate idempotency.
- */
+
 export function mockSuccessfulBulkCreation(
   mockClient: ReturnType<typeof createMockDashboardClient>,
   options: {
@@ -251,10 +201,7 @@ export function mockSuccessfulBulkCreation(
   return mockClient;
 }
 
-/**
- * Configures a mock client for an idempotent task creation scenario.
- * First call creates a task, subsequent calls return existing task with 200 OK.
- */
+
 export function mockIdempotentTaskCreation(
   mockClient: ReturnType<typeof createMockDashboardClient>,
   externalId: string = `idempotent-${Date.now()}`
@@ -265,8 +212,8 @@ export function mockIdempotentTaskCreation(
     title: 'Existing Task'
   });
 
-  // First call: create (201)
-  // Subsequent calls: return existing (200)
+  
+  
   mockClient.createTask
     .mockResolvedValueOnce(existingTask)
     .mockResolvedValue(existingTask);
@@ -274,21 +221,18 @@ export function mockIdempotentTaskCreation(
   return mockClient;
 }
 
-/**
- * Configures a mock client for a bulk idempotent scenario.
- * First call creates all tasks, second call skips all tasks.
- */
+
 export function mockIdempotentBulkCreation(
   mockClient: ReturnType<typeof createMockDashboardClient>,
   taskCount: number = 3
 ) {
-  // First call: all created
+  
   mockClient.bulkCreateTasks
     .mockResolvedValueOnce(mockBulkCreateResponse({
       created: taskCount,
       skipped: 0
     }))
-    // Second call: all skipped
+    
     .mockResolvedValue(mockBulkCreateResponse({
       created: 0,
       skipped: taskCount
@@ -297,9 +241,7 @@ export function mockIdempotentBulkCreation(
   return mockClient;
 }
 
-/**
- * Configures a mock client for a task creation failure scenario.
- */
+
 export function mockTaskCreationFailure(
   mockClient: ReturnType<typeof createMockDashboardClient>,
   errorMessage: string = 'Task creation failed'
@@ -310,9 +252,7 @@ export function mockTaskCreationFailure(
   return mockClient;
 }
 
-/**
- * Configures a mock client for a network/timeout failure scenario.
- */
+
 export function mockNetworkFailure(
   mockClient: ReturnType<typeof createMockDashboardClient>
 ) {
@@ -326,14 +266,11 @@ export function mockNetworkFailure(
   return mockClient;
 }
 
-// ============================================================================
-// Priority Mapping Helpers
-// ============================================================================
 
-/**
- * Maps priority strings to priority scores.
- * Matches the mapping in BulkTaskCreationStep.
- */
+
+
+
+
 export function priorityToPriorityScore(priority: 'critical' | 'high' | 'medium' | 'low'): number {
   const mapping = {
     critical: 1500,
@@ -344,21 +281,16 @@ export function priorityToPriorityScore(priority: 'critical' | 'high' | 'medium'
   return mapping[priority];
 }
 
-/**
- * Determines if a priority score represents an urgent task.
- * Urgent threshold: priority_score >= 1000
- */
+
 export function isUrgentPriority(priorityScore: number): boolean {
   return priorityScore >= 1000;
 }
 
-// ============================================================================
-// Assertion Helpers
-// ============================================================================
 
-/**
- * Asserts that a BulkTaskCreateResponse has the expected counts.
- */
+
+
+
+
 export function assertBulkCreateResponse(
   response: BulkTaskCreateResponse,
   expected: {
@@ -382,9 +314,7 @@ export function assertBulkCreateResponse(
   }
 }
 
-/**
- * Asserts that a Task has the expected priority score.
- */
+
 export function assertTaskPriority(
   task: Task,
   expectedPriority: 'critical' | 'high' | 'medium' | 'low'

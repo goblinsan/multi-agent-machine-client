@@ -29,7 +29,7 @@ export async function createConnection(dbPath?: string): Promise<Database> {
     db = new SQLModule.Database();
   }
   
-  // Enable foreign keys
+  
   db.run('PRAGMA foreign_keys = ON;');
   
   return db;

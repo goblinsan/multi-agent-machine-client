@@ -1,27 +1,4 @@
-/**
- * Project Setup Script - TypeScript/Node.js Version
- * 
- * This script demonstrates how to programmatically:
- * 1. Create a new project
- * 2. Add multiple milestones sequentially
- * 3. Add tasks in bulk per milestone
- * 
- * Usage:
- *   # Use default example data
- *   tsx examples/create-project.ts
- * 
- *   # Use custom JSON file
- *   tsx examples/create-project.ts path/to/your-project.json
- * 
- *   # With custom base URL
- *   BASE_URL=http://localhost:3000 tsx examples/create-project.ts
- * 
- *   # Both custom file and URL
- *   BASE_URL=http://api.example.com tsx examples/create-project.ts my-project.json
- * 
- *   # Pass JSON via stdin
- *   cat my-project.json | tsx examples/create-project.ts -
- */
+
 
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
@@ -130,10 +107,10 @@ async function setupProject(data: ProjectData) {
   console.log('');
 
   try {
-    // Step 1: Create Project
+    
     const projectId = await createProject(data.project);
 
-    // Step 2: Create Milestones
+    
     console.log('\n🎯 Creating milestones...');
     const milestoneMap = new Map<string, number>();
 
@@ -144,7 +121,7 @@ async function setupProject(data: ProjectData) {
       console.log(`  ✓ Milestone ${i + 1}/${data.milestones.length}: ${milestone.name} (ID: ${id})`);
     }
 
-    // Step 3: Create Tasks in Bulk
+    
     console.log('\n📋 Creating tasks in bulk...');
     let totalTasksCreated = 0;
 
@@ -162,7 +139,7 @@ async function setupProject(data: ProjectData) {
       console.log(`  ✓ Milestone ${milestoneSlug}: Created ${created} tasks, Skipped ${skipped} duplicates`);
     }
 
-    // Step 4: Summary
+    
     console.log('\n========================================');
     console.log('✓ Project Setup Complete!');
     console.log('========================================');
@@ -186,18 +163,16 @@ async function setupProject(data: ProjectData) {
   }
 }
 
-/**
- * Load project data from file or stdin
- */
+
 function loadProjectData(filePath?: string): ProjectData {
   let jsonContent: string;
 
   if (!filePath || filePath === '-') {
-    // Read from stdin
+    
     console.log('📥 Reading project data from stdin...');
     jsonContent = readFileSync(0, 'utf-8');
   } else {
-    // Read from file
+    
     const resolvedPath = resolve(filePath);
     console.log(`📥 Reading project data from: ${resolvedPath}`);
     jsonContent = readFileSync(resolvedPath, 'utf-8');
@@ -212,20 +187,20 @@ function loadProjectData(filePath?: string): ProjectData {
   }
 }
 
-// Main execution
+
 async function main() {
-  // Get file path from command line arguments
+  
   const args = process.argv.slice(2);
   const filePath = args[0] || './examples/project-setup-example.json';
   
-  // Load project data
+  
   const projectData = loadProjectData(filePath === '-' ? '-' : filePath);
   
-  // Setup project
+  
   await setupProject(projectData);
 }
 
-// Run main
+
 main().catch(error => {
   console.error('❌ Fatal error:');
   console.error(error);

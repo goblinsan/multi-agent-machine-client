@@ -22,19 +22,7 @@ interface BlockageAnalysis {
   context_hints: string[];
 }
 
-/**
- * BlockedTaskAnalysisStep - Analyzes why a task was blocked
- * 
- * This step:
- * 1. Retrieves task history from Redis/context
- * 2. Identifies the step that caused the blockage
- * 3. Extracts error messages and context
- * 4. Compiles previous unblock attempts
- * 5. Provides hints for resolution
- * 
- * Outputs:
- * - blockage_analysis: Detailed analysis of why task is blocked
- */
+
 export class BlockedTaskAnalysisStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as BlockedTaskAnalysisConfig;
@@ -49,14 +37,14 @@ export class BlockedTaskAnalysisStep extends WorkflowStep {
     try {
       const task = context.getVariable('task');
       
-      // Initialize analysis structure
+      
       const analysis: BlockageAnalysis = {
         reason: 'Unknown blockage',
         previous_attempts: [],
         context_hints: []
       };
 
-      // Extract blockage info from task metadata
+      
       if (task?.blocked_reason) {
         analysis.reason = task.blocked_reason;
       }
@@ -69,7 +57,7 @@ export class BlockedTaskAnalysisStep extends WorkflowStep {
         analysis.error_message = task.error_message || task.error;
       }
 
-      // Check for workflow failure information in context
+      
       const workflowError = context.getVariable('workflow_error');
       const failedStep = context.getVariable('failed_step');
       
@@ -81,22 +69,22 @@ export class BlockedTaskAnalysisStep extends WorkflowStep {
         analysis.failed_step = analysis.failed_step || String(failedStep);
       }
 
-      // Extract previous attempt history
+      
       const attemptHistory = task?.blocked_attempt_history || [];
       
       if (Array.isArray(attemptHistory)) {
         analysis.previous_attempts = attemptHistory;
       }
 
-      // Note: Querying workflow events from transport would require xRange,
-      // which is not part of the MessageTransport interface. This is optional
-      // enrichment that can be added if needed.
-      // For now, analysis relies on context variables and task history.
+      
+      
+      
+      
 
-      // Generate context hints based on failure patterns
+      
       analysis.context_hints = this.generateContextHints(analysis);
 
-      // Store analysis in context for other steps
+      
       context.setVariable('blockage_analysis', analysis);
 
       logger.info('Completed blockage analysis', {
@@ -128,13 +116,11 @@ export class BlockedTaskAnalysisStep extends WorkflowStep {
     }
   }
 
-  /**
-   * Generate helpful hints based on failure patterns
-   */
+  
   private generateContextHints(analysis: BlockageAnalysis): string[] {
     const hints: string[] = [];
 
-    // Check for common failure patterns
+    
     if (analysis.failed_step?.includes('context')) {
       hints.push('Context scan may have failed - check repository access');
       hints.push('Verify PROJECT_BASE directory permissions');
@@ -164,7 +150,7 @@ export class BlockedTaskAnalysisStep extends WorkflowStep {
       hints.push('Verify git remote access credentials');
     }
 
-    // Check for repeated failures
+    
     if (analysis.previous_attempts.length > 0) {
       const recentFailures = analysis.previous_attempts.slice(-3);
       const sameError = recentFailures.every(a => a.error === analysis.error_message);

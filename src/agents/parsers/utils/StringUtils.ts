@@ -1,15 +1,6 @@
-/**
- * StringUtils - String comparison and similarity utilities
- * 
- * Responsibilities:
- * - Calculate string similarity scores
- * - Compute Levenshtein distance for deduplication
- */
 
-/**
- * Calculate similarity between two strings (0-1)
- * Used for deduplicating diff blocks
- */
+
+
 export function calculateSimilarity(str1: string, str2: string): number {
   const longer = str1.length > str2.length ? str1 : str2;
   const shorter = str1.length > str2.length ? str2 : str1;
@@ -22,10 +13,7 @@ export function calculateSimilarity(str1: string, str2: string): number {
   return (longer.length - editDistance) / longer.length;
 }
 
-/**
- * Calculate Levenshtein distance between two strings
- * Measures the minimum number of edits (insertions, deletions, substitutions)
- */
+
 export function levenshteinDistance(str1: string, str2: string): number {
   const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
   

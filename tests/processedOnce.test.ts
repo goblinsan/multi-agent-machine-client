@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeTempRepo } from './makeTempRepo.js';
 import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis client (uses __mocks__/redisClient.js automatically)
+
 vi.mock('../src/redisClient.js');
 
-// Mock dashboard functions to prevent HTTP calls
+
 vi.mock('../src/dashboard.js', () => ({
   fetchProjectStatus: vi.fn().mockResolvedValue({
     id: 'proj-once',
@@ -34,7 +34,7 @@ describe('Coordinator processes each task only once', () => {
     const coordinator = createFastCoordinator();
     
     try {
-      // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
+      
       await coordinator.handleCoordinator(
         {}, 
         { workflow_id: 'wf-once', project_id: 'proj-once' },
@@ -42,12 +42,12 @@ describe('Coordinator processes each task only once', () => {
       );
       workflowExecuted = true;
     } catch (error) {
-      // Even if workflow fails, we're testing that it doesn't hang
+      
       workflowExecuted = true;
     }
 
-    // Business outcome: Test validates that coordinator processes multiple tasks without hanging
-    // This verifies the task processing logic runs without timeout issues
+    
+    
     expect(workflowExecuted).toBe(true);
   });
 });

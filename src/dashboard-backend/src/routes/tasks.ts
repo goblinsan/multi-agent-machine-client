@@ -14,12 +14,12 @@ const taskCreateSchema = z.object({
 });
 
 export function registerTaskRoutes(fastify: FastifyInstance) {
-  // GET list
+  
   fastify.get('/projects/:projectId/tasks', async (request: any, _reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
     const db = await getDb();
 
-    // JOIN with milestones to include milestone data in task response
+    
     const result = db.exec(`
       SELECT 
         t.id, t.title, t.description, t.status, t.priority_score, t.milestone_id, t.labels,
@@ -40,7 +40,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         priority_score, 
         milestone_id, 
         labels: labels ? JSON.parse(labels) : null,
-        // Include milestone data to avoid separate lookups
+        
         milestone: milestone_id ? {
           id: milestone_id,
           name: milestone_name,
@@ -53,7 +53,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     return { data: tasks };
   });
 
-  // GET single
+  
   fastify.get('/projects/:projectId/tasks/:taskId', async (request: any, reply: any) => {
     const { projectId, taskId } = request.params as any;
     const db = await getDb();
@@ -72,7 +72,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     return task;
   });
 
-  // POST single
+  
   fastify.post('/projects/:projectId/tasks', async (request: any, reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
     const parse = taskCreateSchema.safeParse(request.body);
@@ -81,7 +81,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
 
     const db = await getDb();
     
-    // Idempotency: Check if external_id already exists
+    
     if (data.external_id) {
       const existingResult = db.exec(
         'SELECT * FROM tasks WHERE project_id = ? AND external_id = ?',
@@ -89,7 +89,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
       );
       
       if (existingResult[0] && existingResult[0].values.length > 0) {
-        // Task with this external_id already exists - return it (200 OK)
+        
         const cols = existingResult[0].columns;
         const row = existingResult[0].values[0];
         const existing: any = {};
@@ -100,7 +100,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // No existing task - create new one
+    
     db.run(`INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [projectId, data.title, data.description || null, data.milestone_id || null, data.parent_task_id || null, data.status, data.priority_score || 0, data.external_id || null, data.labels ? JSON.stringify(data.labels) : null]);
     
@@ -116,7 +116,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     return reply.status(201).send(created);
   });
 
-  // POST bulk
+  
   fastify.post('/projects/:projectId/tasks:bulk', async (request: any, reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
     const body = request.body as any;
@@ -133,7 +133,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
       for (const t of body.tasks) {
         const parsed = taskCreateSchema.parse(t);
         
-        // Idempotency: Check if external_id already exists
+        
         if (parsed.external_id) {
           const existingResult = db.exec(
             'SELECT * FROM tasks WHERE project_id = ? AND external_id = ?',
@@ -141,7 +141,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
           );
           
           if (existingResult[0] && existingResult[0].values.length > 0) {
-            // Task with this external_id already exists - skip creation
+            
             const cols = existingResult[0].columns;
             const row = existingResult[0].values[0];
             const existing: any = {};
@@ -157,7 +157,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
           }
         }
         
-        // No existing task - create new one
+        
         db.run('INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [projectId, parsed.title, parsed.description || null, parsed.milestone_id || null, parsed.parent_task_id || null, parsed.status, parsed.priority_score || 0, parsed.external_id || null, parsed.labels ? JSON.stringify(parsed.labels) : null]);
         
@@ -188,7 +188,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // PATCH update
+  
   fastify.patch('/projects/:projectId/tasks/:taskId', async (request: any, reply: any) => {
     const { projectId, taskId } = request.params as any;
     const db = await getDb();

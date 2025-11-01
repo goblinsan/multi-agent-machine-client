@@ -5,7 +5,7 @@ import { sendPersonaRequest, waitForPersonaCompletion, parseEventResult, interpr
 import { PERSONAS } from "../../personaNames.js";
 import { ENGINEER_PERSONAS_REQUIRING_PLAN } from "../../util.js";
 
-// Per-stage max planning iterations; default 5 via cfg
+
 const MAX_APPROVAL_RETRIES = Number.isFinite(cfg.planMaxIterationsPerStage as any) && cfg.planMaxIterationsPerStage !== null
     ? (cfg.planMaxIterationsPerStage as number)
     : 5;
@@ -32,7 +32,7 @@ function extractPlanSteps(planPayload: any): any[] {
 }
 
 async function runEngineerPlanApproval(r: any, workflowId: string, projectId: string, repoRemote: string, branchName: string, implementationPersona: string, plannerPersona: string, basePayload: Record<string, any>, attempt: number, feedback: string | null): Promise<PlanApprovalOutcome | null> {
-    // Diagnostic: log whether plan approval should run for this persona
+    
     logger.debug('runEngineerPlanApproval', { implementationPersona, plannerPersona, requiresPlan: ENGINEER_PERSONAS_REQUIRING_PLAN.has(implementationPersona.toLowerCase()) });
     if (!ENGINEER_PERSONAS_REQUIRING_PLAN.has(implementationPersona.toLowerCase())) return null;
 
@@ -68,7 +68,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
                 revision: attempt
             },
             plan_history: planHistory.length ? planHistory.slice() : undefined,
-            // Enforce citation requirements for relevance
+            
             require_citations: cfg.planRequireCitations,
             citation_fields: cfg.planCitationFields,
             uncited_budget: cfg.planUncitedBudget,
@@ -110,7 +110,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
 
         planHistory.push({ attempt: planAttempt + 1, content: planOutput, payload: planJson });
 
-        // Always evaluate the plan, even if it's missing steps, so feedback is consistent
+        
         const evaluationCorrId = randomUUID();
         logger.info("coordinator dispatch plan evaluation", {
             workflowId,
@@ -119,7 +119,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
             planAttempt: planAttempt + 1
         });
 
-        // Diagnostics: ensure we can see if qa_feedback is present for the evaluator
+        
         try {
             const ef = (basePayload as any)?.qa_feedback;
             logger.info("plan evaluation qa-feedback visibility", {
@@ -127,9 +127,9 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
                 hasQaFeedback: !!ef,
                 qaSource: ef && typeof ef === 'object' ? (ef.source || 'object') : (ef ? 'inline' : 'none')
             });
-        } catch { /* logging QA feedback failed, non-fatal */ }
+        } catch {  }
 
-        // Ensure a non-null QA feedback object for evaluator
+        
         const qaFb = explicitQaFeedback || (feedback ? { status: 'info', details: feedback, source: 'feedback_text' } : null) || { status: 'unknown', details: 'No explicit QA feedback provided', source: 'none' };
 
         await sendPersonaRequest(r, {
@@ -155,7 +155,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
         const evaluationResult = parseEventResult(evaluationEvent.fields.result);
         const evaluationStatus = interpretPersonaStatus(evaluationEvent.fields.result);
 
-        // Treat missing steps as automatic failure to avoid approving empty plans
+        
         const missingSteps = planSteps.length === 0;
         if (evaluationStatus.status === 'fail' || missingSteps) {
             const issue = missingSteps
@@ -163,7 +163,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
                     ? "Plan response did not include a non-empty 'plan' array."
                     : "Plan response must include JSON with a 'plan' array describing the execution steps.")
                 : null;
-            // feed evaluator feedback back to the planner as added plan_feedback for next attempt
+            
             planFeedbackNotes = [
                 `The proposed plan did not pass evaluation.${missingSteps ? ' (no steps provided)' : ''}`,
                 feedback ? `QA Feedback: ${feedback}` : undefined,
@@ -178,7 +178,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
                 planAttempt: planAttempt + 1,
                 feedback: planFeedbackNotes.join('\n')
             });
-            // Mutate basePayload guidance to explicitly prioritize evaluator feedback for the next revision request
+            
             const nextGuidance = [
               (basePayload as any).guidance || '',
               "Prioritize evaluator comments above all else.",
@@ -195,7 +195,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
             continue;
         }
 
-        // Passed evaluation and has steps -> approve
+        
         logger.info("plan approved", {
             workflowId,
             planner,
@@ -210,10 +210,10 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
                 const preview = typeof ack === 'string' ? String(ack).slice(0, 500) : JSON.stringify(ack).slice(0, 500);
                 logger.info("planner acknowledged evaluator feedback (initial planning)", { workflowId, preview });
             }
-        } catch { /* planner acknowledgement failed, non-fatal */ }
+        } catch {  }
         return { planText: planOutput, planPayload: planJson, planSteps, history: planHistory.slice() };
     }
-    // Failing open: if we exceeded attempts, proceed with the latest plan in history
+    
     const last = planHistory[planHistory.length - 1];
     if (last && last.payload) {
         try {
@@ -224,7 +224,7 @@ async function runEngineerPlanApproval(r: any, workflowId: string, projectId: st
             (payload as any).meta.reason = 'iteration_limit_exceeded';
             logger.warn("plan approval attempts exhausted; proceeding with last plan", { workflowId, planner, attempt, steps: steps.length });
             return { planText: last.content, planPayload: payload, planSteps: steps, history: planHistory.slice() };
-        } catch { /* fallback plan extraction failed, non-fatal */ }
+        } catch {  }
     }
     throw new Error(`Exceeded plan approval attempts for ${planner} on revision ${attempt}`);
 }
@@ -244,7 +244,7 @@ export type LeadCycleOutcome = {
 export async function runLeadCycle(r: any, workflowId: string, projectId: string, projectInfo: any, projectSlug: string | null, repoRemote: string, branchName: string, baseBranch: string, milestoneDescriptor: any, milestoneName: string, milestoneSlug: string, taskDescriptor: any, taskName: string | null, feedbackNotes: string[], attempt: number): Promise<LeadCycleOutcome> {
     const feedback = feedbackNotes.filter(Boolean).join("\n\n");
     const milestoneNameForPayload = milestoneDescriptor?.name || milestoneName;
-    // If the selected dashboard task looks like a QA failure report, surface it as qa_feedback for the evaluator
+    
     let derivedQaFeedback: any = null;
     try {
         const summary = String(taskDescriptor?.summary || '').trim();
@@ -258,18 +258,18 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
                 derivedQaFeedback = { status: 'fail', details: summary || title || labels, source: 'dashboard_task', task: taskDescriptor };
             }
         }
-        // As a coarse heuristic, if projectInfo.status mentions failing tests, also surface that
+        
         if (!derivedQaFeedback && projectInfo) {
             const piText = String((projectInfo.status || projectInfo.summary || projectInfo.goal || '')).toLowerCase();
             if (/(failing|failures|tests|test)/.test(piText)) {
                 derivedQaFeedback = { status: 'fail', details: projectInfo.status || projectInfo.summary || projectInfo.goal, source: 'project_status' };
             }
         }
-        // Last resort: if we have a dashboard task, provide a minimal non-null object so evaluator doesn't see null
+        
         if (!derivedQaFeedback && taskDescriptor) {
             derivedQaFeedback = { status: 'unknown', details: taskDescriptor.summary || taskDescriptor.name || '(no details)', source: 'task_fallback' };
         }
-    } catch { /* QA feedback derivation failed, non-fatal */ }
+    } catch {  }
     const engineerBasePayload = {
         repo: repoRemote,
         branch: branchName,
@@ -285,12 +285,12 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
         base_branch: baseBranch,
         feedback: feedback || undefined,
         revision: attempt,
-        // Forward QA failure context (if any) so the initial plan evaluator sees it
+        
         qa_feedback: derivedQaFeedback || undefined
     };
 
-    // The planner persona should be the implementation-planner which prepares the plan
-    // for the lead-engineer to execute. See projects/workflow-plans.md.
+    
+    
     const plannerPersona = PERSONAS.IMPLEMENTATION_PLANNER;
     const planOutcome = await runEngineerPlanApproval(r, workflowId, projectId, repoRemote, branchName, "lead-engineer", plannerPersona, engineerBasePayload, attempt, feedback || null);
 
@@ -338,11 +338,11 @@ export async function runLeadCycle(r: any, workflowId: string, projectId: string
     logger.info("coordinator received lead engineer completion", { workflowId, corrId: leadCorrId, eventId: leadEvent.id });
 
     let appliedEdits = leadResultObj?.applied_edits;
-    // Some personas may return a simple status object { status: 'ok', output: '...' }
-    // without an explicit applied_edits structure. Treat a status:'ok' as a successful
-    // application of edits (best-effort) so the coordinator can progress and mark tasks done.
+    
+    
+    
     if (!appliedEdits && leadResultObj && (leadResultObj.status === 'ok' || leadResultObj.result === 'ok')) {
-        // synthesize an appliedEdits object to indicate success
+        
         (leadResultObj as any).applied_edits = { applied: true, attempted: true, paths: [], commit: { committed: true, pushed: true } };
         appliedEdits = leadResultObj?.applied_edits;
     }

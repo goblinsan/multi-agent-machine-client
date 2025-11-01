@@ -5,10 +5,7 @@ interface VariableSetStepConfig {
   variables: Record<string, string>;
 }
 
-/**
- * Simple step to set workflow variables
- * Useful for updating state based on conditional logic
- */
+
 export class VariableSetStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as VariableSetStepConfig;
@@ -25,17 +22,17 @@ export class VariableSetStep extends WorkflowStep {
       variableKeys: Object.keys(config.variables)
     });
 
-    // Resolve variable values (they may contain template strings)
+    
     const resolvedVariables: Record<string, any> = {};
     
     for (const [key, value] of Object.entries(config.variables)) {
       if (typeof value === 'string' && value.includes('${')) {
-        // Variable reference - resolve it
+        
         const resolved = this.resolveTemplateString(value, context);
         resolvedVariables[key] = resolved;
         context.setVariable(key, resolved);
       } else {
-        // Literal value
+        
         resolvedVariables[key] = value;
         context.setVariable(key, value);
       }
@@ -52,9 +49,7 @@ export class VariableSetStep extends WorkflowStep {
     };
   }
 
-  /**
-   * Resolve template string like "${variable_name}"
-   */
+  
   private resolveTemplateString(template: string, context: WorkflowContext): any {
     const match = template.match(/^\$\{([^}]+)\}$/);
     if (match) {
@@ -62,8 +57,8 @@ export class VariableSetStep extends WorkflowStep {
       return context.getVariable(varName);
     }
     
-    // If not a simple variable reference, return as-is
-    // (could be enhanced to support more complex templates)
+    
+    
     return template;
   }
 

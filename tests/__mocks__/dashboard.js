@@ -1,19 +1,4 @@
-/**
- * Mock implementation of dashboard module for testing.
- * 
- * Vitest/Jest automatically uses this mock when vi.mock('../src/dashboard.js') is called
- * without a factory function. This provides sensible defaults for dashboard API calls.
- * 
- * Usage in test files:
- *   vi.mock('../src/dashboard.js');  // Uses this mock with default values
- * 
- * To override specific values in a test:
- *   import * as dashboard from '../src/dashboard.js';
- *   vi.mocked(dashboard.fetchProjectStatus).mockResolvedValueOnce({ id: 'custom-id', ... });
- * 
- * Note: Tests that need significantly different mock behavior should use inline vi.mock()
- * with a factory function instead.
- */
+
 import { vi } from 'vitest';
 
 export const fetchProjectStatus = vi.fn().mockResolvedValue({

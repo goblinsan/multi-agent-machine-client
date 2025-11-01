@@ -6,29 +6,19 @@ import { MessageFormatter } from './messaging/MessageFormatter.js';
 import { PersonaRequestExecutor } from './execution/PersonaRequestExecutor.js';
 
 export type PersonaConsumerConfig = {
-  /** List of personas this consumer should handle */
+  
   personas: string[];
-  /** Consumer ID (defaults to cfg.consumerId) */
+  
   consumerId?: string;
-  /** How long to block waiting for messages (ms) */
+  
   blockMs?: number;
-  /** How many messages to process per read */
+  
   batchSize?: number;
-  /** Whether to run in shutdown mode */
+  
   shutdown?: boolean;
 };
 
-/**
- * PersonaConsumer - Consumes persona requests from request stream
- * 
- * Works with both LocalTransport (in-process) and RedisTransport (distributed).
- * Each persona gets its own consumer group, allowing multiple machines to handle
- * the same persona concurrently.
- * 
- * Usage:
- *   const consumer = new PersonaConsumer(transport);
- *   await consumer.start({ personas: ['context', 'lead-engineer'] });
- */
+
 export class PersonaConsumer {
   private transport: MessageTransport;
   private consumerId: string;
@@ -49,16 +39,13 @@ export class PersonaConsumer {
     this.blockMs = 5000;
     this.batchSize = 1;
     
-    // Initialize dependencies
+    
     const contextExtractor = new ContextExtractor();
     this.requestExecutor = requestExecutor || new PersonaRequestExecutor(transport, contextExtractor);
     this.messageFormatter = messageFormatter || new MessageFormatter();
   }
 
-  /**
-   * Start consuming persona requests
-   * Launches concurrent loops for each persona
-   */
+  
   async start(config: PersonaConsumerConfig): Promise<void> {
     const { personas, consumerId, blockMs, batchSize } = config;
     
@@ -78,7 +65,7 @@ export class PersonaConsumer {
       transportType: cfg.transportType
     });
 
-    // Start a consumer loop for each persona concurrently
+    
     for (const persona of personas) {
       const loopPromise = this.startPersonaLoop(persona);
       this.personaLoops.set(persona, loopPromise);
@@ -87,16 +74,14 @@ export class PersonaConsumer {
     logger.info(`PersonaConsumer: Started ${personas.length} persona loops`);
   }
 
-  /**
-   * Stop all persona consumer loops gracefully
-   */
+  
   async stop(): Promise<void> {
     if (this.isShuttingDown) return;
     
     logger.info('PersonaConsumer: Shutting down...');
     this.isShuttingDown = true;
 
-    // Wait for all persona loops to complete
+    
     const loops = Array.from(this.personaLoops.values());
     await Promise.allSettled(loops);
     
@@ -104,10 +89,7 @@ export class PersonaConsumer {
     logger.info('PersonaConsumer: Shutdown complete');
   }
 
-  /**
-   * Start consumer loop for a single persona
-   * Runs until shutdown is triggered
-   */
+  
   private async startPersonaLoop(persona: string): Promise<void> {
     const group = `${cfg.groupPrefix}:${persona}`;
     
@@ -117,7 +99,7 @@ export class PersonaConsumer {
       requestStream: cfg.requestStream
     });
 
-    // Create consumer group for this persona
+    
     try {
       await this.transport.xGroupCreate(cfg.requestStream, group, '0', { MKSTREAM: true });
       logger.info(`PersonaConsumer: Created consumer group ${group}`);
@@ -130,7 +112,7 @@ export class PersonaConsumer {
       }
     }
 
-    // Poll loop
+    
     while (!this.isShuttingDown) {
       try {
         const result = await this.transport.xReadGroup(
@@ -141,11 +123,11 @@ export class PersonaConsumer {
         );
 
         if (!result) {
-          // Timeout or no messages - this is normal
+          
           continue;
         }
 
-        // Process messages for this persona
+        
         const streamData = result[cfg.requestStream];
         if (!streamData || !streamData.messages || streamData.messages.length === 0) {
           continue;
@@ -163,8 +145,8 @@ export class PersonaConsumer {
               stack: error.stack
             });
             
-            // Even if processing fails, acknowledge the message to prevent infinite retries
-            // The error will be logged and can be investigated
+            
+            
             try {
               await this.transport.xAck(cfg.requestStream, group, msg.id);
             } catch (ackError: any) {
@@ -184,7 +166,7 @@ export class PersonaConsumer {
           stack: error.stack
         });
         
-        // Brief delay before retrying to avoid tight error loops
+        
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
@@ -192,10 +174,7 @@ export class PersonaConsumer {
     logger.info(`PersonaConsumer: Stopped loop for ${persona}`);
   }
 
-  /**
-   * Handle a single persona request message
-   * Executes the persona's LLM call and publishes result to event stream
-   */
+  
   private async handlePersonaRequest(
     persona: string,
     group: string,
@@ -208,8 +187,8 @@ export class PersonaConsumer {
     const intent = fields.intent || '';
     const toPersona = fields.to_persona || '';
 
-    // CRITICAL: Only process messages addressed to this persona
-    // Skip messages meant for other personas (they have their own consumer groups)
+    
+    
     if (toPersona && toPersona !== persona) {
       logger.debug('PersonaConsumer: Skipping message for different persona', {
         thisPersona: persona,
@@ -218,8 +197,8 @@ export class PersonaConsumer {
         messageId
       });
       
-      // Acknowledge the message so it doesn't block this consumer's queue
-      // The correct persona will process it from their own consumer group
+      
+      
       await this.transport.xAck(cfg.requestStream, group, messageId);
       return;
     }
@@ -236,7 +215,7 @@ export class PersonaConsumer {
     const started = Date.now();
 
     try {
-      // Parse request payload
+      
       let payload: any = {};
       try {
         payload = fields.payload ? JSON.parse(fields.payload) : {};
@@ -248,7 +227,7 @@ export class PersonaConsumer {
         });
       }
 
-      // Execute the persona request
+      
       const result = await this.executePersonaRequest({
         persona,
         workflowId,
@@ -261,7 +240,7 @@ export class PersonaConsumer {
         taskId: fields.task_id
       });
 
-      // Publish result to event stream
+      
       const durationMs = Date.now() - started;
       const message = this.messageFormatter.formatSuccessResponse({
         workflowId,
@@ -281,7 +260,7 @@ export class PersonaConsumer {
         durationMs
       });
 
-      // Acknowledge the message
+      
       await this.transport.xAck(cfg.requestStream, group, messageId);
 
     } catch (error: any) {
@@ -295,7 +274,7 @@ export class PersonaConsumer {
         durationMs
       });
 
-      // Publish error result to event stream
+      
       const errorMessage = this.messageFormatter.formatErrorResponse({
         workflowId,
         persona,
@@ -307,14 +286,12 @@ export class PersonaConsumer {
       
       await this.transport.xAdd(cfg.eventStream, '*', errorMessage);
 
-      // Acknowledge the message even on error to prevent infinite retries
+      
       await this.transport.xAck(cfg.requestStream, group, messageId);
     }
   }
 
-  /**
-   * Execute a persona request - delegates to PersonaRequestExecutor
-   */
+  
   private async executePersonaRequest(params: {
     persona: string;
     workflowId: string;
@@ -329,9 +306,7 @@ export class PersonaConsumer {
     return await this.requestExecutor.execute(params);
   }
 
-  /**
-   * Wait for all persona loops to complete (useful for testing)
-   */
+  
   async waitForCompletion(): Promise<void> {
     const loops = Array.from(this.personaLoops.values());
     await Promise.allSettled(loops);

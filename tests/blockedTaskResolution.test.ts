@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { makeTempRepo } from './makeTempRepo';
 
-// Mock all external dependencies
+
 vi.mock('../src/dashboard.js', () => ({
   fetchProjectStatus: vi.fn().mockResolvedValue({
     id: 'proj-blocked',
@@ -23,13 +23,13 @@ vi.mock('../src/dashboard.js', () => ({
   createDashboardTask: vi.fn().mockResolvedValue({ id: 'new-task-123', ok: true })
 }));
 
-// Mock git utils (uses __mocks__/gitUtils.js)
+
 vi.mock('../src/gitUtils.js');
 
 vi.mock('../src/agents/persona.js', () => ({
   sendPersonaRequest: vi.fn().mockResolvedValue('corr-unblock-123'),
   waitForPersonaCompletion: vi.fn().mockImplementation(async (redis, workflowId, corrId, persona, _timeout) => {
-    // Different responses based on persona
+    
     if (persona === 'context') {
       return {
         id: 'event-context-1',
@@ -84,10 +84,10 @@ vi.mock('../src/agents/persona.js', () => ({
   })
 }));
 
-// Mock Redis client (uses __mocks__/redisClient.js)
+
 vi.mock('../src/redisClient.js');
 
-// Mock scanRepo (uses __mocks__/scanRepo.js)
+
 vi.mock('../src/scanRepo.js');
 
 vi.mock('../src/process.js', () => ({
@@ -122,7 +122,7 @@ describe('Blocked Task Resolution Workflow', () => {
         )
       ]);
       
-      // Should complete without hanging
+      
       expect(result).toBeDefined();
       expect(result.success).toBe(true);
       expect(result.results).toBeDefined();
@@ -132,7 +132,7 @@ describe('Blocked Task Resolution Workflow', () => {
       if (error.message === 'Test timeout') {
         throw new Error('Blocked task workflow hung - did not complete within timeout');
       }
-      // Other errors are acceptable for this test (we're testing non-hanging behavior)
+      
       console.log('Workflow failed (expected in test):', error.message);
     }
   });
@@ -140,7 +140,7 @@ describe('Blocked Task Resolution Workflow', () => {
   it('respects max unblock attempts configuration', async () => {
     const { fetchProjectStatusDetails, updateTaskStatus } = await import('../src/dashboard.js');
     
-    // Mock a task that has reached max attempts
+    
     (fetchProjectStatusDetails as any).mockResolvedValueOnce({
       tasks: [{
         id: 'blocked-task-max',
@@ -169,22 +169,22 @@ describe('Blocked Task Resolution Workflow', () => {
         )
       ]);
       
-      // Should mark task as permanently blocked or escalate
-      // The exact behavior depends on workflow implementation
+      
+      
       expect(updateTaskStatus).toHaveBeenCalled();
       
     } catch (error: any) {
       if (error.message === 'Test timeout') {
         throw new Error('Max attempts workflow hung');
       }
-      // Acceptable for this test
+      
     }
   });
 
   it('increments blocked_attempt_count on each unblock attempt', async () => {
     const { fetchProjectStatusDetails } = await import('../src/dashboard.js');
     
-    // Mock a task with few attempts
+    
     (fetchProjectStatusDetails as any).mockResolvedValueOnce({
       tasks: [{
         id: 'blocked-task-increment',
@@ -213,7 +213,7 @@ describe('Blocked Task Resolution Workflow', () => {
         )
       ]);
       
-      // Workflow should complete
+      
       expect(result).toBeDefined();
       
     } catch (error: any) {
@@ -242,10 +242,10 @@ describe('Blocked Task Resolution Workflow', () => {
         )
       ]);
       
-      // Should have sent requests to analyze (lead-engineer) and validate (qa)
+      
       expect(sendPersonaRequest).toHaveBeenCalled();
       
-      // Check if lead-engineer was called for analysis
+      
       const calls = (sendPersonaRequest as any).mock.calls;
       const leadEngineerCall = calls.find((call: any[]) => 
         call[1]?.persona === 'lead-engineer' || call[2] === 'lead-engineer'
@@ -281,17 +281,17 @@ describe('Blocked Task Resolution Workflow', () => {
         )
       ]);
       
-      // Should have updated task status
+      
       expect(updateTaskStatus).toHaveBeenCalled();
       
-      // Check if any call set status to 'open'
+      
       const statusCalls = (updateTaskStatus as any).mock.calls;
       statusCalls.find((call: any[]) => 
         call[1] === 'open' || call[0]?.status === 'open'
       );
       
-      // May or may not have been called depending on workflow result
-      // Just verify the function was available
+      
+      
       
     } catch (error: any) {
       if (error.message === 'Test timeout') {

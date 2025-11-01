@@ -1,13 +1,10 @@
 import { runGit } from "../gitUtils.js";
 import { logger } from "../logger.js";
 
-/**
- * Check if the most recent commit only contains context files (.ma/context/*)
- * Returns true if only context files, false if there are other code changes
- */
+
 export async function isLastCommitContextOnly(repoRoot: string): Promise<boolean> {
   try {
-    // Get the files changed in the last commit
+    
     const result = await runGit(
       ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
       { cwd: repoRoot }
@@ -19,12 +16,12 @@ export async function isLastCommitContextOnly(repoRoot: string): Promise<boolean
       .filter(f => f.trim().length > 0);
 
     if (changedFiles.length === 0) {
-      // No files in last commit - treat as context-only (no code changes)
+      
       logger.info('Last commit has no files', { repoRoot });
       return true;
     }
 
-    // Check if ALL changed files are in .ma/context/
+    
     const contextFilePattern = /^\.ma\/context\/(snapshot\.json|summary\.md|files\.ndjson)$/;
     const allContextFiles = changedFiles.every(file => contextFilePattern.test(file));
 
@@ -36,7 +33,7 @@ export async function isLastCommitContextOnly(repoRoot: string): Promise<boolean
 
     return allContextFiles;
   } catch (error: any) {
-    // If we can't determine, assume we need to rescan
+    
     logger.warn('Failed to check last commit files, assuming rescan needed', {
       repoRoot,
       error: error.message
@@ -45,13 +42,10 @@ export async function isLastCommitContextOnly(repoRoot: string): Promise<boolean
   }
 }
 
-/**
- * Check if there have been any commits since the last context scan
- * Returns true if there are new commits (need to rescan), false if no new commits
- */
+
 export async function hasCommitsSinceLastContextScan(repoRoot: string): Promise<boolean> {
   try {
-    // Get the commit that last modified context files
+    
     const lastContextCommit = await runGit(
       ["log", "-1", "--format=%H", "--", ".ma/context/snapshot.json"],
       { cwd: repoRoot }
@@ -60,13 +54,13 @@ export async function hasCommitsSinceLastContextScan(repoRoot: string): Promise<
     const contextCommitSha = lastContextCommit.stdout.trim();
     
     if (!contextCommitSha) {
-      // No previous context scan found
+      
       logger.info('No previous context scan found', { repoRoot });
       return true;
     }
 
-    // Get commits since last context scan that touch files outside .ma/ directory
-    // This excludes planning logs, QA logs, context files, etc.
+    
+    
     const newCodeCommits = await runGit(
       ["rev-list", `${contextCommitSha}..HEAD`, "--", ".", ":(exclude).ma/**"],
       { cwd: repoRoot }
@@ -74,7 +68,7 @@ export async function hasCommitsSinceLastContextScan(repoRoot: string): Promise<
 
     const hasNewCommits = newCodeCommits.stdout.trim().length > 0;
 
-    // Get head commit for logging
+    
     const headCommit = await runGit(
       ["rev-parse", "HEAD"],
       { cwd: repoRoot }
@@ -90,7 +84,7 @@ export async function hasCommitsSinceLastContextScan(repoRoot: string): Promise<
 
     return hasNewCommits;
   } catch (error: any) {
-    // If we can't determine, assume we need to rescan
+    
     logger.warn('Failed to check commits since last scan, assuming rescan needed', {
       repoRoot,
       error: error.message

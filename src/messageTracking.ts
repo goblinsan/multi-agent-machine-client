@@ -1,9 +1,4 @@
-/**
- * Duplicate Message Detection System
- * 
- * Tracks processed task_id + corr_id pairs to prevent duplicate processing
- * of the same request across distributed persona workers.
- */
+
 
 import { logger } from "./logger.js";
 
@@ -15,32 +10,28 @@ interface ProcessedMessage {
   workflowId: string;
 }
 
-// In-memory storage for processed messages
-// Key format: "taskId:corrId:persona"
+
+
 const processedMessages = new Map<string, ProcessedMessage>();
 
-// TTL for processed messages: 24 hours (in milliseconds)
+
 const MESSAGE_TTL_MS = 24 * 60 * 60 * 1000;
 
-// Cleanup interval: run every hour
+
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
-/**
- * Generate a unique key for a message
- */
+
 function generateMessageKey(taskId: string, corrId: string, persona: string): string {
   return `${taskId}:${corrId}:${persona.toLowerCase()}`;
 }
 
-/**
- * Check if a message has already been processed
- */
+
 export function isDuplicateMessage(
   taskId: string | undefined,
   corrId: string | undefined,
   persona: string
 ): boolean {
-  // If either ID is missing, we can't track duplicates
+  
   if (!taskId || !corrId) {
     return false;
   }
@@ -62,16 +53,14 @@ export function isDuplicateMessage(
   return false;
 }
 
-/**
- * Mark a message as processed
- */
+
 export function markMessageProcessed(
   taskId: string | undefined,
   corrId: string | undefined,
   persona: string,
   workflowId: string
 ): void {
-  // Only track if we have both IDs
+  
   if (!taskId || !corrId) {
     return;
   }
@@ -94,9 +83,7 @@ export function markMessageProcessed(
   });
 }
 
-/**
- * Clean up expired message records
- */
+
 function cleanupExpiredMessages(): void {
   const now = Date.now();
   let removedCount = 0;
@@ -116,9 +103,7 @@ function cleanupExpiredMessages(): void {
   }
 }
 
-/**
- * Start automatic cleanup of expired messages
- */
+
 let cleanupIntervalHandle: ReturnType<typeof setInterval> | null = null;
 
 export function startMessageTrackingCleanup(): void {
@@ -133,9 +118,7 @@ export function startMessageTrackingCleanup(): void {
   });
 }
 
-/**
- * Stop automatic cleanup (for testing or shutdown)
- */
+
 export function stopMessageTrackingCleanup(): void {
   if (cleanupIntervalHandle) {
     clearInterval(cleanupIntervalHandle);
@@ -144,17 +127,13 @@ export function stopMessageTrackingCleanup(): void {
   }
 }
 
-/**
- * Clear all tracked messages (for testing)
- */
+
 export function clearMessageTracking(): void {
   processedMessages.clear();
   logger.debug("Message tracking cleared");
 }
 
-/**
- * Get statistics about tracked messages
- */
+
 export function getMessageTrackingStats(): {
   totalTracked: number;
   oldestTimestamp: number | null;

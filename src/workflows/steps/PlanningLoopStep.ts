@@ -18,10 +18,7 @@ interface PlanningLoopConfig {
   deadlineSeconds?: number;
 }
 
-/**
- * PlanningLoopStep - Encapsulates plan creation and evaluation loop
- * Repeatedly creates plans and evaluates them until evaluation passes or max iterations reached
- */
+
 export class PlanningLoopStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PlanningLoopConfig;
@@ -48,7 +45,7 @@ export class PlanningLoopStep extends WorkflowStep {
       evaluatorPersona
     });
 
-    // Use transport from context
+    
     const transport = context.transport;
 
     while (currentIteration < maxIterations) {
@@ -59,7 +56,7 @@ export class PlanningLoopStep extends WorkflowStep {
         step: planStep
       });
 
-      // Step 1: Request plan from planner persona
+      
       try {
         logger.info('Making planning request', {
           workflowId: context.workflowId,
@@ -68,7 +65,7 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration
         });
 
-        // Get the remote URL for distributed agent coordination
+        
         const repoRemote = context.getVariable('repo_remote') || context.getVariable('effective_repo_path');
         const currentBranch = context.getCurrentBranch();
         
@@ -118,7 +115,7 @@ export class PlanningLoopStep extends WorkflowStep {
           });
         }
 
-        // Commit plan iteration to git
+        
         const taskId = context.getVariable('task')?.id || 'unknown';
         const planContent = this.formatPlanArtifact(planResult, currentIteration);
         await this.commitArtifact(
@@ -138,13 +135,13 @@ export class PlanningLoopStep extends WorkflowStep {
         });
         
         if (currentIteration === maxIterations) {
-          // On final iteration, proceed with whatever we have
+          
           break;
         }
         continue;
       }
 
-      // Step 2: Evaluate the plan
+      
       try {
         logger.info('Making evaluation request', {
           workflowId: context.workflowId,
@@ -153,17 +150,17 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration
         });
 
-        // Get the remote URL for distributed agent coordination
+        
         const repoRemote = context.getVariable('repo_remote') || context.getVariable('effective_repo_path');
         const currentBranch = context.getCurrentBranch();
         
-        // Determine evaluation context based on iteration count and step
+        
         let evalContext = 'planning';
         if (currentIteration > 3) {
           evalContext = 'revision';
         }
         
-        // Get contextual prompt for the evaluator
+        
         const contextualPrompt = getContextualPrompt(evaluatorPersona, evalContext);
         
         const evalPayload = {
@@ -174,7 +171,7 @@ export class PlanningLoopStep extends WorkflowStep {
           repo: repoRemote,
           branch: currentBranch,
           project_id: context.projectId,
-          // Include custom system prompt if available
+          
           ...(contextualPrompt ? { _system_prompt: contextualPrompt } : {})
         };
 
@@ -194,7 +191,7 @@ export class PlanningLoopStep extends WorkflowStep {
 
         const parsedEvaluation = summarizeEvaluationResult(evaluationResult);
 
-        // Parse the actual evaluation status from the result field
+        
         const evaluationStatusInfo = interpretPersonaStatus(evaluationResult?.fields?.result);
 
         logger.info('Evaluation request completed', {
@@ -217,7 +214,7 @@ export class PlanningLoopStep extends WorkflowStep {
           });
         }
 
-        // Commit evaluation result to git
+        
         const taskId = context.getVariable('task')?.id || 'unknown';
         const evalContent = this.formatEvaluationArtifact(evaluationResult, currentIteration);
         await this.commitArtifact(
@@ -227,8 +224,8 @@ export class PlanningLoopStep extends WorkflowStep {
           `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`
         );
 
-        // Check if evaluation passed using the interpreted status
-        // The event status is "done" when complete, but we need to check the actual evaluation result
+        
+        
         lastEvaluationPassed = evaluationStatusInfo.status === 'pass';
 
         if (lastEvaluationPassed) {
@@ -239,7 +236,7 @@ export class PlanningLoopStep extends WorkflowStep {
             evaluationStatus: evaluationStatusInfo.status
           });
           
-          // Commit final approved plan to git
+          
           const finalPlanContent = this.formatPlanArtifact(planResult, currentIteration);
           await this.commitArtifact(
             context,
@@ -269,7 +266,7 @@ export class PlanningLoopStep extends WorkflowStep {
         });
         
         if (currentIteration === maxIterations) {
-          // On final iteration, proceed anyway
+          
           break;
         }
         continue;
@@ -304,16 +301,14 @@ export class PlanningLoopStep extends WorkflowStep {
     };
   }
 
-  /**
-   * Commit artifact to .ma/ directory for git-based persistence
-   */
+  
   private async commitArtifact(
     context: WorkflowContext,
     content: string,
     artifactPath: string,
     commitMessage: string
   ): Promise<void> {
-    // Skip if SKIP_GIT_OPERATIONS is set (test mode)
+    
     const skipGitOps = ((): boolean => {
       try {
         return context.getVariable('SKIP_GIT_OPERATIONS') === true;
@@ -333,18 +328,18 @@ export class PlanningLoopStep extends WorkflowStep {
     const fullPath = path.join(repoRoot, artifactPath);
 
     try {
-      // Create parent directory
+      
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
 
-      // Write file
+      
       await fs.writeFile(fullPath, content, 'utf-8');
 
-      // Commit to git (skip pre-commit hooks for automated workflow commit)
+      
       const relativePath = path.relative(repoRoot, fullPath);
       await runGit(['add', relativePath], { cwd: repoRoot });
       await runGit(['commit', '--no-verify', '-m', commitMessage], { cwd: repoRoot });
 
-      // Get SHA
+      
       const sha = (await runGit(['rev-parse', 'HEAD'], { cwd: repoRoot })).stdout.trim();
 
       logger.info('Artifact committed to git', {
@@ -354,7 +349,7 @@ export class PlanningLoopStep extends WorkflowStep {
         contentLength: content.length
       });
 
-      // Push to remote (best effort - don't fail if push fails)
+      
       try {
         const remotes = await runGit(['remote'], { cwd: repoRoot });
         const hasRemote = remotes.stdout.trim().length > 0;
@@ -381,13 +376,11 @@ export class PlanningLoopStep extends WorkflowStep {
         artifactPath,
         error: error instanceof Error ? error.message : String(error)
       });
-      // Don't throw - allow workflow to continue even if git commit fails
+      
     }
   }
 
-  /**
-   * Format plan result as markdown artifact
-   */
+  
   private formatPlanArtifact(planResult: any, iteration: number): string {
     const fields = planResult?.fields || {};
     const parsed = parseEventResult(fields.result);
@@ -395,13 +388,13 @@ export class PlanningLoopStep extends WorkflowStep {
     let content = `# Plan Iteration ${iteration}\n\n`;
     content += `Generated: ${new Date().toISOString()}\n\n`;
     
-    // Extract plan text
+    
     const planText = typeof parsed?.plan === 'string' ? parsed.plan : fields.result;
     if (planText) {
       content += `## Plan\n\n${planText}\n\n`;
     }
     
-    // Add breakdown if available
+    
     if (Array.isArray(parsed?.breakdown) && parsed.breakdown.length > 0) {
       content += `## Implementation Steps\n\n`;
       parsed.breakdown.forEach((step: any, idx: number) => {
@@ -409,7 +402,7 @@ export class PlanningLoopStep extends WorkflowStep {
       });
     }
     
-    // Add risks if available
+    
     if (Array.isArray(parsed?.risks) && parsed.risks.length > 0) {
       content += `## Risks\n\n`;
       parsed.risks.forEach((risk: any, idx: number) => {
@@ -418,7 +411,7 @@ export class PlanningLoopStep extends WorkflowStep {
       content += `\n`;
     }
     
-    // Add metadata
+    
     if (parsed?.metadata) {
       content += `## Metadata\n\n\`\`\`json\n${JSON.stringify(parsed.metadata, null, 2)}\n\`\`\`\n`;
     }
@@ -426,9 +419,7 @@ export class PlanningLoopStep extends WorkflowStep {
     return content;
   }
 
-  /**
-   * Format evaluation result as markdown artifact
-   */
+  
   private formatEvaluationArtifact(evaluationResult: any, iteration: number): string {
     const fields = evaluationResult?.fields || {};
     const parsed = parseEventResult(fields.result);
@@ -442,7 +433,7 @@ export class PlanningLoopStep extends WorkflowStep {
       content += `## Evaluation Details\n\n${normalized.details}\n\n`;
     }
     
-    // Add structured feedback if available
+    
     if (parsed && typeof parsed === 'object') {
       content += `## Structured Feedback\n\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\`\n`;
     }

@@ -10,22 +10,7 @@ export interface MilestoneStatusCheckConfig {
   include_cancelled?: boolean;
 }
 
-/**
- * MilestoneStatusCheckStep - Checks milestone completion status
- * 
- * Configuration:
- * - check_type: Type of check to perform
- *   - 'incomplete_tasks': Check for incomplete tasks (default)
- *   - 'all_tasks': Get all tasks in milestone
- *   - 'milestone_complete': Check if milestone is fully complete
- * - include_cancelled: Whether to count cancelled tasks as incomplete (default: false)
- * 
- * Outputs:
- * - has_remaining_tasks: Boolean indicating if there are incomplete tasks
- * - remaining_tasks: Array of incomplete task objects
- * - total_tasks: Total number of tasks in milestone
- * - completion_percentage: Percentage of tasks completed (0-100)
- */
+
 export class MilestoneStatusCheckStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as MilestoneStatusCheckConfig || {};
@@ -43,7 +28,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
       checkType
     });
     
-    // If no milestone, return early
+    
     if (!milestone?.id) {
       logger.debug('No milestone found, skipping status check');
       return {
@@ -64,10 +49,10 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
     }
     
     try {
-      // Fetch project status
+      
       const projectStatus = await projectAPI.fetchProjectStatusDetails(projectId) as any;
       
-      // Filter tasks belonging to this milestone
+      
       const milestoneTasks = (projectStatus.tasks || []).filter((t: any) => 
         t.milestone_id === milestone.id || t.milestoneId === milestone.id
       );
@@ -77,13 +62,13 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
         totalTasks: milestoneTasks.length
       });
       
-      // Determine complete statuses
+      
       const completeStatuses = ['done', 'completed', 'closed', 'shipped', 'delivered'];
       if (!includeCancelled) {
         completeStatuses.push('cancelled', 'canceled', 'archived');
       }
       
-      // Filter incomplete tasks
+      
       const incompleteTasks = milestoneTasks.filter((t: any) => {
         const status = (t.status || '').toLowerCase();
         const normalizedStatus = (t.normalized_status || t.normalizedStatus || '').toLowerCase();
@@ -115,7 +100,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
         milestone_complete: incompleteTasks.length === 0 && milestoneTasks.length > 0
       };
       
-      // Set context variables for workflow decisions
+      
       context.setVariable('milestone_has_remaining_tasks', result.has_remaining_tasks);
       context.setVariable('milestone_completion_percentage', result.completion_percentage);
       context.setVariable('milestone_complete', result.milestone_complete);
@@ -151,7 +136,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
     const config = this.config.config as MilestoneStatusCheckConfig || {};
     const errors: string[] = [];
     
-    // Validate check_type if provided
+    
     if (config.check_type) {
       const validTypes = ['incomplete_tasks', 'all_tasks', 'milestone_complete'];
       if (!validTypes.includes(config.check_type)) {
@@ -167,7 +152,7 @@ export class MilestoneStatusCheckStep extends WorkflowStep {
   }
   
   async cleanup(_context: WorkflowContext): Promise<void> {
-    // No cleanup needed
+    
     logger.debug('Milestone status check cleanup completed', { stepName: this.config.name });
   }
 }

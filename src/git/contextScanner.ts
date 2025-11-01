@@ -27,10 +27,7 @@ export interface ContextScanResult {
   allFiles: any[];
 }
 
-/**
- * Scan repository and produce context artifacts (snapshot, ndjson, markdown summary)
- * This is a pure function: no git operations and no file writes.
- */
+
 export async function scanRepositoryForContext(repoRoot: string, opts: ContextScanOptions): Promise<ContextScanResult> {
   const include = opts.include || ['**/*'];
   const exclude = opts.exclude || ['**/.git/**'];
@@ -50,7 +47,7 @@ export async function scanRepositoryForContext(repoRoot: string, opts: ContextSc
       }))
     : [{ base: '', include, exclude }];
 
-  // Always perform a global scan of the repository for accurate totals
+  
   const globalFiles = await scanRepo({
     repo_root: repoRoot,
     include,
@@ -64,7 +61,7 @@ export async function scanRepositoryForContext(repoRoot: string, opts: ContextSc
   const allFiles: any[] = [...globalFiles];
   const perComp: any[] = [];
 
-  // Compute per-component stats by filtering the global files by path prefix
+  
   for (const c of comps) {
     const base = (c.base || '').replace(/^\/+|\/+$/g, '');
     const filtered = base
@@ -105,11 +102,11 @@ function buildScanMarkdown(repoRoot: string, allFiles: any[], perComp: Array<{ c
     lines.push('');
   }
 
-  // Add complete file tree organized by directory
+  
   lines.push('## File Tree');
   lines.push('');
 
-  // Group files by directory
+  
   const filesByDir = new Map<string, typeof allFiles>();
   for (const file of allFiles) {
     const dirPath = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '.';
@@ -119,7 +116,7 @@ function buildScanMarkdown(repoRoot: string, allFiles: any[], perComp: Array<{ c
     filesByDir.get(dirPath)!.push(file);
   }
 
-  // Sort directories alphabetically
+  
   const sortedDirs = Array.from(filesByDir.keys()).sort();
 
   for (const dir of sortedDirs) {
@@ -134,7 +131,7 @@ function buildScanMarkdown(repoRoot: string, allFiles: any[], perComp: Array<{ c
     lines.push('');
   }
 
-  // Alembic detection
+  
   const alembicFiles = allFiles.filter(f => /(^|\/)alembic(\/|$)/i.test(f.path));
   if (alembicFiles.length) {
     const versions = alembicFiles.filter(f => /(^|\/)alembic(\/|).*\bversions\b(\/|).+\.py$/i.test(f.path));

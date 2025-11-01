@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupAllMocks, coordinatorMod, TestProject } from './helpers/mockHelpers.js';
 import * as gitUtils from '../src/gitUtils.js';
 
-// Mock Redis client (uses __mocks__/redisClient.js)
+
 vi.mock('../src/redisClient.js');
 
 beforeEach(() => {
@@ -11,7 +11,7 @@ beforeEach(() => {
 
 describe('Coordinator branch selection', () => {
   it('uses remote default branch as base and avoids milestone/milestone', { timeout: 1000 }, async () => {
-    // Arrange: Create project with a single task
+    
     const project: TestProject = {
       id: 'proj-2',
       name: 'Demo Project',
@@ -19,24 +19,24 @@ describe('Coordinator branch selection', () => {
       tasks: [{ id: 't-1', name: 'task', status: 'open' }]
     };
 
-    // Set up all mocks using our reusable helper
-    // Include devops completion so workflow can finish (step name is '3-devops' not 'devops')
+    
+    
     setupAllMocks(project, [], {
       '3-devops': { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-devops' } as any
     });
 
-    // Customize git mocking for this specific test case
-    // Simulate local repo being on a misleading branch
+    
+    
     vi.spyOn(gitUtils, 'getRepoMetadata').mockResolvedValue({ 
       remoteSlug: 'example/repo', 
       currentBranch: 'milestone/milestone', 
       remoteUrl: 'https://example/repo.git' 
     } as any);
     
-    // Force remote default to main (should be used instead of local branch)
+    
     vi.spyOn(gitUtils, 'detectRemoteDefaultBranch').mockResolvedValue('main');
     
-    // Ensure resolveRepoFromPayload returns a repoRoot
+    
     vi.spyOn(gitUtils, 'resolveRepoFromPayload').mockResolvedValue({ 
       repoRoot: '/tmp/repo', 
       branch: null, 
@@ -56,23 +56,23 @@ describe('Coordinator branch selection', () => {
       porcelain: []
     } as any);
 
-    // Capture arguments to checkout to assert base branch selection
+    
     const checkoutSpy = vi.spyOn(gitUtils, 'checkoutBranchFromBase').mockResolvedValue(undefined as any);
     vi.spyOn(gitUtils, 'ensureBranchPublished').mockResolvedValue(undefined as any);
 
-    // Act: Run the coordinator
+    
     const coordinator = new coordinatorMod.WorkflowCoordinator();
     const msg = { workflow_id: 'wf-branch', project_id: 'proj-2' } as any;
     const payload = { repo: 'https://example/repo.git' } as any;
   await coordinator.handleCoordinator({} as any, {} as any, msg, payload);
 
-    // Assert: Verify that the checkout used the remote default branch 'main' 
-    // instead of the misleading local branch 'milestone/milestone'
+    
+    
     expect(checkoutSpy).toHaveBeenCalled();
     const [repoRoot, baseBranch, newBranch] = checkoutSpy.mock.calls[0] as any[];
     expect(repoRoot).toBe('/tmp/repo');
     expect(baseBranch).toBe('main');
-    // New behavior: uses milestone/{projectSlug} as fallback when no milestone_slug or task_slug provided
+    
     expect(newBranch).toBe('milestone/demo-project');
   });
 });

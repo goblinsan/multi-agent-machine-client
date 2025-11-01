@@ -14,7 +14,7 @@ const projectUpdateSchema = z.object({
 });
 
 export function registerProjectRoutes(fastify: FastifyInstance) {
-  // List all projects
+  
   fastify.get('/projects', async (_request: any, _reply: any) => {
     const db = await getDb();
     
@@ -27,7 +27,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
     return { data: projects };
   });
 
-  // Get single project
+  
   fastify.get('/projects/:id', async (request: any, reply: any) => {
     const id = parseInt((request.params as any).id);
     const db = await getDb();
@@ -49,7 +49,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
     return project;
   });
 
-  // Create project
+  
   fastify.post('/projects', async (request: any, reply: any) => {
     const parse = projectCreateSchema.safeParse(request.body);
     if (!parse.success) {
@@ -65,7 +65,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
 
     const db = await getDb();
     
-    // Check if slug already exists
+    
     const existingResult = db.exec('SELECT id FROM projects WHERE slug = ?', [data.slug]);
     if (existingResult[0] && existingResult[0].values.length > 0) {
       return reply.status(409).send({ 
@@ -92,7 +92,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
     return reply.status(201).send(created);
   });
 
-  // Update project
+  
   fastify.patch('/projects/:id', async (request: any, reply: any) => {
     const id = parseInt((request.params as any).id);
     const parse = projectUpdateSchema.safeParse(request.body);
@@ -108,7 +108,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
 
     const db = await getDb();
     
-    // Check if project exists
+    
     const existingResult = db.exec('SELECT id FROM projects WHERE id = ?', [id]);
     if (!existingResult[0] || existingResult[0].values.length === 0) {
       return reply.status(404).send({ 
@@ -153,12 +153,12 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
     return updated;
   });
 
-  // Get project status with repository information
+  
   fastify.get('/projects/:id/status', async (request: any, reply: any) => {
     const id = parseInt((request.params as any).id);
     const db = await getDb();
     
-    // Get project
+    
     const projectResult = db.exec('SELECT * FROM projects WHERE id = ?', [id]);
     if (!projectResult[0] || projectResult[0].values.length === 0) {
       return reply.status(404).send({ error: 'Project not found' });
@@ -169,7 +169,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
     const project: any = {};
     projectCols.forEach((col, idx) => { project[col] = projectRow[idx]; });
     
-    // Get repositories
+    
     const repoResult = db.exec(
       'SELECT id, url, default_branch, created_at, updated_at FROM repositories WHERE project_id = ?',
       [id]
@@ -183,7 +183,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
       updated_at: row[4]
     })) : [];
     
-    // Get milestones
+    
     const milestoneResult = db.exec(
       'SELECT id, name, slug, status, total_tasks, completed_tasks FROM milestones WHERE project_id = ?',
       [id]
@@ -198,14 +198,14 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
       completed_tasks: row[5] || 0
     })) : [];
     
-    // Return project with nested data, using repository structure expected by WorkflowCoordinator
+    
     const response: any = {
       ...project,
       milestones,
       repositories
     };
     
-    // Add repository in the format expected by extractRepoRemote
+    
     if (repositories.length > 0) {
       response.repository = {
         url: repositories[0].url,
@@ -218,7 +218,7 @@ export function registerProjectRoutes(fastify: FastifyInstance) {
     return response;
   });
 
-  // Delete project
+  
   (fastify as any).delete('/projects/:id', async (request: any, reply: any) => {
     const id = parseInt((request.params as any).id);
     const db = await getDb();

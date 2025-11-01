@@ -9,11 +9,11 @@ test('parse lead engineer preview into ops', async () => {
   const spec = parseUnifiedDiffToEditSpec(txt as string);
   expect(spec).toBeDefined();
   expect(Array.isArray(spec.ops)).toBe(true);
-  // Should include upsert op for README.md and src/App.test.tsx
+  
   const paths = spec.ops.filter(o => (o as any).action === 'upsert').map(o => (o as any).path);
   expect(paths).toContain('README.md');
   expect(paths).toContain('src/App.test.tsx');
-  // README content should include the header
+  
   const readmeOp = spec.ops.find(o => (o as any).path === 'README.md' && (o as any).action === 'upsert') as any;
   expect(readmeOp).toBeTruthy();
   expect(readmeOp.content).toContain('# Machine Client Log Summarizer');

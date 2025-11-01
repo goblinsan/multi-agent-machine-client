@@ -2,9 +2,7 @@ import { randomUUID } from 'crypto';
 import { logger as baseLogger } from '../../logger.js';
 import type { MessageTransport } from '../../transport/index.js';
 
-/**
- * Workflow execution configuration
- */
+
 export interface WorkflowConfig {
   name: string;
   description?: string;
@@ -20,9 +18,7 @@ export interface WorkflowConfig {
   failure_handling?: Record<string, any>;
 }
 
-/**
- * Shared context and state for workflow execution
- */
+
 export class WorkflowContext {
   private variables = new Map<string, any>();
   private stepOutputs = new Map<string, any>();
@@ -47,12 +43,12 @@ export class WorkflowContext {
     initialVariables: Record<string, any> = {}
   ) {
     this.transport = transport;
-    // Initialize variables
+    
     Object.entries(initialVariables).forEach(([key, value]) => {
       this.variables.set(key, value);
     });
 
-    // Create logger with workflow context
+    
     this.logger = {
       ...baseLogger,
       info: (msg: string, meta?: any) => baseLogger.info(msg, { workflowId: this.workflowId, ...meta }),
@@ -62,67 +58,47 @@ export class WorkflowContext {
     };
   }
 
-  /**
-   * Set a variable value
-   */
+  
   setVariable(key: string, value: any): void {
     this.variables.set(key, value);
   }
 
-  /**
-   * Get a variable value
-   */
+  
   getVariable(key: string): any {
     return this.variables.get(key);
   }
 
-  /**
-   * Get all variables
-   */
+  
   getAllVariables(): Record<string, any> {
     return Object.fromEntries(this.variables);
   }
 
-  /**
-   * Get the current working branch for persona requests
-   * This method encapsulates the branch resolution logic used across all workflow steps
-   * Priority: 1. branch variable (set by GitOperationStep), 2. currentBranch variable, 3. context branch
-   */
+  
   getCurrentBranch(): string {
     return this.getVariable('branch') || this.getVariable('currentBranch') || this.branch;
   }
 
-  /**
-   * Set step output
-   */
+  
   setStepOutput(stepName: string, output: any): void {
     this.stepOutputs.set(stepName, output);
   }
 
-  /**
-   * Get step output
-   */
+  
   getStepOutput(stepName: string): any {
     return this.stepOutputs.get(stepName);
   }
 
-  /**
-   * Check if step has output
-   */
+  
   hasStepOutput(stepName: string): boolean {
     return this.stepOutputs.has(stepName);
   }
 
-  /**
-   * Get all step outputs
-   */
+  
   getAllStepOutputs(): Record<string, any> {
     return Object.fromEntries(this.stepOutputs);
   }
 
-  /**
-   * Record step execution start
-   */
+  
   recordStepStart(stepName: string): void {
     this.executionHistory.push({
       stepName,
@@ -131,9 +107,7 @@ export class WorkflowContext {
     });
   }
 
-  /**
-   * Record step execution completion
-   */
+  
   recordStepComplete(stepName: string, status: 'success' | 'failure' | 'skipped', error?: string): void {
     const entry = this.executionHistory.find(h => h.stepName === stepName && !h.endTime);
     if (entry) {
@@ -145,9 +119,7 @@ export class WorkflowContext {
     }
   }
 
-  /**
-   * Get execution history
-   */
+  
   getExecutionHistory(): Array<{
     stepName: string;
     status: string;
@@ -162,9 +134,7 @@ export class WorkflowContext {
     }));
   }
 
-  /**
-   * Get execution summary
-   */
+  
   getExecutionSummary(): {
     totalSteps: number;
     completedSteps: number;
@@ -189,9 +159,7 @@ export class WorkflowContext {
     };
   }
 
-  /**
-   * Clone context for sub-workflow or parallel execution
-   */
+  
   clone(newWorkflowId?: string): WorkflowContext {
     const cloned = new WorkflowContext(
       newWorkflowId || randomUUID(),
@@ -203,7 +171,7 @@ export class WorkflowContext {
       this.getAllVariables()
     );
 
-    // Copy step outputs
+    
     this.stepOutputs.forEach((value, key) => {
       cloned.setStepOutput(key, value);
     });
@@ -211,9 +179,7 @@ export class WorkflowContext {
     return cloned;
   }
 
-  /**
-   * Create a diagnostic snapshot for debugging
-   */
+  
   createDiagnosticSnapshot(): Record<string, any> {
     return {
       workflowId: this.workflowId,

@@ -6,7 +6,7 @@ import * as redisClient from '../src/redisClient.js';
 import * as messageTracking from '../src/messageTracking.js';
 import { calculateProgressiveTimeout, personaMaxRetries, personaTimeoutMs } from '../src/util.js';
 
-// Mock dependencies
+
 vi.mock('../src/agents/persona.js');
 vi.mock('../src/redisClient.js');
 vi.mock('../src/messageTracking.js');
@@ -19,7 +19,7 @@ vi.mock('../src/logger.js', () => ({
   }
 }));
 
-// Mock config
+
 vi.mock('../src/config.js', () => ({
   cfg: {
     personaTimeouts: {
@@ -57,16 +57,16 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
   let context: WorkflowContext;
 
   beforeEach(() => {
-    // Reset all mocks
+    
     vi.clearAllMocks();
     
-    // Mock Redis client (deprecated - but tests still check disconnect)
+    
     mockRedis = {
       disconnect: vi.fn()
     };
     vi.mocked(redisClient.makeRedis).mockResolvedValue(mockRedis);
 
-    // Mock transport
+    
     mockTransport = {
       connect: vi.fn().mockResolvedValue(null),
       disconnect: vi.fn().mockResolvedValue(null),
@@ -86,18 +86,18 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       quit: vi.fn().mockResolvedValue(null)
     };
 
-    // Mock message tracking (no duplicates by default)
+    
     vi.mocked(messageTracking.isDuplicateMessage).mockReturnValue(false);
     vi.mocked(messageTracking.markMessageProcessed).mockImplementation(() => {});
 
-    // Mock interpretPersonaStatus to return proper status interpretation
+    
     vi.mocked(persona.interpretPersonaStatus).mockReturnValue({
       status: 'pass',
       details: '',
       raw: ''
     });
 
-    // Create workflow context
+    
     context = new WorkflowContext(
       'test-workflow-id',
       'test-project-id',
@@ -109,7 +109,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
     );
     context.setVariable('repo_remote', 'git@github.com:test/repo.git');
     context.setVariable('branch', 'main');
-    // CRITICAL: Disable persona bypass for these tests that specifically test persona retry logic
+    
     context.setVariable('SKIP_PERSONA_OPERATIONS', false);
   });
 
@@ -119,7 +119,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
   describe('Progressive Timeout Behavior', () => {
     it('should use increasing timeouts for each retry attempt', async () => {
-      // Track timeout values passed to waitForPersonaCompletion
+      
       const timeoutValues: number[] = [];
       
       vi.mocked(persona.sendPersonaRequest)
@@ -152,7 +152,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       const result = await step.execute(context);
 
-      // Verify progressive timeout values
+      
       expect(timeoutValues.length).toBe(3);
       expect(timeoutValues[0]).toBe(90000);
       expect(timeoutValues[1]).toBe(120000);
@@ -200,8 +200,8 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       
       const duration = Date.now() - startTime;
       
-      // Should complete quickly - no artificial delays
-      // Allow some overhead for test execution
+      
+      
       expect(duration).toBeLessThan(100);
     });
   });
@@ -255,7 +255,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       const result = await step.execute(context);
 
       expect(result.status).toBe('failure');
-      // 6 total attempts: 1 initial + 5 retries
+      
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(6);
     });
 
@@ -338,14 +338,14 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       const result = await step.execute(context);
 
       expect(result.status).toBe('failure');
-      // 2 total attempts: 1 initial + 1 retry
+      
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('Unlimited Retries', () => {
     it('should support unlimited retries when configured', async () => {
-      // Stop after 10 attempts to avoid infinite loop in test
+      
       let attemptCount = 0;
       
       vi.mocked(persona.sendPersonaRequest).mockResolvedValue('corr-id');
@@ -395,7 +395,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
           throw new Error('Timed out waiting for context completion');
         });
 
-      // Create step with a large number to simulate unlimited
+      
       const step = new PersonaRequestStep({
         name: 'test-persona-request',
         type: 'persona_request',
@@ -590,7 +590,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       expect(result.data?.totalAttempts).toBe(1);
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(1);
       expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(1);
-      // Transport lifecycle is managed by context, not individual steps
+      
     });
 
     it('should succeed on third attempt after two timeouts', async () => {
@@ -648,7 +648,7 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
       expect(result.status).toBe('failure');
       expect(result.error?.message).toContain('Redis connection failed');
       expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(1);
-      // Should not retry on non-timeout errors
+      
       expect(persona.waitForPersonaCompletion).not.toHaveBeenCalled();
     });
 
@@ -674,10 +674,10 @@ describe('PersonaRequestStep - Progressive Timeout and Retry Logic', () => {
 
       const result = await step.execute(context);
 
-      // Should fail on the non-timeout error
+      
       expect(result.status).toBe('failure');
       expect(result.error?.message).toContain('Network error');
-      // Only 2 attempts: first timed out (retry), second had network error (stop)
+      
       expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
     });
   });

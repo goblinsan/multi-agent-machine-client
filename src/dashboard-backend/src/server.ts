@@ -10,19 +10,19 @@ import { registerHealthRoutes } from './routes/health';
 export function build() {
   const fastify = Fastify({ logger: true });
 
-  // Register health check routes first (no auth required)
+  
   registerHealthRoutes(fastify);
   
-  // Register project routes
+  
   registerProjectRoutes(fastify);
   
-  // Register repository routes
+  
   registerRepositoryRoutes(fastify);
   
-  // Register milestone routes
+  
   registerMilestoneRoutes(fastify);
   
-  // Register task routes
+  
   registerTaskRoutes(fastify);
 
   return fastify;
@@ -31,7 +31,7 @@ export function build() {
 if (require.main === module) {
   const app = build();
   
-  // Run migrations before starting (async)
+  
   getDb().then(async db => {
     runMigrations(db);
     await saveDb(db);
@@ -47,7 +47,7 @@ if (require.main === module) {
       process.exit(1);
     });
     
-    // Graceful shutdown on SIGTERM
+    
     process.on('SIGTERM', async () => {
       console.log('SIGTERM received, shutting down gracefully...');
       try {
@@ -60,7 +60,7 @@ if (require.main === module) {
       }
     });
     
-    // Graceful shutdown on SIGINT (Ctrl+C)
+    
     process.on('SIGINT', async () => {
       console.log('SIGINT received, shutting down gracefully...');
       try {

@@ -1,29 +1,12 @@
-/**
- * Health Check and Monitoring Routes
- * 
- * Provides production-ready endpoints for:
- * - Service health checks
- * - Database connectivity verification
- * - Prometheus-compatible metrics
- * 
- * These endpoints are essential for:
- * - Load balancer health checks
- * - Container orchestration (Docker, Kubernetes)
- * - Monitoring systems (Prometheus, Datadog, etc.)
- * - Incident detection and alerting
- */
+
 
 import type { FastifyInstance } from 'fastify';
 import { getDb } from '../db/connection';
 
-/**
- * Application start time for uptime calculation
- */
+
 const startTime = Date.now();
 
-/**
- * Metrics tracking
- */
+
 interface Metrics {
   requestCount: number;
   errorCount: number;
@@ -40,30 +23,14 @@ const metrics: Metrics = {
   dbQueryCount: 0,
 };
 
-/**
- * Increment metrics (called by routes)
- */
+
 export function incrementMetric(metric: keyof Metrics, value: number = 1) {
   metrics[metric] += value;
 }
 
-/**
- * Register health check and monitoring routes
- */
+
 export function registerHealthRoutes(fastify: FastifyInstance) {
-  /**
-   * GET /health - Basic health check
-   * 
-   * Returns 200 OK if service is running
-   * Used by load balancers for basic availability checks
-   * 
-   * Response:
-   * {
-   *   "status": "ok",
-   *   "timestamp": "2025-10-20T10:30:00.000Z",
-   *   "uptime": 123456
-   * }
-   */
+  
   fastify.get('/health', async (request: any, reply: any) => {
     const uptime = Date.now() - startTime;
     
@@ -76,33 +43,12 @@ export function registerHealthRoutes(fastify: FastifyInstance) {
     });
   });
 
-  /**
-   * GET /health/db - Database health check
-   * 
-   * Verifies database connectivity by executing a simple query
-   * Returns 200 OK if database is accessible
-   * Returns 503 Service Unavailable if database is down
-   * 
-   * Response (success):
-   * {
-   *   "status": "ok",
-   *   "database": "connected",
-   *   "timestamp": "2025-10-20T10:30:00.000Z"
-   * }
-   * 
-   * Response (failure):
-   * {
-   *   "status": "error",
-   *   "database": "disconnected",
-   *   "error": "Database connection failed",
-   *   "timestamp": "2025-10-20T10:30:00.000Z"
-   * }
-   */
+  
   fastify.get('/health/db', async (request: any, reply: any) => {
     try {
       const db = await getDb();
       
-      // Execute a simple query to verify database connectivity
+      
       const result = db.exec('SELECT 1 as health_check');
       
       if (result.length > 0) {
@@ -131,15 +77,7 @@ export function registerHealthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  /**
-   * GET /health/ready - Readiness probe
-   * 
-   * Checks if service is ready to accept traffic
-   * Includes database connectivity check
-   * Used by Kubernetes readiness probes
-   * 
-   * Returns 200 if ready, 503 if not ready
-   */
+  
   fastify.get('/health/ready', async (request: any, reply: any) => {
     try {
       const db = await getDb();
@@ -158,13 +96,7 @@ export function registerHealthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  /**
-   * GET /health/live - Liveness probe
-   * 
-   * Simple liveness check for Kubernetes
-   * Returns 200 if process is alive
-   * Does not check external dependencies
-   */
+  
   fastify.get('/health/live', async (request: any, reply: any) => {
     return reply.status(200).send({
       status: 'alive',
@@ -172,29 +104,7 @@ export function registerHealthRoutes(fastify: FastifyInstance) {
     });
   });
 
-  /**
-   * GET /metrics - Prometheus-compatible metrics
-   * 
-   * Exposes application metrics in Prometheus text format
-   * Can be scraped by Prometheus or compatible monitoring systems
-   * 
-   * Metrics exposed:
-   * - http_requests_total - Total HTTP requests
-   * - http_errors_total - Total HTTP errors
-   * - tasks_created_total - Total tasks created
-   * - tasks_updated_total - Total tasks updated
-   * - db_queries_total - Total database queries
-   * - uptime_seconds - Service uptime in seconds
-   * 
-   * Example output:
-   * # HELP http_requests_total Total HTTP requests
-   * # TYPE http_requests_total counter
-   * http_requests_total{service="dashboard-backend"} 1234
-   * 
-   * # HELP uptime_seconds Service uptime in seconds
-   * # TYPE uptime_seconds gauge
-   * uptime_seconds{service="dashboard-backend"} 3600
-   */
+  
   fastify.get('/metrics', async (request: any, reply: any) => {
     const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
     
@@ -233,12 +143,7 @@ process_start_time_seconds{service="dashboard-backend"} ${Math.floor(startTime /
       .send(prometheusMetrics);
   });
 
-  /**
-   * GET /metrics/json - JSON-formatted metrics
-   * 
-   * Same metrics as /metrics but in JSON format
-   * Useful for custom monitoring dashboards
-   */
+  
   fastify.get('/metrics/json', async (request: any, reply: any) => {
     const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
     
@@ -257,17 +162,12 @@ process_start_time_seconds{service="dashboard-backend"} ${Math.floor(startTime /
   });
 }
 
-/**
- * Get current metrics snapshot
- * Exported for testing
- */
+
 export function getMetrics(): Readonly<Metrics> {
   return { ...metrics };
 }
 
-/**
- * Reset metrics (for testing only)
- */
+
 export function resetMetrics() {
   metrics.requestCount = 0;
   metrics.errorCount = 0;

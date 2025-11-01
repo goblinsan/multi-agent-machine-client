@@ -1,16 +1,4 @@
-#!/usr/bin/env tsx
-/**
- * Redis Stream Monitor
- * 
- * Monitors Redis streams for request and event messages in real-time.
- * Displays formatted message interactions for debugging and observability.
- * 
- * Usage:
- *   npm run monitor-redis           # Monitor both streams
- *   npm run monitor-redis requests  # Monitor only requests
- *   npm run monitor-redis events    # Monitor only events
- *   npm run monitor-redis --verbose # Show all message fields
- */
+
 
 import { createClient } from "redis";
 import { cfg } from "../src/config.js";
@@ -18,7 +6,7 @@ import { cfg } from "../src/config.js";
 const VERBOSE = process.argv.includes("--verbose") || process.argv.includes("-v");
 const MONITOR_MODE = process.argv[2] && !process.argv[2].startsWith("-") ? process.argv[2] : "both";
 
-// ANSI color codes
+
 const colors = {
   reset: "\x1b[0m",
   bold: "\x1b[1m",
@@ -197,17 +185,17 @@ async function main() {
   await client.connect();
   console.log(c("green", "✓ Connected to Redis\n"));
   
-  // Get the current stream IDs to start monitoring from now
+  
   let requestLastId = "$";
   let eventLastId = "$";
   
   const shouldMonitorRequests = MONITOR_MODE === "both" || MONITOR_MODE === "requests" || MONITOR_MODE === "req";
   const shouldMonitorEvents = MONITOR_MODE === "both" || MONITOR_MODE === "events" || MONITOR_MODE === "evt";
   
-  // Print stats every 30 seconds
+  
   const statsInterval = setInterval(printStats, 30000);
   
-  // Handle graceful shutdown
+  
   process.on("SIGINT", async () => {
     console.log(c("yellow", "\n\nShutting down..."));
     clearInterval(statsInterval);
@@ -218,7 +206,7 @@ async function main() {
   
   console.log(c("gray", "Monitoring... (Press Ctrl+C to stop)\n"));
   
-  // Main monitoring loop
+  
   while (true) {
     if (shouldMonitorRequests) {
       requestLastId = await monitorStream(
@@ -238,7 +226,7 @@ async function main() {
       );
     }
     
-    // Small delay to prevent tight loop
+    
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }

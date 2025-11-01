@@ -6,44 +6,28 @@ import { TaskFilterPrioritizer } from './task/TaskFilterPrioritizer.js';
 import { TaskGrouper } from './task/TaskGrouper.js';
 
 interface TaskCreationConfig {
-  /**
-   * Source of data to base task creation on
-   */
+  
   dataSource?: 'qa-analysis' | 'plan-evaluation' | 'context' | 'all';
   
-  /**
-   * Maximum number of tasks to create
-   */
+  
   maxTasks?: number;
   
-  /**
-   * Whether to create tasks for high-priority issues only
-   */
+  
   highPriorityOnly?: boolean;
   
-  /**
-   * Whether to group related issues into single tasks
-   */
+  
   groupRelatedIssues?: boolean;
   
-  /**
-   * Task priority assignment strategy
-   */
+  
   priorityStrategy?: 'severity-based' | 'impact-based' | 'effort-based' | 'balanced';
   
-  /**
-   * Whether to include estimated effort in task descriptions
-   */
+  
   includeEffortEstimates?: boolean;
   
-  /**
-   * Whether to create subtasks for complex issues
-   */
+  
   createSubtasks?: boolean;
   
-  /**
-   * Custom task templates for different issue types
-   */
+  
   taskTemplates?: Record<string, {
     title: string;
     description: string;
@@ -51,14 +35,10 @@ interface TaskCreationConfig {
     estimatedHours?: number;
   }>;
   
-  /**
-   * Minimum confidence threshold for creating tasks from automated analysis
-   */
+  
   minConfidenceThreshold?: number;
   
-  /**
-   * Whether to assign tasks to specific personas/agents
-   */
+  
   assignToPersonas?: boolean;
 }
 
@@ -98,21 +78,21 @@ export class TaskCreationStep extends WorkflowStep {
     try {
       logger.info('Starting task creation', { stepName: this.config.name });
       
-      // Gather data from various sources
+      
       const sourceData = this.gatherSourceData(context, config);
       
-      // Generate tasks based on gathered data
+      
       const tasks = this.taskGenerator.generateTasks(sourceData, config);
       
-      // Filter and prioritize tasks
+      
       let finalTasks = this.taskFilterPrioritizer.filterAndPrioritize(tasks, config);
       
-      // Group related issues if enabled
+      
       if (config.groupRelatedIssues) {
         finalTasks = this.taskGrouper.groupRelatedTasks(finalTasks);
       }
       
-      // Create summary
+      
       const result = this.createSummary(finalTasks, tasks);
       
       logger.info('Task creation completed', {
@@ -177,7 +157,7 @@ export class TaskCreationStep extends WorkflowStep {
       }
     }
     
-    // Check if required data sources are available
+    
     const dataSource = config.dataSource || 'all';
     if (dataSource === 'qa-analysis' || dataSource === 'all') {
       if (!context.hasStepOutput('qa-analysis') && !context.hasStepOutput('qa')) {
@@ -202,7 +182,7 @@ export class TaskCreationStep extends WorkflowStep {
     const sourceData: any[] = [];
     const dataSource = config.dataSource || 'all';
     
-    // Gather QA analysis data
+    
     if (dataSource === 'qa-analysis' || dataSource === 'all') {
       const qaAnalysis = context.getStepOutput('qa-analysis');
       if (qaAnalysis?.analysis) {
@@ -212,7 +192,7 @@ export class TaskCreationStep extends WorkflowStep {
         });
       }
       
-      // Also check for raw QA results
+      
       const qaResults = context.getStepOutput('qa');
       if (qaResults?.qaResults || qaResults?.testResults) {
         sourceData.push({
@@ -222,7 +202,7 @@ export class TaskCreationStep extends WorkflowStep {
       }
     }
     
-    // Gather plan evaluation data
+    
     if (dataSource === 'plan-evaluation' || dataSource === 'all') {
       const planEvaluation = context.getStepOutput('plan-evaluation');
       if (planEvaluation?.evaluation) {
@@ -233,9 +213,9 @@ export class TaskCreationStep extends WorkflowStep {
       }
     }
     
-    // Gather general context data
+    
     if (dataSource === 'context' || dataSource === 'all') {
-      // Look for any step outputs that might contain actionable items
+      
       const stepNames = ['code-generation', 'implementation', 'review'];
       for (const stepName of stepNames) {
         const stepOutput = context.getStepOutput(stepName);
@@ -349,7 +329,7 @@ export class TaskCreationStep extends WorkflowStep {
   }
 
   async cleanup(_context: WorkflowContext): Promise<void> {
-    // No cleanup needed for task creation
+    
     logger.debug('Task creation step cleanup completed', { stepName: this.config.name });
   }
 }

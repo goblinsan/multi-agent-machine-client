@@ -9,10 +9,7 @@ interface SimpleTaskStatusConfig {
   status: string;
 }
 
-/**
- * SimpleTaskStatusStep - Simple task status update
- * This step directly calls dashboard.updateTaskStatus as expected by tests
- */
+
 export class SimpleTaskStatusStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as SimpleTaskStatusConfig;
@@ -24,7 +21,7 @@ export class SimpleTaskStatusStep extends WorkflowStep {
     });
 
     try {
-      // Get task data from context
+      
       const task = context.getVariable('task');
       if (!task) {
         throw new Error('No task data found in context for update');
@@ -35,7 +32,7 @@ export class SimpleTaskStatusStep extends WorkflowStep {
         throw new Error('Task ID not found in task data');
       }
 
-      // Get projectId from context
+      
       const projectId = context.getVariable('projectId') || context.getVariable('project_id');
       
       logger.info('Calling TaskAPI.updateTaskStatus', {
@@ -45,10 +42,10 @@ export class SimpleTaskStatusStep extends WorkflowStep {
         workflowId: context.workflowId
       });
       
-      // Call the task API method
+      
       await taskAPI.updateTaskStatus(taskId, status, projectId);
       
-      // Cleanup task logs if the task is completed
+      
       const normalizedStatus = status.toLowerCase();
       if (['done', 'completed', 'finished', 'closed', 'resolved'].includes(normalizedStatus)) {
         const repoRoot = context.getVariable('effective_repo_path') || context.getVariable('repo_root');
@@ -69,7 +66,7 @@ export class SimpleTaskStatusStep extends WorkflowStep {
               workflowId: context.workflowId
             });
           } catch (cleanupErr: any) {
-            // Don't fail the task update if cleanup fails
+            
             logger.warn('Task log cleanup failed', {
               taskId,
               workflowId: context.workflowId,
@@ -79,9 +76,9 @@ export class SimpleTaskStatusStep extends WorkflowStep {
         }
       }
       
-      // Set completion variables in context
+      
   context.setVariable('taskStatus', status);
-  // Back-compat for behavior tests expecting snake_case
+  
   context.setVariable('task_status', status);
       context.setVariable('taskCompleted', true);
       context.setVariable('taskId', taskId);

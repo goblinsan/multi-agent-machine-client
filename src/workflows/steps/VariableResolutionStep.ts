@@ -6,23 +6,7 @@ interface VariableConfig {
   variables: Record<string, any>;
 }
 
-/**
- * VariableResolutionStep - Resolves and sets workflow variables
- * 
- * This step evaluates expressions and sets variables in the workflow context.
- * Useful for computing derived values, setting defaults, or normalizing inputs.
- * 
- * Example:
- * ```yaml
- * - name: resolve_vars
- *   type: VariableResolutionStep
- *   config:
- *     variables:
- *       current_tdd_stage: "${task.metadata.tdd_stage || tdd_stage || 'implementation'}"
- *       is_urgent: "${task.priority == 'critical' || task.priority == 'high'}"
- *       milestone_id: "${milestone_context.id}"
- * ```
- */
+
 export class VariableResolutionStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as VariableConfig;
@@ -49,15 +33,15 @@ export class VariableResolutionStep extends WorkflowStep {
       const resolvedVariables: Record<string, any> = {};
       const errors: Record<string, string> = {};
 
-      // Resolve each variable
+      
       for (const [key, expression] of Object.entries(variables)) {
         try {
-          // Check if expression is a string that needs variable substitution
+          
           const resolvedValue = typeof expression === 'string' && expression.includes('${')
             ? this.resolveVariableExpression(expression, context)
             : expression;
 
-          // Set in context
+          
           context.setVariable(key, resolvedValue);
           resolvedVariables[key] = resolvedValue;
 
@@ -83,15 +67,15 @@ export class VariableResolutionStep extends WorkflowStep {
         }
       }
 
-      // Return outputs for each variable (accessible via context)
+      
       const outputs = Object.entries(resolvedVariables).map(([key, value]) => ({
         name: key,
         value
       }));
 
-      // Set outputs in context (outputs are stored in step data, accessible via context)
-      // Note: WorkflowContext.setStepOutput only takes stepName and data
-      // Outputs are accessed via context.getVariable('<stepName>.<outputName>')
+      
+      
+      
 
       const hasErrors = Object.keys(errors).length > 0;
       
@@ -156,11 +140,9 @@ export class VariableResolutionStep extends WorkflowStep {
     };
   }
 
-  /**
-   * Resolve variable expression with ${var} syntax
-   */
+  
   private resolveVariableExpression(expression: string, context: WorkflowContext): any {
-    // Match ${variable} or ${variable.path} patterns
+    
     const variablePattern = /\$\{([^}]+)\}/g;
     let result: string = expression;
     let match: RegExpExecArray | null;
@@ -169,26 +151,24 @@ export class VariableResolutionStep extends WorkflowStep {
       const fullMatch = match[0];
       const variablePath = match[1];
 
-      // Handle complex expressions (e.g., ${a || b || 'default'})
+      
       const resolvedValue = this.evaluateExpression(variablePath, context);
       
-      // If the entire expression is just a variable reference, return the value directly
+      
       if (expression === fullMatch) {
         return resolvedValue;
       }
 
-      // Otherwise, replace in string
+      
       result = result.replace(fullMatch, String(resolvedValue ?? ''));
     }
 
     return result;
   }
 
-  /**
-   * Evaluate expression with variable access and operators
-   */
+  
   private evaluateExpression(expression: string, context: WorkflowContext): any {
-    // Handle logical OR operator (||)
+    
     if (expression.includes('||')) {
       const parts = expression.split('||').map(p => p.trim());
       for (const part of parts) {
@@ -200,7 +180,7 @@ export class VariableResolutionStep extends WorkflowStep {
       return null;
     }
 
-    // Handle logical AND operator (&&)
+    
     if (expression.includes('&&')) {
       const parts = expression.split('&&').map(p => p.trim());
       for (const part of parts) {
@@ -212,7 +192,7 @@ export class VariableResolutionStep extends WorkflowStep {
       return true;
     }
 
-    // Handle comparison operators
+    
     if (expression.includes('==')) {
       const [left, right] = expression.split('==').map(p => p.trim());
       const leftValue = this.evaluateSingleExpression(left, context);
@@ -227,40 +207,36 @@ export class VariableResolutionStep extends WorkflowStep {
       return leftValue != rightValue;
     }
 
-    // Single expression
+    
     return this.evaluateSingleExpression(expression, context);
   }
 
-  /**
-   * Evaluate single expression (variable path or literal)
-   */
+  
   private evaluateSingleExpression(expr: string, context: WorkflowContext): any {
     expr = expr.trim();
 
-    // String literal
+    
     if ((expr.startsWith("'") && expr.endsWith("'")) || 
         (expr.startsWith('"') && expr.endsWith('"'))) {
       return expr.slice(1, -1);
     }
 
-    // Number literal
+    
     if (!isNaN(Number(expr))) {
       return Number(expr);
     }
 
-    // Boolean literal
+    
     if (expr === 'true') return true;
     if (expr === 'false') return false;
     if (expr === 'null') return null;
     if (expr === 'undefined') return undefined;
 
-    // Variable path (e.g., "task.metadata.tdd_stage")
+    
     return this.getVariableByPath(expr, context);
   }
 
-  /**
-   * Get variable value by dot-notation path
-   */
+  
   private getVariableByPath(path: string, context: WorkflowContext): any {
     const parts = path.split('.');
     let value: any = context.getVariable(parts[0]);

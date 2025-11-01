@@ -64,7 +64,7 @@ describe('Phase 4 - PMDecisionParserStep', () => {
       const result = await step.execute(context);
 
       expect(result.status).toBe('success');
-      // Warning logged internally (check logs in real run)
+      
       expect(result.outputs?.pm_decision?.follow_up_tasks).toHaveLength(1);
     });
 
@@ -86,7 +86,7 @@ describe('Phase 4 - PMDecisionParserStep', () => {
 
       expect(result.status).toBe('success');
       expect(result.outputs?.pm_decision?.decision).toBe('defer');
-      // Warning logged internally
+      
     });
 
     it('should validate priority values and log warnings', async () => {
@@ -111,7 +111,7 @@ describe('Phase 4 - PMDecisionParserStep', () => {
 
       expect(result.status).toBe('success');
       expect(result.outputs?.pm_decision?.follow_up_tasks).toHaveLength(3);
-      // Priority validation warnings logged internally
+      
     });
 
     it('should handle only backlog field (deprecated format)', async () => {
@@ -160,7 +160,7 @@ describe('Phase 4 - PMDecisionParserStep', () => {
       const result = await step.execute(context);
 
       expect(result.status).toBe('success');
-      // Milestone routing documented in outputs
+      
     });
   });
 
@@ -179,7 +179,7 @@ describe('Phase 4 - PMDecisionParserStep', () => {
       const context = new WorkflowContext('test-workflow-id', 'test-project-1', '/tmp/test-repo', 'main');
       const result = await step.execute(context);
 
-      // Should succeed but auto-correct to defer
+      
       expect(result.status).toBe('success');
       expect(result.outputs?.pm_decision?.decision).toBe('defer');
     });
@@ -198,7 +198,7 @@ describe('Phase 4 - PMDecisionParserStep', () => {
       const context = new WorkflowContext('test-workflow-id', 'test-project-1', '/tmp/test-repo', 'main');
       const result = await step.execute(context);
 
-      // Should succeed with graceful fallback to defaults
+      
       expect(result.status).toBe('success');
       expect(result.outputs?.pm_decision?.decision).toBe('defer');
     });

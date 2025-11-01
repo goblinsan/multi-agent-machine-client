@@ -4,7 +4,7 @@ import { DiffParser } from '../src/agents/parsers/DiffParser'
 describe('DiffParser robustness tests', () => {
   describe('malformed diff recovery', () => {
     it('handles diff blocks with wrong line numbers but valid structure', () => {
-      // LLM often generates diffs with incorrect @@ line numbers
+      
       const response = `
 Here's the implementation:
 
@@ -19,7 +19,7 @@ Here's the implementation:
 `
       const result = DiffParser.parsePersonaResponse(response)
       
-      // Should still extract the content despite wrong line numbers
+      
       expect(result.diffBlocks.length).toBeGreaterThan(0)
       if (result.editSpec) {
         const upsert = result.editSpec.ops.find((op: any) => op.action === 'upsert')
@@ -103,7 +103,7 @@ function example() {}
 `
       const result = DiffParser.parsePersonaResponse(response)
       
-      // Should find only the real diff, not the typescript code block
+      
       expect(result.diffBlocks.length).toBe(1)
       expect(result.diffBlocks[0].content).toContain('const added')
       expect(result.diffBlocks[0].content).not.toContain('function example')
@@ -145,7 +145,7 @@ Please provide more details.
 `
       const result = DiffParser.parsePersonaResponse(response)
       
-      // Should handle deletion-only diffs
+      
       expect(result.diffBlocks.length).toBeGreaterThan(0)
     })
 
@@ -207,7 +207,7 @@ just random text
 `
       const result = DiffParser.parsePersonaResponse(response)
       
-      // Should fail but provide useful error info
+      
       expect(result.success).toBe(false)
       expect(result.errors.length).toBeGreaterThan(0)
     })
@@ -224,7 +224,7 @@ just random text
 `
       const result = DiffParser.parsePersonaResponse(response)
       
-      // Should parse but potentially warn
+      
       expect(result.diffBlocks.length).toBeGreaterThan(0)
     })
   })

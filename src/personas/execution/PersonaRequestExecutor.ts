@@ -17,39 +17,27 @@ export interface PersonaRequestParams {
   taskId?: string;
 }
 
-/**
- * PersonaRequestExecutor - Executes persona requests (LLM calls or coordination)
- * 
- * Responsibilities:
- * - Route coordination requests to WorkflowCoordinator
- * - Execute LLM requests for all other personas
- * - Build messages and call models
- * - Handle special persona cases
- */
+
 export class PersonaRequestExecutor {
   constructor(
     private transport: MessageTransport,
     private contextExtractor: ContextExtractor
   ) {}
 
-  /**
-   * Execute a persona request by calling LLM or routing to coordinator
-   */
+  
   async execute(params: PersonaRequestParams): Promise<any> {
     const { persona } = params;
 
-    // SPECIAL CASE: coordination persona routes to WorkflowCoordinator instead of LLM
+    
     if (persona === 'coordination') {
       return await this.handleCoordinationRequest(params);
     }
 
-    // Standard LLM request
+    
     return await this.handleLLMRequest(params);
   }
 
-  /**
-   * Handle coordination persona - routes to WorkflowCoordinator
-   */
+  
   private async handleCoordinationRequest(params: PersonaRequestParams): Promise<any> {
     const { workflowId, payload, repo, branch } = params;
 
@@ -62,7 +50,7 @@ export class PersonaRequestExecutor {
     const { WorkflowCoordinator } = await import('../../workflows/WorkflowCoordinator.js');
     const coordinator = new WorkflowCoordinator();
 
-    // Call handleCoordinator with appropriate parameters
+    
     await coordinator.handleCoordinator(
       this.transport,
       {} as any,
@@ -81,22 +69,20 @@ export class PersonaRequestExecutor {
     };
   }
 
-  /**
-   * Handle standard LLM persona request
-   */
+  
   private async handleLLMRequest(params: PersonaRequestParams): Promise<any> {
     const { persona, workflowId, intent, payload, repo, branch } = params;
 
-    // Get persona configuration
+    
     const model = cfg.personaModels[persona];
     if (!model) {
       throw new Error(`No model configured for persona '${persona}'`);
     }
 
-    // Get system prompt for this persona
+    
     const systemPrompt = SYSTEM_PROMPTS[persona] || `You are the ${persona} persona.`;
 
-    // Extract context using ContextExtractor
+    
     const context = await this.contextExtractor.extractContext({
       persona,
       workflowId,
@@ -108,7 +94,7 @@ export class PersonaRequestExecutor {
 
     const { userText, scanSummary: scanSummaryForPrompt, dashboardContext } = context;
 
-    // Build messages for LLM
+    
     const messages = buildPersonaMessages({
       persona,
       systemPrompt,
@@ -121,7 +107,7 @@ export class PersonaRequestExecutor {
       extraSystemMessages: payload.extra_system_messages
     });
 
-    // Get timeout for this persona
+    
     const timeoutMs = payload.timeout_ms || cfg.personaTimeouts[persona] || cfg.personaDefaultTimeoutMs;
 
     logger.debug('PersonaConsumer: Calling LLM', {
@@ -131,7 +117,7 @@ export class PersonaRequestExecutor {
       timeoutMs
     });
 
-    // Call the model
+    
     const response = await callPersonaModel({
       persona,
       model,
@@ -146,9 +132,9 @@ export class PersonaRequestExecutor {
       contentLength: response.content.length
     });
 
-    // Return response in expected format
-    // NOTE: Do NOT add status here - it should be interpreted from the LLM output
-    // by interpretPersonaStatus() in the workflow step
+    
+    
+    
     return {
       output: response.content,
       duration_ms: response.duration_ms

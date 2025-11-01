@@ -1,23 +1,5 @@
-#!/usr/bin/env node
-/**
- * Local Development Orchestrator
- * 
- * Runs the full stack in a single process for local development:
- * 1. Starts the dashboard backend (port 3000)
- * 2. Dispatches coordinator trigger message
- * 3. Processes workflows using transport abstraction
- * 
- * Usage:
- *   npm run local -- <project_id> [repo_url] [base_branch]
- * 
- * Example:
- *   npm run local -- 1
- *   npm run local -- 1 git@github.com:user/repo.git main
- * 
- * Requirements:
- *   - TRANSPORT_TYPE=local (recommended for single-process dev)
- *   - Dashboard backend at src/dashboard-backend
- */
+
+
 
 import { spawn, ChildProcess } from 'child_process';
 import { getTransport } from "../transport/index.js";
@@ -48,15 +30,9 @@ function printUsage() {
   console.error("  PROJECT_BASE=<path>     (where to clone/find projects)");
 }
 
-/**
- * Start persona consumer for local transport
- * 
- * When using LocalTransport, we run persona consumers in the same process.
- * Each persona gets its own consumer group and poll loop, allowing them to
- * process requests concurrently.
- */
+
 async function startPersonaConsumers(transport: any): Promise<void> {
-  // Only start consumers if using local transport
+  
   if (cfg.transportType !== 'local') {
     console.log('Skipping persona consumers (not using local transport)');
     return;
@@ -70,10 +46,10 @@ async function startPersonaConsumers(transport: any): Promise<void> {
   console.log('Starting persona consumers for local transport...');
   console.log(`Allowed personas: ${cfg.allowedPersonas.join(', ')}`);
 
-  // Create and start persona consumer
+  
   personaConsumer = new PersonaConsumer(transport);
   
-  // Start consumer loops (they run in background)
+  
   await personaConsumer.start({
     personas: cfg.allowedPersonas
   });
@@ -81,9 +57,7 @@ async function startPersonaConsumers(transport: any): Promise<void> {
   console.log('Persona consumers started');
 }
 
-/**
- * Start the dashboard backend process
- */
+
 async function startDashboard(): Promise<void> {
   return new Promise((resolve, reject) => {
     const dashboardPath = path.join(__dirname, '..', 'dashboard-backend');
@@ -102,7 +76,7 @@ async function startDashboard(): Promise<void> {
       const output = data.toString();
       console.log(`[dashboard] ${output.trim()}`);
       
-      // Look for server startup message
+      
       if (!startupComplete && (output.includes('listening') || output.includes('started'))) {
         startupComplete = true;
         console.log('Dashboard backend ready');
@@ -125,7 +99,7 @@ async function startDashboard(): Promise<void> {
       }
     });
 
-    // Give it a few seconds to start up
+    
     setTimeout(() => {
       if (!startupComplete) {
         console.log('Dashboard startup timeout - proceeding anyway');
@@ -135,13 +109,11 @@ async function startDashboard(): Promise<void> {
   });
 }
 
-/**
- * Process coordinator messages in a loop
- */
+
 async function processCoordinatorLoop(transport: any, initialMessage: any): Promise<void> {
   console.log('Starting coordinator message processing...');
   
-  // First, handle the initial coordinator message we dispatched
+  
   const initialPayload = JSON.parse(initialMessage.payload || '{}');
   
   try {
@@ -152,35 +124,33 @@ async function processCoordinatorLoop(transport: any, initialMessage: any): Prom
     console.error('Error processing initial coordinator message:', error.message);
   }
 
-  // For now, exit after processing the initial message
-  // In the future, this could be extended to stay running and process additional messages
+  
+  
   console.log('Coordinator processing complete');
 }
 
-/**
- * Cleanup and shutdown
- */
+
 async function shutdown(transport: any) {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
   console.log('\nShutting down...');
 
-  // Stop persona consumers
+  
   if (personaConsumer) {
     console.log('Stopping persona consumers...');
     await personaConsumer.stop();
     personaConsumer = null;
   }
 
-  // Stop dashboard
+  
   if (dashboardProcess) {
     console.log('Stopping dashboard backend...');
     dashboardProcess.kill('SIGTERM');
     dashboardProcess = null;
   }
 
-  // Disconnect transport
+  
   try {
     await transport.quit();
     console.log('Transport disconnected');
@@ -208,7 +178,7 @@ async function main() {
     process.exit(1);
   }
 
-  // Validate TRANSPORT_TYPE
+  
   if (cfg.transportType !== 'local') {
     console.warn(`Warning: TRANSPORT_TYPE is '${cfg.transportType}', but 'local' is recommended for single-process development`);
   }
@@ -224,7 +194,7 @@ async function main() {
   if (baseBranch) console.log(`Base Branch: ${baseBranch}`);
   console.log('');
 
-  // Step 1: Start dashboard backend
+  
   try {
     await startDashboard();
   } catch (error) {
@@ -232,15 +202,15 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 2: Get transport connection (before starting consumers)
+  
   const transport = await getTransport();
   console.log(`Transport connected: ${cfg.transportType}`);
 
-  // Setup graceful shutdown
+  
   process.on('SIGINT', () => shutdown(transport));
   process.on('SIGTERM', () => shutdown(transport));
 
-  // Step 3: Start persona consumers (for local transport)
+  
   try {
     await startPersonaConsumers(transport);
   } catch (error) {
@@ -248,7 +218,7 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 4: Dispatch coordinator message
+  
   const payload: Record<string, unknown> = { project_id: projectId };
   if (repo) payload.repo = repo;
   if (baseBranch) payload.base_branch = baseBranch;
@@ -279,14 +249,14 @@ async function main() {
   const entryId = await transport.xAdd(cfg.requestStream, "*", msg);
   console.log(`Coordinator message dispatched: ${entryId}`);
 
-  // Step 5: Process the coordinator workflow
+  
   try {
     await processCoordinatorLoop(transport, msg);
   } catch (error: any) {
     console.error('Error in coordinator loop:', error.message);
   }
 
-  // Cleanup
+  
   await shutdown(transport);
 }
 

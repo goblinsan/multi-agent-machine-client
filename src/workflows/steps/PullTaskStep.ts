@@ -18,20 +18,7 @@ export interface TaskData {
   timestamp: number;
 }
 
-/**
- * PullTaskStep - Retrieves tasks from Redis stream
- * 
- * Configuration:
- * - streamName: Redis stream to pull from
- * - consumerGroup: Consumer group name
- * - consumerId: Unique consumer identifier
- * - blockTime: Max time to block waiting for messages (default: 1000ms)
- * - maxMessages: Maximum messages to pull at once (default: 1)
- * 
- * Outputs:
- * - task: The pulled task data
- * - taskId: The Redis message ID
- */
+
 export class PullTaskStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PullTaskConfig;
@@ -50,17 +37,17 @@ export class PullTaskStep extends WorkflowStep {
         throw new Error('Transport not available in context');
       }
       
-      // Ensure consumer group exists
+      
       try {
         await transport.xGroupCreate(streamName, consumerGroup, '0', { MKSTREAM: true });
       } catch (error: any) {
-        // Ignore if group already exists
+        
         if (!error.message?.includes('BUSYGROUP')) {
           throw error;
         }
       }
 
-      // Pull messages from stream
+      
       const result = await transport.xReadGroup(
         consumerGroup, 
         consumerId,
@@ -93,7 +80,7 @@ export class PullTaskStep extends WorkflowStep {
         };
       }
 
-      // Parse the first message
+      
       const firstMessage = messageList[0];
       const messageId = firstMessage.id;
       const fields = firstMessage.fields;
@@ -111,11 +98,11 @@ export class PullTaskStep extends WorkflowStep {
         persona: taskData.persona
       });
 
-      // Set context variables
+      
       context.setVariable('task', taskData);
       context.setVariable('taskId', messageId);
 
-      // Acknowledge the message
+      
       await transport.xAck(streamName, consumerGroup, messageId);
 
       return {
@@ -166,7 +153,7 @@ export class PullTaskStep extends WorkflowStep {
   }
 
   async cleanup(context: WorkflowContext): Promise<void> {
-    // Clean up any pending messages if needed
+    
     const taskId = context.getVariable('taskId');
     if (taskId) {
       logger.debug(`Cleaning up task: ${taskId}`);

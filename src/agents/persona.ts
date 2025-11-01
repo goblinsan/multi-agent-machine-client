@@ -23,12 +23,12 @@ export async function waitForPersonaCompletion(
   try {
     const streamKey = cfg.eventStream;
 
-    // xRevRange optimization commented out - not in MessageTransport interface
-    // This optimization scanned recent events before blocking, but isn't critical
-    // The blocking xRead below will still catch completions
+    
+    
+    
 
-    // Start with "0-0" to check all existing messages first, then use lastId for subsequent reads
-    // This ensures we don't miss events that were published before we started listening
+    
+    
     let lastId = "0-0";
     while (Date.now() - started < effectiveTimeout) {
       const elapsed = Date.now() - started;
@@ -37,7 +37,7 @@ export async function waitForPersonaCompletion(
       const readResult = await transport.xRead([{ key: streamKey, id: lastId }], { BLOCK: blockMs, COUNT: 20 }).catch(() => null);
       if (!readResult) continue;
 
-      // xRead returns { [streamKey]: { messages: [...] } }, convert to array of streams
+      
       const streams = Object.entries(readResult).map(([key, streamData]: [string, any]) => ({
         key,
         messages: streamData.messages || []
@@ -46,7 +46,7 @@ export async function waitForPersonaCompletion(
       for (const stream of streams) {
         const messages = stream.messages || [];
         for (const message of messages) {
-          // Message interface has fields directly, not message.message
+          
           const rawFields = message.fields;
           const fields: Record<string, string> = {};
           for (const [k, v] of Object.entries(rawFields)) fields[k] = typeof v === "string" ? v : String(v);
@@ -63,7 +63,7 @@ export async function waitForPersonaCompletion(
       }
     }
   } finally {
-    // No quit needed - transport lifecycle managed by caller
+    
   }
 
   const timeoutSec = Math.round(effectiveTimeout / 100) / 10;
@@ -130,13 +130,13 @@ export function extractJsonPayloadFromText(text: string | undefined): any | null
   let match: RegExpExecArray | null;
   while ((match = fenceRegex.exec(text))) {
     const snippet = match[1];
-    try { return JSON.parse(snippet); } catch { /* ignore invalid JSON in fence */ }
+    try { return JSON.parse(snippet); } catch {  }
   }
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     const candidate = text.slice(firstBrace, lastBrace + 1);
-    try { return JSON.parse(candidate); } catch { /* ignore invalid JSON extraction */ }
+    try { return JSON.parse(candidate); } catch {  }
   }
   return null;
 }
@@ -152,7 +152,7 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
   const raw = (output || "").trim();
   let json = extractJsonPayloadFromText(raw);
   
-  // PRIORITY 1: Explicit JSON status field (REQUIRED for reliable parsing)
+  
   if (json && typeof json.status === "string") {
     const statusLower = json.status.trim().toLowerCase();
     let normalized: "pass" | "fail" | "unknown" = "unknown";
@@ -162,7 +162,7 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     return { status: normalized, details, raw, payload: json };
   }
   
-  // PRIORITY 2: Check nested output field (LM Studio wrapper pattern)
+  
   if (json && typeof json.output === "string") {
     const innerJson = extractJsonPayloadFromText(json.output);
     if (innerJson && typeof innerJson.status === "string") {
@@ -175,9 +175,9 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     }
   }
   
-  // PRIORITY 3: Look for explicit status declarations at START of response
-  // Only check first 500 characters to avoid false positives from narrative text
-  // Pattern: "Status: pass" or "Result: fail" at beginning of line
+  
+  
+  
   if (!raw.length) return { status: "unknown", details: raw, raw };
   const firstPart = raw.substring(0, 500);
   const statusLineMatch = firstPart.match(/^(?:status|result):\s*(pass|fail|passed|failed|success|error|ok|approved|rejected)/im);
@@ -188,8 +188,8 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     return { status: normalized, details: raw, raw, payload: json };
   }
   
-  // PRIORITY 4: Check for explicit JSON-like status declarations in first 500 chars
-  // Pattern: {"status": "pass"} or 'status': 'fail' 
+  
+  
   const jsonStatusMatch = firstPart.toLowerCase().match(/["']status["']\s*:\s*["'](pass|fail|success|error|failed|succeeded|approved|rejected|ok)["']/);
   if (jsonStatusMatch) {
     const declaredStatus = jsonStatusMatch[1];
@@ -198,8 +198,6 @@ export function interpretPersonaStatus(output: string | undefined): PersonaStatu
     return { status: normalized, details: raw, raw, payload: json };
   }
   
-  // DEFAULT: No clear status found - return UNKNOWN (fail-safe)
-  // DO NOT scan entire text for keywords - prevents false positives from narrative
   logger.warn('Persona status unclear - no explicit status declaration found', {
     rawPreview: raw.substring(0, 200),
     hasJson: !!json,

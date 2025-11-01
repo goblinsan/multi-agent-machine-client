@@ -10,5 +10,5 @@ declare module 'fastify' {
   export default fastify;
 }
 
-// Allow importing JSON schema file paths
+
 declare module '*.sql';

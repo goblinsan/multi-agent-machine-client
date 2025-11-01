@@ -9,7 +9,7 @@ export async function detectRemoteDefaultBranch(repoRoot: string): Promise<strin
       return ref.slice("refs/remotes/origin/".length);
     }
     if (ref.length) return ref;
-  } catch { /* symbolic-ref failed, try remote show */ }
+  } catch {  }
 
   try {
     const remoteShow = await runGit(["remote", "show", "origin"], { cwd: repoRoot });
@@ -21,7 +21,7 @@ export async function detectRemoteDefaultBranch(repoRoot: string): Promise<strin
       const branch = line.split(":" , 2)[1]?.trim();
       if (branch) return branch;
     }
-  } catch { /* remote show failed, return null */ }
+  } catch {  }
 
   return null;
 }
@@ -141,13 +141,13 @@ export async function describeWorkingTree(repoRoot: string): Promise<WorkingTree
 function remoteSlug(remote: string | null | undefined) {
   if (!remote) return null;
   try {
-    // Simple parsing for slug extraction
+    
     const trimmed = remote.trim();
     if (trimmed.includes("://")) {
       const url = new URL(trimmed);
       return `${url.host}${url.pathname}`.replace(/\.git$/i, "");
     }
-    // SSH format: git@host:path
+    
     const sshMatch = /^(?:[^@]+@)?([^:]+):(.+)$/.exec(trimmed);
     if (sshMatch) {
       return `${sshMatch[1]}/${sshMatch[2]}`.replace(/\.git$/i, "");
@@ -170,13 +170,13 @@ export async function getRepoMetadata(repoRoot: string) {
       remoteUrl = remote;
       remoteSlugValue = remoteSlug(remote);
     }
-  } catch { /* git remote failed, use defaults */ }
+  } catch {  }
 
   try {
     const branchRes = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot });
     const branch = branchRes.stdout.trim();
     if (branch && branch !== "HEAD") currentBranch = branch;
-  } catch { /* rev-parse failed, use default branch */ }
+  } catch {  }
 
   return { remoteUrl, remoteSlug: remoteSlugValue, currentBranch };
 }

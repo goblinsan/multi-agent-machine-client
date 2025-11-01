@@ -11,10 +11,7 @@ interface ConditionalConfig {
   elseSteps?: WorkflowStepConfig[];
 }
 
-/**
- * ConditionalStep - Executes different steps based on condition evaluation
- * This step implements conditional logic for QA failure handling
- */
+
 export class ConditionalStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as ConditionalConfig;
@@ -28,7 +25,7 @@ export class ConditionalStep extends WorkflowStep {
     });
 
     try {
-      // Evaluate condition
+      
       const conditionResult = this.evaluateConditionExpression(condition, context);
       
       logger.info(`Condition evaluated`, {
@@ -37,7 +34,7 @@ export class ConditionalStep extends WorkflowStep {
         result: conditionResult
       });
 
-      // Select steps to execute
+      
       const stepsToExecute = conditionResult ? thenSteps : elseSteps;
       
       if (stepsToExecute.length === 0) {
@@ -51,16 +48,16 @@ export class ConditionalStep extends WorkflowStep {
         };
       }
 
-      // Execute the selected steps
+      
       const stepResults: any[] = [];
       let allSuccessful = true;
 
       for (const stepConfig of stepsToExecute) {
         try {
-          // Create step instance based on type
+          
           const step = this.createStepInstance(stepConfig);
           
-          // Execute step
+          
           const result = await step.execute(context);
           stepResults.push({
             name: stepConfig.name,
@@ -127,7 +124,7 @@ export class ConditionalStep extends WorkflowStep {
 
   private evaluateConditionExpression(condition: string, context: WorkflowContext): boolean {
     try {
-      // Handle common condition patterns for QA failure
+      
       if (condition.includes('qaStatus')) {
         const qaStatus = context.getVariable('qaStatus') || context.getVariable('qa_status');
         
@@ -142,9 +139,9 @@ export class ConditionalStep extends WorkflowStep {
         }
       }
 
-      // Handle step output checks
+      
       if (condition.includes('stepOutput')) {
-        // Pattern: stepOutput.stepName.property == value
+        
         const match = condition.match(/stepOutput\.(\w+)\.(\w+)\s*(==|!=|===|!==)\s*"([^"]+)"/);
         if (match) {
           const [, stepName, property, operator, value] = match;
@@ -162,7 +159,6 @@ export class ConditionalStep extends WorkflowStep {
         }
       }
 
-      // Simple variable comparison
       const match = condition.match(/(\w+)\s*(==|!=|===|!==)\s*"([^"]+)"/);
       if (match) {
         const [, varName, operator, value] = match;
@@ -222,7 +218,7 @@ export class ConditionalStep extends WorkflowStep {
       errors.push('ConditionalStep: elseSteps must be an array if provided');
     }
 
-    // Validate nested steps
+    
     const allSteps = [...(config.thenSteps || []), ...(config.elseSteps || [])];
     for (const stepConfig of allSteps) {
       if (!stepConfig.name || typeof stepConfig.name !== 'string') {

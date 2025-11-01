@@ -16,13 +16,9 @@ export interface FailureAnalysis {
   relatedFailures: string[];
 }
 
-/**
- * Analyzes individual test failures to determine root cause and suggest fixes
- */
+
 export class FailureAnalyzer {
-  /**
-   * Analyze a single failure to determine category, root cause, and suggested fix
-   */
+  
   analyzeFailure(failure: QAFailure, _performRootCauseAnalysis: boolean = true): FailureAnalysis {
     const errorText = failure.error.toLowerCase();
     const analysis: FailureAnalysis = {
@@ -35,7 +31,7 @@ export class FailureAnalyzer {
       relatedFailures: []
     };
 
-    // Match against known patterns for detailed analysis
+    
     if (errorText.includes('syntaxerror') || errorText.includes('syntax error')) {
       analysis.category = 'Syntax Error';
       analysis.severity = 'high';
@@ -90,9 +86,7 @@ export class FailureAnalyzer {
     return analysis;
   }
 
-  /**
-   * Analyze multiple failures and find common patterns
-   */
+  
   analyzeFailures(failures: QAFailure[], maxFailures: number = 50): FailureAnalysis[] {
     const failuresToAnalyze = failures.slice(0, maxFailures);
     return failuresToAnalyze.map(failure => this.analyzeFailure(failure));

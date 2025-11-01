@@ -29,36 +29,17 @@ export interface ContextData {
   };
 }
 
-/**
- * ContextStep - Gathers repository and artifact context with change detection
- * 
- * Configuration:
- * - repoPath: Path to the repository to scan
- * - includePatterns: File patterns to include (default: all files)
- * - excludePatterns: Patterns to exclude from scanning
- * - maxFiles: Maximum number of files to scan (default: 1000)
- * - maxBytes: Maximum total bytes to scan (default: 10MB)
- * - maxDepth: Maximum depth to scan (default: 10)
- * - trackLines: Whether to count lines (default: true)
- * - trackHash: Whether to calculate file hashes (default: false)
- * - forceRescan: Force a new scan even if context files exist (default: false)
- * 
- * Outputs:
- * - context: Complete context data
- * - repoScan: Repository scan results
- */
+
 export class ContextStep extends WorkflowStep {
   
-  /**
-   * Check if existing context files are still valid by comparing source file modification times
-   */
+  
   private async isRescanNeeded(repoPath: string, includePatterns: string[], excludePatterns: string[]): Promise<boolean> {
     try {
       const contextDir = path.join(repoPath, '.ma', 'context');
       const snapshotPath = path.join(contextDir, 'snapshot.json');
       const summaryPath = path.join(contextDir, 'summary.md');
 
-      // Check if context files exist
+      
       const snapshotExists = await fs.access(snapshotPath).then(() => true).catch(() => false);
       const summaryExists = await fs.access(summaryPath).then(() => true).catch(() => false);
 
@@ -71,11 +52,11 @@ export class ContextStep extends WorkflowStep {
         return true;
       }
 
-      // Get the timestamp of the last context scan
+      
       const snapshotStat = await fs.stat(snapshotPath);
       const lastScanTime = snapshotStat.mtime.getTime();
 
-      // Quick scan to check if any source files have been modified since last scan
+      
       const quickScanSpec: ScanSpec = {
         repo_root: repoPath,
         include: includePatterns,
@@ -89,7 +70,7 @@ export class ContextStep extends WorkflowStep {
 
       const quickScan = await scanRepo(quickScanSpec);
       
-      // Check if any files have been modified since the last scan
+      
       const hasNewerFiles = quickScan.some(file => file.mtime > lastScanTime);
 
       if (hasNewerFiles) {
@@ -115,9 +96,7 @@ export class ContextStep extends WorkflowStep {
     }
   }
 
-  /**
-   * Load existing context data from files
-   */
+  
   private async loadExistingContext(repoPath: string): Promise<ContextData | null> {
     try {
       const contextDir = path.join(repoPath, '.ma', 'context');
@@ -126,7 +105,7 @@ export class ContextStep extends WorkflowStep {
       const snapshotContent = await fs.readFile(snapshotPath, 'utf8');
       const snapshot = JSON.parse(snapshotContent);
 
-      // Convert snapshot back to ContextData format
+      
       const contextData: ContextData = {
         repoScan: snapshot.files || [],
         metadata: {
@@ -155,16 +134,13 @@ export class ContextStep extends WorkflowStep {
     }
   }
 
-  /**
-   * Write context artifacts (snapshot.json and summary.md) to .ma/context/ directory
-   * This enables distributed agents to access context without re-scanning
-   */
+  
   private async writeContextArtifacts(repoPath: string, contextData: ContextData): Promise<void> {
     try {
       const contextDir = path.join(repoPath, '.ma', 'context');
       await fs.mkdir(contextDir, { recursive: true });
 
-      // Create snapshot.json
+      
       const snapshot = {
         timestamp: contextData.metadata.scannedAt,
         files: contextData.repoScan,
@@ -178,7 +154,7 @@ export class ContextStep extends WorkflowStep {
       const snapshotPath = path.join(contextDir, 'snapshot.json');
       await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf-8');
 
-      // Create summary.md with file tree and analysis
+      
       const summary = this.generateContextSummary(contextData);
       const summaryPath = path.join(contextDir, 'summary.md');
       await fs.writeFile(summaryPath, summary, 'utf-8');
@@ -189,22 +165,22 @@ export class ContextStep extends WorkflowStep {
         fileCount: contextData.metadata.fileCount
       });
 
-      // Commit and push to git for distributed access
+      
       const { runGit } = await import('../../gitUtils.js');
       
       try {
-        // Add both files
+        
         await runGit(['add', '.ma/context/snapshot.json', '.ma/context/summary.md'], { cwd: repoPath });
         
-        // Commit with --no-verify to skip pre-commit hooks (automated workflow commit)
+        
         const commitMsg = `chore(ma): update context scan (${contextData.metadata.fileCount} files)`;
         await runGit(['commit', '--no-verify', '-m', commitMsg], { cwd: repoPath });
         
-        // Get current branch
+        
         const branchResult = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath });
         const branch = branchResult.stdout.trim();
         
-        // Push to remote (best effort - don't fail if push fails)
+        
         try {
           const remotes = await runGit(['remote'], { cwd: repoPath });
           if (remotes.stdout.trim().length > 0) {
@@ -217,14 +193,14 @@ export class ContextStep extends WorkflowStep {
           });
         }
       } catch (gitErr) {
-        // Git operations are best-effort for context
+        
         logger.warn('Failed to commit context artifacts', {
           error: gitErr instanceof Error ? gitErr.message : String(gitErr)
         });
       }
 
     } catch (error) {
-      // Don't fail the workflow if artifact writing fails
+      
       logger.warn('Failed to write context artifacts', {
         error: String(error),
         repoPath
@@ -232,13 +208,11 @@ export class ContextStep extends WorkflowStep {
     }
   }
 
-  /**
-   * Generate markdown summary of context scan
-   */
+  
   private generateContextSummary(contextData: ContextData): string {
     const { repoScan, metadata } = contextData;
     
-    // Group files by directory
+    
     const dirTree: Record<string, FileInfo[]> = {};
     repoScan.forEach(file => {
       const dir = path.dirname(file.path);
@@ -246,7 +220,7 @@ export class ContextStep extends WorkflowStep {
       dirTree[dir].push(file);
     });
 
-    // Build summary
+    
     let summary = `# Repository Context Summary\n\n`;
     summary += `Generated: ${new Date(metadata.scannedAt).toISOString()}\n\n`;
     summary += `## Statistics\n\n`;
@@ -254,7 +228,7 @@ export class ContextStep extends WorkflowStep {
     summary += `- **Total Size**: ${(metadata.totalBytes / 1024).toFixed(2)} KB\n`;
     summary += `- **Max Depth**: ${metadata.maxDepth}\n\n`;
 
-    // Directory structure
+    
     summary += `## Directory Structure\n\n\`\`\`\n`;
     const sortedDirs = Object.keys(dirTree).sort();
     sortedDirs.forEach(dir => {
@@ -268,7 +242,7 @@ export class ContextStep extends WorkflowStep {
     });
     summary += `\`\`\`\n\n`;
 
-    // Large files (>200 lines or >50KB)
+    
     const largeFiles = repoScan.filter(f => 
       (f.lines && f.lines > 200) || f.bytes > 50 * 1024
     );
@@ -282,7 +256,7 @@ export class ContextStep extends WorkflowStep {
       summary += `\n`;
     }
 
-    // File extensions distribution
+    
     const extMap: Record<string, number> = {};
     repoScan.forEach(f => {
       const ext = path.extname(f.path) || '(no extension)';
@@ -312,10 +286,10 @@ export class ContextStep extends WorkflowStep {
       forceRescan = false
     } = config;
 
-    // Resolve variables in repoPath (e.g., ${repo_root})
+    
     const repoPath = this.resolveVariables(rawRepoPath, context);
 
-    // CRITICAL: Abort if repoPath wasn't resolved or is invalid
+    
     if (!repoPath || repoPath.includes('${')) {
       const error = `FATAL: repo_root variable not resolved! Got: "${repoPath}" from config: "${rawRepoPath}"`;
       logger.error(error, {
@@ -330,7 +304,7 @@ export class ContextStep extends WorkflowStep {
       };
     }
 
-    // Verify the resolved path is a valid directory
+    
     try {
       const stats = await fs.stat(repoPath);
       if (!stats.isDirectory()) {
@@ -365,7 +339,7 @@ export class ContextStep extends WorkflowStep {
       let contextData: ContextData | undefined;
       let reusedExisting = false;
 
-      // Check if we need to rescan or can reuse existing context
+      
       if (!forceRescan) {
         const needsRescan = await this.isRescanNeeded(repoPath, includePatterns, excludePatterns);
         
@@ -384,13 +358,13 @@ export class ContextStep extends WorkflowStep {
         }
       }
 
-      // Perform new scan if needed
+      
       if (!contextData || forceRescan) {
         logger.info('Performing new repository scan', {
           reason: forceRescan ? 'forced rescan' : 'source files changed'
         });
 
-        // Build scan specification
+        
         const scanSpec: ScanSpec = {
           repo_root: repoPath,
           include: includePatterns,
@@ -402,7 +376,7 @@ export class ContextStep extends WorkflowStep {
           track_hash: trackHash
         };
 
-        // Scan repository structure
+        
         const repoScan = await scanRepo(scanSpec);
         
         const totalBytes = repoScan.reduce((sum, file) => sum + file.bytes, 0);
@@ -413,7 +387,7 @@ export class ContextStep extends WorkflowStep {
           maxDepth
         });
 
-        // Build context data
+        
         contextData = {
           repoScan,
           metadata: {
@@ -430,11 +404,11 @@ export class ContextStep extends WorkflowStep {
           totalBytes: contextData.metadata.totalBytes
         });
 
-        // Write snapshot.json and summary.md for distributed persistence
+        
         await this.writeContextArtifacts(repoPath, contextData);
       }
 
-      // Set context variables
+      
       context.setVariable('context', contextData);
       context.setVariable('repoScan', contextData.repoScan);
 
@@ -511,7 +485,7 @@ export class ContextStep extends WorkflowStep {
       errors.push('ContextStep: trackHash must be a boolean');
     }
 
-    // Check if repository path exists (warning only)
+    
     try {
       const fs = await import('fs');
       const stats = await fs.promises.stat(config.repoPath);
@@ -530,23 +504,21 @@ export class ContextStep extends WorkflowStep {
   }
 
   async cleanup(context: WorkflowContext): Promise<void> {
-    // Clear large context data if needed to free memory
+    
     const contextData = context.getVariable('context');
     if (contextData) {
       logger.debug('Cleaning up context data');
-      // Context cleanup would happen automatically when context is destroyed
+      
     }
   }
 
-  /**
-   * Resolves variable placeholders like ${variable_name} in strings
-   */
+  
   private resolveVariables(str: string, context: WorkflowContext): string {
     return str.replace(/\$\{([^}]+)\}/g, (match, varPath) => {
       try {
         const parts = varPath.trim().split('.');
         
-        // First check if it's a direct context property (repo_root, branch, etc.)
+        
         const firstPart = parts[0];
         let value: any;
         
@@ -559,16 +531,16 @@ export class ContextStep extends WorkflowStep {
         } else if (firstPart === 'project_id') {
           value = context.projectId;
         } else {
-          // Otherwise get from variables map
+          
           value = context.getVariable(firstPart);
         }
         
-        // Traverse nested properties
+        
         for (let i = 1; i < parts.length; i++) {
           if (value && typeof value === 'object' && parts[i] in value) {
             value = value[parts[i]];
           } else {
-            // Property not found, return original placeholder
+            
             return match;
           }
         }

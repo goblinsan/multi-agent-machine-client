@@ -1,9 +1,7 @@
 import { WorkflowStep, WorkflowStepConfig, StepResult } from '../engine/WorkflowStep.js';
 import { WorkflowContext } from '../engine/WorkflowContext.js';
 
-/**
- * Simple test step for validating workflow engine
- */
+
 export class TestStep extends WorkflowStep {
   constructor(config: WorkflowStepConfig) {
     super(config);
@@ -20,7 +18,7 @@ export class TestStep extends WorkflowStep {
       delay
     });
 
-    // Simulate some work
+    
     if (delay > 0) {
       await new Promise(resolve => setTimeout(resolve, delay));
     }

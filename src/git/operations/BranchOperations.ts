@@ -2,19 +2,9 @@ import { logger } from "../../logger.js";
 import { runGit, guardWorkspaceMutation } from "../core.js";
 import { branchExists, remoteBranchExists, hasLocalChanges } from "../queries.js";
 
-/**
- * BranchOperations - Handles git branch operations
- * 
- * Responsibilities:
- * - Create and checkout branches
- * - Fetch and pull branch updates
- * - Handle checkout errors and recovery
- * - Align branches to remote after divergence
- */
 
-/**
- * Handle checkout errors with automatic fallback
- */
+
+
 async function handleCheckoutError(repoRoot: string, branch: string, error: any): Promise<never> {
   if (await hasLocalChanges(repoRoot)) {
     const message = `Cannot checkout ${branch}: uncommitted changes detected in local repository at ${repoRoot}. Commit, stash, or discard the changes and try again.`;
@@ -23,10 +13,7 @@ async function handleCheckoutError(repoRoot: string, branch: string, error: any)
   throw error;
 }
 
-/**
- * Checkout a branch from a base branch
- * Comprehensive branch management with fetch, pull, and creation logic
- */
+
 export async function checkoutBranchFromBase(repoRoot: string, baseBranch: string, newBranch: string) {
   guardWorkspaceMutation(repoRoot, `checkoutBranchFromBase ${newBranch} from ${baseBranch}`);
   
@@ -54,14 +41,14 @@ export async function checkoutBranchFromBase(repoRoot: string, baseBranch: strin
       await handleCheckoutError(repoRoot, newBranch, error);
     }
 
-    // Only pull if the remote branch exists
+    
     const remoteExists = await remoteBranchExists(repoRoot, newBranch);
     if (remoteExists) {
       try {
         await runGit(["pull", "--ff-only", "origin", newBranch], { cwd: repoRoot });
       } catch (error) {
         logger.warn("git pull branch failed", { repoRoot, branch: newBranch, error });
-        // If there are no local changes, align the branch to the remote to recover from divergence
+        
         try {
           if (!(await hasLocalChanges(repoRoot))) {
             await runGit(["fetch", "origin", newBranch], { cwd: repoRoot }).catch(() => {});

@@ -26,24 +26,7 @@ export interface TaskUpdateResult {
   };
 }
 
-/**
- * TaskUpdateStep - Updates task status on dashboard/external systems
- * 
- * Configuration:
- * - dashboardUrl: Dashboard endpoint URL (optional, uses context default)
- * - updateType: Type of update (status, progress, result, failure)
- * - status: Task status to set (for status updates)
- * - message: Update message or description
- * - progress: Progress percentage 0-100 (for progress updates)
- * - metadata: Additional metadata to include
- * - retryCount: Number of retries on failure (default: 2)
- * - timeoutMs: Request timeout (default: 10000)
- * 
- * Outputs:
- * - updateResult: Complete update result
- * - updated: Boolean indicating success
- * - taskId: The updated task ID
- */
+
 export class TaskUpdateStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as TaskUpdateConfig;
@@ -66,7 +49,7 @@ export class TaskUpdateStep extends WorkflowStep {
     });
 
     try {
-      // Get task data from context
+      
       const task = context.getVariable('task');
       if (!task) {
         throw new Error('No task data found in context for update');
@@ -77,7 +60,7 @@ export class TaskUpdateStep extends WorkflowStep {
         throw new Error('Task ID not found in task data');
       }
 
-      // Build update payload
+      
       const updatePayload = this.buildUpdatePayload(updateType, {
         taskId,
         status,
@@ -97,7 +80,7 @@ export class TaskUpdateStep extends WorkflowStep {
         payloadKeys: Object.keys(updatePayload)
       });
 
-      // Perform update with retry logic
+      
       let lastError: Error | null = null;
       let updateResponse: any = null;
       let attemptCount = 0;
@@ -122,7 +105,7 @@ export class TaskUpdateStep extends WorkflowStep {
           });
 
           if (attempt < retryCount) {
-            // Wait before retry with exponential backoff
+            
             const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
@@ -133,7 +116,7 @@ export class TaskUpdateStep extends WorkflowStep {
         throw lastError || new Error('Task update failed after all retries');
       }
 
-      // Build result
+      
       const updateResult: TaskUpdateResult = {
         updated: true,
         taskId,
@@ -147,7 +130,7 @@ export class TaskUpdateStep extends WorkflowStep {
         }
       };
 
-      // Cleanup task logs if the task is completed
+      
       if (status && updateType === 'status') {
         const normalizedStatus = status.toLowerCase();
         if (['done', 'completed', 'finished', 'closed', 'resolved'].includes(normalizedStatus)) {
@@ -169,7 +152,7 @@ export class TaskUpdateStep extends WorkflowStep {
                 updateType
               });
             } catch (cleanupErr: any) {
-              // Don't fail the task update if cleanup fails
+              
               logger.warn('Task log cleanup failed', {
                 taskId,
                 updateType,
@@ -180,7 +163,7 @@ export class TaskUpdateStep extends WorkflowStep {
         }
       }
       
-      // Set context variables
+      
       context.setVariable('updateResult', updateResult);
       context.setVariable('updated', true);
       context.setVariable('taskId', taskId);
@@ -268,22 +251,22 @@ export class TaskUpdateStep extends WorkflowStep {
   }
 
   private async performUpdate(url: string, payload: any, _timeoutMs: number): Promise<any> {
-    // For now, simulate the update (in real implementation, this would make HTTP requests)
+    
     logger.debug('Performing task update', {
       url,
       payloadType: payload.type,
       taskId: payload.taskId
     });
 
-    // Simulate network call
+    
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Simulate different response scenarios
+    
     if (payload.taskId === 'fail-test') {
       throw new Error('Simulated dashboard update failure');
     }
 
-    // Return mock success response
+    
     return {
       success: true,
       taskId: payload.taskId,
@@ -293,7 +276,7 @@ export class TaskUpdateStep extends WorkflowStep {
   }
 
   private getDefaultDashboardUrl(context: WorkflowContext): string {
-    // In real implementation, this would get from configuration or context
+    
     return context.getVariable('dashboardUrl') || 'http://localhost:3000/api/tasks';
   }
 
@@ -349,7 +332,7 @@ export class TaskUpdateStep extends WorkflowStep {
   }
 
   async cleanup(context: WorkflowContext): Promise<void> {
-    // Clean up any update artifacts
+    
     const updateResult = context.getVariable('updateResult');
     if (updateResult) {
       logger.debug('Cleaning up task update result');

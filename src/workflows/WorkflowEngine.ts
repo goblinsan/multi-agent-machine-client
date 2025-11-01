@@ -32,9 +32,7 @@ import { StepExecutor } from './engine/StepExecutor';
 import { randomUUID } from 'crypto';
 import { logger } from '../logger.js';
 
-/**
- * YAML workflow definition structure
- */
+
 export interface WorkflowDefinition {
   name: string;
   description: string;
@@ -56,9 +54,7 @@ export interface WorkflowDefinition {
   };
 }
 
-/**
- * Individual step definition in YAML
- */
+
 export interface WorkflowStepDefinition {
   name: string;
   type: string;
@@ -69,9 +65,7 @@ export interface WorkflowStepDefinition {
   outputs?: string[];
 }
 
-/**
- * Workflow execution result
- */
+
 export interface WorkflowExecutionResult {
   success: boolean;
   completedSteps: string[];
@@ -81,9 +75,7 @@ export interface WorkflowExecutionResult {
   finalContext: WorkflowContext;
 }
 
-/**
- * Engine for executing YAML-defined workflows
- */
+
 export class WorkflowEngine {
   private stepRegistry: Map<string, new (...args: any[]) => WorkflowStep>;
   private workflowLoader: WorkflowLoader;
@@ -98,16 +90,12 @@ export class WorkflowEngine {
     this.stepExecutor = new StepExecutor(this.stepRegistry);
   }
 
-  /**
-   * Ensure default workflow definitions are loaded once from the repo
-   */
+  
   private async ensureDefaultWorkflowsLoaded(): Promise<void> {
     return this.workflowLoader.ensureDefaultWorkflowsLoaded();
   }
 
-  /**
-   * Register all built-in workflow step types
-   */
+  
   private registerBuiltInSteps(): void {
     this.stepRegistry.set('PullTaskStep', PullTaskStep);
     this.stepRegistry.set('ContextStep', ContextStep);
@@ -130,51 +118,39 @@ export class WorkflowEngine {
     this.stepRegistry.set('UnblockAttemptStep', UnblockAttemptStep);
     this.stepRegistry.set('MilestoneStatusCheckStep', MilestoneStatusCheckStep);
     this.stepRegistry.set('ReviewFailureTasksStep', ReviewFailureTasksStep);
-    // New sub-workflow support steps
+    
     this.stepRegistry.set('SubWorkflowStep', SubWorkflowStep);
     this.stepRegistry.set('BulkTaskCreationStep', BulkTaskCreationStep);
     this.stepRegistry.set('PMDecisionParserStep', PMDecisionParserStep);
     this.stepRegistry.set('VariableResolutionStep', VariableResolutionStep);
   }
 
-  /**
-   * Register a custom step type
-   */
+  
   public registerStep(type: string, stepClass: new (...args: any[]) => WorkflowStep): void {
     this.stepRegistry.set(type, stepClass);
   }
 
-  /**
-   * Load workflow definition from YAML file
-   */
+  
   public async loadWorkflowFromFile(filePath: string): Promise<WorkflowDefinition> {
     return this.workflowLoader.loadWorkflowFromFile(filePath);
   }
 
-  /**
-   * Load all workflow definitions from a directory
-   */
+  
   public async loadWorkflowsFromDirectory(directoryPath: string): Promise<WorkflowDefinition[]> {
     return this.workflowLoader.loadWorkflowsFromDirectory(directoryPath);
   }
 
-  /**
-   * Get workflow definition by name
-   */
+  
   public getWorkflowDefinition(name: string): WorkflowDefinition | undefined {
     return this.workflowLoader.getWorkflowDefinition(name);
   }
 
-  /**
-   * Get all loaded workflow definitions
-   */
+  
   public getWorkflowDefinitions(): WorkflowDefinition[] {
     return this.workflowLoader.getWorkflowDefinitions();
   }
 
-  /**
-   * Find workflow by trigger condition
-   */
+  
   public findWorkflowByCondition(taskType: string, scope?: string): WorkflowDefinition | undefined {
     for (const definition of this.workflowLoader.getWorkflowDefinitions()) {
       if (this.conditionEvaluator.evaluateTriggerCondition(definition.trigger.condition, taskType, scope)) {
@@ -184,9 +160,7 @@ export class WorkflowEngine {
     return undefined;
   }
 
-  /**
-   * Execute a workflow by name
-   */
+  
   public async executeWorkflow(
     workflowName: string,
     projectIdOrVars: string | Record<string, any>,
@@ -197,7 +171,7 @@ export class WorkflowEngine {
   ): Promise<WorkflowExecutionResult> {
     let definition = this.workflowLoader.getWorkflowDefinition(workflowName);
     if (!definition) {
-      // Attempt to auto-load default workflow definitions on-demand
+      
       await this.ensureDefaultWorkflowsLoaded();
       definition = this.workflowLoader.getWorkflowDefinition(workflowName);
       if (!definition) {
@@ -205,20 +179,20 @@ export class WorkflowEngine {
       }
     }
 
-    // New-architecture alignment:
-    // - If an object is passed as the second argument, treat it as initial variables
-    //   and execute the workflow in normal mode, returning the modern WorkflowExecutionResult.
+    
+    
+    
     if (typeof projectIdOrVars === 'object' && projectIdOrVars !== null) {
       const variables = projectIdOrVars as Record<string, any>;
       const seededVars: Record<string, any> = {
-        // Keep test-friendly defaults to avoid external dependencies
+        
         SKIP_GIT_OPERATIONS: true,
         SKIP_PERSONA_OPERATIONS: true,
         repo_remote: variables.repo || variables.repo_remote || 'git@example.com/repo.git',
         projectId: variables.project_id || variables.projectId || 'test-project',
         ...variables
       };
-      // Ensure a task object exists for SimpleTaskStatusStep
+      
       const taskId = (variables as any).task?.id || (variables as any).task_id || (variables as any).taskId;
       if (taskId && !seededVars.task) {
         seededVars.task = { id: taskId, title: (variables as any).task_name || (variables as any).title || 'test-task' };
@@ -234,14 +208,12 @@ export class WorkflowEngine {
       );
     }
 
-    // Normal mode with explicit projectId string
+    
     const projectId = projectIdOrVars as string;
     return this.executeWorkflowDefinition(definition, projectId, repoRoot!, branch, transport as MessageTransport, initialVariables);
   }
 
-  /**
-   * Execute a workflow definition
-   */
+  
   public async executeWorkflowDefinition(
     definition: WorkflowDefinition,
     projectId: string,
@@ -253,7 +225,7 @@ export class WorkflowEngine {
     const startTime = Date.now();
     const completedSteps: string[] = [];
     
-    // Create workflow context
+    
     const workflowConfig: WorkflowConfig = {
       name: definition.name,
       description: definition.description,
@@ -275,34 +247,34 @@ export class WorkflowEngine {
     );
     
     try {
-      // Set up default context variables
+      
       this.setupDefaultContext(context);
       
-      // Validate prerequisites
+      
       this.validatePrerequisites(definition, context);
       
-      // Build step execution order
+      
       const executionOrder = this.stepExecutor.buildExecutionOrder(definition.steps);
       
-      // Execute steps in order
+      
       for (const stepName of executionOrder) {
         const stepDef = definition.steps.find(s => s.name === stepName);
         if (!stepDef) {
           throw new Error(`Step definition not found: ${stepName}`);
         }
 
-        // Check if step should be executed based on conditions and dependencies
+        
         if (!this.shouldExecuteStep(stepDef, context, completedSteps)) {
           continue;
         }
 
-        // Execute the step
+        
         const success = await this.stepExecutor.executeStep(stepDef, context, definition);
 
         if (success) {
           completedSteps.push(stepName);
         } else {
-          // Handle step failure
+          
           await this.handleStepFailure(stepDef, context, definition);
           
           return {
@@ -324,7 +296,7 @@ export class WorkflowEngine {
       };
 
     } catch (error: any) {
-      // Handle workflow-level failure
+      
       await this.handleWorkflowFailure(error, context, definition);
 
       return {
@@ -337,15 +309,13 @@ export class WorkflowEngine {
     }
   }
 
-  /**
-   * Check if step should be executed based on conditions and dependencies
-   */
+  
   private shouldExecuteStep(
     stepDef: WorkflowStepDefinition,
     context: WorkflowContext,
     completedSteps: string[]
   ): boolean {
-    // Check dependencies
+    
     if (stepDef.depends_on) {
       for (const dependency of stepDef.depends_on) {
         if (!completedSteps.includes(dependency)) {
@@ -354,7 +324,7 @@ export class WorkflowEngine {
       }
     }
 
-    // Check condition
+    
     if (stepDef.condition) {
       const result = this.conditionEvaluator.evaluateSimpleCondition(stepDef.condition, context);
       logger.debug('Step condition evaluated', {
@@ -369,9 +339,7 @@ export class WorkflowEngine {
     return true;
   }
 
-  /**
-   * Handle step failure
-   */
+  
   private async handleStepFailure(
     failedStep: WorkflowStepDefinition,
     context: WorkflowContext,
@@ -394,9 +362,7 @@ export class WorkflowEngine {
     }
   }
 
-  /**
-   * Handle workflow failure
-   */
+  
   private async handleWorkflowFailure(
     error: Error,
     context: WorkflowContext,
@@ -418,11 +384,9 @@ export class WorkflowEngine {
     }
   }
 
-  /**
-   * Set up default context variables
-   */
+  
   private setupDefaultContext(context: WorkflowContext): void {
-    // Set default environment variables if not provided
+    
     context.setVariable('REDIS_STREAM_NAME', context.getVariable('REDIS_STREAM_NAME') || process.env.REDIS_STREAM_NAME || 'workflow-tasks');
     context.setVariable('CONSUMER_GROUP', context.getVariable('CONSUMER_GROUP') || process.env.CONSUMER_GROUP || 'workflow-consumers');
     context.setVariable('CONSUMER_ID', context.getVariable('CONSUMER_ID') || process.env.CONSUMER_ID || 'workflow-engine');
@@ -430,9 +394,7 @@ export class WorkflowEngine {
     context.setVariable('repoRoot', context.repoRoot);
   }
 
-  /**
-   * Validate workflow prerequisites
-   */
+  
   private validatePrerequisites(definition: WorkflowDefinition, context: WorkflowContext): void {
     if (definition.context.repo_required && !context.repoRoot) {
       throw new Error('Repository path is required but not provided in context');
@@ -440,7 +402,5 @@ export class WorkflowEngine {
   }
 }
 
-/**
- * Default workflow engine instance
- */
+
 export const workflowEngine = new WorkflowEngine();

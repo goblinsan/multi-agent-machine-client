@@ -9,7 +9,7 @@ describe('Contextual Persona Prompts', () => {
       expect(prompt).toBeDefined()
       expect(prompt).toContain('implementation plan')
       expect(prompt?.toLowerCase()).toContain('planning quality')
-      // Should avoid focusing on QA (but may mention it in context of "not QA")
+      
       expect(prompt?.toLowerCase()).not.toMatch(/\bqa\s+(feedback|test|failure)/i)
     })
 
@@ -44,7 +44,7 @@ describe('Contextual Persona Prompts', () => {
     })
 
     it('returns null if persona has no default and context not found', () => {
-      // Add a test persona without a default
+      
       const originalPrompts = { ...CONTEXT_SPECIFIC_PROMPTS }
       CONTEXT_SPECIFIC_PROMPTS['test-persona'] = {
         'specific': 'Specific prompt'
@@ -53,7 +53,7 @@ describe('Contextual Persona Prompts', () => {
       const prompt = getContextualPrompt('test-persona', 'nonexistent')
       expect(prompt).toBeNull()
       
-      // Restore
+      
       Object.assign(CONTEXT_SPECIFIC_PROMPTS, originalPrompts)
     })
   })
@@ -63,11 +63,11 @@ describe('Contextual Persona Prompts', () => {
       const planningPrompt = CONTEXT_SPECIFIC_PROMPTS['plan-evaluator']['planning']
       const qaPrompt = CONTEXT_SPECIFIC_PROMPTS['plan-evaluator']['qa-plan']
       
-      // Planning prompt should not mention QA test results
+      
       expect(planningPrompt.toLowerCase()).not.toContain('qa test')
       expect(planningPrompt.toLowerCase()).not.toContain('test failures')
       
-      // QA prompt should explicitly mention QA
+      
       expect(qaPrompt.toLowerCase()).toContain('qa')
       expect(qaPrompt.toLowerCase()).toContain('test')
     })
@@ -100,7 +100,7 @@ describe('Contextual Persona Prompts', () => {
       expect(qaFixPrompt.toLowerCase()).toContain('minimal')
       expect(qaFixPrompt.toLowerCase()).toContain('surgical')
       
-      // Default should be more general
+      
       expect(defaultPrompt).not.toContain('QA test')
       expect(defaultPrompt).toContain('engineering work')
     })

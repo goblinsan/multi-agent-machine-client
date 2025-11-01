@@ -1,12 +1,10 @@
 import { cfg } from "../config.js";
 import { fetch } from "undici";
 
-/**
- * Fetch context snapshot for a workflow
- */
+
 export async function fetchContext(workflowId: string) {
   try {
-    // Use context-by-workflow endpoint if available in cfg.dashboardContextEndpoint (overrideable)
+    
     if (cfg.dashboardContextEndpoint && cfg.dashboardContextEndpoint.startsWith('http')) {
       const url = new URL(cfg.dashboardContextEndpoint);
       url.searchParams.set('workflow_id', workflowId);

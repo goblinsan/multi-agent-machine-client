@@ -10,12 +10,12 @@ import { PERSONAS } from "../personaNames.js";
 const taskAPI = new TaskAPI();
 const projectAPI = new ProjectAPI();
 
-// Note: we do not persist externalId->createdId mapping here. The dashboard
-// is the canonical store. If needed, use findTaskIdByExternalId to recover
-// the created id by querying the dashboard project status.
+
+
+
 
 const TASK_STATUS_PRIORITY: Record<string, number> = {
-    // Priority order: blocked > in_review > in_progress > open
+    
     blocked: 0,
     stuck: 0,
     review: 1,
@@ -56,7 +56,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     if (!status) return 3;
     const normalized = normalizeTaskStatus(status);
     if (normalized in TASK_STATUS_PRIORITY) return TASK_STATUS_PRIORITY[normalized];
-    // Fallback pattern matching (in priority order)
+    
     if (status.includes("block") || status.includes("stuck")) return 0;
     if (status.includes("review")) return 1;
     if (status.includes("progress") || status.includes("doing") || status.includes("work") || status.includes("active")) return 2;
@@ -154,7 +154,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
   
     if (!candidates.length) return null;
 
-  // keep silent here; use logger.debug if needed
+  
 
     candidates.sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
@@ -253,15 +253,15 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       if (uuidRegex.test(rawMilestone)) milestoneId = rawMilestone;
       else milestoneSlug = String(rawMilestone);
     }
-    // If no milestone information was provided, default to a safe backlog bucket
-    // This satisfies the dashboard requirement: milestone_id OR (project_id AND milestone_slug)
-    // and aligns with our scheduling policy that unspecified items can live under Future Enhancements.
+    
+    
+    
     if (!milestoneId && !milestoneSlug) {
       milestoneSlug = 'future-enhancements';
     }
   const parentTaskIdRaw = options.parentTaskDescriptor?.id || null;
-  // Only treat as canonical parent id if it looks like a UUID; otherwise we will pass it through
-  // and the dashboard.createDashboardTask will map to parent_task_external_id.
+  
+  
   const isUuid = (s: string) => /^(?:[0-9a-fA-F]{8})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{4})-(?:[0-9a-fA-F]{12})$/.test(s);
   const parentTaskId = (typeof parentTaskIdRaw === 'string' && isUuid(parentTaskIdRaw)) ? parentTaskIdRaw : (parentTaskIdRaw || null);
   const summaries: any[] = [];
@@ -283,7 +283,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
       }
   const descriptionBase = task.description || `Follow-up required for ${options.stage}`;
       const description = scheduleNote ? `${descriptionBase}\n\nSchedule: ${scheduleNote}` : descriptionBase;
-      // If we have a milestone slug but not an ID, attempt to resolve it via the dashboard project status
+      
       let resolvedMilestoneId = milestoneId;
       let resolvedMilestoneSlug = milestoneSlug;
       if (!resolvedMilestoneId && resolvedMilestoneSlug && options.projectId) {
@@ -303,18 +303,18 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
             }
           }
         } catch (err) {
-          // ignore resolution errors
+          
         }
       }
 
-      // derive project_slug if available (use provided projectName or fallback to known project slug)
+      
       const derivedProjectSlug = options.projectName || undefined;
-      // Use deterministic external id for QA follow-ups to prevent duplicates across retries
+      
       const externalId = options.stage === 'qa'
         ? computeQaFollowupExternalId(options.projectId, options.parentTaskDescriptor)
         : `auto-${options.stage}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
 
-      // if QA diagnostics exist on the task, prepare attachments (base64) clipped to configured max size
+      
       let attachments: { name: string; content_base64: string }[] | undefined = undefined;
       try {
   const diag: any = (task.diagnostics || null);
@@ -322,7 +322,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
           const text = typeof diag.text === "string" ? diag.text : (typeof diag === "string" ? diag : JSON.stringify(diag));
           if (text && text.length) {
             const maxBytes = cfg.dashboardMaxAttachmentBytes || 200000;
-            // clip to maxBytes when UTF-8 encoded conservatively: assume 1 char = 1 byte for ASCII; further clipping is acceptable
+            
             let clipped = text;
             if (Buffer.byteLength(clipped, "utf8") > maxBytes) {
               clipped = clipped.slice(0, Math.floor(maxBytes * 0.9));
@@ -332,20 +332,20 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
           }
         }
       } catch (err) {
-        // ignore attachment build errors
+        
         attachments = undefined;
       }
 
-      // If creating QA follow-ups, request initial_status=in_progress so they're visible immediately
+      
       const createOptions: Record<string, any> = { create_milestone_if_missing: cfg.dashboardCreateMilestoneIfMissing };
       if (options.stage === 'qa') createOptions.initial_status = 'in_progress';
       
-      // IMPORTANT: If we couldn't resolve a milestone ID and are using a slug,
-      // we MUST set create_milestone_if_missing=true to avoid 422 errors from the dashboard.
-      // This happens when:
-      // 1. We default to 'future-enhancements' for backlog tasks
-      // 2. The milestone doesn't exist yet in the project
-      // 3. The dashboard API requires the milestone to exist OR create_milestone_if_missing=true
+      
+      
+      
+      
+      
+      
       if (!resolvedMilestoneId && resolvedMilestoneSlug) {
         createOptions.create_milestone_if_missing = true;
         logger.debug('Milestone not resolved to ID, enabling auto-create', {
@@ -376,7 +376,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
         const summaryParts = [title];
         if (schedule) summaryParts.push(`schedule: ${schedule}`);
         summaryParts.push(`priority ${task.defaultPriority ?? 5}`);
-        // Include description so downstream planners have the task details
+        
         summaries.push({ summary: summaryParts.join(" | "), title, externalId, createdId: createdId ? String(createdId) : undefined, description });
       } else {
         logger.warn("dashboard task creation failed", {
@@ -388,7 +388,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
           projectId: options.projectId,
           error: body?.error || body?.body || "unknown"
         });
-        // Do not include non-created items in summaries to avoid downstream status updates on non-existent tasks
+        
       }
     }
 
@@ -402,9 +402,9 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     return `qa-failure:${proj}:${parent}`;
   }
 
-  // Wrapper that asks the summarization persona to condense each task description
-  // before creating the dashboard task. This implements the coordinator responsibility
-  // of running summarizer -> create -> (dashboard) for each follow-up task.
+  
+  
+  
   export async function createDashboardTaskEntriesWithSummarizer(r: any, workflowId: string, tasks: any[], options: {
     stage: "qa" | "devops" | "code-review" | "security";
     milestoneDescriptor: any;
@@ -417,7 +417,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     const results: any[] = [];
 
     for (const task of tasks) {
-      // Ask the centralized summarizer helper to condense the task into concise next steps
+      
       try {
         const title = task.title || `${options.stage.toUpperCase()} follow-up`;
         const desc = task.description || task.summary || `Follow-up required for ${options.stage}`;
@@ -427,7 +427,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
         logger.debug("summarizer helper failed for task, falling back to original description", { task: task.title, error: err });
       }
 
-      // Delegate to the existing createDashboardTaskEntries logic for creation
+      
       const created = await createDashboardTaskEntries([task], options);
       if (created && created.length) results.push(...created);
     }
@@ -435,8 +435,8 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
     return results;
   }
 
-  // Locate a created task id by an externalId within a project by querying the
-  // dashboard project status. Returns the task id string or null if not found.
+  
+  
   export async function findTaskIdByExternalId(externalId: string, projectId: string | null): Promise<string | null> {
     if (!externalId) return null;
     if (!projectId) return null;
@@ -451,7 +451,7 @@ const TASK_STATUS_PRIORITY: Record<string, number> = {
   const ext = (t.external_id ?? t.externalId ?? t.external) || t.externalid || null;
         if (ext && String(ext) === String(externalId)) return String(t.id || t.task_id || t.id);
       }
-      // also try nested containers
+      
       for (const t of candidates) {
         if (!t) continue;
         const nested = Array.isArray(t.items) ? t.items : (Array.isArray(t.tasks) ? t.tasks : null);

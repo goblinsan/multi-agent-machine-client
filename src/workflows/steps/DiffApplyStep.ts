@@ -3,9 +3,7 @@ import { WorkflowContext } from '../engine/WorkflowContext.js';
 import { DiffParser, DiffParseResult as _DiffParseResult } from '../../agents/parsers/DiffParser.js';
 import { applyEditOps } from '../../fileops.js';
 
-/**
- * Configuration for diff apply step
- */
+
 interface DiffApplyStepConfig {
   source_output?: string;
   source_variable?: string;
@@ -17,9 +15,7 @@ interface DiffApplyStepConfig {
   dry_run?: boolean;
 }
 
-/**
- * Workflow step for parsing and applying code diffs to repository
- */
+
 export class DiffApplyStep extends WorkflowStep {
   constructor(config: WorkflowStepConfig) {
     super(config);
@@ -30,7 +26,7 @@ export class DiffApplyStep extends WorkflowStep {
     const startTime = Date.now();
 
     try {
-      // Test bypass: skip diff application when persona/git ops are skipped
+      
       const skipOps = ((): boolean => {
         try {
           return context.getVariable('SKIP_GIT_OPERATIONS') === true || context.getVariable('SKIP_PERSONA_OPERATIONS') === true;
@@ -67,7 +63,7 @@ export class DiffApplyStep extends WorkflowStep {
         dryRun: stepConfig.dry_run || false
       });
 
-      // Get diff content from step output or context variable
+      
       const diffContent = this.getDiffContent(context, stepConfig);
       if (!diffContent) {
         context.logger.error('CRITICAL: No diff content available to apply', {
@@ -79,7 +75,7 @@ export class DiffApplyStep extends WorkflowStep {
         throw new Error('CRITICAL: No diff content found. Implementation step may have failed or returned no changes.');
       }
 
-      // Parse the diff content
+      
       const parseResult = DiffParser.parsePersonaResponse(diffContent);
       
       if (!parseResult.success) {
@@ -92,7 +88,7 @@ export class DiffApplyStep extends WorkflowStep {
         throw new Error(`Diff parsing failed: ${parseResult.errors.join(', ')}`);
       }
 
-      // Log parsing results
+      
       context.logger.info('Diff parsing completed', {
         stepName: this.config.name,
         diffBlocksFound: parseResult.diffBlocks.length,
@@ -116,12 +112,12 @@ export class DiffApplyStep extends WorkflowStep {
         throw new Error('Coordinator-critical: Implementation returned no diff operations to apply. Aborting.');
       }
 
-      // Apply validation if requested
+      
       if (stepConfig.validation && stepConfig.validation !== 'none') {
         await this.validateChanges(parseResult.editSpec, context, stepConfig);
       }
 
-      // Apply the changes if not in dry-run mode
+      
       let applyResult;
       if (stepConfig.dry_run) {
         context.logger.info('Dry run mode - changes not applied', {
@@ -135,13 +131,13 @@ export class DiffApplyStep extends WorkflowStep {
           sha: 'dry-run'
         };
       } else {
-        // Create edit spec JSON for fileops
+        
         const editSpecJson = JSON.stringify(parseResult.editSpec);
         
-        // Get current branch from context (encapsulates branch resolution logic)
+        
         const currentBranch = context.getCurrentBranch();
         
-        // Apply the edits
+        
         applyResult = await applyEditOps(editSpecJson, {
           repoRoot: context.repoRoot,
           maxBytes: stepConfig.max_file_size || 512 * 1024,
@@ -153,7 +149,7 @@ export class DiffApplyStep extends WorkflowStep {
           commitMessage: stepConfig.commit_message || this.generateCommitMessage(context)
         });
 
-        // Critical validation: ensure changes were actually applied
+        
         if (!applyResult.changed || applyResult.changed.length === 0) {
           context.logger.error('Critical failure: No file changes after applying diffs', {
             stepName: this.config.name,
@@ -164,7 +160,7 @@ export class DiffApplyStep extends WorkflowStep {
           throw new Error('Coordinator-critical: Implementation edits produced no file changes. Aborting.');
         }
 
-        // Critical validation: ensure commit was created (applyEditOps handles commit/push internally)
+        
         if (!applyResult.sha || applyResult.sha === '') {
           context.logger.error('Critical failure: No commit SHA after applying changes', {
             stepName: this.config.name,
@@ -223,12 +219,12 @@ export class DiffApplyStep extends WorkflowStep {
     const warnings: string[] = [];
     const stepConfig = this.config.config as DiffApplyStepConfig || {};
 
-    // Check that we have a source for diff content
+    
     if (!stepConfig.source_output && !stepConfig.source_variable) {
       errors.push('Must specify either source_output or source_variable for diff content');
     }
 
-    // Validate source exists
+    
     if (stepConfig.source_output && !context.hasStepOutput(stepConfig.source_output)) {
       errors.push(`Source output '${stepConfig.source_output}' not found in context`);
     }
@@ -237,12 +233,12 @@ export class DiffApplyStep extends WorkflowStep {
       warnings.push(`Source variable '${stepConfig.source_variable}' not found in context`);
     }
 
-    // Validate validation setting
+    
     if (stepConfig.validation && !['none', 'syntax_check', 'full'].includes(stepConfig.validation)) {
       errors.push(`Invalid validation setting: ${stepConfig.validation}`);
     }
 
-    // Validate max file size
+    
     if (stepConfig.max_file_size !== undefined && stepConfig.max_file_size <= 0) {
       errors.push('max_file_size must be positive');
     }
@@ -250,11 +246,9 @@ export class DiffApplyStep extends WorkflowStep {
     return { valid: errors.length === 0, errors, warnings };
   }
 
-  /**
-   * Get diff content from specified source
-   */
+  
   private getDiffContent(context: WorkflowContext, config: DiffApplyStepConfig): string | null {
-    // Try step output first
+    
     if (config.source_output) {
       const output = context.getStepOutput(config.source_output);
       
@@ -265,7 +259,7 @@ export class DiffApplyStep extends WorkflowStep {
       });
       
       if (output) {
-        // Handle different output formats
+        
         if (typeof output === 'string') {
           return output;
         } else if (output.diffs || output.code_diffs) {
@@ -275,19 +269,19 @@ export class DiffApplyStep extends WorkflowStep {
         } else if (output.diff) {
           return output.diff;
         } else if (output.ops && Array.isArray(output.ops)) {
-          // Handle pre-parsed ops structure at top level - convert to synthetic diff format
+          
           context.logger.info('DiffApplyStep: detected pre-parsed ops structure, converting to diff format', {
             opsCount: output.ops.length
           });
           return this.convertOpsToDiffFormat(output.ops);
         } else if (output.result) {
-          // result might be a stringified JSON or direct string
+          
           if (typeof output.result === 'string') {
             return output.result;
           } else if (output.result.diffs || output.result.code_diffs) {
             return output.result.diffs || output.result.code_diffs;
           } else if (output.result.ops && Array.isArray(output.result.ops)) {
-            // Handle pre-parsed ops structure in result field
+            
             context.logger.info('DiffApplyStep: detected pre-parsed ops in result field, converting to diff format', {
               opsCount: output.result.ops.length
             });
@@ -297,7 +291,7 @@ export class DiffApplyStep extends WorkflowStep {
           return output.output;
         }
         
-        // Log warning if we couldn't find diffs
+        
         context.logger.warn('DiffApplyStep: could not extract diff content from output', {
           source_output: config.source_output,
           outputPreview: JSON.stringify(output).substring(0, 500)
@@ -305,7 +299,7 @@ export class DiffApplyStep extends WorkflowStep {
       }
     }
 
-    // Try context variable
+    
     if (config.source_variable) {
       const variable = context.getVariable(config.source_variable);
       if (typeof variable === 'string') {
@@ -316,16 +310,13 @@ export class DiffApplyStep extends WorkflowStep {
     return null;
   }
 
-  /**
-   * Convert pre-parsed ops array to synthetic diff format
-   * This allows the step to handle both raw diff text and structured ops
-   */
+  
   private convertOpsToDiffFormat(ops: any[]): string {
     const diffBlocks: string[] = [];
     
     for (const op of ops) {
       if (op.action === 'upsert' && op.path && op.content !== undefined) {
-        // Create a synthetic unified diff for upsert operations
+        
         const content = op.content;
         const lines = content.split('\n');
         const hunks = lines.map((line: string) => `+${line}`).join('\n');
@@ -339,7 +330,7 @@ ${hunks}
         
         diffBlocks.push(diffBlock);
       } else if (op.action === 'delete' && op.path) {
-        // Create a synthetic unified diff for delete operations
+        
         const diffBlock = `\`\`\`diff
 --- a/${op.path}
 +++ /dev/null
@@ -353,26 +344,22 @@ ${hunks}
     return diffBlocks.join('\n\n');
   }
 
-  /**
-   * Validate changes before applying (placeholder for now)
-   */
+  
   private async validateChanges(editSpec: any, context: WorkflowContext, config: DiffApplyStepConfig): Promise<void> {
     if (config.validation === 'syntax_check') {
-      // TODO: Implement syntax checking for different file types
+      
       context.logger.debug('Syntax validation not yet implemented', {
         stepName: this.config.name
       });
     } else if (config.validation === 'full') {
-      // TODO: Implement full validation (compilation, tests, etc.)
+      
       context.logger.debug('Full validation not yet implemented', {
         stepName: this.config.name
       });
     }
   }
 
-  /**
-   * Generate a commit message based on context
-   */
+  
   private generateCommitMessage(context: WorkflowContext): string {
     const task = context.getVariable('selected_task');
     const milestone = context.getVariable('selected_milestone');

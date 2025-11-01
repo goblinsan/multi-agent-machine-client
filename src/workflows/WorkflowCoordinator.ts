@@ -13,9 +13,7 @@ import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
 import { TaskFetcher } from "./coordinator/TaskFetcher.js";
 import { WorkflowSelector } from "./coordinator/WorkflowSelector.js";
 
-/**
- * Enhanced coordinator that uses the new WorkflowEngine for task processing
- */
+
 export class WorkflowCoordinator {
   private engine: WorkflowEngine;
   private workflowsLoaded: boolean = false;
@@ -24,11 +22,11 @@ export class WorkflowCoordinator {
   
   private isTestEnv(): boolean {
     try {
-      // Detect Vitest/Jest-like environments
+      
       if (process.env.NODE_ENV === 'test') return true;
       if (process.env.VITEST) return true;
       if (typeof (globalThis as any).vi !== 'undefined') return true;
-    } catch { /* process.env access may throw in some environments */ }
+    } catch {  }
     return false;
   }
 
@@ -38,22 +36,17 @@ export class WorkflowCoordinator {
     this.workflowSelector = new WorkflowSelector();
   }
 
-  /**
-   * Fetch project tasks (instance method for test-time spying/mocking)
-   * Tests expect to spy on coordinator.fetchProjectTasks, so delegate to TaskFetcher here.
-   */
+  
   public async fetchProjectTasks(projectId: string): Promise<any[]> {
     return await this.taskFetcher.fetchTasks(projectId);
   }
 
-  /**
-   * Load workflow definitions from the definitions directory
-   */
+  
   async loadWorkflows(): Promise<void> {
     if (this.workflowsLoaded) return;
 
     try {
-  // Build path with forward slashes to keep tests platform-agnostic
+  
   const workflowsPath = `${process.cwd().replace(/\\/g, '/')}/src/workflows/definitions`;
       const definitions = await this.engine.loadWorkflowsFromDirectory(workflowsPath);
       
@@ -68,15 +61,13 @@ export class WorkflowCoordinator {
     }
   }
 
-  /**
-   * Main coordination function that processes tasks using workflow engine
-   */
+  
   async handleCoordinator(transport: MessageTransport, r: any, msg: any, payload: any): Promise<any> {
     const workflowId: string = firstString(msg?.workflow_id) || randomUUID();
     let projectId: string = firstString(msg?.project_id, payload?.project_id, payload?.projectId) || '';
     
     if (!projectId) {
-      // In test environments, default to a stub project to allow targeted tests to proceed
+      
       if (this.isTestEnv()) {
         projectId = 'p1';
       } else {
@@ -84,7 +75,7 @@ export class WorkflowCoordinator {
       }
     }
 
-    // Ensure workflows are loaded
+    
     await this.loadWorkflows();
 
     logger.info("WorkflowCoordinator starting", {
@@ -94,17 +85,17 @@ export class WorkflowCoordinator {
     });
 
     try {
-      // Fetch project information
+      
       const projectInfo: any = await projectAPI.fetchProjectStatus(projectId);
       const details: any = await projectAPI.fetchProjectStatusDetails(projectId).catch(() => null);
       
       const projectName = firstString(projectInfo?.name, payload?.project_name) || 'project';
       const projectSlug = slugify(firstString(projectInfo?.slug, payload?.project_slug, projectName) || projectName || 'project');
 
-      // Resolve repository
+      
       let repoRemoteCandidate = this.extractRepoRemote(details, projectInfo, payload);
       if (!repoRemoteCandidate) {
-        // In test environments, provide a stub remote to allow tests to proceed
+        
         if (this.isTestEnv()) {
           repoRemoteCandidate = 'git@github.com:example/stub-repo.git';
           logger.warn('No repository remote found; using stub remote for tests', { projectId, repoRemoteCandidate });
@@ -120,13 +111,13 @@ export class WorkflowCoordinator {
         project_slug: projectSlug 
       });
 
-    // Process tasks in a loop until all are complete
+    
     const results = [];
   let iterationCount = 0;
-  // Safety limit to prevent infinite loops while allowing large projects
-  // Each iteration: fetches fresh tasks → processes 1 task → loops
-  // This allows immediate response to urgent tasks added during processing
-  // Default 500 iterations handles up to 500 tasks (configurable via COORDINATOR_MAX_ITERATIONS)
+  
+  
+  
+  
   const maxIterations = this.isTestEnv() ? 2 : (cfg.coordinatorMaxIterations ?? 500);
   let abortedDueToFailure = false;
   let abortMetadata: { taskId?: string; error?: string; failedStep?: string } | null = null;
@@ -134,13 +125,13 @@ export class WorkflowCoordinator {
       while (iterationCount < maxIterations) {
         iterationCount++;
         
-        // CRITICAL: Fetch fresh tasks from dashboard at each iteration
-        // This allows immediate response to urgent tasks added during processing
-        // (e.g., QA failures, security issues, follow-up tasks)
+        
+        
+        
         const currentTasks = await this.fetchProjectTasks(projectId);
         
-        // CRITICAL: No fallbacks! If dashboard returns no tasks and we're not in test mode,
-        // something is wrong - abort immediately
+        
+        
         if (!currentTasks || !Array.isArray(currentTasks)) {
           logger.error("CRITICAL: Dashboard returned invalid task data", {
             workflowId,
@@ -155,7 +146,7 @@ export class WorkflowCoordinator {
           .filter(task => this.taskFetcher.normalizeTaskStatus(task?.status) !== 'done')
           .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));
         
-        // Debug logging to see extracted tasks
+        
         logger.info("Fetched tasks debug", {
           workflowId,
           projectId,
@@ -182,8 +173,8 @@ export class WorkflowCoordinator {
           pendingTaskIds: currentPendingTasks.map(t => t?.id).filter(Boolean)
         });
         
-        // Process next pending task (tasks are sequential, not parallel)
-        // We refetch tasks each iteration to pick up any new tasks created during processing
+        
+        
         const task = currentPendingTasks[0];
         let batchFailed = false;
         
@@ -242,14 +233,14 @@ export class WorkflowCoordinator {
           break;
         }
         
-        // Add small delay between iterations to prevent overwhelming the system
-        // Skip delay in test mode to speed up tests
+        
+        
         if (!this.isTestEnv() && currentPendingTasks.length > 1) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       
-      // Check if we hit max iterations without completing all tasks
+      
       if (!abortedDueToFailure && iterationCount >= maxIterations) {
         logger.warn("Hit maximum iteration limit", {
           workflowId,
@@ -294,9 +285,7 @@ export class WorkflowCoordinator {
     }
   }
 
-  /**
-   * Process a single task using the appropriate workflow
-   */
+  
   private async processTask(transport: MessageTransport, task: any, context: {
     workflowId: string;
     projectId: string;
@@ -306,15 +295,15 @@ export class WorkflowCoordinator {
     branch: string;
     remote?: string | null;
   }): Promise<any> {
-    // Test-compat: allow calling with signature (task, context) where transport is omitted
-    // If called as processTask(task, context), shift arguments accordingly
+    
+    
     if (arguments.length === 2) {
       context = task as any;
       task = transport as any;
-      // Provide a minimal stub transport; engine mocks typically don't use it
+      
       transport = {} as any;
     }
-    // Ensure transport is available for workflow execution
+    
     if (!transport) {
       throw new Error('Transport is required for task processing');
     }
@@ -322,7 +311,7 @@ export class WorkflowCoordinator {
     const taskType = this.workflowSelector.determineTaskType(task);
     const scope = this.workflowSelector.determineTaskScope(task);
     
-    // Use WorkflowSelector to select the appropriate workflow
+    
     const selection = this.workflowSelector.selectWorkflowForTask(this.engine, task);
     
     if (!selection) {
@@ -342,9 +331,7 @@ export class WorkflowCoordinator {
     return this.executeWorkflow(transport, workflow, task, context);
   }
 
-  /**
-   * Execute a workflow for a specific task
-   */
+  
   private async executeWorkflow(transport: MessageTransport, workflow: any, task: any, context: {
     workflowId: string;
     projectId: string;
@@ -382,26 +369,26 @@ export class WorkflowCoordinator {
       projectId: context.projectId,
       projectName: context.projectName,
       projectSlug: context.projectSlug,
-      // Add milestone information if available - pass full milestone object and individual fields
+      
       milestone: task?.milestone || null,
       milestone_name: task?.milestone?.name || task?.milestone_name || null,
       milestoneId: task?.milestone?.id || task?.milestone_id || null,
       milestone_slug: task?.milestone?.slug || task?.milestone_slug || null,
       milestone_description: task?.milestone?.description || null,
       milestone_status: task?.milestone?.status || null,
-      // Task-specific fields for branch naming
+      
       task_slug: task?.slug || task?.task_slug || null,
-      // Compute feature branch name based on milestone/task slug (using branchUtils logic)
+      
       featureBranchName: this.workflowSelector.computeFeatureBranchName(task, context.projectSlug),
-      // Skip pull task step since we're injecting the task directly
+      
       SKIP_PULL_TASK: true,
-      // CRITICAL: Always use remote URL for distributed systems - never pass local paths
-      // Each agent machine will resolve the remote to their local PROJECT_BASE
+      
+      
       repo_remote: context.remote,
       effective_repo_path: context.remote
     };
     
-    // Validate that we have a remote URL for distributed coordination
+    
     if (!context.remote) {
       logger.error('No repository remote URL available for workflow execution', {
         workflowId: context.workflowId,
@@ -411,10 +398,10 @@ export class WorkflowCoordinator {
       throw new Error('Cannot execute workflow: no repository remote URL. Configure the repository URL in the project dashboard.');
     }
 
-    // Create a modified workflow that skips the pull-task step when we have a task
+    
     const modifiedWorkflow = this.createTaskInjectedWorkflow(workflow, task);
 
-    // Execute workflow with transport (passed as parameter)
+    
     const result = await this.engine.executeWorkflowDefinition(
       modifiedWorkflow,
       context.projectId,
@@ -453,25 +440,23 @@ export class WorkflowCoordinator {
     };
   }
 
-  /**
-   * Create a modified workflow that skips pull-task step when task is provided
-   */
+  
   private createTaskInjectedWorkflow(workflow: any, task: any): any {
     if (!task || !workflow.steps) {
       return workflow;
     }
 
-    // Create a copy of the workflow
+    
     const modifiedWorkflow = JSON.parse(JSON.stringify(workflow));
     
-    // Filter out the pull-task step since we're injecting the task directly
+    
     modifiedWorkflow.steps = workflow.steps.filter((step: any) => step.type !== 'PullTaskStep');
     
-    // Update dependencies - remove references to pull-task step
+    
     modifiedWorkflow.steps.forEach((step: any) => {
       if (step.depends_on && Array.isArray(step.depends_on)) {
         step.depends_on = step.depends_on.filter((dep: string) => dep !== 'pull-task');
-        // If no dependencies left, remove the depends_on property
+        
         if (step.depends_on.length === 0) {
           delete step.depends_on;
         }
@@ -481,9 +466,7 @@ export class WorkflowCoordinator {
     return modifiedWorkflow;
   }
 
-  /**
-   * Extract repository remote from various sources
-   */
+  
   private extractRepoRemote(details: any, projectInfo: any, payload: any): string {
     const pickRemoteFrom = (obj: any) => firstString(
       obj?.repository?.clone_url,

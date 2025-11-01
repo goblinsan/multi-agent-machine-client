@@ -5,7 +5,7 @@ import { logger } from '../src/logger.js';
 import fs from 'fs/promises';
 import _path from 'path';
 
-// Mock external dependencies
+
 vi.mock('fs/promises');
 vi.mock('../src/scanRepo.js', () => ({
   scanRepo: vi.fn()
@@ -41,7 +41,7 @@ describe('ContextStep Change Detection', () => {
       logger: logger
     } as any;
 
-    // Mock fs.stat to validate repoPath exists and is a directory
+    
     (fs.stat as any).mockResolvedValue({
       isDirectory: () => true,
       mtime: new Date(Date.now() - 60000)
@@ -49,10 +49,10 @@ describe('ContextStep Change Detection', () => {
   });
 
   it('should rescan when context files do not exist', async () => {
-    // Mock file access to simulate missing context files
+    
     (fs.access as any).mockRejectedValue(new Error('File not found'));
     
-    // Mock scanRepo for the full scan
+    
     const { scanRepo } = await import('../src/scanRepo.js');
     (scanRepo as any).mockResolvedValue([
       { path: 'src/test.ts', bytes: 1000, lines: 50, mtime: Date.now() }
@@ -75,10 +75,10 @@ describe('ContextStep Change Detection', () => {
     const lastScanTime = Date.now() - 60000;
     const newerFileTime = Date.now() - 30000;
 
-    // Mock context files exist
+    
     (fs.access as any).mockResolvedValue(undefined);
     
-    // Mock snapshot file stat - need different mock for context file vs repo stat
+    
     (fs.stat as any)
       .mockResolvedValueOnce({
         isDirectory: () => true,
@@ -89,7 +89,7 @@ describe('ContextStep Change Detection', () => {
         mtime: new Date(lastScanTime)
       });
 
-    // Mock quick scan to find newer files
+    
     const { scanRepo } = await import('../src/scanRepo.js');
     (scanRepo as any)
       .mockResolvedValueOnce([
@@ -115,10 +115,10 @@ describe('ContextStep Change Detection', () => {
     const lastScanTime = Date.now() - 60000;
     const olderFileTime = Date.now() - 120000;
 
-    // Mock context files exist
+    
     (fs.access as any).mockResolvedValue(undefined);
     
-    // Mock stats: first for repoPath validation, then for snapshot file
+    
     (fs.stat as any)
       .mockResolvedValueOnce({
         isDirectory: () => true,
@@ -129,13 +129,13 @@ describe('ContextStep Change Detection', () => {
         mtime: new Date(lastScanTime)
       });
 
-    // Mock quick scan to find no newer files
+    
     const { scanRepo } = await import('../src/scanRepo.js');
     (scanRepo as any).mockResolvedValue([
       { path: 'src/test.ts', bytes: 1000, lines: 50, mtime: olderFileTime }
     ]);
 
-    // Mock existing context data
+    
     (fs.readFile as any).mockResolvedValue(JSON.stringify({
       files: [
         { path: 'src/test.ts', bytes: 1000, lines: 50, mtime: olderFileTime }
@@ -164,7 +164,7 @@ describe('ContextStep Change Detection', () => {
   });
 
   it('should force rescan when forceRescan is true', async () => {
-    // Create context step with force rescan
+    
     const forceRescanStep = new ContextStep({
       name: 'test-context-force',
       type: 'ContextStep',
@@ -174,7 +174,7 @@ describe('ContextStep Change Detection', () => {
       }
     });
 
-    // Mock scanRepo for the full scan
+    
     const { scanRepo } = await import('../src/scanRepo.js');
     (scanRepo as any).mockResolvedValue([
       { path: 'src/test.ts', bytes: 1000, lines: 50, mtime: Date.now() }
@@ -193,17 +193,17 @@ describe('ContextStep Change Detection', () => {
   });
 
   it('should handle errors gracefully and fall back to rescan', async () => {
-    // Mock repoPath validation to succeed
+    
     (fs.stat as any).mockResolvedValueOnce({
       isDirectory: () => true,
       mtime: new Date()
     });
     
-    // Mock context files exist but reading snapshot stats fails
+    
     (fs.access as any).mockResolvedValue(undefined);
     (fs.stat as any).mockRejectedValueOnce(new Error('Permission denied'));
 
-    // Mock scanRepo for the full scan
+    
     const { scanRepo } = await import('../src/scanRepo.js');
     (scanRepo as any).mockResolvedValue([
       { path: 'src/test.ts', bytes: 1000, lines: 50, mtime: Date.now() }

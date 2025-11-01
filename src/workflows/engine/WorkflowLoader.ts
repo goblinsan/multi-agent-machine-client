@@ -3,9 +3,7 @@ import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import type { WorkflowDefinition } from '../WorkflowEngine';
 
-/**
- * Handles loading and validation of workflow definitions from YAML files
- */
+
 export class WorkflowLoader {
   private workflowDefinitions: Map<string, WorkflowDefinition>;
   private defaultWorkflowsLoaded = false;
@@ -16,25 +14,16 @@ export class WorkflowLoader {
     this.stepRegistry = stepRegistry;
   }
 
-  /**
-   * Ensure default workflow definitions are loaded once from the repo
-   */
+  
   async ensureDefaultWorkflowsLoaded(): Promise<void> {
     if (this.defaultWorkflowsLoaded) return;
     
     const baseDir = process.cwd();
-    const legacyDir = join(baseDir, 'src', 'workflows', 'definitions');
-    const v3Dir = join(baseDir, 'src', 'workflows', 'definitions-v3');
+    const definitionsDir = join(baseDir, 'src', 'workflows', 'definitions');
     const subDir = join(baseDir, 'src', 'workflows', 'sub-workflows');
     
     try {
-      await this.loadWorkflowsFromDirectory(legacyDir);
-    } catch {
-      void 0;
-    }
-    
-    try {
-      await this.loadWorkflowsFromDirectory(v3Dir);
+      await this.loadWorkflowsFromDirectory(definitionsDir);
     } catch {
       void 0;
     }
@@ -48,9 +37,7 @@ export class WorkflowLoader {
     this.defaultWorkflowsLoaded = true;
   }
 
-  /**
-   * Load workflow definition from YAML file
-   */
+  
   async loadWorkflowFromFile(filePath: string): Promise<WorkflowDefinition> {
     try {
       const yamlContent = await readFile(filePath, 'utf-8');
@@ -65,9 +52,7 @@ export class WorkflowLoader {
     }
   }
 
-  /**
-   * Load all workflow definitions from a directory
-   */
+  
   async loadWorkflowsFromDirectory(directoryPath: string): Promise<WorkflowDefinition[]> {
     try {
       const files = await readdir(directoryPath);
@@ -93,30 +78,22 @@ export class WorkflowLoader {
     }
   }
 
-  /**
-   * Get workflow definition by name
-   */
+  
   getWorkflowDefinition(name: string): WorkflowDefinition | undefined {
     return this.workflowDefinitions.get(name);
   }
 
-  /**
-   * Get all loaded workflow definitions
-   */
+  
   getWorkflowDefinitions(): WorkflowDefinition[] {
     return Array.from(this.workflowDefinitions.values());
   }
 
-  /**
-   * Get the workflow definitions map
-   */
+  
   getWorkflowDefinitionsMap(): Map<string, WorkflowDefinition> {
     return this.workflowDefinitions;
   }
 
-  /**
-   * Validate workflow definition structure
-   */
+  
   private validateWorkflowDefinition(definition: WorkflowDefinition): void {
     if (!definition.name) {
       throw new Error('Workflow definition must have a name');
@@ -126,7 +103,7 @@ export class WorkflowLoader {
       throw new Error('Workflow definition must have at least one step');
     }
     
-    // Validate step types
+    
     for (const step of definition.steps) {
       const hasTemplate = !!(step as any).template;
       if (!hasTemplate && !this.stepRegistry.has(step.type)) {
@@ -134,7 +111,7 @@ export class WorkflowLoader {
       }
     }
     
-    // Validate dependencies
+    
     const stepNames = new Set(definition.steps.map(s => s.name));
     for (const step of definition.steps) {
       if (step.depends_on) {

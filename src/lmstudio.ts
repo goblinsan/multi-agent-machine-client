@@ -16,7 +16,7 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const headers: Record<string,string> = { "Content-Type": "application/json" };
-      // allow LM Studio API key via config if present
+      
       if ((cfg as any).lmsApiKey) headers["Authorization"] = `Bearer ${(cfg as any).lmsApiKey}`;
 
       const payload = { model, messages, temperature };
@@ -42,17 +42,17 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
     } catch (err: any) {
       clearTimeout(timer);
       lastErr = err;
-      // If aborted due to timeout, mark clearly
+      
       if (err && (err.name === 'AbortError' || err.type === 'aborted')) {
         lastErr = new Error(`LM Studio request aborted after ${timeoutMs}ms`);
       }
-      // Log network/undici-specific errors with details
+      
       logger.warn("callLMStudio attempt failed", { url, attempt, errorName: err?.name, errorMessage: err?.message, code: err?.code, stack: err?.stack ? String(err.stack).slice(0,200) : undefined });
 
-      // If last attempt, break and rethrow a contextual error below
+      
       if (attempt === maxRetries) break;
 
-      // exponential backoff with jitter
+      
       const backoff = calculateBackoffDelay(attempt, {
         initialDelayMs: 500,
         backoffMultiplier: 2,
@@ -66,7 +66,7 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
 
   const errDetails = lastErr && typeof lastErr === 'object' ? (lastErr.message || String(lastErr)) : String(lastErr || 'fetch failed');
   const err = new Error(`callLMStudio fetch failed for ${url}: ${errDetails}`);
-  // attach original error for callers that inspect it
+  
   (err as any).cause = lastErr;
   logger.error("callLMStudio failed after retries", { url, error: errDetails });
   throw err;

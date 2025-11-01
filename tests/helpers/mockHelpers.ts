@@ -7,15 +7,9 @@ import * as fileops from '../../src/fileops.js';
 import * as gitUtils from '../../src/gitUtils.js';
 import { sent } from '../testCapture.js';
 
-/**
- * Common test helper utilities for mocking Redis, personas, dashboard, and git operations.
- * Extracted from successful tests to promote reusability and consistency.
- */
 
-/**
- * Redis client mock that prevents actual Redis connections during tests.
- * Use this mock at module level: vi.mock('../src/redisClient.js', () => createRedisMock())
- */
+
+
 export function createRedisMock() {
   return {
     makeRedis: vi.fn().mockResolvedValue({
@@ -31,9 +25,7 @@ export function createRedisMock() {
   };
 }
 
-/**
- * Project structure for testing with tasks and milestones
- */
+
 export interface TestProject {
   id: string;
   name: string;
@@ -42,9 +34,7 @@ export interface TestProject {
   repositories?: Array<{ url: string }>;
 }
 
-/**
- * Milestone structure for testing
- */
+
 export interface TestMilestone {
   id: string;
   name: string;
@@ -52,9 +42,7 @@ export interface TestMilestone {
   tasks: Array<{ id: string; name: string; status: string }>;
 }
 
-/**
- * Dashboard API mocking utilities
- */
+
 export class DashboardMockHelper {
   private project: TestProject;
   private milestones: TestMilestone[];
@@ -68,33 +56,31 @@ export class DashboardMockHelper {
     this.milestones = milestones;
   }
 
-  /**
-   * Set up all dashboard API mocks for a test scenario
-   */
+  
   setupMocks() {
-    // Mock ProjectAPI prototype methods
+    
     vi.spyOn(ProjectAPI.prototype, 'fetchProjectStatus').mockImplementation(async () => {
-      // Filter out tasks that have been marked as done
+      
       const openTasks = this.project.tasks.filter(t => this.updatedTasks[t.id] !== 'done');
       return { ...this.project, tasks: openTasks } as any;
     });
 
     vi.spyOn(ProjectAPI.prototype, 'fetchProjectStatusDetails').mockImplementation(async () => {
-      // Return fresh milestone data that reflects current task statuses
+      
       return this.milestones.length > 0 ? { milestones: this.milestones } as any : null as any;
     });
 
     vi.spyOn(ProjectAPI.prototype, 'fetchProjectMilestones').mockResolvedValue(this.milestones as any);
 
-    // CRITICAL: Mock fetchProjectTasks() - the actual API used by TaskFetcher
-    // This is the single source of truth for task data
+    
+    
     vi.spyOn(ProjectAPI.prototype, 'fetchProjectTasks').mockImplementation(async () => {
-      // Filter out tasks that have been marked as done
+      
       const openTasks = this.project.tasks.filter(t => this.updatedTasks[t.id] !== 'done');
       return openTasks as any;
     });
 
-    // Mock TaskAPI prototype methods
+    
     vi.spyOn(TaskAPI.prototype, 'fetchTask').mockImplementation(async (taskId: string) => {
       const task = this.project.tasks.find(t => t.id === taskId);
       return { ...task, lock_version: task?.lock_version || 0 } as any;
@@ -103,13 +89,13 @@ export class DashboardMockHelper {
     this.updateTaskStatusSpy = vi.spyOn(TaskAPI.prototype, 'updateTaskStatus').mockImplementation(async (taskId: string, status: string) => {
       this.updatedTasks[taskId] = status;
       
-      // Update task in project
+      
       const task = this.project.tasks.find(t => t.id === taskId);
       if (task) {
         task.status = status;
       }
       
-      // Update task in milestones
+      
       this.milestones.forEach(m => {
         const task = m.tasks.find(t => t.id === taskId);
         if (task) {
@@ -123,38 +109,30 @@ export class DashboardMockHelper {
     return this;
   }
 
-  /**
-   * Get the current task status updates
-   */
+  
   getUpdatedTasks() {
     return { ...this.updatedTasks };
   }
 
-  /**
-   * Reset task status tracking
-   */
+  
   resetTaskUpdates() {
     this.updatedTasks = {};
     return this;
   }
 }
 
-/**
- * Persona completion responses for different workflow steps
- */
+
 export interface PersonaCompletions {
   [stepKey: string]: any;
 }
 
-/**
- * Persona mocking utilities
- */
+
 export class PersonaMockHelper {
   private completions: PersonaCompletions = {};
 
   constructor(completions: PersonaCompletions = {}) {
     this.completions = {
-      // Default completions
+      
       '1-context': { fields: { result: JSON.stringify({}) }, id: 'evt-context' },
       '2-plan': { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'implement feature' }] } }) }, id: 'evt-plan' },
       '2-implementation': { fields: { result: JSON.stringify({ status: 'ok', output: 'built', ops: [{ action: 'upsert', path: 'dummy.txt', content: 'hello' }] }) }, id: 'evt-impl' },
@@ -163,10 +141,10 @@ export class PersonaMockHelper {
       '3-security': { fields: { result: JSON.stringify({ status: 'pass', details: 'security ok' }) }, id: 'evt-sec' },
       '3-devops': { fields: { result: JSON.stringify({ status: 'pass', details: 'deployed' }) }, id: 'evt-devops' },
       '4-implementation-plan': { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'followup' }] } }) }, id: 'evt-final-plan' },
-      // Plan evaluation completions
+      
       'plan-evaluator-pass': { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-eval-pass' },
       'plan-evaluator-fail': { fields: { result: JSON.stringify({ status: 'fail', reason: 'Plan not relevant to feedback' }) }, id: 'evt-eval-fail' },
-      // QA failure related completions
+      
       '3.6-plan-revision': { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'address QA feedback' }] }, output: '' }) }, id: 'evt-plan-revised' },
       '3.7-evaluate-qa-plan-revised': { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-eval-pass-revised' },
       'qa-created-tasks': { fields: { result: JSON.stringify({ payload: { plan: [{ goal: 'followup' }] } }) }, id: 'evt-planner-followup' },
@@ -174,11 +152,9 @@ export class PersonaMockHelper {
     };
   }
 
-  /**
-   * Set up persona request and completion mocking
-   */
+  
   setupMocks() {
-    // Clear sent array for test
+    
     sent.length = 0;
 
     vi.spyOn(persona, 'sendPersonaRequest').mockImplementation(async (_r: any, opts: any) => {
@@ -192,7 +168,7 @@ export class PersonaMockHelper {
       const match = sent.find(s => s.corrId === corrId) as any;
       
       if (!match) {
-        // Fallback: if corrId looks like a step name, use that
+        
         if (this.completions[corrId]) {
           return this.completions[corrId];
         }
@@ -201,7 +177,7 @@ export class PersonaMockHelper {
 
       const step = match.step;
       
-      // Handle specific persona routing
+      
       if (match.toPersona === 'plan-evaluator') {
         const plan = match.payload?.plan;
         if (plan && this.shouldEvaluatorFail(plan)) {
@@ -214,48 +190,44 @@ export class PersonaMockHelper {
       if (match.toPersona === 'project-manager') {
         const task = match.payload?.task;
         if (task) {
-          // Task status update is handled by the mocked TaskAPI.updateTaskStatus
-          // No need to call it directly here
+          
+          
         }
         return { fields: { result: JSON.stringify({ status: 'pass' }) }, id: 'evt-pm' };
       }
 
-      // Handle step-based completions
+      
       if (this.completions[step]) {
         const completion = this.completions[step];
         
-        // Special handling for devops step to mark tasks as done
+        
         if (step === '3-devops') {
           const task = match.payload?.task;
           if (task && task.id) {
-            // Task status update is handled by the mocked TaskAPI.updateTaskStatus
-            // The actual workflow will call it, no need to duplicate here
+            
+            
           }
         }
         
         return completion;
       }
 
-      // Default fallback
+      
       return { fields: { result: JSON.stringify({ status: 'ok' }) }, id: 'evt-unknown' } as any;
     });
 
     return this;
   }
 
-  /**
-   * Add or override completion responses
-   */
+  
   addCompletion(stepKey: string, completion: any) {
     this.completions[stepKey] = completion;
     return this;
   }
 
-  /**
-   * Override evaluator failure logic for testing plan evaluation failures
-   */
+  
   private shouldEvaluatorFail(plan: any): boolean {
-    // Default logic: fail if plan goal is 'implement new feature' (irrelevant to QA feedback)
+    
     if (plan?.payload?.plan?.[0]?.goal === 'implement new feature') {
       return true;
     }
@@ -266,17 +238,13 @@ export class PersonaMockHelper {
   }
 }
 
-/**
- * Git utilities mocking for tests
- */
+
 export class GitMockHelper {
   private verifyCounter = 0;
   private localShaCounter = 0;
   private remoteShaCounter = 0;
 
-  /**
-   * Set up all git utility mocks for testing
-   */
+  
   setupMocks() {
     vi.spyOn(fileops, 'applyEditOps').mockResolvedValue({ 
       changed: ['dummy.txt'], 
@@ -331,9 +299,7 @@ export class GitMockHelper {
     return this;
   }
 
-  /**
-   * Reset counters for fresh test state
-   */
+  
   resetCounters() {
     this.verifyCounter = 0;
     this.localShaCounter = 0;
@@ -342,13 +308,9 @@ export class GitMockHelper {
   }
 }
 
-/**
- * Task management mocking utilities
- */
+
 export class TaskMockHelper {
-  /**
-   * Set up task creation mocks
-   */
+  
   setupMocks() {
     vi.spyOn(tasks, 'createDashboardTaskEntriesWithSummarizer').mockResolvedValue([
       { 
@@ -362,9 +324,7 @@ export class TaskMockHelper {
     return this;
   }
 
-  /**
-   * Set up QA failure task creation
-   */
+  
   setupQAFailureMocks() {
     vi.spyOn(tasks, 'createDashboardTaskEntriesWithSummarizer').mockResolvedValue([
       { 
@@ -379,11 +339,9 @@ export class TaskMockHelper {
   }
 }
 
-/**
- * Coordinator mocking to prevent Redis issues in tests
- */
+
 export async function setupCoordinatorMocks() {
-  // Mock the internal Redis usage for persona requests
+  
   vi.mock('../../src/redisClient.js', async () => {
     const actual = await vi.importActual('../../src/redisClient.js') as any;
     return {
@@ -402,9 +360,7 @@ export async function setupCoordinatorMocks() {
   });
 }
 
-/**
- * Complete test setup helper that configures all common mocks
- */
+
 export function setupAllMocks(
   project: TestProject, 
   milestones: TestMilestone[] = [], 
@@ -427,5 +383,5 @@ export function setupAllMocks(
   };
 }
 
-// Re-export WorkflowCoordinator for convenience  
+
 export * as coordinatorMod from '../../src/workflows/WorkflowCoordinator.js';

@@ -117,7 +117,7 @@ type CommandRunResult = {
       entries.push(entry);
   
       if (result.exitCode !== 0) {
-        // On failure, look for common log files produced by test/lint tools and attach their contents.
+        
         try {
           const candidates = [
             "npm-debug.log",
@@ -134,7 +134,7 @@ type CommandRunResult = {
           for (const pattern of candidates) {
             const globPath = path.join(repoRoot, pattern);
             try {
-              // simple existence check for exact files, and for patterns try a wildcard glob via readdir when necessary
+              
               if (!pattern.includes("*")) {
                 const stat = await fs.stat(globPath).catch(() => null);
                 if (stat) {
@@ -144,7 +144,7 @@ type CommandRunResult = {
                   }
                 }
               } else {
-                // pattern contains wildcard - list directory and match
+                
                 const dir = path.dirname(globPath);
                 const basePattern = path.basename(pattern).replace(/\*/g, "");
                 const files = await fs.readdir(dir).catch(() => [] as string[]);
@@ -158,16 +158,16 @@ type CommandRunResult = {
                 }
               }
             } catch (err) {
-              // ignore individual file read errors
+              
             }
           }
-          // Also look for absolute paths mentioned in stdout/stderr (e.g. npm debug log path) and attach them
+          
           try {
             const combined = `${result.stdout || ""}\n${result.stderr || ""}`;
             const npmMatch = /A complete log of this run can be found in:\s*(\S+)/i.exec(combined);
             const pathsFound = new Set<string>();
             if (npmMatch && npmMatch[1]) pathsFound.add(npmMatch[1]);
-            // generic absolute path matches (Unix)
+            
             const absPathRegex = /(?<!\S)(\/[^\s:]+)/g;
             let m: RegExpExecArray | null;
             while ((m = absPathRegex.exec(combined))) {
@@ -181,14 +181,14 @@ type CommandRunResult = {
                 const raw = await fs.readFile(p, "utf8").catch(() => "");
                 if (raw && raw.trim().length) entry.logs!.push({ path: path.relative(repoRoot, p), content: clipText(raw, 10000) });
               } catch (err) {
-                // ignore
+                
               }
             }
           } catch (err) {
-            // ignore
+            
           }
         } catch (err) {
-          // ignore overall diagnostics attach failures
+          
         }
         break;
       }

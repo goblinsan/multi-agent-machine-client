@@ -16,7 +16,7 @@ const milestoneUpdateSchema = z.object({
 });
 
 export function registerMilestoneRoutes(fastify: FastifyInstance) {
-  // List milestones for a project
+  
   fastify.get('/projects/:projectId/milestones', async (request: any, _reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
     const db = await getDb();
@@ -45,7 +45,7 @@ export function registerMilestoneRoutes(fastify: FastifyInstance) {
     return { data: milestones };
   });
 
-  // Get single milestone
+  
   fastify.get('/projects/:projectId/milestones/:id', async (request: any, reply: any) => {
     const { projectId, id } = request.params as any;
     const db = await getDb();
@@ -71,7 +71,7 @@ export function registerMilestoneRoutes(fastify: FastifyInstance) {
     return milestone;
   });
 
-  // Create milestone
+  
   fastify.post('/projects/:projectId/milestones', async (request: any, reply: any) => {
     const projectId = parseInt((request.params as any).projectId);
     const parse = milestoneCreateSchema.safeParse(request.body);
@@ -89,7 +89,7 @@ export function registerMilestoneRoutes(fastify: FastifyInstance) {
 
     const db = await getDb();
     
-    // Check if project exists
+    
     const projectResult = db.exec('SELECT id FROM projects WHERE id = ?', [projectId]);
     if (!projectResult[0] || projectResult[0].values.length === 0) {
       return reply.status(404).send({ 
@@ -100,7 +100,7 @@ export function registerMilestoneRoutes(fastify: FastifyInstance) {
       });
     }
     
-    // Check if slug already exists for this project
+    
     const existingResult = db.exec(
       'SELECT id FROM milestones WHERE project_id = ? AND slug = ?', 
       [projectId, data.slug]
@@ -130,7 +130,7 @@ export function registerMilestoneRoutes(fastify: FastifyInstance) {
     return reply.status(201).send(created);
   });
 
-  // Update milestone
+  
   fastify.patch('/projects/:projectId/milestones/:id', async (request: any, reply: any) => {
     const { projectId, id } = request.params as any;
     const parse = milestoneUpdateSchema.safeParse(request.body);
@@ -147,7 +147,7 @@ export function registerMilestoneRoutes(fastify: FastifyInstance) {
 
     const db = await getDb();
     
-    // Check if milestone exists
+    
     const existingResult = db.exec(
       'SELECT id FROM milestones WHERE id = ? AND project_id = ?', 
       [parseInt(id), parseInt(projectId)]
@@ -202,7 +202,7 @@ export function registerMilestoneRoutes(fastify: FastifyInstance) {
     return updated;
   });
 
-  // Delete milestone
+  
   (fastify as any).delete('/projects/:projectId/milestones/:id', async (request: any, reply: any) => {
     const { projectId, id } = request.params as any;
     const db = await getDb();

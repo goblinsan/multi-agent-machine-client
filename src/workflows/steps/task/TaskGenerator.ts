@@ -38,9 +38,7 @@ interface TaskCreationConfig {
   assignToPersonas?: boolean;
 }
 
-/**
- * Generates tasks from various data sources (QA analysis, plan evaluation, context)
- */
+
 export class TaskGenerator {
   private static readonly DEFAULT_TEMPLATES = {
     'syntax-error': {
@@ -69,9 +67,7 @@ export class TaskGenerator {
     }
   };
 
-  /**
-   * Generate tasks from all available source data
-   */
+  
   generateTasks(sourceData: any[], config: TaskCreationConfig): TaskDefinition[] {
     const tasks: TaskDefinition[] = [];
     let taskCounter = 0;
@@ -108,13 +104,11 @@ export class TaskGenerator {
     return tasks;
   }
 
-  /**
-   * Generate tasks from QA analysis results
-   */
+  
   private generateQAAnalysisTasks(analysis: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
     const tasks: TaskDefinition[] = [];
     
-    // Check both failureAnalyses (from QAAnalysisStep) and failures (older field name)
+    
     const failures = analysis.failureAnalyses || analysis.failures;
     if (failures && Array.isArray(failures)) {
       for (let i = 0; i < failures.length; i++) {
@@ -153,7 +147,7 @@ export class TaskGenerator {
       }
     }
     
-    // Generate tasks from recommendations
+    
     if (analysis.recommendations && Array.isArray(analysis.recommendations)) {
       for (let i = 0; i < analysis.recommendations.length; i++) {
         const rec = analysis.recommendations[i];
@@ -183,9 +177,7 @@ export class TaskGenerator {
     return tasks;
   }
 
-  /**
-   * Generate tasks from raw QA test results
-   */
+  
   private generateQAResultsTasks(qaResults: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
     const tasks: TaskDefinition[] = [];
     
@@ -218,9 +210,7 @@ export class TaskGenerator {
     return tasks;
   }
 
-  /**
-   * Generate tasks from plan evaluation
-   */
+  
   private generatePlanEvaluationTasks(evaluation: any, config: TaskCreationConfig, startId: number): TaskDefinition[] {
     const tasks: TaskDefinition[] = [];
     
@@ -256,7 +246,7 @@ export class TaskGenerator {
       }
     }
     
-    // Generate tasks from missing components
+    
     if (evaluation.missingComponents && Array.isArray(evaluation.missingComponents)) {
       for (let i = 0; i < evaluation.missingComponents.length; i++) {
         const component = evaluation.missingComponents[i];
@@ -287,14 +277,12 @@ export class TaskGenerator {
     return tasks;
   }
 
-  /**
-   * Generate tasks from general context data
-   */
+  
   private generateContextTasks(data: any, stepName: string, config: TaskCreationConfig, startId: number): TaskDefinition[] {
     const tasks: TaskDefinition[] = [];
     
-    // Generic task generation from context data
-    // This is a fallback for unstructured data
+    
+    
     if (data.actionItems && Array.isArray(data.actionItems)) {
       for (let i = 0; i < data.actionItems.length; i++) {
         const item = data.actionItems[i];
@@ -324,9 +312,7 @@ export class TaskGenerator {
     return tasks;
   }
 
-  /**
-   * Map severity to priority
-   */
+  
   private mapSeverityToPriority(severity: string): TaskDefinition['priority'] {
     switch (severity.toLowerCase()) {
       case 'high': return 'critical';
@@ -336,9 +322,7 @@ export class TaskGenerator {
     }
   }
 
-  /**
-   * Format task description based on failure type
-   */
+  
   private formatTaskDescription(failure: any, type: string): string {
     let description = '';
     

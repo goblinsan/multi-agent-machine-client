@@ -1,19 +1,6 @@
 name: "task-flow"
 description: "Consolidated task processing workflow with unified review feedback loops and TDD awareness"
 version: "3.0.0"
-# MIGRATION HISTORY:
-# v2.0.0 - Code review + security review use review-failure-handling sub-workflow
-# v3.0.0 - QA review also uses review-failure-handling (removed QAIterationLoopStep)
-#        - ALL reviews now use unified feedback loop pattern
-#        - TDD awareness added to all review types
-#        - Duplicate task detection enabled (PM checks existing tasks)
-#
-# ARCHITECTURE (v3.0.0):
-# - Unified review pattern: QA, code review, security review all use same sub-workflow
-# - PM evaluates ALL review failures and decides: retry, create tasks, or defer
-# - No iterative retry loops - PM makes one-time decision per review failure
-# - TDD-aware: PM knows if task is implementing failing test (affects QA/code/security decisions)
-# - Duplicate detection: PM sees existing tasks to prevent duplicate task creation
 trigger:
   condition: "task_type == 'task' || task_type == 'feature'"
 context:
@@ -21,18 +8,14 @@ context:
   branch_strategy: "feature-branch"
 
 steps:
-  # Git setup - checkout feature branch based on milestone
   - name: checkout_branch
     type: GitOperationStep
     description: "Checkout feature branch from base branch using milestone slug from dashboard"
     config:
       operation: "checkoutBranchFromBase"
       baseBranch: "main"
-      # Use milestone slug for branch name - will be dynamically resolved
-      # Falls back to feat/task if milestone_slug is not available
       newBranch: "${featureBranchName}"
 
-  # Mark task as in progress immediately after starting
   - name: mark_task_in_progress
     type: SimpleTaskStatusStep
     description: "Mark task as in progress on dashboard"
@@ -40,7 +23,6 @@ steps:
     config:
       status: "in_progress"
 
-  # Context gathering - scan repository and commit artifacts to git
   - name: context_scan
     type: ContextStep
     description: "Scan repository structure and create context snapshot"
@@ -50,38 +32,21 @@ steps:
       includePatterns: ["**/*"]
       excludePatterns: ["node_modules/**", ".git/**", "dist/**", "build/**", ".ma/**"]
       maxFiles: 1000
-      maxBytes: 10485760  # 10MB
+      maxBytes: 10485760
       maxDepth: 10
       trackLines: true
       trackHash: false
       forceRescan: false
 
-  # Context analysis - send scan data to context persona for analysis
-  # ONLY if context was NOT reused (i.e., fresh scan performed)
-  - name: context_request
-    type: PersonaRequestStep
-    description: "Request context analysis from context persona"
+  - template: context_analysis
+    name: context_request
     depends_on: ["context_scan"]
-    condition: "${context_scan.reused_existing} != true"  # Skip LLM call if reusing existing context
-    config:
-      step: "1-context"
-      persona: "context"
-      intent: "context_analysis"
-      payload:
-        task: "${task}"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"
-        milestone: "${milestone}"
-        milestone_name: "${milestone_name}"
-        repoScan: "${repoScan}"
-        context_metadata: "${context.metadata}"
-        reused_existing: "${context_scan.reused_existing}"
+    condition: ${context_scan.reused_existing} == false
 
-  # Planning with evaluation loop (encapsulates plan creation and evaluation)
   - name: planning_loop
     type: PlanningLoopStep
     description: "Plan creation and evaluation loop with max 5 iterations"
-    depends_on: ["context_scan"]  # Changed from context_request - planning can proceed with cached context
+    depends_on: ["context_scan"]
     config:
       maxIterations: 5
       plannerPersona: "implementation-planner"
@@ -89,29 +54,15 @@ steps:
       planStep: "2-plan"
       evaluateStep: "2.5-evaluate-plan"
       payload:
-        task: "${task}"
+        task: ${task}
         context: "${context_request_result}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
-  # Implementation
-  - name: implementation_request
-    type: PersonaRequestStep
-    description: "Request implementation from lead engineer persona"
+  - template: implementation
+    name: implementation_request
     depends_on: ["planning_loop"]
-    config:
-      step: "2-implementation"
-      persona: "lead-engineer"
-      intent: "implementation"
-      # timeout not set - will use persona-specific timeout from PERSONA_TIMEOUTS_JSON env (600s for lead-engineer)
-      payload:
-        task: "${task}"
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"
 
-  # Apply implementation edits to repository
-  # NOTE: This step now handles commit AND push internally via applyEditOps
   - name: apply_implementation_edits
     type: DiffApplyStep
     description: "Parse, apply, commit, and push implementation edits from lead engineer"
@@ -121,7 +72,6 @@ steps:
       validation: "syntax_check"
       commit_message: "feat: implement ${taskName}"
 
-  # Verify changes were pushed
   - name: verify_diff
     type: GitOperationStep
     description: "Verify remote branch has diff from base"
@@ -129,7 +79,6 @@ steps:
     config:
       operation: "verifyRemoteBranchHasDiff"
 
-  # Ensure branch is published before code-related personas begin
   - name: ensure_branch_published
     type: GitOperationStep
     description: "Ensure branch is published to remote before code reviews"
@@ -137,24 +86,10 @@ steps:
     config:
       operation: "ensureBranchPublished"
 
-  # QA - depends on git operations being complete
-  - name: qa_request
-    type: PersonaRequestStep
-    description: "Request QA review from tester-qa persona"
+  - template: qa_review
+    name: qa_request
     depends_on: ["ensure_branch_published"]
-    outputs: ["qa_request_result", "qa_request_status"]
-    config:
-      step: "3-qa"
-      persona: "tester-qa"
-      intent: "qa"
-      payload:
-        task: "${task}"
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        implementation: "${implementation_request_result}"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"
 
-  # Commit QA results to git for distributed access
   - name: commit_qa_result
     type: GitArtifactStep
     description: "Commit QA review result to .ma/tasks/{id}/reviews/qa.json"
@@ -165,8 +100,6 @@ steps:
       commit_message: "test(ma): QA review for task ${task.id}"
       format: "json"
 
-  # Handle QA failures with unified review-failure-handling sub-workflow
-  # NOTE: existing_tasks will be populated by dashboard integration in future
   - name: handle_qa_failure
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for QA failures (unified pattern)"
@@ -179,10 +112,10 @@ steps:
         review_result: "${qa_request_result}"
         review_status: "${qa_request_status}"
         milestone_context: "${milestone}"
-        task: "${task}"
+        task: ${task}
         parent_task_id: "${taskId}"
         priority_scores:
-          urgent: 1200  # QA failures prioritized between code review (1000) and security (1500)
+          urgent: 1200
           deferred: 50
         config:
           block_original_task: true
@@ -190,9 +123,8 @@ steps:
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
-        existing_tasks: []  # TODO: Populate from dashboard query
+        existing_tasks: []
 
-  # Mark task as in review when QA passes
   - name: mark_task_in_review
     type: SimpleTaskStatusStep
     description: "Mark task as in review on dashboard when QA passes"
@@ -201,27 +133,10 @@ steps:
     config:
       status: "in_review"
 
-  # Code Review - evaluates code quality, style, and best practices
-  - name: code_review_request
-    type: PersonaRequestStep
-    description: "Request code review from code reviewer persona"
+  - template: code_review
+    name: code_review_request
     depends_on: ["mark_task_in_review"]
-    outputs: ["code_review_request_result", "code_review_request_status"]
-    config:
-      step: "4-code-review"
-      persona: "code-reviewer"
-      intent: "code_review"
-      payload:
-        task: "${task}"
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        implementation: "${implementation_request_result}"
-        qa_result: "${qa_request_result}"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"
-        tdd_aware: "${tdd_aware}"
-        tdd_stage: "${tdd_stage}"
 
-  # Commit code review results to git
   - name: commit_code_review_result
     type: GitArtifactStep
     description: "Commit code review result to .ma/tasks/{id}/reviews/code-review.json"
@@ -232,7 +147,6 @@ steps:
       commit_message: "refactor(ma): code review for task ${task.id}"
       format: "json"
 
-  # Handle code review failures with PM prioritization and task creation
   - name: handle_code_review_failure
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for code review failures"
@@ -245,7 +159,7 @@ steps:
         review_result: "${code_review_request_result}"
         review_status: "${code_review_request_status}"
         milestone_context: "${milestone}"
-        task: "${task}"
+        task: ${task}
         parent_task_id: "${taskId}"
         priority_scores:
           urgent: 1000
@@ -256,31 +170,13 @@ steps:
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
-        existing_tasks: []  # TODO: Populate from dashboard query
+        existing_tasks: []
 
-  # Security Review - evaluates security vulnerabilities and risks
-  - name: security_request
-    type: PersonaRequestStep
-    description: "Request security review from security reviewer persona"
+  - template: security_review
+    name: security_request
     depends_on: ["code_review_request"]
     condition: "${code_review_request_status} == 'pass'"
-    outputs: ["security_request_result", "security_request_status"]
-    config:
-      step: "5-security"
-      persona: "security-review"
-      intent: "security_review"
-      payload:
-        task: "${task}"
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        implementation: "${implementation_request_result}"
-        qa_result: "${qa_request_result}"
-        code_review_result: "${code_review_request_result}"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"
-        tdd_aware: "${tdd_aware}"
-        tdd_stage: "${tdd_stage}"
 
-  # Commit security review results to git
   - name: commit_security_result
     type: GitArtifactStep
     description: "Commit security review result to .ma/tasks/{id}/reviews/security.json"
@@ -291,7 +187,6 @@ steps:
       commit_message: "security(ma): security review for task ${task.id}"
       format: "json"
 
-  # Handle security review failures with PM prioritization and task creation
   - name: handle_security_failure
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for security failures"
@@ -304,10 +199,10 @@ steps:
         review_result: "${security_request_result}"
         review_status: "${security_request_status}"
         milestone_context: "${milestone}"
-        task: "${task}"
+        task: ${task}
         parent_task_id: "${taskId}"
         priority_scores:
-          urgent: 1500  # Security higher priority than code review
+          urgent: 1500
           deferred: 50
         config:
           block_original_task: true
@@ -315,30 +210,13 @@ steps:
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
-        existing_tasks: []  # TODO: Populate from dashboard query
+        existing_tasks: []
 
-  # DevOps Review - evaluates deployment and operational concerns
-  - name: devops_request
-    type: PersonaRequestStep
-    description: "Request DevOps review from DevOps persona"
+  - template: devops_review
+    name: devops_request
     depends_on: ["security_request"]
     condition: "${security_request_status} == 'pass'"
-    outputs: ["devops_request_result", "devops_request_status"]
-    config:
-      step: "6-devops"
-      persona: "devops"
-      intent: "devops_review"
-      payload:
-        task: "${task}"
-        plan_artifact: ".ma/tasks/${task.id}/03-plan-final.md"
-        implementation: "${implementation_request_result}"
-        qa_result: "${qa_request_result}"
-        code_review_result: "${code_review_request_result}"
-        security_result: "${security_request_result}"
-        repo: "${repo_remote}"
-        project_id: "${projectId}"
 
-  # Commit DevOps review results to git
   - name: commit_devops_result
     type: GitArtifactStep
     description: "Commit DevOps review result to .ma/tasks/{id}/reviews/devops.json"
@@ -349,7 +227,6 @@ steps:
       commit_message: "ci(ma): DevOps review for task ${task.id}"
       format: "json"
 
-  # Handle DevOps review failures with unified review-failure-handling sub-workflow
   - name: handle_devops_failure
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for DevOps failures"
@@ -362,10 +239,10 @@ steps:
         review_result: "${devops_request_result}"
         review_status: "${devops_request_status}"
         milestone_context: "${milestone}"
-        task: "${task}"
+        task: ${task}
         parent_task_id: "${taskId}"
         priority_scores:
-          urgent: 1100  # DevOps between QA (1200) and code review (1000)
+          urgent: 1100
           deferred: 50
         config:
           block_original_task: true
@@ -373,9 +250,8 @@ steps:
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
-        existing_tasks: []  # TODO: Populate from dashboard query
+        existing_tasks: []
 
-  # Mark task as done only when all reviews pass (DevOps is last)
   - name: mark_task_done
     type: SimpleTaskStatusStep
     description: "Mark task as completed on dashboard when all reviews pass"
@@ -386,7 +262,6 @@ steps:
       project_id: "${projectId}"
       status: "done"
 
-  # Check milestone completion status
   - name: check_milestone_completion
     type: MilestoneStatusCheckStep
     description: "Check if milestone has remaining incomplete tasks"
@@ -395,7 +270,6 @@ steps:
       check_type: "incomplete_tasks"
       include_cancelled: false
 
-  # Send suggested tasks to PM for urgency evaluation if milestone incomplete
   - name: pm_evaluate_suggestions
     type: PersonaRequestStep
     description: "Send suggested tasks to PM for urgency evaluation"
@@ -407,14 +281,13 @@ steps:
       intent: "evaluate_task_urgency"
       payload:
         milestone: "${milestone}"
-        completed_task: "${task}"
+        completed_task: ${task}
         remaining_tasks: "${check_milestone_completion_remaining_tasks}"
         suggested_tasks: "${qa_iteration_loop_suggested_tasks}"
         milestone_completion_percentage: "${milestone_completion_percentage}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
 
-# Failure handling - mark task as blocked when workflow fails
 failure_handling:
   on_workflow_failure:
     - name: mark_task_blocked
@@ -423,7 +296,6 @@ failure_handling:
       config:
         status: "blocked"
 
-# Workflow timeouts
 timeouts:
-  context_request_timeout: 600000  # 10 minutes for context gathering
-  default_step: 300000  # 5 minutes default
+  context_request_timeout: 600000
+  default_step: 300000

@@ -3,8 +3,8 @@ import fs from 'fs/promises';
 import { applyEditOps, parseUnifiedDiffToEditSpec } from '../src/fileops.js';
 import { parseAgentEditsFromResponse } from '../src/workflows/helpers/agentResponseParser.js';
 
-// Harness: run the coordinator fallback parse/apply path directly using the
-// saved lead preview. Avoid monkey-patching ESM module namespaces.
+
+
 async function main() {
   const repoRoot = process.cwd();
   const previewPath = path.join(repoRoot, 'scripts', 'lead_preview_current.txt');

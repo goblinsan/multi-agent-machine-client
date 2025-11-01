@@ -1,20 +1,4 @@
-/**
- * DiffParser - Main facade for diff parsing operations
- * 
- * This module serves as the facade for diff parsing functionality.
- * It exports the primary entry points and types used throughout the application:
- * - parsePersonaResponse: Parse persona responses and extract diffs
- * - validateEditSpec: Validate edit specifications
- * - DiffBlock, DiffParseResult: Type definitions
- * 
- * All diff parsing logic has been extracted into focused modules:
- * - utils/TextCleaner: Text preprocessing
- * - utils/StringUtils: String similarity and Levenshtein distance
- * - extraction/BlockExtractor: Extract diff blocks from text
- * - extraction/ContentExtractor: Extract file content from diffs
- * - conversion/DiffConverter: Convert diffs to edit operations
- * - validation/EditSpecValidator: Validate edit specifications
- */
+
 
 import type { EditSpec } from '../../fileops.js';
 import { cleanResponse } from './utils/TextCleaner.js';
@@ -22,9 +6,7 @@ import { extractDiffBlocks } from './extraction/BlockExtractor.js';
 import { convertDiffBlocksToEditSpec } from './conversion/DiffConverter.js';
 import { validateEditSpec as validateEditSpecImpl } from './validation/EditSpecValidator.js';
 
-/**
- * Extracted diff block from persona response
- */
+
 export interface DiffBlock {
   filename?: string;
   content: string;
@@ -33,9 +15,7 @@ export interface DiffBlock {
   endMarker?: string;
 }
 
-/**
- * Result of diff parsing
- */
+
 export interface DiffParseResult {
   success: boolean;
   editSpec?: EditSpec;
@@ -44,23 +24,19 @@ export interface DiffParseResult {
   warnings: string[];
 }
 
-/**
- * Enhanced diff parser to reliably extract and convert diffs from persona responses
- */
+
 export class DiffParser {
-  /**
-   * Parse persona response and extract diff blocks
-   */
+  
   static parsePersonaResponse(response: string): DiffParseResult {
     const errors: string[] = [];
     const warnings: string[] = [];
     let diffBlocks: DiffBlock[] = [];
 
     try {
-      // Clean up the response
+      
       const cleanedResponse = cleanResponse(response);
       
-      // Extract diff blocks
+      
       diffBlocks = extractDiffBlocks(cleanedResponse);
       
       if (diffBlocks.length === 0) {
@@ -73,7 +49,7 @@ export class DiffParser {
         };
       }
 
-      // Convert diff blocks to edit spec
+      
       const editSpec = convertDiffBlocksToEditSpec(diffBlocks);
       
       if (!editSpec || editSpec.ops.length === 0) {
@@ -86,7 +62,7 @@ export class DiffParser {
         };
       }
 
-      // Validate edit spec
+      
       const validation = validateEditSpecImpl(editSpec);
       if (!validation.valid) {
         errors.push(...validation.errors);
@@ -112,9 +88,7 @@ export class DiffParser {
     }
   }
 
-  /**
-   * Validate edit specification
-   */
+  
   static validateEditSpec(spec: EditSpec): { valid: boolean; errors: string[]; warnings: string[] } {
     return validateEditSpecImpl(spec);
   }

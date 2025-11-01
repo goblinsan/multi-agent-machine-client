@@ -8,55 +8,30 @@ import { TaskDuplicateDetector } from './helpers/TaskDuplicateDetector.js';
 const taskAPI = new TaskAPI();
 const projectAPI = new ProjectAPI();
 
-/**
- * Configuration for ReviewFailureTasksStep
- */
+
 interface ReviewFailureTasksConfig {
-  /**
-   * Variable name containing the normalized PM decision from PMDecisionParserStep
-   * Expected format: { decision, reasoning, immediate_issues, deferred_issues, follow_up_tasks }
-   */
+  
   pmDecisionVariable: string;
   
-  /**
-   * Type of review that failed
-   */
+  
   reviewType: 'code_review' | 'security_review' | 'qa' | 'devops';
   
-  /**
-   * Priority score for urgent tasks
-   * - QA: 1200 (test failures block all work)
-   * - Code/Security/DevOps: 1000
-   * If not specified, uses review type defaults
-   */
+  
   urgentPriorityScore?: number;
   
-  /**
-   * Priority score for deferred tasks (default: 50)
-   */
+  
   deferredPriorityScore?: number;
   
-  /**
-   * Whether to create tasks for deferred issues (default: true)
-   */
+  
   createDeferredTasks?: boolean;
   
-  /**
-   * Milestone slug for backlog tasks (default: 'future-enhancements')
-   */
+  
   backlogMilestoneSlug?: string;
 }
 
-/**
- * Creates follow-up tasks based on PM review failure prioritization.
- * Requires normalized PM decision from PMDecisionParserStep.
- * 
- * @see docs/steps/REVIEW_FAILURE_TASKS_STEP.md for detailed documentation
- */
+
 export class ReviewFailureTasksStep extends WorkflowStep {
-  /**
-   * Review type to human-readable label mapping
-   */
+  
   private static readonly REVIEW_TYPE_LABELS: Record<string, string> = {
     'code_review': 'Code Review',
     'security_review': 'Security Review',
@@ -75,7 +50,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         pmDecisionVariable: config.pmDecisionVariable
       });
       
-      // Get normalized PM decision from PMDecisionParserStep output
+      
       const pmDecision = context.getVariable(config.pmDecisionVariable);
       
       if (!pmDecision) {
@@ -93,7 +68,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         };
       }
       
-      // Validate PM decision structure (should be normalized by PMDecisionParserStep)
+      
       if (!pmDecision.follow_up_tasks || !Array.isArray(pmDecision.follow_up_tasks)) {
         logger.error('PM decision missing follow_up_tasks array - expected normalized output from PMDecisionParserStep', {
           stepName: this.config.name,
@@ -110,7 +85,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         };
       }
       
-      // Get context variables for task creation
+      
       const projectId = context.getVariable('projectId');
       const milestoneId = context.getVariable('milestoneId');
       const task = context.getVariable('task');
@@ -128,28 +103,28 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         followUpTasksCount: pmDecision.follow_up_tasks.length
       });
       
-      // Fetch existing tasks for duplicate detection
+      
       const existingTasks = await projectAPI.fetchProjectTasks(projectId);
       logger.debug('Fetched existing tasks for duplicate detection', {
         stepName: this.config.name,
         existingTasksCount: existingTasks.length
       });
       
-      // Create tasks
+      
       let urgentTasksCreated = 0;
       let deferredTasksCreated = 0;
       let skippedDuplicates = 0;
       
-      // Create follow-up tasks
+      
       if (pmDecision.follow_up_tasks.length > 0) {
         for (const followUpTask of pmDecision.follow_up_tasks) {
           const isUrgent = ['critical', 'high'].includes(followUpTask.priority?.toLowerCase() || '');
           
           try {
-            // Calculate priority score based on review type and urgency
-            // QA urgent: 1200 (test failures block all work)
-            // Code/Security/DevOps urgent: 1000
-            // All deferred: 50
+            
+            
+            
+            
             const defaultUrgentPriority = config.reviewType === 'qa' ? 1200 : 1000;
             const priorityScore = isUrgent 
               ? (config.urgentPriorityScore || defaultUrgentPriority)
@@ -163,7 +138,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
               parentTaskId
             );
             
-            // Check for duplicate tasks
+            
             if (this.isDuplicateTask(followUpTask, existingTasks, taskTitle)) {
               skippedDuplicates++;
               logger.info('Skipping duplicate task', {
@@ -174,7 +149,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
               continue;
             }
             
-            // Urgent tasks go to the same milestone, deferred tasks go to backlog
+            
             const targetMilestoneId = isUrgent ? milestoneId : null;
             const targetMilestoneSlug = isUrgent ? undefined : (config.backlogMilestoneSlug || 'future-enhancements');
             
@@ -276,19 +251,16 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     }
   }
   
-  /**
-   * Check if a task is a duplicate of an existing task using TaskDuplicateDetector
-   * Uses title_and_milestone strategy with 50% overlap threshold
-   */
+  
   private isDuplicateTask(followUpTask: any, existingTasks: any[], formattedTitle: string): boolean {
     if (!followUpTask || !existingTasks || existingTasks.length === 0) {
       return false;
     }
     
-    // Use TaskDuplicateDetector with title_and_milestone strategy
+    
     const detector = new TaskDuplicateDetector();
     
-    // Prepare task for duplicate detection
+    
     const taskForDetection = {
       title: formattedTitle,
       description: followUpTask.description || '',
@@ -296,7 +268,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
       milestone_id: followUpTask.milestone_id
     };
     
-    // Find duplicate with detailed scoring
+    
     const result = detector.findDuplicateWithDetails(
       taskForDetection,
       existingTasks,
@@ -319,14 +291,12 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     return false;
   }
   
-  /**
-   * Format task title with review type prefix and urgency indicator
-   */
+  
   private formatTaskTitle(title: string, reviewType: string, isUrgent: boolean): string {
     const prefix = isUrgent ? '🚨 URGENT' : '📋';
     const reviewLabel = ReviewFailureTasksStep.REVIEW_TYPE_LABELS[reviewType] || reviewType;
     
-    // If title already has the review type, don't duplicate
+    
     if (title.toLowerCase().includes(reviewLabel.toLowerCase())) {
       return `${prefix} ${title}`;
     }
@@ -334,9 +304,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
     return `${prefix} [${reviewLabel}] ${title}`;
   }
   
-  /**
-   * Format task description with context and links
-   */
+  
   private formatTaskDescription(
     description: string,
     pmDecision: any,
@@ -394,7 +362,7 @@ export class ReviewFailureTasksStep extends WorkflowStep {
       errors.push('ReviewFailureTasksStep: deferredPriorityScore must be non-negative');
     }
     
-    // Warning if pmDecisionVariable doesn't suggest it's from PMDecisionParserStep
+    
     if (config.pmDecisionVariable && 
         !config.pmDecisionVariable.includes('pm_decision') && 
         !config.pmDecisionVariable.includes('parsed_decision')) {

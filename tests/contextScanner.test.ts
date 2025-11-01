@@ -27,20 +27,20 @@ describe('ContextScanner', () => {
       trackHash: false
     });
 
-    // Basic structure checks
+    
     expect(result.snapshot).toBeTruthy();
     expect(result.snapshot.repo).toBe(repoRoot);
     expect(typeof result.ndjson).toBe('string');
     expect(typeof result.summaryMd).toBe('string');
     expect(Array.isArray(result.allFiles)).toBe(true);
 
-    // Totals should match file count (README, src/a.ts, tests/b.test.ts, alembic/versions/001_init.py)
+    
     const expectedFileCount = 4;
     expect(result.snapshot.totals.files).toBe(expectedFileCount);
     const ndjsonLines = result.ndjson.split('\n').filter(Boolean);
     expect(ndjsonLines.length).toBe(expectedFileCount);
 
-    // Components should include src and tests with 1 file each
+    
     const compNames = result.perComp.map(c => c.component);
     expect(compNames).toContain('src');
     expect(compNames).toContain('tests');
@@ -49,7 +49,7 @@ describe('ContextScanner', () => {
     expect(srcComp?.totals.files).toBe(1);
     expect(testsComp?.totals.files).toBe(1);
 
-    // Markdown should contain header, file tree, and Alembic section
+    
     expect(result.summaryMd).toMatch(/^# Context Snapshot \(Scan\)/);
     expect(result.summaryMd).toContain('## File Tree');
     expect(result.summaryMd).toContain('alembic');

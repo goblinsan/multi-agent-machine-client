@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeTempRepo } from './makeTempRepo.js';
 import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis (uses __mocks__/redisClient.js)
+
 vi.mock('../src/redisClient.js');
 
-// Mock dashboard functions to prevent HTTP calls
+
 vi.mock('../src/dashboard.js', () => ({
   fetchProjectStatus: vi.fn().mockResolvedValue({
     id: 'proj-happy',
@@ -35,7 +35,7 @@ describe('Coordinator happy path across multiple milestones and tasks', () => {
     const coordinator = createFastCoordinator();
     
     try {
-      // Safety: Redis + dashboard mocks prevent hanging, 20-iteration limit provides fallback
+      
       await coordinator.handleCoordinator(
         {} as any,
         {},
@@ -44,12 +44,12 @@ describe('Coordinator happy path across multiple milestones and tasks', () => {
       );
       workflowExecuted = true;
     } catch (error) {
-      // Even if workflow fails, we're testing that it doesn't hang
+      
       workflowExecuted = true;
     }
 
-    // Business outcome: The test validates that multi-milestone workflow executes without hanging
-    // This verifies the happy path logic runs without timeout issues regardless of implementation details
+    
+    
     expect(workflowExecuted).toBe(true);
   });
 });

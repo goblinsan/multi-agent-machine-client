@@ -3,19 +3,7 @@ import { PersonaConsumer } from '../src/personas/PersonaConsumer.js';
 import { LocalTransport } from '../src/transport/LocalTransport.js';
 import { cfg } from '../src/config.js';
 
-/**
- * CRITICAL TEST: Validates that implementation-planner receives task descriptions
- * 
- * This test addresses a production bug where the planner was generating random
- * generic plans instead of task-specific plans because it wasn't receiving
- * the task description from the dashboard API.
- * 
- * Test Coverage:
- * 1. Persona receives task description from payload
- * 2. Description is included in the userText sent to LLM
- * 3. Missing description causes diagnostic error
- * 4. Dashboard API returns description field
- */
+
 describe('Persona planning context validation', () => {
   let transport: LocalTransport;
   let consumer: PersonaConsumer;
@@ -29,7 +17,7 @@ describe('Persona planning context validation', () => {
     let capturedUserText: string | undefined;
     let capturedMessages: any[] = [];
     
-    // Mock buildPersonaMessages to capture what's sent to LLM
+    
     const buildMessagesModule = await import('../src/personas/PersonaRequestHandler.js');
     const originalBuildMessages = buildMessagesModule.buildPersonaMessages;
     vi.spyOn(buildMessagesModule, 'buildPersonaMessages').mockImplementation((input: any) => {
@@ -38,13 +26,13 @@ describe('Persona planning context validation', () => {
       return capturedMessages;
     });
 
-    // Mock callPersonaModel to avoid actual LLM calls
+    
     vi.spyOn(buildMessagesModule, 'callPersonaModel').mockResolvedValue({
       content: '{"plan": [{"goal": "test"}]}',
       duration_ms: 100
     });
 
-    // Start consumer
+    
     await consumer.start({
       personas: ['implementation-planner'],
       blockMs: 100,
@@ -53,7 +41,7 @@ describe('Persona planning context validation', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Send request with ACTUAL dashboard API structure (task.data.description)
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-critical-test',
       to_persona: 'implementation-planner',
@@ -82,21 +70,21 @@ describe('Persona planning context validation', () => {
       })
     });
 
-    // Wait for processing
+    
     await new Promise(resolve => setTimeout(resolve, 50));
     await consumer.stop();
 
-    // CRITICAL ASSERTIONS
+    
     expect(capturedUserText).toBeDefined();
     expect(capturedUserText).toContain('Config loader and schema validation');
     expect(capturedUserText).toContain('Implement hierarchical config');
     expect(capturedUserText).toContain('JSON schema validation');
     
-    // Should NOT just be the generic intent
+    
     expect(capturedUserText).not.toBe('planning');
     expect(capturedUserText).not.toContain('Process this request');
     
-    // Verify it's in the actual messages sent to LLM
+    
     const userMessage = capturedMessages.find(m => m.role === 'user');
     expect(userMessage).toBeDefined();
     expect(userMessage.content).toContain('Config loader');
@@ -107,7 +95,7 @@ describe('Persona planning context validation', () => {
     let errorLogged = false;
     let loggedPayload: any = null;
     
-    // Spy on logger to catch error
+    
     const loggerModule = await import('../src/logger.js');
     const originalError = loggerModule.logger.error;
     vi.spyOn(loggerModule.logger, 'error').mockImplementation((msg: string, meta?: any) => {
@@ -132,7 +120,7 @@ describe('Persona planning context validation', () => {
 
     await new Promise(resolve => setTimeout(resolve, 10));
 
-    // Send request with task but NO description
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-no-desc',
       to_persona: 'implementation-planner',
@@ -144,16 +132,16 @@ describe('Persona planning context validation', () => {
           id: 1,
           title: 'Some task',
           status: 'open'
-          // description is MISSING!
+          
         }
       })
     });
 
-    // Give enough time for async processing
+    
     await new Promise(resolve => setTimeout(resolve, 200));
     await consumer.stop();
 
-    // MUST have logged an error
+    
     expect(errorLogged).toBe(true);
     expect(loggedPayload).toBeDefined();
     expect(loggedPayload.persona).toBe('implementation-planner');
@@ -161,7 +149,7 @@ describe('Persona planning context validation', () => {
   });
 
   it('validates dashboard API returns description field', async () => {
-    // This is an integration test that verifies the dashboard API contract
+    
     const { fetch } = await import('undici');
     
     try {
@@ -175,19 +163,19 @@ describe('Persona planning context validation', () => {
       if (data.data.length > 0) {
         const firstTask = data.data[0];
         
-        // CRITICAL: Dashboard API MUST return description field
+        
         expect(firstTask).toHaveProperty('id');
         expect(firstTask).toHaveProperty('title');
         expect(firstTask).toHaveProperty('description');
         expect(firstTask).toHaveProperty('status');
         
-        // If description exists in DB, it should be a string
+        
         if (firstTask.description !== null) {
           expect(typeof firstTask.description).toBe('string');
         }
       }
     } catch (error) {
-      // Dashboard might not be running in test environment
+      
       console.warn('Dashboard API not available:', error);
     }
   });
@@ -215,7 +203,7 @@ describe('Persona planning context validation', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5));
 
-    // Complex payload with lots of extra fields
+    
     await transport.xAdd(cfg.requestStream, '*', {
       workflow_id: 'wf-complex',
       to_persona: 'implementation-planner',
@@ -255,29 +243,29 @@ describe('Persona planning context validation', () => {
   });
 
   it('workflow should abort if task description is missing (integration behavior)', async () => {
-    // This test documents the REQUIRED behavior:
-    // When a task has no description, the workflow MUST abort with a diagnostic error
-    // rather than sending a generic "planning" prompt to the LLM
     
-    // Note: This would be implemented in WorkflowCoordinator or PlanningLoopStep
-    // to check task.description before sending to persona
+    
+    
+    
+    
+    
     
     const taskWithoutDescription: any = {
       id: 1,
       title: 'Some task',
       status: 'open'
-      // description is MISSING
+      
     };
 
-    // EXPECTED BEHAVIOR (to be implemented):
-    // 1. Check if task.description exists and is non-empty
-    // 2. If not, log error with diagnostic info
-    // 3. Abort workflow with clear error message
-    // 4. Update task status to 'blocked' with reason
+    
+    
+    
+    
+    
     
     expect(taskWithoutDescription.description).toBeUndefined();
     
-    // This test serves as documentation of required behavior
-    // TODO: Implement validation in PlanningLoopStep.execute() or WorkflowCoordinator
+    
+    
   });
 });

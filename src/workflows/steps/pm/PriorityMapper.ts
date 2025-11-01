@@ -1,12 +1,8 @@
 import type { PMDecision } from './DecisionParser';
 
-/**
- * Handles priority mapping and milestone routing for PM decisions
- */
+
 export class PriorityMapper {
-  /**
-   * Apply numeric priority mapping and milestone routing to follow_up_tasks
-   */
+  
   applyPriorityAndMilestoneRouting(
     decision: PMDecision,
     reviewType: string | undefined,
@@ -20,7 +16,7 @@ export class PriorityMapper {
       const p = prio.toLowerCase();
       const isUrgent = p === 'critical' || p === 'high';
       if (!isUrgent) return null;
-      // QA urgent = 1200, others = 1000
+      
       if (reviewType === 'qa' || /\[qa\]/i.test(title)) return 1200;
       return 1000;
     };

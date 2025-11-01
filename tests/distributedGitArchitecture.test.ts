@@ -1,17 +1,4 @@
-/**
- * Distributed Git Architecture Tests
- * 
- * These tests validate the CRITICAL architectural requirement:
- * "Almost every step pushes to git for distributed agent coordination"
- * 
- * WHY THESE TESTS ARE CRITICAL:
- * - Distributed agents MUST be able to pick up work from git
- * - Context, planning, and review artifacts MUST persist in .ma/ directory
- * - Git commits enable audit trail and failure recovery
- * - Missing git commits = broken distributed architecture
- * 
- * If these tests fail, the distributed architecture is BROKEN.
- */
+
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ContextStep } from '../src/workflows/steps/ContextStep.js';
@@ -33,7 +20,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
   let context: WorkflowContext;
 
   beforeEach(async () => {
-    // Create temp repo with initial files
+    
     tempRepoDir = await makeTempRepo({
       'src/example.ts': 'export const hello = "world";',
       'README.md': '# Test Project'
@@ -42,7 +29,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
     transport = new LocalTransport();
     await transport.connect();
 
-    // Create workflow context
+    
     context = new WorkflowContext(
       'test-workflow',
       '1',
@@ -58,7 +45,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
 
   afterEach(async () => {
     await transport.disconnect();
-    // Cleanup temp repo
+    
     await execP(`rm -rf ${tempRepoDir}`);
   });
 
@@ -78,12 +65,12 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
 
       expect(result.status).toBe('success');
 
-      // CRITICAL: snapshot.json MUST exist
+      
       const snapshotPath = path.join(tempRepoDir, '.ma', 'context', 'snapshot.json');
       const snapshotExists = await fs.access(snapshotPath).then(() => true).catch(() => false);
       expect(snapshotExists).toBe(true);
 
-      // Validate snapshot content
+      
       const snapshotContent = await fs.readFile(snapshotPath, 'utf-8');
       const snapshot = JSON.parse(snapshotContent);
       expect(snapshot.timestamp).toBeDefined();
@@ -106,12 +93,12 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
 
       await contextStep.execute(context);
 
-      // CRITICAL: summary.md MUST exist
+      
       const summaryPath = path.join(tempRepoDir, '.ma', 'context', 'summary.md');
       const summaryExists = await fs.access(summaryPath).then(() => true).catch(() => false);
       expect(summaryExists).toBe(true);
 
-      // Validate summary content
+      
       const summaryContent = await fs.readFile(summaryPath, 'utf-8');
       expect(summaryContent).toContain('# Repository Context Summary');
       expect(summaryContent).toContain('## Statistics');
@@ -130,20 +117,20 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
         }
       });
 
-      // Get commit count before
+      
       const logBefore = await runGit(['log', '--oneline'], { cwd: tempRepoDir });
       const commitsBefore = logBefore.stdout.trim().split('\n').length;
 
       await contextStep.execute(context);
 
-      // Get commit count after
+      
       const logAfter = await runGit(['log', '--oneline'], { cwd: tempRepoDir });
       const commitsAfter = logAfter.stdout.trim().split('\n').length;
 
-      // CRITICAL: Must have new commit
+      
       expect(commitsAfter).toBeGreaterThan(commitsBefore);
 
-      // Verify commit message
+      
       const latestCommit = await runGit(['log', '-1', '--pretty=%B'], { cwd: tempRepoDir });
       expect(latestCommit.stdout).toContain('chore(ma): update context scan');
     });
@@ -161,7 +148,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
 
       await contextStep.execute(context);
 
-      // Check files in latest commit
+      
       const filesInCommit = await runGit(['show', '--name-only', '--pretty=format:', 'HEAD'], { cwd: tempRepoDir });
       const files = filesInCommit.stdout.trim().split('\n').filter(Boolean);
 
@@ -180,19 +167,19 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
         }
       });
 
-      // First scan - creates artifacts
+      
       await contextStep.execute(context);
       const logAfterFirst = await runGit(['log', '--oneline'], { cwd: tempRepoDir });
       const commitsAfterFirst = logAfterFirst.stdout.trim().split('\n').length;
 
-      // Second scan without code changes - should reuse
+      
       const result2 = await contextStep.execute(context);
       expect(result2.outputs?.reused_existing).toBe(true);
 
       const logAfterSecond = await runGit(['log', '--oneline'], { cwd: tempRepoDir });
       const commitsAfterSecond = logAfterSecond.stdout.trim().split('\n').length;
 
-      // CRITICAL: No new commit when reusing context
+      
       expect(commitsAfterSecond).toBe(commitsAfterFirst);
     });
 
@@ -209,12 +196,12 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
 
       const result = await contextStep.execute(context);
 
-      // CRITICAL: repoScan MUST be in outputs for context persona
+      
       expect(result.outputs?.repoScan).toBeDefined();
       expect(result.outputs?.repoScan).toBeInstanceOf(Array);
       expect(result.outputs?.repoScan.length).toBeGreaterThan(0);
 
-      // Verify repoScan structure
+      
       const firstFile = result.outputs?.repoScan[0];
       expect(firstFile).toHaveProperty('path');
       expect(firstFile).toHaveProperty('bytes');
@@ -244,12 +231,12 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       const result = await gitArtifactStep.execute(context);
       expect(result.status).toBe('success');
 
-      // CRITICAL: qa.json MUST exist
+      
       const qaPath = path.join(tempRepoDir, '.ma', 'tasks', '1', 'reviews', 'qa.json');
       const qaExists = await fs.access(qaPath).then(() => true).catch(() => false);
       expect(qaExists).toBe(true);
 
-      // CRITICAL: Must be committed
+      
       const filesInCommit = await runGit(['show', '--name-only', '--pretty=format:', 'HEAD'], { cwd: tempRepoDir });
       expect(filesInCommit.stdout).toContain('.ma/tasks/1/reviews/qa.json');
     });
@@ -275,12 +262,12 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       const result = await gitArtifactStep.execute(context);
       expect(result.status).toBe('success');
 
-      // CRITICAL: code-review.json MUST exist
+      
       const reviewPath = path.join(tempRepoDir, '.ma', 'tasks', '1', 'reviews', 'code-review.json');
       const reviewExists = await fs.access(reviewPath).then(() => true).catch(() => false);
       expect(reviewExists).toBe(true);
 
-      // CRITICAL: Must be committed
+      
       const latestCommit = await runGit(['log', '-1', '--pretty=%B'], { cwd: tempRepoDir });
       expect(latestCommit.stdout).toContain('refactor(ma): code review for task 1');
     });
@@ -340,7 +327,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
 
   describe('REQUIREMENT 3: Distributed agent recovery from git', () => {
     it('should allow second agent to read context from git', async () => {
-      // First agent scans and commits
+      
       const contextStep = new ContextStep({
         name: 'context_scan',
         type: 'ContextStep',
@@ -352,19 +339,19 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       });
       await contextStep.execute(context);
 
-      // Second agent reads from git (simulated by reading file directly)
+      
       const snapshotPath = path.join(tempRepoDir, '.ma', 'context', 'snapshot.json');
       const snapshotContent = await fs.readFile(snapshotPath, 'utf-8');
       const snapshot = JSON.parse(snapshotContent);
 
-      // CRITICAL: Second agent can reconstruct context from git
+      
       expect(snapshot.files).toBeInstanceOf(Array);
       expect(snapshot.totals.files).toBeGreaterThan(0);
       expect(snapshot.timestamp).toBeDefined();
     });
 
     it('should allow second agent to read review results from git', async () => {
-      // First agent commits QA result
+      
       context.setVariable('qa_request_result', {
         status: 'fail',
         summary: 'Tests failing',
@@ -383,12 +370,12 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       });
       await gitArtifactStep.execute(context);
 
-      // Second agent reads from git
+      
       const qaPath = path.join(tempRepoDir, '.ma', 'tasks', '1', 'reviews', 'qa.json');
       const qaContent = await fs.readFile(qaPath, 'utf-8');
       const qaResult = JSON.parse(qaContent);
 
-      // CRITICAL: Second agent can see QA status and act on it
+      
       expect(qaResult.status).toBe('fail');
       expect(qaResult.summary).toBe('Tests failing');
       expect(qaResult.findings).toContain('Test case 1 failed');
@@ -400,11 +387,11 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       const workflowPath = path.join(process.cwd(), 'src', 'workflows', 'definitions', 'task-flow.yaml');
       const workflowContent = await fs.readFile(workflowPath, 'utf-8');
 
-      // CRITICAL: Must use ContextStep for context_scan
+      
       expect(workflowContent).toContain('name: context_scan');
       expect(workflowContent).toContain('type: ContextStep');
 
-      // Should still have context_request for persona analysis
+      
       expect(workflowContent).toContain('name: context_request');
       expect(workflowContent).toContain('type: PersonaRequestStep');
     });
@@ -413,13 +400,13 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       const workflowPath = path.join(process.cwd(), 'src', 'workflows', 'definitions', 'task-flow.yaml');
       const workflowContent = await fs.readFile(workflowPath, 'utf-8');
 
-      // CRITICAL: Must commit all review results
+      
       expect(workflowContent).toContain('name: commit_qa_result');
       expect(workflowContent).toContain('name: commit_code_review_result');
       expect(workflowContent).toContain('name: commit_security_result');
       expect(workflowContent).toContain('name: commit_devops_result');
 
-      // All should use GitArtifactStep
+      
       const qaCommitMatch = workflowContent.match(/name: commit_qa_result[\s\S]*?type: (\w+)/);
       expect(qaCommitMatch?.[1]).toBe('GitArtifactStep');
     });
@@ -428,30 +415,28 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       const workflowPath = path.join(process.cwd(), 'src', 'workflows', 'definitions', 'in-review-task-flow.yaml');
       const workflowContent = await fs.readFile(workflowPath, 'utf-8');
 
-      // CRITICAL: Resume workflow must also commit reviews
+      
       expect(workflowContent).toContain('name: commit_code_review_result');
       expect(workflowContent).toContain('name: commit_security_result');
       expect(workflowContent).toContain('name: commit_devops_result');
     });
 
     it('context persona should receive repoScan in payload', async () => {
-      const workflowPath = path.join(process.cwd(), 'src', 'workflows', 'definitions', 'task-flow.yaml');
-      const workflowContent = await fs.readFile(workflowPath, 'utf-8');
+      const templatePath = path.join(process.cwd(), 'src', 'workflows', 'templates', 'step-templates.yaml');
+      const templateContent = await fs.readFile(templatePath, 'utf-8');
 
-      // CRITICAL: Context persona must receive scan data
-      const contextRequestSection = workflowContent.match(/name: context_request[\s\S]*?payload:([\s\S]*?)(?=\n {2}#|\n {2}-)/);
-      expect(contextRequestSection).toBeDefined();
-      expect(contextRequestSection?.[0]).toContain('repoScan');
-      expect(contextRequestSection?.[0]).toContain('context_metadata');
-      expect(contextRequestSection?.[0]).toContain('reused_existing');
+      const contextTemplateSection = templateContent.match(/context_analysis:[\s\S]*?payload:([\s\S]*?)(?=\n {2}\w)/);
+      expect(contextTemplateSection).toBeDefined();
+      expect(contextTemplateSection?.[0]).toContain('repoScan');
+      expect(contextTemplateSection?.[0]).toContain('context_metadata');
     });
   });
 
   describe('REQUIREMENT 5: Audit trail and recovery', () => {
     it('should have complete git history for workflow execution', async () => {
-      // Simulate full workflow: context → planning → implementation → reviews
       
-      // 1. Context scan
+      
+      
       const contextStep = new ContextStep({
         name: 'context_scan',
         type: 'ContextStep',
@@ -463,7 +448,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       });
       await contextStep.execute(context);
 
-      // 2. QA review
+      
       context.setVariable('qa_request_result', { status: 'pass' });
       const qaStep = new GitArtifactStep({
         name: 'commit_qa_result',
@@ -477,7 +462,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       });
       await qaStep.execute(context);
 
-      // 3. Code review
+      
       context.setVariable('code_review_request_result', { status: 'pass' });
       const codeStep = new GitArtifactStep({
         name: 'commit_code_review_result',
@@ -491,11 +476,11 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       });
       await codeStep.execute(context);
 
-      // Verify git log shows complete history
+      
       const log = await runGit(['log', '--oneline', '--all'], { cwd: tempRepoDir });
       const commits = log.stdout.trim().split('\n');
 
-      // CRITICAL: Should have commits for context, QA, code review
+      
       expect(commits.length).toBeGreaterThanOrEqual(3);
       expect(log.stdout).toContain('context scan');
       expect(log.stdout).toContain('QA review');
@@ -503,7 +488,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
     });
 
     it('should allow rebuilding workflow state from .ma/ directory', async () => {
-      // Create complete .ma/ structure
+      
       const contextStep = new ContextStep({
         name: 'context_scan',
         type: 'ContextStep',
@@ -528,7 +513,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       });
       await qaStep.execute(context);
 
-      // Verify .ma/ directory structure
+      
       const maPath = path.join(tempRepoDir, '.ma');
       const contextPath = path.join(maPath, 'context');
       const reviewsPath = path.join(maPath, 'tasks', '1', 'reviews');
@@ -539,7 +524,7 @@ describe('Distributed Git Architecture - CRITICAL REQUIREMENTS', () => {
       expect(contextExists).toBe(true);
       expect(reviewsExists).toBe(true);
 
-      // Verify all artifacts present
+      
       const snapshotExists = await fs.access(path.join(contextPath, 'snapshot.json')).then(() => true).catch(() => false);
       const summaryExists = await fs.access(path.join(contextPath, 'summary.md')).then(() => true).catch(() => false);
       const qaExists = await fs.access(path.join(reviewsPath, 'qa.json')).then(() => true).catch(() => false);

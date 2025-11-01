@@ -1,9 +1,7 @@
 import type { WorkflowContext } from './WorkflowContext';
 import { evaluateCondition as evaluateConditionUtil } from './conditionUtils';
 
-/**
- * Result of a workflow step execution
- */
+
 export interface StepResult {
   status: 'success' | 'failure' | 'skipped';
   data?: Record<string, any>;
@@ -16,18 +14,14 @@ export interface StepResult {
   };
 }
 
-/**
- * Validation result for step configuration
- */
+
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
 }
 
-/**
- * Configuration for a workflow step from YAML
- */
+
 export interface WorkflowStepConfig {
   name: string;
   type: string;
@@ -45,27 +39,21 @@ export interface WorkflowStepConfig {
   };
 }
 
-/**
- * Abstract base class for all workflow steps
- */
+
 export abstract class WorkflowStep {
   constructor(
     public readonly config: WorkflowStepConfig
   ) {}
 
-  /**
-   * Execute the workflow step
-   */
+  
   abstract execute(context: WorkflowContext): Promise<StepResult>;
 
-  /**
-   * Validate step configuration and context requirements
-   */
+  
   async validate(context: WorkflowContext): Promise<ValidationResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Basic validation
+    
     if (!this.config.name) {
       errors.push('Step name is required');
     }
@@ -74,7 +62,7 @@ export abstract class WorkflowStep {
       errors.push('Step type is required');
     }
 
-    // Check dependencies
+    
     if (this.config.depends_on) {
       for (const dep of this.config.depends_on) {
         if (!context.hasStepOutput(dep)) {
@@ -83,7 +71,7 @@ export abstract class WorkflowStep {
       }
     }
 
-    // Allow subclasses to add their own validation
+    
     const subValidation = await this.validateConfig(context);
     errors.push(...subValidation.errors);
     warnings.push(...subValidation.warnings);
@@ -95,32 +83,26 @@ export abstract class WorkflowStep {
     };
   }
 
-  /**
-   * Rollback changes made by this step (optional)
-   */
+  
   async rollback?(context: WorkflowContext): Promise<void>;
 
-  /**
-   * Get estimated execution time for planning purposes
-   */
+  
   getEstimatedDuration(): number {
     return this.config.timeout || 60000;
   }
 
-  /**
-   * Check if step should be executed based on condition
-   */
+  
   async shouldExecute(context: WorkflowContext): Promise<boolean> {
     if (!this.config.condition) {
       return true;
     }
 
     try {
-      // Delegate to shared condition evaluation utility
-      // This ensures all condition evaluation uses the same logic
+      
+      
       const result = evaluateConditionUtil(this.config.condition, context);
       
-      // Debug logging for conditional execution
+      
       context.logger.info('Condition evaluated', {
         step: this.config.name,
         condition: this.config.condition,
@@ -139,23 +121,17 @@ export abstract class WorkflowStep {
     }
   }
 
-  /**
-   * Subclasses can override this for custom validation
-   */
+  
   protected async validateConfig(_context: WorkflowContext): Promise<ValidationResult> {
     return { valid: true, errors: [], warnings: [] };
   }
 }
 
-/**
- * Factory for creating workflow steps from configuration
- */
+
 export class WorkflowStepFactory {
   private static stepTypes = new Map<string, new (config: WorkflowStepConfig) => WorkflowStep>();
 
-  /**
-   * Register a step type
-   */
+  
   static registerStep<T extends WorkflowStep>(
     type: string,
     stepClass: new (config: WorkflowStepConfig) => T
@@ -163,9 +139,7 @@ export class WorkflowStepFactory {
     this.stepTypes.set(type, stepClass);
   }
 
-  /**
-   * Create a step instance from configuration
-   */
+  
   static createStep(config: WorkflowStepConfig): WorkflowStep {
     const StepClass = this.stepTypes.get(config.type);
     if (!StepClass) {
@@ -175,9 +149,7 @@ export class WorkflowStepFactory {
     return new StepClass(config);
   }
 
-  /**
-   * Get all registered step types
-   */
+  
   static getRegisteredTypes(): string[] {
     return Array.from(this.stepTypes.keys());
   }

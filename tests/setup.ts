@@ -4,11 +4,11 @@ import fs from 'fs';
 import { execSync } from 'child_process';
 import { beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as childProcess from 'child_process';
-// Global Redis client mock to prevent accidental real Redis connections in any test
-// Ensures PersonaRequestStep and any transport usage do not introduce long waits
+
+
 import { vi as _vi } from 'vitest';
-// FORCE ultra-fast test mode for all persona operations
-// Override all timeout configs to minimal values
+
+
 process.env.FAST_TEST_MODE = '1';
 process.env.PERSONA_DEFAULT_TIMEOUT_MS = '100';
 process.env.PERSONA_DEFAULT_MAX_RETRIES = '0';
@@ -63,7 +63,7 @@ function currentBranch(): string | null {
   return safeGit('git rev-parse --abbrev-ref HEAD');
 }
 
-// Create an isolated PROJECT_BASE for any repo operations during tests
+
 const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-tests-'));
 process.env.PROJECT_BASE = tmpBase;
 
@@ -79,7 +79,7 @@ afterEach(() => {
   if (!originalWasRepo) return;
   const now = currentBranch();
   if (branchBeforeEach && now && branchBeforeEach !== now) {
-    // Try to restore to the branch active before this test started
+    
     safeGit(`git checkout ${branchBeforeEach}`);
   }
 });
@@ -91,13 +91,13 @@ afterAll(() => {
       safeGit(`git checkout ${originalBranch}`);
     }
   }
-  // Clean up PROJECT_BASE tmp directory for CI hygiene
+  
   try {
     fs.rmSync(tmpBase, { recursive: true, force: true });
-  } catch { /* cleanup may fail if dir doesn't exist */ }
+  } catch {  }
 });
 
-// Guard: prevent git commands from running outside tmp directories during tests
+
 const origExec = childProcess.exec;
 const origExecSync = childProcess.execSync;
 const origExecFile = (childProcess as any).execFile;
@@ -106,7 +106,7 @@ const origSpawn = childProcess.spawn;
 const origSpawnSync = childProcess.spawnSync;
 
 function ensureTmpCwd(opts?: any) {
-  // Only enforce when an explicit cwd is provided (to avoid false positives)
+  
   const cwd = opts && typeof opts === 'object' && 'cwd' in opts ? (opts.cwd || '') : '';
   if (!cwd) return;
   const allowed = String(cwd).startsWith(os.tmpdir());
@@ -115,9 +115,9 @@ function ensureTmpCwd(opts?: any) {
   }
 }
 
-// Install spies once per test worker
+
 try {
-  // exec
+  
   if (!vi.isMockFunction((childProcess as any).exec)) {
     vi.spyOn(childProcess as any, 'exec').mockImplementation((...args: any[]) => {
       const command = args[0];
@@ -126,7 +126,7 @@ try {
       return (origExec as any).apply(childProcess, args);
     });
   }
-  // execSync
+  
   if (!vi.isMockFunction((childProcess as any).execSync)) {
     vi.spyOn(childProcess as any, 'execSync').mockImplementation((...args: any[]) => {
       const command = args[0];
@@ -135,7 +135,7 @@ try {
       return (origExecSync as any).apply(childProcess, args);
     });
   }
-  // execFile
+  
   if (!vi.isMockFunction((childProcess as any).execFile)) {
     vi.spyOn(childProcess as any, 'execFile').mockImplementation((...args: any[]) => {
       const file = args[0];
@@ -144,7 +144,7 @@ try {
       return (origExecFile as any).apply(childProcess, args);
     });
   }
-  // execFileSync
+  
   if (!vi.isMockFunction((childProcess as any).execFileSync)) {
     vi.spyOn(childProcess as any, 'execFileSync').mockImplementation((...args: any[]) => {
       const file = args[0];
@@ -153,7 +153,7 @@ try {
       return (origExecFileSync as any).apply(childProcess, args);
     });
   }
-  // spawn
+  
   if (!vi.isMockFunction((childProcess as any).spawn)) {
     vi.spyOn(childProcess as any, 'spawn').mockImplementation((...args: any[]) => {
       const command = args[0];
@@ -162,7 +162,7 @@ try {
       return (origSpawn as any).apply(childProcess, args);
     });
   }
-  // spawnSync
+  
   if (!vi.isMockFunction((childProcess as any).spawnSync)) {
     vi.spyOn(childProcess as any, 'spawnSync').mockImplementation((...args: any[]) => {
       const command = args[0];
@@ -172,13 +172,13 @@ try {
     });
   }
 } catch (e) {
-  // If spying fails for any reason, continue without the global guard.
+  
 }
 
-// ==========================================
-// Dashboard Client Mock Configuration
-// ==========================================
-// Export mock helpers for easy access in tests
+
+
+
+
 export {
   createMockDashboardClient,
   mockTaskResponse,
@@ -199,12 +199,12 @@ export {
   assertTaskPriority
 } from './helpers/dashboardMocks';
 
-// Optionally enable global auto-mocking of DashboardClient by setting DASHBOARD_MOCK_GLOBAL=1
-// This allows integration tests to use the real client while unit tests can opt-in to the mock.
+
+
 if (process.env.DASHBOARD_MOCK_GLOBAL === '1') {
-  // This will automatically replace all DashboardClient instances with mocks
+  
   vi.mock('../src/services/DashboardClient.js', () => {
-    // Stateful in-memory store to satisfy integration tests expectations
+    
     let nextId = 1;
     const tasks: any[] = [];
 
@@ -247,7 +247,7 @@ if (process.env.DASHBOARD_MOCK_GLOBAL === '1') {
         return created;
       }
       async bulkCreateTasks(projectId: number, input: any) {
-        // Validate inputs first; if any invalid, throw bulk error per integration test expectation
+        
         const list: any[] = input?.tasks ?? [];
         const allowed = new Set(['open','in_progress','in_review','blocked','done','archived']);
         for (const t of list) {

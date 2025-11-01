@@ -19,19 +19,7 @@ interface UnblockResult {
   error?: string;
 }
 
-/**
- * UnblockAttemptStep - Attempts to resolve a task blockage
- * 
- * This step executes the unblock strategy determined by the lead engineer:
- * - "retry_with_context" - Retry with updated context/environment
- * - "create_subtasks" - Break down into smaller, unblocked tasks
- * - "request_clarification" - Add comment asking for more information
- * - "automated_fix" - Apply automated fix (e.g., dependency update, config fix)
- * - "escalate" - Mark for manual intervention
- * 
- * Outputs:
- * - unblock_attempt: Result of unblock attempt
- */
+
 export class UnblockAttemptStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as UnblockAttemptConfig;
@@ -48,7 +36,7 @@ export class UnblockAttemptStep extends WorkflowStep {
       
       let result: UnblockResult;
 
-      // Execute strategy
+      
       switch (strategy) {
         case 'retry_with_context':
           result = await this.retryWithContext(context, config, blockageAnalysis);
@@ -78,7 +66,7 @@ export class UnblockAttemptStep extends WorkflowStep {
           result = await this.retryWithContext(context, config, blockageAnalysis);
       }
 
-      // Store result in context
+      
       context.setVariable('unblock_attempt', result);
 
       logger.info('Unblock attempt completed', {
@@ -109,9 +97,7 @@ export class UnblockAttemptStep extends WorkflowStep {
     }
   }
 
-  /**
-   * Strategy: Retry with updated context
-   */
+  
   private async retryWithContext(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
@@ -123,13 +109,13 @@ export class UnblockAttemptStep extends WorkflowStep {
 
     const actions: string[] = [];
 
-    // Clear any cached context
+    
     actions.push('Cleared cached context');
 
-    // Mark task as ready for retry (status will be set to 'open' after validation)
+    
     actions.push('Prepared task for retry');
 
-    // Add analysis as task comment/metadata
+    
     if (blockageAnalysis) {
       actions.push(`Added blockage analysis: ${blockageAnalysis.reason}`);
     }
@@ -141,9 +127,7 @@ export class UnblockAttemptStep extends WorkflowStep {
     };
   }
 
-  /**
-   * Strategy: Create subtasks to break down the problem
-   */
+  
   private async createSubtasks(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
@@ -156,7 +140,7 @@ export class UnblockAttemptStep extends WorkflowStep {
     const actions: string[] = [];
     const subtasks: any[] = [];
 
-    // Extract subtask definitions from resolution plan
+    
     const subtaskDefs = resolutionPlan?.subtasks || [];
 
     if (subtaskDefs.length === 0) {
@@ -168,8 +152,8 @@ export class UnblockAttemptStep extends WorkflowStep {
       };
     }
 
-    // For now, log the subtasks that would be created
-    // In production, this would call createDashboardTask for each
+    
+    
     for (const subtask of subtaskDefs) {
       actions.push(`Identified subtask: ${subtask.title || subtask.name}`);
       subtasks.push(subtask);
@@ -185,9 +169,7 @@ export class UnblockAttemptStep extends WorkflowStep {
     };
   }
 
-  /**
-   * Strategy: Request clarification from user/PM
-   */
+  
   private async requestClarification(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
@@ -199,10 +181,10 @@ export class UnblockAttemptStep extends WorkflowStep {
 
     const actions: string[] = [];
 
-    // Extract clarification questions from resolution plan
+    
     const questions = resolutionPlan?.questions || ['Need more information to proceed'];
 
-    // In production, this would add a comment to the task
+    
     actions.push(`Prepared clarification request with ${questions.length} question(s)`);
     
     for (const question of questions) {
@@ -216,9 +198,7 @@ export class UnblockAttemptStep extends WorkflowStep {
     };
   }
 
-  /**
-   * Strategy: Apply automated fix
-   */
+  
   private async applyAutomatedFix(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
@@ -230,12 +210,12 @@ export class UnblockAttemptStep extends WorkflowStep {
 
     const actions: string[] = [];
 
-    // Extract fix details from resolution plan
+    
     const fixType = resolutionPlan?.fix_type || 'unknown';
 
     actions.push(`Identified fix type: ${fixType}`);
 
-    // Common automated fixes
+    
     switch (fixType) {
       case 'dependency_update':
         actions.push('Would update dependencies (not implemented in this version)');
@@ -253,7 +233,7 @@ export class UnblockAttemptStep extends WorkflowStep {
         actions.push(`Unknown fix type: ${fixType}`);
     }
 
-    // For now, most automated fixes just prepare the task for retry
+    
     return {
       success: true,
       resolution: `Prepared automated fix: ${fixType}`,
@@ -261,9 +241,7 @@ export class UnblockAttemptStep extends WorkflowStep {
     };
   }
 
-  /**
-   * Strategy: Escalate for manual intervention
-   */
+  
   private async escalateForManualIntervention(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
@@ -275,7 +253,7 @@ export class UnblockAttemptStep extends WorkflowStep {
 
     const actions: string[] = [];
 
-    // Add escalation marker
+    
     actions.push('Marked task for manual intervention');
     
     if (blockageAnalysis?.previous_attempts?.length > 0) {

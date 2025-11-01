@@ -3,7 +3,7 @@ import { DiffApplyStep } from '../src/workflows/steps/DiffApplyStep.js';
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
 import { logger } from '../src/logger.js';
 
-// Mock external dependencies
+
 vi.mock('../src/fileops.js', () => ({
   applyEditOps: vi.fn()
 }));
@@ -51,10 +51,10 @@ describe('DiffApplyStep Critical Error Handling', () => {
   });
 
   it('should return failure when no diff operations found', async () => {
-    // Mock empty diff content
+    
     (mockContext.getStepOutput as any).mockReturnValue('some diff content');
     
-    // Mock parser to return no operations
+    
     const { DiffParser } = await import('../src/agents/parsers/DiffParser.js');
     (DiffParser.parsePersonaResponse as any).mockReturnValue({
       success: true,
@@ -64,7 +64,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       warnings: []
     });
 
-    // Should return failure with critical error
+    
     const result = await diffApplyStep.execute(mockContext);
     
     expect(result.status).toBe('failure');
@@ -81,10 +81,10 @@ describe('DiffApplyStep Critical Error Handling', () => {
   });
 
   it('should return failure when no file changes after applying diffs', async () => {
-    // Mock diff content with operations
+    
     (mockContext.getStepOutput as any).mockReturnValue('some diff content');
     
-    // Mock parser to return operations
+    
     const { DiffParser } = await import('../src/agents/parsers/DiffParser.js');
     (DiffParser.parsePersonaResponse as any).mockReturnValue({
       success: true,
@@ -94,7 +94,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       warnings: []
     });
 
-    // Mock applyEditOps to return no changes
+    
     const { applyEditOps } = await import('../src/fileops.js');
     (applyEditOps as any).mockResolvedValue({
       changed: [],
@@ -102,7 +102,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       sha: 'test-sha'
     });
 
-    // Should return failure with critical error
+    
     const result = await diffApplyStep.execute(mockContext);
     
     expect(result.status).toBe('failure');
@@ -119,10 +119,10 @@ describe('DiffApplyStep Critical Error Handling', () => {
   });
 
   it('should return failure when no commit SHA is returned', async () => {
-    // Mock diff content with operations
+    
     (mockContext.getStepOutput as any).mockReturnValue('some diff content');
     
-    // Mock parser to return operations
+    
     const { DiffParser } = await import('../src/agents/parsers/DiffParser.js');
     (DiffParser.parsePersonaResponse as any).mockReturnValue({
       success: true,
@@ -132,7 +132,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       warnings: []
     });
 
-    // Mock applyEditOps to return changes but no commit SHA
+    
     const { applyEditOps } = await import('../src/fileops.js');
     (applyEditOps as any).mockResolvedValue({
       changed: ['test.ts'],
@@ -140,7 +140,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       sha: ''
     });
 
-    // Should return failure with critical error
+    
     const result = await diffApplyStep.execute(mockContext);
     
     expect(result.status).toBe('failure');
@@ -157,10 +157,10 @@ describe('DiffApplyStep Critical Error Handling', () => {
   });
 
   it('should succeed when valid diff operations are applied and committed', async () => {
-    // Mock diff content with operations
+    
     (mockContext.getStepOutput as any).mockReturnValue('some diff content');
     
-    // Mock parser to return operations
+    
     const { DiffParser } = await import('../src/agents/parsers/DiffParser.js');
     (DiffParser.parsePersonaResponse as any).mockReturnValue({
       success: true,
@@ -170,7 +170,7 @@ describe('DiffApplyStep Critical Error Handling', () => {
       warnings: []
     });
 
-    // Mock applyEditOps to return successful result
+    
     const { applyEditOps } = await import('../src/fileops.js');
     (applyEditOps as any).mockResolvedValue({
       changed: ['test.ts'],

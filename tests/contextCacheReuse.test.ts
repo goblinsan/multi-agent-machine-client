@@ -34,7 +34,7 @@ describe('Context Cache Reuse', () => {
 
   afterEach(async () => {
     await transport.disconnect();
-    // Temp dir cleanup happens automatically on system reboot
+    
   });
 
   it('should perform initial scan and write context artifacts', async () => {
@@ -60,7 +60,7 @@ describe('Context Cache Reuse', () => {
     expect(result.outputs?.reused_existing).toBe(false);
     expect(result.outputs?.repoScan).toHaveLength(3);
 
-    // Verify context artifacts were created
+    
     const snapshotPath = path.join(tempRepoDir, '.ma/context/snapshot.json');
     const summaryPath = path.join(tempRepoDir, '.ma/context/summary.md');
 
@@ -70,7 +70,7 @@ describe('Context Cache Reuse', () => {
     expect(snapshotExists).toBe(true);
     expect(summaryExists).toBe(true);
 
-    // Verify snapshot content
+    
     const snapshotContent = await fs.readFile(snapshotPath, 'utf-8');
     const snapshot = JSON.parse(snapshotContent);
     expect(snapshot.files).toHaveLength(3);
@@ -78,7 +78,7 @@ describe('Context Cache Reuse', () => {
   });
 
   it('should reuse existing context when source files unchanged', async () => {
-    // First scan - creates context
+    
     const step1 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -99,10 +99,10 @@ describe('Context Cache Reuse', () => {
     expect(result1.status).toBe('success');
     expect(result1.outputs?.reused_existing).toBe(false);
 
-    // Wait a bit to ensure timestamp difference
+    
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Second scan - should reuse
+    
     const step2 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -121,14 +121,14 @@ describe('Context Cache Reuse', () => {
 
     const result2 = await step2.execute(context);
     
-    // CRITICAL: Should reuse existing context
+    
     expect(result2.status).toBe('success');
     expect(result2.outputs?.reused_existing).toBe(true);
     expect(result2.outputs?.repoScan).toHaveLength(3);
   });
 
   it('should rescan when source files are modified', async () => {
-    // First scan
+    
     const step1 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -149,17 +149,17 @@ describe('Context Cache Reuse', () => {
     expect(result1.status).toBe('success');
     expect(result1.outputs?.reused_existing).toBe(false);
 
-    // Wait to ensure timestamp difference
+    
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Modify a source file
+    
     await fs.writeFile(
       path.join(tempRepoDir, 'src/index.ts'),
       'console.log("modified");\n',
       'utf-8'
     );
 
-    // Second scan - should detect changes and rescan
+    
     const step2 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -178,15 +178,15 @@ describe('Context Cache Reuse', () => {
 
     const result2 = await step2.execute(context);
     
-    // CRITICAL: Should perform new scan because source changed
+    
     expect(result2.status).toBe('success');
     expect(result2.outputs?.reused_existing).toBe(false);
-    // File count might include .ma/ artifacts from first scan, just verify it's > 0
+    
     expect(result2.outputs?.repoScan.length).toBeGreaterThan(0);
   });
 
   it('should NOT rescan when only .ma/ files change', async () => {
-    // First scan
+    
     const step1 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -206,10 +206,10 @@ describe('Context Cache Reuse', () => {
     const result1 = await step1.execute(context);
     expect(result1.status).toBe('success');
 
-    // Wait to ensure timestamp difference
+    
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Add a file in .ma/ (excluded from scan)
+    
     await fs.mkdir(path.join(tempRepoDir, '.ma/tasks'), { recursive: true });
     await fs.writeFile(
       path.join(tempRepoDir, '.ma/tasks/plan.md'),
@@ -217,7 +217,7 @@ describe('Context Cache Reuse', () => {
       'utf-8'
     );
 
-    // Second scan - should still reuse because .ma/ is excluded
+    
     const step2 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -236,13 +236,13 @@ describe('Context Cache Reuse', () => {
 
     const result2 = await step2.execute(context);
     
-    // CRITICAL: Should reuse because changes are in excluded .ma/ directory
+    
     expect(result2.status).toBe('success');
     expect(result2.outputs?.reused_existing).toBe(true);
   });
 
   it('should force rescan when forceRescan is true', async () => {
-    // First scan
+    
     const step1 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -263,7 +263,7 @@ describe('Context Cache Reuse', () => {
     expect(result1.status).toBe('success');
     expect(result1.outputs?.reused_existing).toBe(false);
 
-    // Second scan with forceRescan=true
+    
     const step2 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -282,13 +282,13 @@ describe('Context Cache Reuse', () => {
 
     const result2 = await step2.execute(context);
     
-    // CRITICAL: Should rescan even though files unchanged
+    
     expect(result2.status).toBe('success');
     expect(result2.outputs?.reused_existing).toBe(false);
   });
 
   it('should set reused_existing flag correctly in step outputs', async () => {
-    // First scan
+    
     const step1 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -307,14 +307,14 @@ describe('Context Cache Reuse', () => {
 
     const result1 = await step1.execute(context);
     
-    // CRITICAL: First scan should have reused_existing = false in outputs
+    
     expect(result1.status).toBe('success');
     expect(result1.outputs?.reused_existing).toBe(false);
 
-    // Wait to ensure timestamp difference
+    
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Second scan - should reuse
+    
     const step2 = new ContextStep({
       name: 'context_scan',
       type: 'ContextStep',
@@ -333,12 +333,12 @@ describe('Context Cache Reuse', () => {
 
     const result2 = await step2.execute(context);
     
-    // CRITICAL: Second scan should have reused_existing = true in outputs
-    // This flag is used in workflow YAML to skip LLM calls: condition: "${context_scan.reused_existing} != true"
+    
+    
     expect(result2.status).toBe('success');
     expect(result2.outputs?.reused_existing).toBe(true);
     
-    // Verify the flag is accessible via step output name
+    
     const stepOutputs = context.getStepOutput('context_scan');
     if (stepOutputs) {
       expect(stepOutputs.reused_existing).toBe(true);

@@ -38,24 +38,7 @@ export interface PlanningResult {
   };
 }
 
-/**
- * PlanningStep - Creates implementation plans for tasks
- * 
- * Configuration:
- * - persona: Persona to use for planning
- * - model: LLM model to use (optional)
- * - temperature: Sampling temperature (default: 0.3)
- * - planningPromptTemplate: Custom planning prompt (optional)
- * - maxPlanningTokens: Max tokens for planning (default: 2000)
- * - requireApproval: Whether plan needs approval (default: false)
- * - planValidationRules: Rules to validate the plan
- * 
- * Outputs:
- * - planningResult: Complete planning result
- * - plan: The text plan
- * - breakdown: Structured plan breakdown
- * - risks: Identified risks and mitigations
- */
+
 export class PlanningStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PlanningConfig;
@@ -77,16 +60,16 @@ export class PlanningStep extends WorkflowStep {
     });
 
     try {
-      // Get task data from context
+      
       const task = context.getVariable('task') as TaskData;
       if (!task) {
         throw new Error('No task data found in context');
       }
 
-      // Get repository context
+      
       const contextData = context.getVariable('context');
 
-      // Build planning prompt
+      
       const prompt = planningPromptTemplate || this.buildPlanningPrompt(task, contextData);
 
       logger.debug('Generated planning prompt', {
@@ -95,7 +78,7 @@ export class PlanningStep extends WorkflowStep {
         taskType: task.type
       });
 
-      // Call LLM for planning
+      
       const messages: ChatMessage[] = [
         {
           role: 'system',
@@ -139,23 +122,23 @@ export class PlanningStep extends WorkflowStep {
 
       const duration_ms = Date.now() - startTime;
 
-      // Parse the planning response
+      
       let parsedPlan: any;
       try {
         parsedPlan = JSON.parse(llmResponse.content);
       } catch (error) {
-        // Fallback: try to extract structured data from text
+        
         parsedPlan = this.parseUnstructuredPlan(llmResponse.content);
       }
 
-      // Validate the plan
+      
       const validationErrors = this.validatePlan(parsedPlan, planValidationRules);
       if (validationErrors.length > 0) {
         logger.warn('Plan validation failed', { errors: validationErrors });
-        // Continue with warnings rather than failing
+        
       }
 
-      // Build planning result
+      
       const planningResult: PlanningResult = {
         plan: parsedPlan.plan || llmResponse.content,
         breakdown: parsedPlan.breakdown || [],
@@ -169,7 +152,7 @@ export class PlanningStep extends WorkflowStep {
         }
       };
 
-      // Set context variables
+      
       context.setVariable('planningResult', planningResult);
       context.setVariable('plan', planningResult.plan);
       context.setVariable('breakdown', planningResult.breakdown);
@@ -233,7 +216,7 @@ export class PlanningStep extends WorkflowStep {
       prompt += `- ${fileCount} files scanned\n`;
       prompt += `- ${(totalBytes / 1024).toFixed(1)} KB total size\n`;
       
-      // Include key files
+      
       const keyFiles = contextData.repoScan
         .filter((file: any) => 
           file.path.endsWith('.ts') || 
@@ -263,7 +246,7 @@ Focus on practical, actionable steps that can be executed by the development tea
   }
 
   private parseUnstructuredPlan(text: string): any {
-    // Simple fallback parser for unstructured planning text
+    
     const lines = text.split('\n').filter(line => line.trim());
     
     let plan = '';
@@ -277,7 +260,7 @@ Focus on practical, actionable steps that can be executed by the development tea
       const trimmed = line.trim();
       
       if (trimmed.toLowerCase().includes('step') || trimmed.match(/^\d+\./)) {
-        // Extract step information
+        
         const stepMatch = trimmed.match(/(?:step\s*)?(\d+)\.?\s*(.+)/i);
         if (stepMatch) {
           breakdown.push({
@@ -329,9 +312,9 @@ Focus on practical, actionable steps that can be executed by the development tea
       }
     }
     
-    // Apply custom validation rules
+    
     for (const rule of rules) {
-      // Simple rule validation - can be enhanced
+      
       if (rule === 'require_risks' && (!plan.risks || plan.risks.length === 0)) {
         errors.push('Plan must include risk assessment');
       }
@@ -385,7 +368,7 @@ Focus on practical, actionable steps that can be executed by the development tea
   }
 
   async cleanup(context: WorkflowContext): Promise<void> {
-    // Clean up any planning artifacts
+    
     const planningResult = context.getVariable('planningResult');
     if (planningResult) {
       logger.debug('Cleaning up planning result');

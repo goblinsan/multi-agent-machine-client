@@ -1,15 +1,4 @@
-/**
- * Mock implementation of gitUtils for testing.
- * 
- * Provides standard git utility mocks for tests. Most coordinator tests need
- * resolveRepoFromPayload to work with temp repositories.
- * 
- * Usage in test files:
- *   vi.mock('../src/gitUtils.js');  // Uses this mock
- * 
- * Note: Tests that need actual git operations (commitAndPush.test.ts, etc.)
- * should keep inline mocks or use real implementations.
- */
+
 import { vi } from 'vitest';
 
 export const resolveRepoFromPayload = vi.fn().mockImplementation(async (payload) => ({

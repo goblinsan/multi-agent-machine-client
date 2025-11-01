@@ -1,18 +1,9 @@
 import { WorkflowContext } from '../../engine/WorkflowContext.js';
 import { logger } from '../../../logger.js';
 
-/**
- * Resolves variable templates in payload data
- * Handles:
- * - Simple variables: ${variableName}
- * - Nested properties: ${task.id}, ${milestone.slug}
- * - Template strings: '.ma/tasks/${task.id}/plan.md'
- * - Arrays and objects (recursive)
- */
+
 export class VariableResolver {
-  /**
-   * Resolve all variables in a payload object
-   */
+  
   resolvePayload(payload: Record<string, any>, context: WorkflowContext): Record<string, any> {
     const resolved: Record<string, any> = {};
 
@@ -23,9 +14,7 @@ export class VariableResolver {
     return resolved;
   }
 
-  /**
-   * Recursively resolve a value, handling arrays, objects, and templates
-   */
+  
   private resolveValue(value: any, context: WorkflowContext): any {
     if (value === null || value === undefined) {
       return value;
@@ -50,13 +39,7 @@ export class VariableResolver {
     return value;
   }
 
-  /**
-   * Resolve a string that may contain variable templates
-   * Examples:
-   * - '${task}' (exact match) → returns the task object as-is
-   * - '${task.id}' → '42'
-   * - '.ma/tasks/${task.id}/plan.md' → '.ma/tasks/42/plan.md'
-   */
+  
   private resolveStringTemplate(template: string, context: WorkflowContext): any {
     const variablePattern = /\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}/g;
     

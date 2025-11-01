@@ -1,31 +1,5 @@
-#!/usr/bin/env node
-/**
- * Persona Worker Runner
- * 
- * Runs persona consumers to process requests from the request stream.
- * This is the main entry point for distributed persona execution.
- * 
- * Usage:
- *   npm run dev
- *   npm run dev -- --consumer-id=worker-2
- * 
- * Configuration (via .env):
- *   TRANSPORT_TYPE=redis (required for distributed mode)
- *   ALLOWED_PERSONAS=context,lead-engineer,tester-qa (personas to handle)
- *   CONSUMER_ID=worker-1 (unique ID for this worker)
- *   
- * Features:
- *   - Supports multiple personas per machine via ALLOWED_PERSONAS
- *   - Each persona gets its own consumer group for load balancing
- *   - Graceful shutdown on SIGINT/SIGTERM
- *   - Works with both Redis and Local transport
- * 
- * Architecture:
- *   - Multiple machines can run this script
- *   - Each machine can handle different or overlapping persona sets
- *   - Redis consumer groups ensure work is distributed across machines
- *   - Coordinator runs separately (npm run coordinator)
- */
+
+
 
 import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
@@ -93,7 +67,7 @@ async function main() {
     process.exit(0);
   }
 
-  // Parse command line args
+  
   let consumerId = cfg.consumerId;
   for (const arg of args) {
     if (arg.startsWith('--consumer-id=')) {
@@ -112,7 +86,7 @@ async function main() {
   
   console.log('');
 
-  // Validate configuration
+  
   if (cfg.allowedPersonas.length === 0) {
     console.error('ERROR: No personas configured in ALLOWED_PERSONAS');
     console.error('Set ALLOWED_PERSONAS in .env file (comma-separated list)');
@@ -120,7 +94,7 @@ async function main() {
     process.exit(1);
   }
 
-  // Check that personas have model mappings
+  
   const personasWithoutModels = cfg.allowedPersonas.filter(p => !cfg.personaModels[p]);
   if (personasWithoutModels.length > 0) {
     console.warn('WARNING: Some personas have no model mapping:', personasWithoutModels.join(', '));
@@ -128,7 +102,7 @@ async function main() {
     console.warn('Add model mappings in PERSONA_MODELS_JSON or .env');
   }
 
-  // Connect to transport
+  
   console.log('Connecting to transport...');
   try {
     transport = await getTransport();
@@ -138,11 +112,11 @@ async function main() {
     process.exit(1);
   }
 
-  // Setup graceful shutdown
+  
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  // Create and start persona consumer
+  
   console.log('Starting persona consumer...');
   consumer = new PersonaConsumer(transport);
 
@@ -157,7 +131,7 @@ async function main() {
     console.log('Press Ctrl+C to stop');
     console.log('');
 
-    // Keep process alive - consumer loops run in background
+    
     await consumer.waitForCompletion();
 
   } catch (error: any) {

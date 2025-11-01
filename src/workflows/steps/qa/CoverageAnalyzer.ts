@@ -11,13 +11,9 @@ export interface CoverageAnalysisResult {
   criticalGaps: string[];
 }
 
-/**
- * Analyzes test coverage metrics and provides recommendations
- */
+
 export class CoverageAnalyzer {
-  /**
-   * Analyze coverage metrics and generate recommendations
-   */
+  
   analyzeCoverage(coverage: CoverageMetrics | undefined): CoverageAnalysisResult {
     if (!coverage) {
       return {
@@ -33,7 +29,7 @@ export class CoverageAnalyzer {
     const recommendations: string[] = [];
     const criticalGaps: string[] = [];
 
-    // Overall coverage assessment
+    
     if (avgCoverage >= 90) {
       status = 'excellent';
     } else if (avgCoverage >= 80) {
@@ -48,7 +44,7 @@ export class CoverageAnalyzer {
       criticalGaps.push('Low overall test coverage may hide critical bugs');
     }
 
-    // Specific coverage analysis
+    
     if (coverage.branches < 80) {
       recommendations.push('Add tests for conditional logic and error paths');
       if (coverage.branches < 60) {

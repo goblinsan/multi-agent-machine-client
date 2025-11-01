@@ -7,7 +7,7 @@ const execGit = promisify(execFile);
 
 type GitRunOptions = { cwd?: string };
 
-// Allow tests to override how git is executed without relying on spy semantics on ESM exports
+
 type RunGitImpl = (args: string[], options?: GitRunOptions) => Promise<{ stdout: string; stderr?: string }>;
 let runGitImpl: RunGitImpl | null = null;
 
@@ -25,7 +25,7 @@ export async function runGit(args: string[], options: GitRunOptions = {}) {
   return execGit("git", args, { cwd: options.cwd, env: gitEnv() });
 }
 
-// Test-only hook to override git execution
+
 export function __setRunGitImplForTests(impl?: RunGitImpl | null) {
   runGitImpl = impl || null;
 }
@@ -34,7 +34,7 @@ export function isWorkspaceRepo(repoRoot: string) {
   try {
     const ws = path.resolve(process.cwd());
     const rr = path.resolve(repoRoot);
-    // Treat the current workspace folder as protected (no mutations) unless explicitly allowed
+    
     return rr === ws;
   } catch {
     return false;

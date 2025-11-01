@@ -12,17 +12,17 @@ describe('ContextExtractor', () => {
   beforeEach(async () => {
     extractor = new ContextExtractor();
     
-    // Create temp directory for artifact tests
+    
     tempDir = path.join(process.cwd(), 'test-temp-' + Date.now());
     await fs.mkdir(tempDir, { recursive: true });
   });
 
   afterEach(async () => {
-    // Cleanup temp directory
+    
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
     } catch (error) {
-      // Ignore cleanup errors
+      
     }
     vi.restoreAllMocks();
   });
@@ -82,7 +82,7 @@ describe('ContextExtractor', () => {
     });
 
     it('should extract from task.data.description (dashboard structure)', async () => {
-      // This tests the ACTUAL structure returned by the dashboard API
+      
       const userText = await extractor.extractUserText({
         persona: 'implementation-planner',
         workflowId: 'wf-1',
@@ -136,7 +136,7 @@ describe('ContextExtractor', () => {
     });
 
     it('should throw error if task.data exists but has no description', async () => {
-      // Test dashboard structure without description
+      
       await expect(
         extractor.extractUserText({
           persona: 'implementation-planner',
@@ -175,7 +175,7 @@ describe('ContextExtractor', () => {
 
   describe('readArtifactFromGit', () => {
     it('should read artifact from git repo', async () => {
-      // Create a fake repo structure
+      
       const repoName = 'test-repo';
       const repoPath = path.join(tempDir, repoName);
       const artifactPath = 'artifacts/plan.md';
@@ -184,7 +184,7 @@ describe('ContextExtractor', () => {
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, '# Test Plan\n\nThis is a test plan.');
 
-      // Mock cfg.projectBase to use our temp directory
+      
       const originalProjectBase = cfg.projectBase;
       cfg.projectBase = tempDir;
 
@@ -348,7 +348,7 @@ describe('ContextExtractor', () => {
         repo: 'https://github.com/test/repo.git'
       });
 
-      // Should fallback to intent when artifact read fails
+      
       expect(userText).toBe('fallback_intent');
     });
   });
@@ -396,7 +396,7 @@ describe('ContextExtractor', () => {
           }
         });
       } catch (error) {
-        // Expected to throw
+        
       }
 
       expect(errorSpy).toHaveBeenCalledWith(

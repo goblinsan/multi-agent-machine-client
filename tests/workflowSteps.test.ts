@@ -15,7 +15,7 @@ import * as gitUtils from '../src/gitUtils.js';
 import { abortWorkflowDueToPushFailure, abortWorkflowWithReason } from '../src/workflows/helpers/workflowAbort.js';
 import { sendPersonaRequest, waitForPersonaCompletion } from '../src/agents/persona.js';
 
-// Mock external dependencies
+
 vi.mock('../src/redisClient.js', () => {
   const redisMock = {
     xGroupCreate: vi.fn().mockResolvedValue(null),
@@ -120,7 +120,7 @@ describe('Workflow Steps', () => {
   let mockTransport: any;
 
   beforeEach(() => {
-    // Create mock transport with all necessary methods
+    
     mockTransport = {
       xGroupCreate: vi.fn().mockResolvedValue(null),
       xReadGroup: vi.fn().mockResolvedValue({
@@ -157,7 +157,7 @@ describe('Workflow Steps', () => {
       mockTransport,
       {}
     );
-    // Disable persona bypass for tests that verify persona request behavior
+    
     context.setVariable('SKIP_PERSONA_OPERATIONS', false);
     vi.clearAllMocks();
     vi.mocked(sendPersonaRequest).mockResolvedValue('corr-123');
@@ -189,7 +189,7 @@ describe('Workflow Steps', () => {
       expect(result.outputs?.task).toBeDefined();
       expect(result.outputs?.taskId).toBe('test-id-123');
       
-      // Check context variables
+      
       const task = context.getVariable('task');
       expect(task).toBeDefined();
       expect(task.type).toBe('code-task');
@@ -202,7 +202,7 @@ describe('Workflow Steps', () => {
         type: 'PullTaskStep',
         config: {
           streamName: 'test-stream'
-          // Missing required fields
+          
         }
       };
 
@@ -236,7 +236,7 @@ describe('Workflow Steps', () => {
       expect(result.outputs?.context).toBeDefined();
       expect(result.outputs?.repoScan).toBeDefined();
       
-      // Check context variables
+      
       const contextData = context.getVariable('context');
       expect(contextData).toBeDefined();
       expect(contextData.metadata.fileCount).toBe(2);
@@ -259,7 +259,7 @@ describe('Workflow Steps', () => {
 
   describe('CodeGenStep', () => {
     it('should generate code using LLM', async () => {
-      // Set up task in context
+      
       context.setVariable('task', {
         id: 'test-123',
         type: 'code-task',
@@ -285,7 +285,7 @@ describe('Workflow Steps', () => {
       expect(result.outputs?.diffs).toBeDefined();
       expect(result.outputs?.diffs.length).toBeGreaterThan(0);
       
-      // Check context variables
+      
       const response = context.getVariable('response');
       expect(response).toBeDefined();
       expect(response).toContain('Generated code response');
@@ -356,7 +356,7 @@ describe('Workflow Steps', () => {
 
   describe('PlanningStep', () => {
     it('should create implementation plans', async () => {
-      // Set up task in context
+      
       context.setVariable('task', {
         id: 'test-123',
         type: 'feature-task',
@@ -367,7 +367,7 @@ describe('Workflow Steps', () => {
         }
       });
 
-      // Mock structured JSON response
+      
       const mockLLMResponse = {
         content: JSON.stringify({
           plan: 'Implement the feature in 3 phases',
@@ -412,7 +412,7 @@ describe('Workflow Steps', () => {
       expect(result.outputs?.breakdown).toBeDefined();
       expect(result.outputs?.risks).toBeDefined();
       
-      // Check structured data
+      
       const planningResult = context.getVariable('planningResult');
       expect(planningResult).toBeDefined();
       expect(planningResult.breakdown.length).toBe(1);
@@ -422,13 +422,13 @@ describe('Workflow Steps', () => {
 
   describe('QAStep', () => {
     it('should execute tests and analyze results', async () => {
-      // Mock successful test execution
+      
       const mockSpawn = {
         stdout: { on: vi.fn() },
         stderr: { on: vi.fn() },
         on: vi.fn((event, callback) => {
           if (event === 'close') {
-            // Simulate successful test run
+            
             setTimeout(() => callback(0), 10);
           }
         }),
@@ -439,7 +439,7 @@ describe('Workflow Steps', () => {
         spawn: vi.fn().mockReturnValue(mockSpawn)
       };
 
-      // Mock test output
+      
       setTimeout(() => {
         const dataCallback = mockSpawn.stdout.on.mock.calls.find(call => call[0] === 'data')?.[1];
         if (dataCallback) {
@@ -469,7 +469,7 @@ describe('Workflow Steps', () => {
 
   describe('TaskUpdateStep', () => {
     it('should update task status', async () => {
-      // Set up task in context
+      
       context.setVariable('task', {
         id: 'test-task-123',
         type: 'code-task'
@@ -493,7 +493,7 @@ describe('Workflow Steps', () => {
       expect(result.outputs?.updated).toBe(true);
       expect(result.outputs?.taskId).toBe('test-task-123');
       
-      // Check context variables
+      
       const updateResult = context.getVariable('updateResult');
       expect(updateResult).toBeDefined();
       expect(updateResult.taskId).toBe('test-task-123');
@@ -540,10 +540,10 @@ describe('Workflow Steps', () => {
     });
   });
 
-  // New workflow steps tests
+  
   describe('PlanEvaluationStep', () => {
     beforeEach(() => {
-      // Add mock plan data to context
+      
       context.setStepOutput('planning', {
         plan: {
           title: 'Test Implementation Plan',
@@ -600,14 +600,14 @@ describe('Workflow Steps', () => {
     });
 
     it('should fail evaluation for poor quality plan', async () => {
-      // Override with poor quality plan
+      
       context.setStepOutput('planning', {
         plan: {
           title: 'Bad',
           description: 'Too short',
           steps: [],
           complexity: 'high'
-          // Missing required fields
+          
         }
       });
 
@@ -658,7 +658,7 @@ describe('Workflow Steps', () => {
     });
 
     it('should handle missing plan data', async () => {
-      // Clear plan data
+      
       context.setStepOutput('planning', {});
 
       const config = {
@@ -677,7 +677,7 @@ describe('Workflow Steps', () => {
 
   describe('QAAnalysisStep', () => {
     beforeEach(() => {
-      // Add mock QA results to context
+      
       context.setStepOutput('qa', {
         qaResults: {
           status: 'failed',
@@ -764,13 +764,13 @@ describe('Workflow Steps', () => {
       expect(categories).toBeDefined();
       expect(categories.length).toBeGreaterThan(0);
       
-      // Should categorize TypeErrors and SyntaxErrors
+      
       expect(categories.some((c: any) => c.name === 'Type Error')).toBe(true);
       expect(categories.some((c: any) => c.name === 'Syntax Error')).toBe(true);
     });
 
     it('should handle good QA results', async () => {
-      // Override with passing tests
+      
       context.setStepOutput('qa', {
         qaResults: {
           status: 'passed',
@@ -823,7 +823,7 @@ describe('Workflow Steps', () => {
     });
 
     it('should handle missing QA results', async () => {
-      // Clear QA data
+      
       context.setStepOutput('qa', {});
 
       const config = {
@@ -935,7 +935,7 @@ describe('Workflow Steps', () => {
 
   describe('TaskCreationStep', () => {
     beforeEach(() => {
-      // Add mock QA analysis results
+      
       context.setStepOutput('qa-analysis', {
         analysis: {
           overallAssessment: {
@@ -974,7 +974,7 @@ describe('Workflow Steps', () => {
         }
       });
 
-      // Add mock plan evaluation results
+      
       context.setStepOutput('plan-evaluation', {
         evaluation: {
           issues: [
@@ -1013,7 +1013,7 @@ describe('Workflow Steps', () => {
       expect(result.outputs?.tasksByPriority).toBeDefined();
       
       const tasks = result.outputs?.tasks as any[];
-      // TaskGenerator preserves the original category from failureAnalyses
+      
       expect(tasks.length).toBeGreaterThan(0);
       expect(tasks.some(t => t.priority === 'critical' || t.priority === 'high')).toBe(true);
     });
@@ -1035,7 +1035,7 @@ describe('Workflow Steps', () => {
       expect(result.outputs?.tasksCreated).toBeGreaterThan(0);
       
       const tasks = result.outputs?.tasks as any[];
-      // TaskGenerator preserves issue.category from plan evaluation
+      
       expect(tasks.some(t => t.category === 'completeness')).toBe(true);
     });
 
@@ -1055,7 +1055,7 @@ describe('Workflow Steps', () => {
       expect(result.status).toBe('success');
       
       const tasks = result.outputs?.tasks as any[];
-      // Should filter out the medium confidence timeout task (0.7)
+      
       expect(tasks.every(t => t.confidence >= 0.95)).toBe(true);
     });
 
@@ -1077,7 +1077,7 @@ describe('Workflow Steps', () => {
     });
 
     it('should group related issues when enabled', async () => {
-      // Add multiple similar failures
+      
       context.setStepOutput('qa-analysis', {
         analysis: {
           failureAnalyses: [
@@ -1116,7 +1116,7 @@ describe('Workflow Steps', () => {
       expect(result.status).toBe('success');
       
       const tasks = result.outputs?.tasks as any[];
-      // Should create grouped task
+      
       expect(tasks.some(t => t.title && t.title.includes('Type Error'))).toBe(true);
     });
 
@@ -1146,7 +1146,7 @@ describe('Workflow Steps', () => {
     });
 
     it('should handle missing source data gracefully', async () => {
-      // Clear all source data
+      
       context.setStepOutput('qa-analysis', {});
       context.setStepOutput('plan-evaluation', {});
 

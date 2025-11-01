@@ -7,15 +7,7 @@ import { hasLocalChanges, remoteBranchExists, detectRemoteDefaultBranch } from "
 import { parseRemote, maskRemote } from "../utils/remoteUtils.js";
 import { sanitizeSegment, directoryExists } from "../utils/fsUtils.js";
 
-/**
- * RepoSetup - Handles repository initialization and setup
- * 
- * Responsibilities:
- * - Clone and initialize repositories
- * - Configure git credentials
- * - Manage remote URLs and authentication
- * - Determine repository directory paths
- */
+
 
 type RemoteInfo = {
   remote: string;
@@ -23,18 +15,14 @@ type RemoteInfo = {
   credentialUrl?: URL;
 };
 
-/**
- * Ensure the PROJECT_BASE directory exists
- */
+
 export async function ensureProjectBase() {
   await fs.mkdir(cfg.projectBase, { recursive: true });
 }
 
-/**
- * Determine the local directory path for a repository
- */
+
 export function repoDirectoryFor(remote: string, projectHint?: string | null) {
-  // Always prefer projectHint when available to avoid deep nested paths like PROJECT_BASE/github.com/org/repo
+  
   if (projectHint && projectHint.trim().length) {
     const segments = projectHint
       .split(/[\\/]+/)
@@ -45,8 +33,8 @@ export function repoDirectoryFor(remote: string, projectHint?: string | null) {
     }
   }
 
-  // Fallback: extract project name from remote URL path, but DON'T include hostname
-  // This gives us PROJECT_BASE/project-name instead of PROJECT_BASE/github.com/org/project-name
+  
+  
   const parsed = parseRemote(remote);
   const rel = parsed.path.replace(/\.git$/i, "");
   const pieces = rel
@@ -54,20 +42,18 @@ export function repoDirectoryFor(remote: string, projectHint?: string | null) {
     .map(sanitizeSegment)
     .filter(Boolean);
   
-  // Use only the last segment (project name) from the remote path
-  // e.g., "goblinsan/project-name" -> use "project-name"
+  
+  
   if (pieces.length > 0) {
     const projectName = pieces[pieces.length - 1];
     return path.join(cfg.projectBase, projectName);
   }
   
-  // Last resort fallback
+  
   return path.join(cfg.projectBase, cfg.defaultRepoName);
 }
 
-/**
- * Add credentials to a remote URL if configured
- */
+
 export function remoteWithCredentials(remote: string): RemoteInfo {
   const secret = cfg.git.token || cfg.git.password;
   const hasSshKey = Boolean(cfg.git.sshKeyPath && cfg.git.sshKeyPath.length);
@@ -79,7 +65,7 @@ export function remoteWithCredentials(remote: string): RemoteInfo {
       const sshRemote = `git@${host}:${parsed.path}`;
       return { remote: sshRemote, sanitized: sshRemote };
     } catch {
-      // fall through and let HTTPS handling take over
+      
     }
   }
 
@@ -100,9 +86,7 @@ export function remoteWithCredentials(remote: string): RemoteInfo {
   }
 }
 
-/**
- * Configure git credential store for a repository
- */
+
 export async function configureCredentialStore(repoRoot: string, credentialUrl?: URL) {
   if (!credentialUrl) return;
   if (!cfg.git.credentialsPath) return;
@@ -110,7 +94,7 @@ export async function configureCredentialStore(repoRoot: string, credentialUrl?:
 
   try {
     await fs.mkdir(path.dirname(credentialsPath), { recursive: true });
-  } catch { /* directory may already exist */ }
+  } catch {  }
 
   const username = credentialUrl.username || (cfg.git.username || (cfg.git.token ? "git" : ""));
   const password = credentialUrl.password || cfg.git.token || cfg.git.password;
@@ -132,10 +116,7 @@ export async function configureCredentialStore(repoRoot: string, credentialUrl?:
   }
 }
 
-/**
- * Ensure a repository is cloned and up-to-date
- * Returns the repo root path and sanitized remote URL
- */
+
 export async function ensureRepo(remote: string, branch: string | null, projectHint: string | null) {
   await ensureProjectBase();
   const remoteInfo = remoteWithCredentials(remote);
@@ -148,7 +129,7 @@ export async function ensureRepo(remote: string, branch: string | null, projectH
   if (!repoExists) {
     await fs.mkdir(path.dirname(repoRoot), { recursive: true });
     logger.info("git clone", { remote: displayRemote, repoRoot });
-    // Always run clone with an explicit cwd to avoid inheriting the process cwd
+    
     await runGit(["clone", remoteInfo.remote, repoRoot], { cwd: cfg.projectBase });
   } else if (!gitDirExists) {
     throw new Error(`Cannot reuse ${repoRoot}: path exists but is not a git repo`);
@@ -156,7 +137,7 @@ export async function ensureRepo(remote: string, branch: string | null, projectH
     logger.info("git fetch", { remote: displayRemote, repoRoot });
     try {
       await runGit(["remote", "set-url", "origin", remoteInfo.sanitized], { cwd: repoRoot });
-    } catch { /* remote set-url may fail, continue with fetch */ }
+    } catch {  }
     await runGit(["fetch", "--all", "--tags"], { cwd: repoRoot });
   }
 
@@ -180,7 +161,7 @@ export async function ensureRepo(remote: string, branch: string | null, projectH
         if (remoteExists) {
           await runGit(["checkout", "-B", branch, `origin/${branch}`], { cwd: repoRoot });
         } else {
-          // Branch doesn't exist locally or remotely, will be created later
+          
           logger.debug("Branch does not exist locally or remotely", { repoRoot, branch });
         }
       } catch (e) {
@@ -188,13 +169,13 @@ export async function ensureRepo(remote: string, branch: string | null, projectH
       }
     }
     
-    // Only try to pull if remote branch exists
+    
     if (remoteExists) {
       try {
         await runGit(["pull", "--ff-only", "origin", branch], { cwd: repoRoot });
       } catch (e) {
         logger.warn("git pull failed", { error: e, repoRoot, branch });
-        // Safe realignment if no local changes exist
+        
         try {
           if (!(await hasLocalChanges(repoRoot))) {
             await runGit(["fetch", "origin", branch], { cwd: repoRoot }).catch(()=>{});
@@ -212,7 +193,7 @@ export async function ensureRepo(remote: string, branch: string | null, projectH
     let current = "";
     try {
       current = (await runGit(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repoRoot })).stdout.trim();
-    } catch { /* rev-parse may fail in detached HEAD */ }
+    } catch {  }
 
     if (!current || current === "HEAD") {
       const fallback = (await detectRemoteDefaultBranch(repoRoot)) || cfg.git.defaultBranch;

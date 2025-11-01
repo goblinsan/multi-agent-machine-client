@@ -22,9 +22,7 @@ export interface FailureCategory {
   examples: string[];
 }
 
-/**
- * Categorizes test failures based on error patterns
- */
+
 export class FailureCategorizer {
   private static readonly BUILT_IN_CATEGORIES: CategoryDefinition[] = [
     {
@@ -71,13 +69,11 @@ export class FailureCategorizer {
     }
   ];
 
-  /**
-   * Categorize failures based on error patterns
-   */
+  
   categorizeFailures(failures: QAFailure[], customCategories?: CategoryDefinition[]): FailureCategory[] {
     const categories = new Map<string, FailureCategory>();
     
-    // Initialize with built-in categories
+    
     const allCategories = [
       ...FailureCategorizer.BUILT_IN_CATEGORIES,
       ...(customCategories || [])
@@ -115,7 +111,7 @@ export class FailureCategorizer {
         }
       }
 
-      // Create "Other" category for uncategorized failures
+      
       if (!categorized) {
         if (!categories.has('Other')) {
           categories.set('Other', {
@@ -138,9 +134,7 @@ export class FailureCategorizer {
     return Array.from(categories.values()).sort((a, b) => b.count - a.count);
   }
 
-  /**
-   * Get built-in category definitions
-   */
+  
   static getBuiltInCategories(): CategoryDefinition[] {
     return [...FailureCategorizer.BUILT_IN_CATEGORIES];
   }

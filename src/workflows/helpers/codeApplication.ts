@@ -79,7 +79,7 @@ export async function applyAgentCodeChanges(options: ApplyAgentCodeChangesOption
   const editSpecCandidate = parseOutcome.editSpec && typeof parseOutcome.editSpec === 'object' ? parseOutcome.editSpec : null;
   const editOps = Array.isArray((editSpecCandidate as any)?.ops) ? (editSpecCandidate as any).ops : [];
   
-  // Log warnings about skipped files
+  
   const warnings = (editSpecCandidate as any)?.warnings || [];
   if (warnings.length > 0) {
     logger.warn('coordinator: skipped files during diff parsing', {
@@ -121,7 +121,7 @@ export async function applyAgentCodeChanges(options: ApplyAgentCodeChangesOption
     throw new Error(messages.noChanges);
   }
 
-  try { await ensureBranchPublished(repoRoot, branchName); } catch { /* branch may already be published */ }
+  try { await ensureBranchPublished(repoRoot, branchName); } catch {  }
 
   const commitResult = await commitAndPushPaths({ repoRoot, branch: branchName, message: options.commitMessage ?? `feat: ${taskName}`, paths: editResult.changed });
   if (!commitResult || !commitResult.committed || !commitResult.pushed) {

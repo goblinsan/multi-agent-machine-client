@@ -10,34 +10,22 @@ import type { FailureAnalysis } from './qa/FailureAnalyzer.js';
 import type { CoverageAnalysisResult } from './qa/CoverageAnalyzer.js';
 
 interface QAAnalysisConfig {
-  /**
-   * Source of QA results to analyze
-   */
+  
   qaResultsSource?: 'context' | 'input';
   
-  /**
-   * Whether to perform automated failure categorization
-   */
+  
   categorizeFailures?: boolean;
   
-  /**
-   * Whether to suggest fixes for common failure patterns
-   */
+  
   suggestFixes?: boolean;
   
-  /**
-   * Whether to analyze test coverage implications
-   */
+  
   analyzeCoverage?: boolean;
   
-  /**
-   * Whether to track failure patterns over time
-   */
+  
   trackPatterns?: boolean;
   
-  /**
-   * Custom failure categories to recognize
-   */
+  
   customCategories?: Array<{
     name: string;
     patterns: string[];
@@ -45,14 +33,10 @@ interface QAAnalysisConfig {
     description: string;
   }>;
   
-  /**
-   * Maximum number of failure details to analyze
-   */
+  
   maxFailuresToAnalyze?: number;
   
-  /**
-   * Whether to perform root cause analysis
-   */
+  
   performRootCauseAnalysis?: boolean;
 }
 
@@ -123,7 +107,7 @@ export class QAAnalysisStep extends WorkflowStep {
     try {
       logger.info('Starting QA analysis', { stepName: this.config.name });
       
-      // Extract QA results
+      
       const qaResults = this.extractQAResults(context, config);
       if (!qaResults) {
         return {
@@ -133,7 +117,7 @@ export class QAAnalysisStep extends WorkflowStep {
         };
       }
       
-      // Perform analysis
+      
       const analysis = this.analyzeQAResults(qaResults, config);
       
       logger.info('QA analysis completed', {
@@ -198,7 +182,7 @@ export class QAAnalysisStep extends WorkflowStep {
       }
     }
     
-    // Check if QA results are available in context
+    
     if (config.qaResultsSource === 'context' || !config.qaResultsSource) {
       const hasQAResults = context.hasStepOutput('qa') || 
                           context.hasStepOutput('test') || 
@@ -219,7 +203,7 @@ export class QAAnalysisStep extends WorkflowStep {
     const source = config.qaResultsSource || 'context';
     
     if (source === 'context') {
-      // Look for QA results in context from previous steps
+      
       const stepNames = ['qa', 'test', 'testing', 'quality-assurance'];
       for (const stepName of stepNames) {
         const stepOutput = context.getStepOutput(stepName);
@@ -230,7 +214,7 @@ export class QAAnalysisStep extends WorkflowStep {
       
       return null;
     } else {
-      // For input source, would need additional context setup
+      
       return null;
     }
   }
@@ -245,7 +229,7 @@ export class QAAnalysisStep extends WorkflowStep {
       nextActions: []
     };
 
-    // Categorize failures
+    
     if (config.categorizeFailures !== false && qaResults.failures.length > 0) {
       analysis.failureCategories = this.failureCategorizer.categorizeFailures(
         qaResults.failures,
@@ -253,18 +237,18 @@ export class QAAnalysisStep extends WorkflowStep {
       );
     }
 
-    // Analyze individual failures
+    
     if (qaResults.failures.length > 0) {
       const maxFailures = config.maxFailuresToAnalyze || 50;
       analysis.failureAnalyses = this.failureAnalyzer.analyzeFailures(qaResults.failures, maxFailures);
     }
 
-    // Analyze coverage if available
+    
     if (config.analyzeCoverage !== false && qaResults.coverage) {
       analysis.coverageAnalysis = this.coverageAnalyzer.analyzeCoverage(qaResults.coverage);
     }
 
-    // Generate recommendations
+    
     analysis.recommendations = this.recommendationGenerator.generateRecommendations(qaResults, analysis);
     analysis.nextActions = this.recommendationGenerator.generateNextActions(qaResults, analysis);
 
@@ -272,7 +256,7 @@ export class QAAnalysisStep extends WorkflowStep {
   }
 
   async cleanup(_context: WorkflowContext): Promise<void> {
-    // No cleanup needed for QA analysis
+    
     logger.debug('QA analysis step cleanup completed', { stepName: this.config.name });
   }
 }

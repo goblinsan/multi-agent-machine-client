@@ -1,20 +1,4 @@
-/**
- * Local Message Transport
- * 
- * In-memory message transport using Node.js EventEmitter.
- * Simulates Redis Streams behavior for local development and testing.
- * 
- * Features:
- * - In-memory message queuing
- * - Consumer group simulation
- * - Message acknowledgment tracking
- * - No external dependencies (Redis not required)
- * 
- * Limitations:
- * - Not distributed (single process only)
- * - Messages lost on process restart
- * - Not suitable for production
- */
+
 
 import { EventEmitter } from 'events';
 import {
@@ -38,9 +22,7 @@ interface ConsumerGroupState {
   consumers: Map<string, Set<string>>;
 }
 
-/**
- * Local in-memory transport using EventEmitter
- */
+
 export class LocalTransport implements MessageTransport {
   private emitter: EventEmitter;
   private streams: Map<string, StoredMessage[]>;
@@ -68,20 +50,14 @@ export class LocalTransport implements MessageTransport {
     await this.disconnect();
   }
 
-  /**
-   * Generate a Redis-like stream ID
-   * Format: timestamp-sequence (e.g., "1729123456789-0")
-   */
+  
   private generateId(): string {
     const timestamp = Date.now();
     const sequence = this.messageIdCounter++;
     return `${timestamp}-${sequence}`;
   }
 
-  /**
-   * Compare two stream IDs
-   * Returns: -1 if a < b, 0 if equal, 1 if a > b
-   */
+  
   private compareIds(a: string, b: string): number {
     if (a === b) return 0;
     
@@ -92,9 +68,7 @@ export class LocalTransport implements MessageTransport {
     return aSeq < bSeq ? -1 : 1;
   }
 
-  /**
-   * Add a message to a stream
-   */
+  
   async xAdd(stream: string, id: string, fields: Record<string, string>): Promise<string> {
     if (!this.streams.has(stream)) {
       this.streams.set(stream, []);
@@ -109,7 +83,7 @@ export class LocalTransport implements MessageTransport {
 
     this.streams.get(stream)!.push(message);
 
-    // Debug logging
+    
     if (process.env.DEBUG_TRANSPORT) {
       console.log(`[LocalTransport xAdd] Added message to '${stream}': ${messageId}`, {
         to_persona: fields.to_persona,
@@ -118,32 +92,30 @@ export class LocalTransport implements MessageTransport {
       });
     }
 
-    // Emit event for new message (for xRead listeners)
+    
     this.emitter.emit(`stream:${stream}`, message);
 
     return messageId;
   }
 
-  /**
-   * Create a consumer group
-   */
+  
   async xGroupCreate(
     stream: string,
     group: string,
     startId: string,
     options?: CreateGroupOptions
   ): Promise<void> {
-    // Create stream if requested and doesn't exist
+    
     if (options?.MKSTREAM && !this.streams.has(stream)) {
       this.streams.set(stream, []);
     }
 
-    // Check if stream exists
+    
     if (!this.streams.has(stream)) {
       throw new Error(`ERR no such key`);
     }
 
-    // Check if group already exists
+    
     if (!this.groups.has(stream)) {
       this.groups.set(stream, new Map());
     }
@@ -153,7 +125,7 @@ export class LocalTransport implements MessageTransport {
       throw new Error(`BUSYGROUP Consumer Group name already exists`);
     }
 
-    // Create the group
+    
     streamGroups.set(group, {
       name: group,
       lastDeliveredId: startId,
@@ -161,9 +133,7 @@ export class LocalTransport implements MessageTransport {
     });
   }
 
-  /**
-   * Read messages from a stream using consumer group
-   */
+  
   async xReadGroup(
     group: string,
     consumer: string,
@@ -174,7 +144,7 @@ export class LocalTransport implements MessageTransport {
     const count = options?.COUNT ?? 10;
     const blockMs = options?.BLOCK ?? 0;
 
-    // Debug logging
+    
     const debugLog = (msg: string, data?: any) => {
       if (process.env.DEBUG_TRANSPORT) {
         console.log(`[LocalTransport xReadGroup] ${msg}`, data || '');
@@ -187,13 +157,13 @@ export class LocalTransport implements MessageTransport {
     let hasMessages = false;
 
     for (const { key: streamKey, id: startId } of streamArray) {
-      // Check if stream exists
+      
       if (!this.streams.has(streamKey)) {
         debugLog(`Stream '${streamKey}' does not exist`);
         continue;
       }
 
-      // Check if group exists
+      
       const streamGroups = this.groups.get(streamKey);
       if (!streamGroups || !streamGroups.has(group)) {
         debugLog(`Group '${group}' does not exist for stream '${streamKey}'`);
@@ -205,7 +175,7 @@ export class LocalTransport implements MessageTransport {
 
       debugLog(`Stream '${streamKey}' has ${streamMessages.length} messages, group lastDeliveredId: ${groupState.lastDeliveredId}`);
 
-      // Get consumer's pending messages set
+      
       if (!groupState.consumers.has(consumer)) {
         groupState.consumers.set(consumer, new Set());
       }
@@ -213,7 +183,7 @@ export class LocalTransport implements MessageTransport {
 
       const messages: Message[] = [];
 
-      // Read new messages (id = ">")
+      
       if (startId === '>') {
         debugLog(`Reading new messages after ${groupState.lastDeliveredId}`);
         for (const msg of streamMessages) {
@@ -224,7 +194,7 @@ export class LocalTransport implements MessageTransport {
               fields: { ...msg.fields }
             });
 
-            // Mark as pending for this consumer
+            
             pending.add(msg.id);
             groupState.lastDeliveredId = msg.id;
 
@@ -232,7 +202,7 @@ export class LocalTransport implements MessageTransport {
           }
         }
       }
-      // Read pending messages for this consumer (id = "0")
+      
       else if (startId === '0') {
         for (const msg of streamMessages) {
           if (pending.has(msg.id)) {
@@ -245,7 +215,7 @@ export class LocalTransport implements MessageTransport {
           }
         }
       }
-      // Read from specific ID
+      
       else {
         for (const msg of streamMessages) {
           if (this.compareIds(msg.id, startId) > 0) {
@@ -268,13 +238,13 @@ export class LocalTransport implements MessageTransport {
       }
     }
 
-    // If blocking and no messages, wait for new messages
+    
     if (!hasMessages && blockMs > 0) {
       debugLog(`No messages, blocking for ${blockMs}ms`);
       const waitResult = await this.waitForMessages(streamArray, blockMs);
       if (waitResult) {
         debugLog('New messages arrived, retrying read');
-        // Retry the read after new messages arrived
+        
         return this.xReadGroup(group, consumer, streams, { ...options, BLOCK: 0 });
       } else {
         debugLog('Blocking timeout, no new messages');
@@ -285,9 +255,7 @@ export class LocalTransport implements MessageTransport {
     return hasMessages ? result : null;
   }
 
-  /**
-   * Read messages from a stream (without consumer group)
-   */
+  
   async xRead(
     streams: { key: string; id: string } | Array<{ key: string; id: string }>,
     options?: ReadOptions
@@ -307,9 +275,9 @@ export class LocalTransport implements MessageTransport {
       const streamMessages = this.streams.get(streamKey)!;
       const messages: Message[] = [];
 
-      // Special ID "$" means only new messages from now
+      
       if (startId === '$') {
-        // Don't return existing messages, only wait for new ones
+        
         continue;
       }
 
@@ -330,11 +298,11 @@ export class LocalTransport implements MessageTransport {
       }
     }
 
-    // If blocking and no messages, wait for new messages
+    
     if (!hasMessages && blockMs > 0) {
       const waitResult = await this.waitForMessages(streamArray, blockMs);
       if (waitResult) {
-        // Retry the read after new messages arrived
+        
         return this.xRead(streams, { ...options, BLOCK: 0 });
       }
     }
@@ -342,9 +310,7 @@ export class LocalTransport implements MessageTransport {
     return hasMessages ? result : null;
   }
 
-  /**
-   * Wait for new messages on any of the specified streams
-   */
+  
   private waitForMessages(
     streams: Array<{ key: string; id: string }>,
     timeoutMs: number
@@ -368,13 +334,13 @@ export class LocalTransport implements MessageTransport {
         resolve(true);
       };
 
-      // Listen for messages on all streams
+      
       for (const { key } of streams) {
         this.emitter.once(`stream:${key}`, onMessage);
         handlers.push(onMessage);
       }
 
-      // Timeout
+      
       setTimeout(() => {
         cleanup();
         resolve(false);
@@ -382,9 +348,7 @@ export class LocalTransport implements MessageTransport {
     });
   }
 
-  /**
-   * Acknowledge message processing
-   */
+  
   async xAck(stream: string, group: string, id: string): Promise<number> {
     const streamGroups = this.groups.get(stream);
     if (!streamGroups || !streamGroups.has(group)) {
@@ -394,7 +358,7 @@ export class LocalTransport implements MessageTransport {
     const groupState = streamGroups.get(group)!;
     let acked = 0;
 
-    // Remove from all consumers' pending sets
+    
     for (const [_, pending] of groupState.consumers) {
       if (pending.has(id)) {
         pending.delete(id);
@@ -405,17 +369,13 @@ export class LocalTransport implements MessageTransport {
     return acked;
   }
 
-  /**
-   * Get stream length
-   */
+  
   async xLen(stream: string): Promise<number> {
     const messages = this.streams.get(stream);
     return messages ? messages.length : 0;
   }
 
-  /**
-   * Delete a stream
-   */
+  
   async del(stream: string): Promise<number> {
     if (this.streams.has(stream)) {
       this.streams.delete(stream);
@@ -425,9 +385,7 @@ export class LocalTransport implements MessageTransport {
     return 0;
   }
 
-  /**
-   * Get information about consumer groups
-   */
+  
   async xInfoGroups(stream: string): Promise<ConsumerGroup[]> {
     const streamGroups = this.groups.get(stream);
     if (!streamGroups) {
@@ -452,9 +410,7 @@ export class LocalTransport implements MessageTransport {
     return result;
   }
 
-  /**
-   * Destroy a consumer group
-   */
+  
   async xGroupDestroy(stream: string, group: string): Promise<boolean> {
     const streamGroups = this.groups.get(stream);
     if (!streamGroups || !streamGroups.has(group)) {

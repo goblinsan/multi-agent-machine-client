@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeTempRepo } from './makeTempRepo.js';
 import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
 
-// Mock Redis client (uses __mocks__/redisClient.js)
+
 vi.mock('../src/redisClient.js');
 
-// Mock dashboard functions to prevent HTTP calls
+
 vi.mock('../src/dashboard.js', () => ({
   fetchProjectStatus: vi.fn().mockResolvedValue({
     id: 'proj-init',
@@ -18,7 +18,7 @@ vi.mock('../src/dashboard.js', () => ({
   })
 }));
 
-// Verifies: initial planning loop evaluates every time and asks planner to acknowledge feedback
+
 
 describe('Initial planning loop evaluates and requests acknowledgement', () => {
   beforeEach(() => {
@@ -29,11 +29,11 @@ describe('Initial planning loop evaluates and requests acknowledgement', () => {
     const tempRepo = await makeTempRepo();
     let planningCompleted = false;
     
-    // Test business outcome: Planning evaluation should complete without hitting iteration limit
+    
     const coordinator = createFastCoordinator();
     
     try {
-      // SAFETY: Race condition with timeout protection
+      
       const testPromise = coordinator.handleCoordinator(
         {}, 
         { workflow_id: 'wf-init', project_id: 'proj-init' }, 
@@ -52,12 +52,12 @@ describe('Initial planning loop evaluates and requests acknowledgement', () => {
 
       await Promise.race([testPromise, timeoutPromise]);
     } catch (error) {
-      // May fail due to other issues, but we're testing that planning doesn't hang
+      
       planningCompleted = true;
     }
 
-    // Business outcome: Planning evaluation logic completed without hanging or hitting iteration limits
-    // This validates that the PlanningLoopStep handles evaluation and acknowledgement internally
+    
+    
     expect(planningCompleted).toBe(true);
   });
 });

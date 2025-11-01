@@ -28,18 +28,18 @@ function ensureStream() {
   if (stream) return stream;
   try {
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
-  } catch { /* directory may already exist */ }
+  } catch {  }
   try {
-    // write a header synchronously so the file is populated immediately and we observe any permission errors
+    
     const header = `# machine-client log (level=${configuredLevel}) started ${new Date().toISOString()}\n`;
     try {
       fs.appendFileSync(logFile, header);
-    } catch { /* log header write failed, non-fatal */ }
+    } catch {  }
     stream = fs.createWriteStream(logFile, { flags: "a" });
-    // attach handlers to surface errors early
+    
     stream.on('error', (err) => {
       console.error('[logger] write stream error', err);
-      try { stream?.end(); } catch { /* ignore stream.end errors */ }
+      try { stream?.end(); } catch {  }
       stream = null;
     });
     stream.on('open', () => {

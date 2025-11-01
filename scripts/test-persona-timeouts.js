@@ -60,7 +60,7 @@ const parsed = parsePersonaTimeouts(parsedJson);
 console.log('parsePersonaTimeouts =>', parsed);
 console.log('lead-engineer (ms) =>', parsed['lead-engineer']);
 
-// show human-readable seconds
+
 for (const k of Object.keys(parsed)) console.log(k, '=>', parsed[k], 'ms =>', Math.round(parsed[k]/1000)+'s');
 
 process.exit(0);

@@ -90,9 +90,7 @@ export function slugify(value: string) {
     return cfg.personaDefaultTimeoutMs;
   }
 
-  /**
-   * Get max retries for a persona (returns null for unlimited)
-   */
+  
   export function personaMaxRetries(persona: string, cfg: any): number | null {
     const key = (persona || "").toLowerCase();
     if (key && cfg.personaMaxRetries && cfg.personaMaxRetries[key] !== undefined) {
@@ -101,21 +99,7 @@ export function slugify(value: string) {
     return cfg.personaDefaultMaxRetries ?? 3;
   }
 
-  /**
-   * Calculate progressive backoff timeout for a retry attempt
-   * Formula: baseTimeout + (attemptNumber * backoffIncrement)
-   * 
-   * Example with 60s base timeout and 30s increment:
-   * - Attempt 1: 60s
-   * - Attempt 2: 90s (60 + 30)
-   * - Attempt 3: 120s (60 + 60)
-   * - Attempt 4: 150s (60 + 90)
-   * 
-   * @param baseTimeoutMs Base timeout in milliseconds
-   * @param attemptNumber Current attempt number (1-based)
-   * @param backoffIncrementMs Backoff increment per attempt (default: 30000ms)
-   * @returns Timeout in milliseconds for this attempt
-   */
+  
   export function calculateProgressiveTimeout(
     baseTimeoutMs: number,
     attemptNumber: number,

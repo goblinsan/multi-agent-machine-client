@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WorkflowContext } from '../src/workflows/engine/WorkflowContext.js';
 import { PersonaRequestStep } from '../src/workflows/steps/PersonaRequestStep.js';
 
-// Mock persona operations
+
 vi.mock('../src/agents/persona.js', () => ({
   sendPersonaRequest: vi.fn().mockResolvedValue('corr-123'),
   waitForPersonaCompletion: vi.fn().mockResolvedValue({
@@ -36,7 +36,7 @@ describe('Conditional Step Execution', () => {
 
   describe('Boolean inequality conditions', () => {
     it('should skip step when condition evaluates to false (reused_existing == true)', async () => {
-      // Set up step output with reused_existing flag
+      
       context.setStepOutput('context_scan', {
         reused_existing: true,
         fileCount: 10
@@ -57,7 +57,7 @@ describe('Conditional Step Execution', () => {
     });
 
     it('should execute step when condition evaluates to true (reused_existing == false)', async () => {
-      // Set up step output with reused_existing flag
+      
       context.setStepOutput('context_scan', {
         reused_existing: false,
         fileCount: 10
@@ -78,7 +78,7 @@ describe('Conditional Step Execution', () => {
     });
 
     it('should execute step when condition evaluates to true (reused_existing undefined)', async () => {
-      // Set up step output WITHOUT reused_existing flag
+      
       context.setStepOutput('context_scan', {
         fileCount: 10
       });

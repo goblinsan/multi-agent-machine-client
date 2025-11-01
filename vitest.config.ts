@@ -8,14 +8,14 @@ export default defineConfig({
     globals: false,
     dir: path.resolve(process.cwd()),
     setupFiles: [path.resolve(process.cwd(), 'tests/setup.ts')],
-    // Run tests sequentially to prevent resource exhaustion
+    
     pool: 'forks',
     poolOptions: {
       forks: {
         singleFork: true,
       },
     },
-    // Increase timeout for integration tests
+    
     testTimeout: 15000,
   },
 });

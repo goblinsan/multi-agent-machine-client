@@ -3,16 +3,14 @@ import { fetch } from "undici";
 import { ProjectAPI } from "./dashboard/ProjectAPI.js";
 import { TaskAPI, CreateTaskInput, CreateTaskResult } from "./dashboard/TaskAPI.js";
 
-// Initialize API clients
+
 const projectAPI = new ProjectAPI();
 const taskAPI = new TaskAPI();
 
-/**
- * Fetch context snapshot for a workflow
- */
+
 export async function fetchContext(workflowId: string) {
   try {
-    // Use context-by-workflow endpoint if available in cfg.dashboardContextEndpoint (overrideable)
+    
     if (cfg.dashboardContextEndpoint && cfg.dashboardContextEndpoint.startsWith('http')) {
       const url = new URL(cfg.dashboardContextEndpoint);
       url.searchParams.set('workflow_id', workflowId);
@@ -36,7 +34,7 @@ export async function fetchContext(workflowId: string) {
   }
 }
 
-// Delegate project operations to ProjectAPI
+
 export async function fetchProjectStatus(projectId: string | null | undefined) {
   return projectAPI.fetchProjectStatus(projectId);
 }
@@ -57,7 +55,7 @@ export async function fetchProjectTasks(projectId: string) {
   return projectAPI.fetchProjectTasks(projectId);
 }
 
-// Delegate task operations to TaskAPI
+
 export async function createDashboardTask(input: CreateTaskInput): Promise<CreateTaskResult | null> {
   return taskAPI.createDashboardTask(input);
 }
