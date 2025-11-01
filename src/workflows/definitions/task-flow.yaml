@@ -36,7 +36,7 @@ steps:
       maxDepth: 10
       trackLines: true
       trackHash: false
-      forceRescan: false
+      forceRescan: ${force_rescan || false}
 
   - template: context_analysis
     name: context_request

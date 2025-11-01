@@ -15,13 +15,17 @@ let isShuttingDown = false;
 
 function printUsage() {
   console.error(
-    "Usage: npm run local -- <project_id> [repo_url] [base_branch]",
+    "Usage: npm run local -- <project_id> [repo_url] [base_branch] [flags]",
   );
   console.error("");
   console.error("Examples:");
   console.error("  npm run local -- 1");
   console.error("  npm run local -- 1 git@github.com:user/repo.git");
   console.error("  npm run local -- 1 git@github.com:user/repo.git develop");
+  console.error("  npm run local -- 1 . . --force-rescan");
+  console.error("");
+  console.error("Flags:");
+  console.error("  --force-rescan          Force context rescan (ignore cache)");
   console.error("");
   console.error("Environment:");
   console.error("  TRANSPORT_TYPE=local    (recommended for single-process)");
@@ -140,7 +144,12 @@ async function main() {
     process.exit(1);
   }
 
-  const [projectIdArg, repoArg, baseBranchArg] = args;
+  const flags = args.filter((arg) => arg.startsWith("--"));
+  const positionalArgs = args.filter((arg) => !arg.startsWith("--"));
+
+  const forceRescan = flags.includes("--force-rescan");
+
+  const [projectIdArg, repoArg, baseBranchArg] = positionalArgs;
 
   if (!projectIdArg) {
     console.error("Error: project_id is required");
@@ -156,18 +165,23 @@ async function main() {
 
   const projectId = projectIdArg.trim();
   const repo =
-    repoArg ||
-    process.env.COORDINATOR_REPO ||
-    process.env.SEED_REPO ||
-    process.env.REPO_URL ||
-    "";
-  const baseBranch = baseBranchArg || process.env.COORDINATOR_BASE_BRANCH || "";
+    repoArg && repoArg !== "."
+      ? repoArg
+      : process.env.COORDINATOR_REPO ||
+        process.env.SEED_REPO ||
+        process.env.REPO_URL ||
+        "";
+  const baseBranch =
+    baseBranchArg && baseBranchArg !== "."
+      ? baseBranchArg
+      : process.env.COORDINATOR_BASE_BRANCH || "";
 
   console.log("=== Local Development Stack ===");
   console.log(`Transport: ${cfg.transportType}`);
   console.log(`Project ID: ${projectId}`);
   if (repo) console.log(`Repository: ${repo}`);
   if (baseBranch) console.log(`Base Branch: ${baseBranch}`);
+  if (forceRescan) console.log(`Force Rescan: enabled`);
   console.log("");
 
   try {
@@ -193,6 +207,7 @@ async function main() {
   const payload: Record<string, unknown> = { project_id: projectId };
   if (repo) payload.repo = repo;
   if (baseBranch) payload.base_branch = baseBranch;
+  if (forceRescan) payload.force_rescan = true;
 
   const corrId = `coord-${Date.now()}`;
   const workflowId = `wf_coord_${Date.now()}`;

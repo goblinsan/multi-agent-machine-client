@@ -4,16 +4,19 @@ import { PERSONAS } from "../personaNames.js";
 
 function printUsage() {
   console.error(
-    "Usage: npm run coordinator [--drain|--drain-only|--nuke] <project_id> [repo_url] [base_branch]",
+    "Usage: npm run coordinator [--drain|--drain-only|--nuke|--force-rescan] <project_id> [repo_url] [base_branch]",
   );
   console.error(
-    "  --drain       Clear messages from streams before dispatching (preserves consumer groups).",
+    "  --drain        Clear messages from streams before dispatching (preserves consumer groups).",
   );
   console.error(
-    "  --drain-only  Clear messages and exit without dispatching (preserves consumer groups).",
+    "  --drain-only   Clear messages and exit without dispatching (preserves consumer groups).",
   );
   console.error(
-    "  --nuke        Nuclear option: destroy streams AND consumer groups, then exit.",
+    "  --nuke         Nuclear option: destroy streams AND consumer groups, then exit.",
+  );
+  console.error(
+    "  --force-rescan Force context rescan (ignore cache).",
   );
   console.error("");
   console.error("Examples:");
@@ -25,6 +28,9 @@ function printUsage() {
   );
   console.error(
     "  npm run coordinator -- PROJECT_ID                # Send coordinator message",
+  );
+  console.error(
+    "  npm run coordinator -- --force-rescan PROJECT_ID # Force context rescan",
   );
 }
 
@@ -123,6 +129,7 @@ async function main() {
   let drainOnly = false;
   let nuke = false;
   let nukeOnly = false;
+  let forceRescan = false;
   const positionals: string[] = [];
 
   for (const arg of args) {
@@ -187,6 +194,7 @@ async function main() {
   const payload: Record<string, unknown> = { project_id: projectId };
   if (repo) payload.repo = repo;
   if (baseBranch) payload.base_branch = baseBranch;
+  if (forceRescan) payload.force_rescan = true;
 
   const corrId = `coord-${Date.now()}`;
 
@@ -212,6 +220,7 @@ async function main() {
     project_id: projectId,
     repo,
     baseBranch,
+    forceRescan,
   });
   await transport.quit();
 }
