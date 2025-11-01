@@ -9,12 +9,12 @@ const LEVELS: Record<Level, number> = {
   warn: 1,
   info: 2,
   debug: 3,
-  trace: 4
+  trace: 4,
 };
 
 const configuredLevel = ((): Level => {
   const lvl = (cfg.log.level || "info") as Level;
-  return (lvl in LEVELS) ? lvl : "info";
+  return lvl in LEVELS ? lvl : "info";
 })();
 
 const minLevel = LEVELS[configuredLevel];
@@ -29,28 +29,27 @@ function ensureStream() {
   try {
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
   } catch (e) {
-    console.error('[logger] failed to create log directory', e);
+    console.error("[logger] failed to create log directory", e);
   }
   try {
-    
     const header = `# machine-client log (level=${configuredLevel}) started ${new Date().toISOString()}\n`;
     try {
       fs.appendFileSync(logFile, header);
     } catch (e) {
-      console.error('[logger] failed to write log header', e);
+      console.error("[logger] failed to write log header", e);
     }
     stream = fs.createWriteStream(logFile, { flags: "a" });
-    
-    stream.on('error', (err) => {
-      console.error('[logger] write stream error', err);
-      try { 
-        stream?.end(); 
+
+    stream.on("error", (err) => {
+      console.error("[logger] write stream error", err);
+      try {
+        stream?.end();
       } catch (e) {
-        console.error('[logger] failed to close stream', e);
+        console.error("[logger] failed to close stream", e);
       }
       stream = null;
     });
-    stream.on('open', () => {
+    stream.on("open", () => {
       if (consoleEnabled) console.log(`[logger] log stream opened ${logFile}`);
     });
   } catch (e) {
@@ -73,7 +72,7 @@ function serialize(value: any): any {
     const base: Record<string, any> = {
       name: value.name,
       message: value.message,
-      stack: value.stack
+      stack: value.stack,
     };
     for (const key of Object.keys(value)) {
       const v = (value as any)[key];
@@ -95,13 +94,18 @@ function write(level: Level, message: string, meta?: any) {
   const entry: Record<string, any> = {
     ts: new Date().toISOString(),
     level,
-    msg: message
+    msg: message,
   };
   if (meta !== undefined) entry.meta = serialize(meta);
 
   const line = JSON.stringify(entry);
   if (consoleEnabled) {
-    const consoleMethod = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+    const consoleMethod =
+      level === "error"
+        ? console.error
+        : level === "warn"
+          ? console.warn
+          : console.log;
     if (entry.meta !== undefined) {
       consoleMethod(`[${level}] ${message}`, entry.meta);
     } else {
@@ -115,11 +119,21 @@ function write(level: Level, message: string, meta?: any) {
 }
 
 export const logger = {
-  error(message: string, meta?: any) { write("error", message, meta); },
-  warn(message: string, meta?: any) { write("warn", message, meta); },
-  info(message: string, meta?: any) { write("info", message, meta); },
-  debug(message: string, meta?: any) { write("debug", message, meta); },
-  trace(message: string, meta?: any) { write("trace", message, meta); }
+  error(message: string, meta?: any) {
+    write("error", message, meta);
+  },
+  warn(message: string, meta?: any) {
+    write("warn", message, meta);
+  },
+  info(message: string, meta?: any) {
+    write("info", message, meta);
+  },
+  debug(message: string, meta?: any) {
+    write("debug", message, meta);
+  },
+  trace(message: string, meta?: any) {
+    write("trace", message, meta);
+  },
 };
 
 if (logFile) {

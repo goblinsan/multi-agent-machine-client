@@ -1,11 +1,12 @@
-
-
 import { createClient } from "redis";
 import { cfg } from "../src/config.js";
 
-const VERBOSE = process.argv.includes("--verbose") || process.argv.includes("-v");
-const MONITOR_MODE = process.argv[2] && !process.argv[2].startsWith("-") ? process.argv[2] : "both";
-
+const VERBOSE =
+  process.argv.includes("--verbose") || process.argv.includes("-v");
+const MONITOR_MODE =
+  process.argv[2] && !process.argv[2].startsWith("-")
+    ? process.argv[2]
+    : "both";
 
 const colors = {
   reset: "\x1b[0m",
@@ -19,7 +20,8 @@ const colors = {
   cyan: "\x1b[36m",
 };
 
-const c = (color: keyof typeof colors, text: string | number) => `${colors[color]}${text}${colors.reset}`;
+const c = (color: keyof typeof colors, text: string | number) =>
+  `${colors[color]}${text}${colors.reset}`;
 
 interface MonitorStats {
   requests: number;
@@ -48,7 +50,7 @@ function formatDuration(ms: number): string {
 
 function formatRequest(id: string, msg: Record<string, string>): void {
   stats.requests++;
-  
+
   const timestamp = formatTimestamp();
   const workflowId = c("cyan", msg.workflow_id?.slice(-8) || "unknown");
   const from = c("yellow", msg.from || "unknown");
@@ -56,33 +58,39 @@ function formatRequest(id: string, msg: Record<string, string>): void {
   const intent = c("bold", msg.intent || "unknown");
   const step = msg.step ? c("magenta", `[${msg.step}]`) : "";
   const corrId = msg.corr_id ? c("gray", `corr:${msg.corr_id.slice(-6)}`) : "";
-  
-  console.log(`${timestamp} ${c("blue", "REQ")} ${workflowId} ${from} → ${to} ${step} ${intent} ${corrId}`);
-  
+
+  console.log(
+    `${timestamp} ${c("blue", "REQ")} ${workflowId} ${from} → ${to} ${step} ${intent} ${corrId}`,
+  );
+
   if (VERBOSE) {
     console.log(c("gray", `  ID: ${id}`));
     if (msg.payload) {
-      const payload = msg.payload.length > 200 ? msg.payload.slice(0, 200) + "..." : msg.payload;
+      const payload =
+        msg.payload.length > 200
+          ? msg.payload.slice(0, 200) + "..."
+          : msg.payload;
       console.log(c("gray", `  Payload: ${payload}`));
     }
     if (msg.repo) console.log(c("gray", `  Repo: ${msg.repo}`));
     if (msg.branch) console.log(c("gray", `  Branch: ${msg.branch}`));
-    if (msg.deadline_s) console.log(c("gray", `  Deadline: ${msg.deadline_s}s`));
+    if (msg.deadline_s)
+      console.log(c("gray", `  Deadline: ${msg.deadline_s}s`));
   }
 }
 
 function formatEvent(id: string, msg: Record<string, string>): void {
   stats.events++;
-  
+
   const timestamp = formatTimestamp(msg.ts);
   const workflowId = c("cyan", msg.workflow_id?.slice(-8) || "unknown");
   const from = c("green", msg.from_persona || "unknown");
   const step = msg.step ? c("magenta", `[${msg.step}]`) : "";
   const corrId = msg.corr_id ? c("gray", `corr:${msg.corr_id.slice(-6)}`) : "";
-  
+
   let statusIcon = "";
   let statusColorKey: keyof typeof colors = "reset";
-  
+
   switch (msg.status) {
     case "done":
       statusIcon = "✓";
@@ -104,15 +112,21 @@ function formatEvent(id: string, msg: Record<string, string>): void {
     default:
       statusIcon = "?";
   }
-  
-  const status = c(statusColorKey, `${statusIcon} ${msg.status?.toUpperCase() || "UNKNOWN"}`);
-  
-  console.log(`${timestamp} ${c("magenta", "EVT")} ${workflowId} ${from} ${step} ${status} ${corrId}`);
-  
+
+  const status = c(
+    statusColorKey,
+    `${statusIcon} ${msg.status?.toUpperCase() || "UNKNOWN"}`,
+  );
+
+  console.log(
+    `${timestamp} ${c("magenta", "EVT")} ${workflowId} ${from} ${step} ${status} ${corrId}`,
+  );
+
   if (VERBOSE || msg.status === "error") {
     console.log(c("gray", `  ID: ${id}`));
     if (msg.result) {
-      const result = msg.result.length > 200 ? msg.result.slice(0, 200) + "..." : msg.result;
+      const result =
+        msg.result.length > 200 ? msg.result.slice(0, 200) + "..." : msg.result;
       console.log(c("gray", `  Result: ${result}`));
     }
     if (msg.error) {
@@ -136,14 +150,14 @@ async function monitorStream(
   client: any,
   streamKey: string,
   lastId: string,
-  formatter: (id: string, msg: Record<string, string>) => void
+  formatter: (id: string, msg: Record<string, string>) => void,
 ): Promise<string> {
   try {
     const result = await client.xRead(
       { key: streamKey, id: lastId },
-      { BLOCK: 1000, COUNT: 10 }
+      { BLOCK: 1000, COUNT: 10 },
     );
-    
+
     if (result) {
       for (const stream of result) {
         for (const message of stream.messages) {
@@ -158,10 +172,12 @@ async function monitorStream(
     }
   } catch (err: any) {
     if (!err.message?.includes("ETIMEDOUT")) {
-      console.error(c("red", `Error reading stream ${streamKey}: ${err.message}`));
+      console.error(
+        c("red", `Error reading stream ${streamKey}: ${err.message}`),
+      );
     }
   }
-  
+
   return lastId;
 }
 
@@ -170,32 +186,37 @@ async function main() {
   console.log(`Redis URL: ${cfg.redisUrl.replace(/:[^:@]+@/, ":***@")}`);
   console.log(`Request Stream: ${c("blue", cfg.requestStream)}`);
   console.log(`Event Stream: ${c("magenta", cfg.eventStream)}`);
-  console.log(`Mode: ${c("yellow", MONITOR_MODE)} ${VERBOSE ? c("gray", "(verbose)") : ""}`);
+  console.log(
+    `Mode: ${c("yellow", MONITOR_MODE)} ${VERBOSE ? c("gray", "(verbose)") : ""}`,
+  );
   console.log(c("gray", "─".repeat(80) + "\n"));
-  
+
   const client = createClient({
     url: cfg.redisUrl,
     password: cfg.redisPassword,
   });
-  
+
   client.on("error", (err) => {
     console.error(c("red", "Redis Client Error:"), err);
   });
-  
+
   await client.connect();
   console.log(c("green", "✓ Connected to Redis\n"));
-  
-  
+
   let requestLastId = "$";
   let eventLastId = "$";
-  
-  const shouldMonitorRequests = MONITOR_MODE === "both" || MONITOR_MODE === "requests" || MONITOR_MODE === "req";
-  const shouldMonitorEvents = MONITOR_MODE === "both" || MONITOR_MODE === "events" || MONITOR_MODE === "evt";
-  
-  
+
+  const shouldMonitorRequests =
+    MONITOR_MODE === "both" ||
+    MONITOR_MODE === "requests" ||
+    MONITOR_MODE === "req";
+  const shouldMonitorEvents =
+    MONITOR_MODE === "both" ||
+    MONITOR_MODE === "events" ||
+    MONITOR_MODE === "evt";
+
   const statsInterval = setInterval(printStats, 30000);
-  
-  
+
   process.on("SIGINT", async () => {
     console.log(c("yellow", "\n\nShutting down..."));
     clearInterval(statsInterval);
@@ -203,30 +224,28 @@ async function main() {
     await client.quit();
     process.exit(0);
   });
-  
+
   console.log(c("gray", "Monitoring... (Press Ctrl+C to stop)\n"));
-  
-  
+
   while (true) {
     if (shouldMonitorRequests) {
       requestLastId = await monitorStream(
         client,
         cfg.requestStream,
         requestLastId,
-        formatRequest
+        formatRequest,
       );
     }
-    
+
     if (shouldMonitorEvents) {
       eventLastId = await monitorStream(
         client,
         cfg.eventStream,
         eventLastId,
-        formatEvent
+        formatEvent,
       );
     }
-    
-    
+
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }

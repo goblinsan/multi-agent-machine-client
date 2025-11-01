@@ -1,5 +1,5 @@
-import { logger } from '../../../logger.js';
-import { sleep } from '../../../util/retry.js';
+import { logger } from "../../../logger.js";
+import { sleep } from "../../../util/retry.js";
 
 export interface RetryConfig {
   max_attempts?: number;
@@ -18,7 +18,7 @@ export class RetryHandler {
     operation: () => Promise<T>,
     config: RetryConfig,
     context: RetryContext,
-    shouldRetry: (result: T, error: Error | null) => boolean
+    shouldRetry: (result: T, error: Error | null) => boolean,
   ): Promise<{ result: T | null; lastError: Error | null }> {
     const maxAttempts = config.max_attempts || 3;
     const initialDelay = config.initial_delay_ms || 1000;
@@ -31,50 +31,49 @@ export class RetryHandler {
       try {
         if (attempt > 1) {
           const delay = initialDelay * Math.pow(backoffMultiplier, attempt - 2);
-          logger.info('Retrying operation', {
+          logger.info("Retrying operation", {
             stepName: context.stepName,
             operation: context.operation,
             attempt,
             maxAttempts,
             delay_ms: delay,
-            backoff_strategy: 'exponential'
+            backoff_strategy: "exponential",
           });
           await sleep(delay);
         }
 
         logger.info(`Operation attempt ${attempt}/${maxAttempts}`, {
           stepName: context.stepName,
-          operation: context.operation
+          operation: context.operation,
         });
 
         result = await operation();
 
         if (!shouldRetry(result, null)) {
-          logger.info('Operation succeeded', {
+          logger.info("Operation succeeded", {
             stepName: context.stepName,
             operation: context.operation,
-            attempt
+            attempt,
           });
           break;
         }
 
         if (attempt < maxAttempts) {
-          logger.warn('Operation requires retry', {
+          logger.warn("Operation requires retry", {
             stepName: context.stepName,
             operation: context.operation,
-            attempt
+            attempt,
           });
         }
-
       } catch (error: any) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        
-        logger.error('Operation attempt failed', {
+
+        logger.error("Operation attempt failed", {
           stepName: context.stepName,
           operation: context.operation,
           attempt,
           maxAttempts,
-          error: lastError.message
+          error: lastError.message,
         });
 
         if (attempt === maxAttempts) {
@@ -86,30 +85,33 @@ export class RetryHandler {
     return { result, lastError };
   }
 
-  hasRetryableErrors(errors: string[], retryableErrorPatterns?: string[]): boolean {
+  hasRetryableErrors(
+    errors: string[],
+    retryableErrorPatterns?: string[],
+  ): boolean {
     if (!errors || errors.length === 0) {
       return false;
     }
 
     const patterns = retryableErrorPatterns || [
-      'timeout',
-      'network',
-      'connection',
-      'ECONNREFUSED',
-      'ECONNRESET',
-      'ETIMEDOUT',
-      'rate limit',
-      'HTTP 429',
-      'HTTP 500',
-      'HTTP 502',
-      'HTTP 503',
-      'HTTP 504'
+      "timeout",
+      "network",
+      "connection",
+      "ECONNREFUSED",
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "rate limit",
+      "HTTP 429",
+      "HTTP 500",
+      "HTTP 502",
+      "HTTP 503",
+      "HTTP 504",
     ];
 
-    return errors.some(error => 
-      patterns.some(pattern => 
-        error.toLowerCase().includes(pattern.toLowerCase())
-      )
+    return errors.some((error) =>
+      patterns.some((pattern) =>
+        error.toLowerCase().includes(pattern.toLowerCase()),
+      ),
     );
   }
 }

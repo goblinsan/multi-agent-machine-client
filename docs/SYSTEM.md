@@ -37,6 +37,7 @@ src/
 Workflows use YAML definitions with template inheritance to eliminate duplication. Templates defined in `src/workflows/templates/step-templates.yaml`.
 
 **Available Templates**:
+
 - `context_analysis`: Repository scanning and context extraction
 - `implementation`: Code generation and modification
 - `qa_review`: Quality assurance validation
@@ -45,6 +46,7 @@ Workflows use YAML definitions with template inheritance to eliminate duplicatio
 - `devops_review`: Infrastructure and deployment review
 
 **Template Usage**:
+
 ```yaml
 - type: PersonaRequestStep
   name: implementation
@@ -57,21 +59,26 @@ Workflows use YAML definitions with template inheritance to eliminate duplicatio
 ### Active Workflows
 
 **task-flow.yaml**: Main task processing (default fallback)
+
 - Context analysis → Implementation → QA → Code Review → Security → DevOps
 
 **in-review-task-flow.yaml**: Resume workflow for tasks marked 'in_review'
+
 - Code Review → Security → DevOps (skips implementation)
 
 **hotfix-task-flow.yaml**: Fast-track critical production fixes
+
 - Priority ≥ 2000 or labels: hotfix/urgent/emergency
 - All steps flagged with `hotfix_mode: true`, `fast_track: true`
 
 **blocked-task-resolution.yaml**: Analyze and resolve blocked tasks
+
 - Context analysis → Lead analysis → Validation → Unblock attempt
 
 ### Workflow Selection Logic
 
 Located in `src/workflows/coordinator/WorkflowSelector.ts`:
+
 1. Status = 'blocked' → blocked-task-resolution
 2. Status = 'in_review' → in-review-task-flow
 3. Priority ≥ 2000 OR hotfix labels → hotfix-task-flow
@@ -82,6 +89,7 @@ Located in `src/workflows/coordinator/WorkflowSelector.ts`:
 ### Active Personas
 
 Defined in `src/personaNames.ts`:
+
 - `context`: Repository scanning and context extraction
 - `plan-evaluator`: Planning validation
 - `implementation-planner`: Implementation strategy
@@ -105,6 +113,7 @@ Defined in `src/personaNames.ts`:
 ### Timeout & Retry
 
 Configured per-persona in workflow definitions:
+
 ```yaml
 timeout_ms: 60000
 max_retries: 2
@@ -169,6 +178,7 @@ LOG_LEVEL=info
 ### Models
 
 Configured in `src/config.ts`:
+
 - Default: `deepseek-coder-v2.5`
 - Planning personas: `qwen2.5-coder-32b-instruct`
 
@@ -181,6 +191,7 @@ Configured in `src/config.ts`:
 **Coverage**: Critical paths (workflows, git ops, persona routing, TDD governance)
 
 **Key Test Patterns**:
+
 - `makeTempRepo()`: Creates isolated git repos for testing
 - `coordinatorTestHelper`: Workflow execution mocking
 - Safety guards prevent modifications to working repository
@@ -220,6 +231,7 @@ npm run monitor          # Monitor Redis streams (debugging)
 ### Creating Tasks
 
 Tasks created via:
+
 1. Dashboard API: `POST /projects/:projectId/tasks`
 2. `BulkTaskCreationStep`: PM persona output parsing
 3. Manual insertion: `TaskManager.createTask()`
@@ -235,6 +247,7 @@ Tasks created via:
 ### Template Merging
 
 Deep merge strategy in `src/workflows/engine/TemplateLoader.ts`:
+
 - Base template loaded from `step-templates.yaml`
 - Workflow overrides applied recursively
 - Arrays concatenated, objects merged deeply
@@ -243,6 +256,7 @@ Deep merge strategy in `src/workflows/engine/TemplateLoader.ts`:
 ### Variable Resolution
 
 Workflow context variables resolved in steps via `${variable}` syntax:
+
 - Direct variables: `${task.id}`
 - Step outputs: `${stepName.property}`
 - Nested access: `${context.repo.branch}`
@@ -252,6 +266,7 @@ Implemented in `src/workflows/steps/helpers/VariableResolver.ts`.
 ### Diff Parsing
 
 Multi-strategy parser in `src/agents/parsers/DiffParser.ts`:
+
 1. Extract code blocks from markdown
 2. Detect unified diff format
 3. Parse edit specifications (file operations)
@@ -261,6 +276,7 @@ Multi-strategy parser in `src/agents/parsers/DiffParser.ts`:
 ### Condition Evaluation
 
 Boolean expressions in workflow conditions:
+
 - Variable comparison: `task.status == 'completed'`
 - Inequality: `plan_status != 'fail'`
 - Step output access: `qa_result.status == 'pass'`

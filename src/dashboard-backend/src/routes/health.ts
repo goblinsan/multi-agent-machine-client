@@ -1,11 +1,7 @@
-
-
-import type { FastifyInstance } from 'fastify';
-import { getDb } from '../db/connection';
-
+import type { FastifyInstance } from "fastify";
+import { getDb } from "../db/connection";
 
 const startTime = Date.now();
-
 
 interface Metrics {
   requestCount: number;
@@ -23,91 +19,83 @@ const metrics: Metrics = {
   dbQueryCount: 0,
 };
 
-
 export function incrementMetric(metric: keyof Metrics, value: number = 1) {
   metrics[metric] += value;
 }
 
-
 export function registerHealthRoutes(fastify: FastifyInstance) {
-  
-  fastify.get('/health', async (request: any, reply: any) => {
+  fastify.get("/health", async (request: any, reply: any) => {
     const uptime = Date.now() - startTime;
-    
+
     return reply.status(200).send({
-      status: 'ok',
+      status: "ok",
       timestamp: new Date().toISOString(),
       uptime,
-      service: 'dashboard-backend',
-      version: process.env.npm_package_version || '1.0.0',
+      service: "dashboard-backend",
+      version: process.env.npm_package_version || "1.0.0",
     });
   });
 
-  
-  fastify.get('/health/db', async (request: any, reply: any) => {
+  fastify.get("/health/db", async (request: any, reply: any) => {
     try {
       const db = await getDb();
-      
-      
-      const result = db.exec('SELECT 1 as health_check');
-      
+
+      const result = db.exec("SELECT 1 as health_check");
+
       if (result.length > 0) {
         return reply.status(200).send({
-          status: 'ok',
-          database: 'connected',
+          status: "ok",
+          database: "connected",
           timestamp: new Date().toISOString(),
         });
       } else {
         return reply.status(503).send({
-          status: 'error',
-          database: 'disconnected',
-          error: 'Database query returned no results',
+          status: "error",
+          database: "disconnected",
+          error: "Database query returned no results",
           timestamp: new Date().toISOString(),
         });
       }
     } catch (error: any) {
-      request.log.error('Database health check failed', error);
-      
+      request.log.error("Database health check failed", error);
+
       return reply.status(503).send({
-        status: 'error',
-        database: 'disconnected',
-        error: error.message || 'Database connection failed',
+        status: "error",
+        database: "disconnected",
+        error: error.message || "Database connection failed",
         timestamp: new Date().toISOString(),
       });
     }
   });
 
-  
-  fastify.get('/health/ready', async (request: any, reply: any) => {
+  fastify.get("/health/ready", async (request: any, reply: any) => {
     try {
       const db = await getDb();
-      db.exec('SELECT 1');
-      
+      db.exec("SELECT 1");
+
       return reply.status(200).send({
-        status: 'ready',
+        status: "ready",
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
       return reply.status(503).send({
-        status: 'not_ready',
+        status: "not_ready",
         error: error.message,
         timestamp: new Date().toISOString(),
       });
     }
   });
 
-  
-  fastify.get('/health/live', async (request: any, reply: any) => {
+  fastify.get("/health/live", async (request: any, reply: any) => {
     return reply.status(200).send({
-      status: 'alive',
+      status: "alive",
       timestamp: new Date().toISOString(),
     });
   });
 
-  
-  fastify.get('/metrics', async (request: any, reply: any) => {
+  fastify.get("/metrics", async (request: any, reply: any) => {
     const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
-    
+
     const prometheusMetrics = `
 # HELP http_requests_total Total HTTP requests
 # TYPE http_requests_total counter
@@ -139,16 +127,15 @@ process_start_time_seconds{service="dashboard-backend"} ${Math.floor(startTime /
 `.trim();
 
     return reply
-      .header('Content-Type', 'text/plain; version=0.0.4')
+      .header("Content-Type", "text/plain; version=0.0.4")
       .send(prometheusMetrics);
   });
 
-  
-  fastify.get('/metrics/json', async (request: any, reply: any) => {
+  fastify.get("/metrics/json", async (request: any, reply: any) => {
     const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
-    
+
     return reply.status(200).send({
-      service: 'dashboard-backend',
+      service: "dashboard-backend",
       timestamp: new Date().toISOString(),
       uptime_seconds: uptimeSeconds,
       metrics: {
@@ -162,11 +149,9 @@ process_start_time_seconds{service="dashboard-backend"} ${Math.floor(startTime /
   });
 }
 
-
 export function getMetrics(): Readonly<Metrics> {
   return { ...metrics };
 }
-
 
 export function resetMetrics() {
   metrics.requestCount = 0;

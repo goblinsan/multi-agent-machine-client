@@ -1,5 +1,4 @@
-import { WorkflowConfig as _WorkflowConfig } from './WorkflowContext.js';
-
+import { WorkflowConfig as _WorkflowConfig } from "./WorkflowContext.js";
 
 export interface SchemaValidationError {
   path: string;
@@ -7,51 +6,43 @@ export interface SchemaValidationError {
   value?: any;
 }
 
-
 export interface SchemaValidationResult {
   valid: boolean;
   errors: SchemaValidationError[];
   warnings: SchemaValidationError[];
 }
 
-
 export class WorkflowValidator {
-  
   static validateWorkflow(config: any): SchemaValidationResult {
     const errors: SchemaValidationError[] = [];
     const warnings: SchemaValidationError[] = [];
 
-    
     if (!config.name) {
-      errors.push({ path: 'name', message: 'Workflow name is required' });
+      errors.push({ path: "name", message: "Workflow name is required" });
     }
 
     if (!config.version) {
-      errors.push({ path: 'version', message: 'Workflow version is required' });
+      errors.push({ path: "version", message: "Workflow version is required" });
     }
 
     if (!config.steps || !Array.isArray(config.steps)) {
-      errors.push({ path: 'steps', message: 'Workflow must have steps array' });
+      errors.push({ path: "steps", message: "Workflow must have steps array" });
     } else {
-      
       config.steps.forEach((step: any, index: number) => {
         const stepErrors = this.validateStep(step, `steps[${index}]`);
         errors.push(...stepErrors.errors);
         warnings.push(...stepErrors.warnings);
       });
 
-      
       const dependencyErrors = this.validateStepDependencies(config.steps);
       errors.push(...dependencyErrors);
     }
 
-    
     if (config.trigger) {
       const triggerErrors = this.validateTrigger(config.trigger);
       errors.push(...triggerErrors);
     }
 
-    
     if (config.context) {
       const contextErrors = this.validateContext(config.context);
       errors.push(...contextErrors);
@@ -60,106 +51,103 @@ export class WorkflowValidator {
     return {
       valid: errors.length === 0,
       errors,
-      warnings
+      warnings,
     };
   }
 
-  
   private static validateStep(step: any, path: string): SchemaValidationResult {
     const errors: SchemaValidationError[] = [];
     const warnings: SchemaValidationError[] = [];
 
-    
     if (!step.name) {
-      errors.push({ path: `${path}.name`, message: 'Step name is required' });
+      errors.push({ path: `${path}.name`, message: "Step name is required" });
     }
 
     if (!step.type) {
-      errors.push({ path: `${path}.type`, message: 'Step type is required' });
+      errors.push({ path: `${path}.type`, message: "Step type is required" });
     }
 
-    
     if (step.name && !/^[a-zA-Z0-9_-]+$/.test(step.name)) {
       errors.push({
         path: `${path}.name`,
-        message: 'Step name must contain only alphanumeric characters, underscores, and hyphens',
-        value: step.name
+        message:
+          "Step name must contain only alphanumeric characters, underscores, and hyphens",
+        value: step.name,
       });
     }
 
-    
     if (step.depends_on) {
       if (!Array.isArray(step.depends_on)) {
         errors.push({
           path: `${path}.depends_on`,
-          message: 'depends_on must be an array of step names'
+          message: "depends_on must be an array of step names",
         });
       } else {
         step.depends_on.forEach((dep: any, depIndex: number) => {
-          if (typeof dep !== 'string') {
+          if (typeof dep !== "string") {
             errors.push({
               path: `${path}.depends_on[${depIndex}]`,
-              message: 'Dependency must be a string (step name)'
+              message: "Dependency must be a string (step name)",
             });
           }
         });
       }
     }
 
-    
     if (step.outputs) {
       if (!Array.isArray(step.outputs)) {
         errors.push({
           path: `${path}.outputs`,
-          message: 'outputs must be an array of strings'
+          message: "outputs must be an array of strings",
         });
       } else {
         step.outputs.forEach((output: any, outputIndex: number) => {
-          if (typeof output !== 'string') {
+          if (typeof output !== "string") {
             errors.push({
               path: `${path}.outputs[${outputIndex}]`,
-              message: 'Output must be a string'
+              message: "Output must be a string",
             });
           }
         });
       }
     }
 
-    
     if (step.timeout !== undefined) {
-      if (typeof step.timeout !== 'number' || step.timeout <= 0) {
+      if (typeof step.timeout !== "number" || step.timeout <= 0) {
         errors.push({
           path: `${path}.timeout`,
-          message: 'timeout must be a positive number (milliseconds)',
-          value: step.timeout
+          message: "timeout must be a positive number (milliseconds)",
+          value: step.timeout,
         });
       }
     }
 
-    
     if (step.retry) {
-      if (typeof step.retry.count !== 'number' || step.retry.count < 0) {
+      if (typeof step.retry.count !== "number" || step.retry.count < 0) {
         errors.push({
           path: `${path}.retry.count`,
-          message: 'retry.count must be a non-negative number',
-          value: step.retry.count
+          message: "retry.count must be a non-negative number",
+          value: step.retry.count,
         });
       }
 
-      if (typeof step.retry.delay_ms !== 'number' || step.retry.delay_ms < 0) {
+      if (typeof step.retry.delay_ms !== "number" || step.retry.delay_ms < 0) {
         errors.push({
           path: `${path}.retry.delay_ms`,
-          message: 'retry.delay_ms must be a non-negative number',
-          value: step.retry.delay_ms
+          message: "retry.delay_ms must be a non-negative number",
+          value: step.retry.delay_ms,
         });
       }
 
       if (step.retry.backoff_multiplier !== undefined) {
-        if (typeof step.retry.backoff_multiplier !== 'number' || step.retry.backoff_multiplier <= 0) {
+        if (
+          typeof step.retry.backoff_multiplier !== "number" ||
+          step.retry.backoff_multiplier <= 0
+        ) {
           errors.push({
             path: `${path}.retry.backoff_multiplier`,
-            message: 'retry.backoff_multiplier must be a positive number',
-            value: step.retry.backoff_multiplier
+            message: "retry.backoff_multiplier must be a positive number",
+            value: step.retry.backoff_multiplier,
           });
         }
       }
@@ -168,12 +156,12 @@ export class WorkflowValidator {
     return { valid: errors.length === 0, errors, warnings };
   }
 
-  
-  private static validateStepDependencies(steps: any[]): SchemaValidationError[] {
+  private static validateStepDependencies(
+    steps: any[],
+  ): SchemaValidationError[] {
     const errors: SchemaValidationError[] = [];
-    const stepNames = new Set(steps.map(step => step.name).filter(Boolean));
+    const stepNames = new Set(steps.map((step) => step.name).filter(Boolean));
 
-    
     steps.forEach((step, index) => {
       if (step.depends_on && Array.isArray(step.depends_on)) {
         step.depends_on.forEach((dep: string) => {
@@ -181,14 +169,13 @@ export class WorkflowValidator {
             errors.push({
               path: `steps[${index}].depends_on`,
               message: `Dependency '${dep}' not found in workflow steps`,
-              value: dep
+              value: dep,
             });
           }
         });
       }
     });
 
-    
     const visited = new Set<string>();
     const recursionStack = new Set<string>();
 
@@ -204,7 +191,7 @@ export class WorkflowValidator {
       visited.add(stepName);
       recursionStack.add(stepName);
 
-      const step = steps.find(s => s.name === stepName);
+      const step = steps.find((s) => s.name === stepName);
       if (step?.depends_on) {
         for (const dep of step.depends_on) {
           if (hasCircularDependency(dep)) {
@@ -220,9 +207,9 @@ export class WorkflowValidator {
     for (const step of steps) {
       if (step.name && hasCircularDependency(step.name)) {
         errors.push({
-          path: 'steps',
+          path: "steps",
           message: `Circular dependency detected involving step '${step.name}'`,
-          value: step.name
+          value: step.name,
         });
         break;
       }
@@ -231,46 +218,52 @@ export class WorkflowValidator {
     return errors;
   }
 
-  
   private static validateTrigger(trigger: any): SchemaValidationError[] {
     const errors: SchemaValidationError[] = [];
 
-    if (trigger.condition && typeof trigger.condition !== 'string') {
+    if (trigger.condition && typeof trigger.condition !== "string") {
       errors.push({
-        path: 'trigger.condition',
-        message: 'trigger.condition must be a string',
-        value: trigger.condition
+        path: "trigger.condition",
+        message: "trigger.condition must be a string",
+        value: trigger.condition,
       });
     }
 
     return errors;
   }
 
-  
   private static validateContext(context: any): SchemaValidationError[] {
     const errors: SchemaValidationError[] = [];
 
-    if (context.repo_required !== undefined && typeof context.repo_required !== 'boolean') {
+    if (
+      context.repo_required !== undefined &&
+      typeof context.repo_required !== "boolean"
+    ) {
       errors.push({
-        path: 'context.repo_required',
-        message: 'context.repo_required must be a boolean',
-        value: context.repo_required
+        path: "context.repo_required",
+        message: "context.repo_required must be a boolean",
+        value: context.repo_required,
       });
     }
 
-    if (context.branch_strategy !== undefined && typeof context.branch_strategy !== 'string') {
+    if (
+      context.branch_strategy !== undefined &&
+      typeof context.branch_strategy !== "string"
+    ) {
       errors.push({
-        path: 'context.branch_strategy',
-        message: 'context.branch_strategy must be a string',
-        value: context.branch_strategy
+        path: "context.branch_strategy",
+        message: "context.branch_strategy must be a string",
+        value: context.branch_strategy,
       });
     }
 
     return errors;
   }
 
-  
-  static validateWithStepTypes(config: any, availableStepTypes: string[]): SchemaValidationResult {
+  static validateWithStepTypes(
+    config: any,
+    availableStepTypes: string[],
+  ): SchemaValidationResult {
     const baseValidation = this.validateWorkflow(config);
     const errors = [...baseValidation.errors];
     const warnings = [...baseValidation.warnings];
@@ -280,8 +273,8 @@ export class WorkflowValidator {
         if (step.type && !availableStepTypes.includes(step.type)) {
           errors.push({
             path: `steps[${index}].type`,
-            message: `Unknown step type '${step.type}'. Available types: ${availableStepTypes.join(', ')}`,
-            value: step.type
+            message: `Unknown step type '${step.type}'. Available types: ${availableStepTypes.join(", ")}`,
+            value: step.type,
           });
         }
       });
@@ -290,7 +283,7 @@ export class WorkflowValidator {
     return {
       valid: errors.length === 0,
       errors,
-      warnings
+      warnings,
     };
   }
 }

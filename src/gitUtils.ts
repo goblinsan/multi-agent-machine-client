@@ -1,25 +1,31 @@
+export {
+  runGit,
+  __setRunGitImplForTests,
+  gitEnv,
+  isWorkspaceRepo,
+  guardWorkspaceMutation,
+} from "./git/core.js";
 
-
-
-
-export { runGit, __setRunGitImplForTests, gitEnv, isWorkspaceRepo, guardWorkspaceMutation } from "./git/core.js";
-
-
-export { resolveRepoFromPayload, checkoutBranchFromBase } from "./git/repository.js";
+export {
+  resolveRepoFromPayload,
+  checkoutBranchFromBase,
+} from "./git/repository.js";
 export type { RepoResolution } from "./git/repository.js";
-
 
 export { ensureBranchPublished, commitAndPushPaths } from "./git/commits.js";
 
-
-export { 
-  detectRemoteDefaultBranch, 
-  branchExists, 
-  remoteBranchExists, 
+export {
+  detectRemoteDefaultBranch,
+  branchExists,
+  remoteBranchExists,
   hasLocalChanges,
   describeWorkingTree,
   getRepoMetadata,
   verifyRemoteBranchHasDiff,
-  getBranchHeadSha
+  getBranchHeadSha,
 } from "./git/queries.js";
-export type { WorkingTreeEntry, WorkingTreeSummary, RemoteDiffVerification } from "./git/queries.js";
+export type {
+  WorkingTreeEntry,
+  WorkingTreeSummary,
+  RemoteDiffVerification,
+} from "./git/queries.js";

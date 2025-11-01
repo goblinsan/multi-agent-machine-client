@@ -7,8 +7,10 @@ const execGit = promisify(execFile);
 
 type GitRunOptions = { cwd?: string };
 
-
-type RunGitImpl = (args: string[], options?: GitRunOptions) => Promise<{ stdout: string; stderr?: string }>;
+type RunGitImpl = (
+  args: string[],
+  options?: GitRunOptions,
+) => Promise<{ stdout: string; stderr?: string }>;
 let runGitImpl: RunGitImpl | null = null;
 
 export function gitEnv(): Record<string, string | undefined> {
@@ -25,7 +27,6 @@ export async function runGit(args: string[], options: GitRunOptions = {}) {
   return execGit("git", args, { cwd: options.cwd, env: gitEnv() });
 }
 
-
 export function __setRunGitImplForTests(impl?: RunGitImpl | null) {
   runGitImpl = impl || null;
 }
@@ -34,7 +35,7 @@ export function isWorkspaceRepo(repoRoot: string) {
   try {
     const ws = path.resolve(process.cwd());
     const rr = path.resolve(repoRoot);
-    
+
     return rr === ws;
   } catch {
     return false;
@@ -43,6 +44,8 @@ export function isWorkspaceRepo(repoRoot: string) {
 
 export function guardWorkspaceMutation(repoRoot: string, op: string) {
   if (isWorkspaceRepo(repoRoot) && !cfg.allowWorkspaceGit) {
-    throw new Error(`Workspace git mutation blocked (${op}) at ${repoRoot}. Set MC_ALLOW_WORKSPACE_GIT=1 to override.`);
+    throw new Error(
+      `Workspace git mutation blocked (${op}) at ${repoRoot}. Set MC_ALLOW_WORKSPACE_GIT=1 to override.`,
+    );
   }
 }

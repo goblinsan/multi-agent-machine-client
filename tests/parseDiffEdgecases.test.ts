@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { parseUnifiedDiffToEditSpec } from '../src/fileops'
+import { describe, it, expect } from "vitest";
+import { parseUnifiedDiffToEditSpec } from "../src/fileops";
 
-describe('parseUnifiedDiffToEditSpec edge cases', () => {
-  it('parses a deletion diff into a delete op', () => {
+describe("parseUnifiedDiffToEditSpec edge cases", () => {
+  it("parses a deletion diff into a delete op", () => {
     const diff = `diff --git a/src/old.js b/src/old.js
 index e69de29..0000000 100644
 --- a/src/old.js
@@ -13,10 +13,14 @@ index e69de29..0000000 100644
 -
 `;
     const spec = parseUnifiedDiffToEditSpec(diff);
-    expect(spec.ops.some((o: any) => o.action === 'delete' && o.path === 'src/old.js')).toBeTruthy();
+    expect(
+      spec.ops.some(
+        (o: any) => o.action === "delete" && o.path === "src/old.js",
+      ),
+    ).toBeTruthy();
   });
 
-  it('parses multiple hunks and reconstructs new content', () => {
+  it("parses multiple hunks and reconstructs new content", () => {
     const diff = `diff --git a/src/multi.js b/src/multi.js
 index e69..abc 100644
 --- a/src/multi.js
@@ -30,17 +34,19 @@ index e69..abc 100644
 +console.log('added at tail')
 `;
     const spec = parseUnifiedDiffToEditSpec(diff);
-    const up = spec.ops.find((o: any) => o.action === 'upsert' && o.path === 'src/multi.js');
+    const up = spec.ops.find(
+      (o: any) => o.action === "upsert" && o.path === "src/multi.js",
+    );
     expect(up).toBeDefined();
-    
+
     const upsert = up as any;
     expect(upsert.content).toBeDefined();
     expect(upsert.content).toContain("console.log('line1')");
     expect(upsert.content).toContain("console.log('line2-new')");
     expect(upsert.content).toContain("console.log('added at tail')");
-  })
+  });
 
-  it('filters out .git/HEAD and emits warning', () => {
+  it("filters out .git/HEAD and emits warning", () => {
     const diff = `diff --git a/.git/HEAD b/.git/HEAD
 index e69de29..4b825dc 100644
 --- a/.git/HEAD
@@ -53,11 +59,11 @@ index e69de29..4b825dc 100644
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
     expect(spec.ops.length).toBe(0);
     expect(warnings.length).toBeGreaterThan(0);
-    expect(warnings[0]).toContain('.git/HEAD');
-    expect(warnings[0]).toContain('disallowed extension');
-  })
+    expect(warnings[0]).toContain(".git/HEAD");
+    expect(warnings[0]).toContain("disallowed extension");
+  });
 
-  it('filters out .env file and emits warning', () => {
+  it("filters out .env file and emits warning", () => {
     const diff = `diff --git a/.env b/.env
 index e69de29..4b825dc 100644
 --- a/.env
@@ -70,10 +76,10 @@ index e69de29..4b825dc 100644
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
     expect(spec.ops.length).toBe(0);
     expect(warnings.length).toBeGreaterThan(0);
-    expect(warnings[0]).toContain('.env');
-  })
+    expect(warnings[0]).toContain(".env");
+  });
 
-  it('filters out files without extensions', () => {
+  it("filters out files without extensions", () => {
     const diff = `diff --git a/LICENSE b/LICENSE
 index e69de29..4b825dc 100644
 --- a/LICENSE
@@ -85,9 +91,9 @@ index e69de29..4b825dc 100644
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
     expect(spec.ops.length).toBe(0);
     expect(warnings.length).toBeGreaterThan(0);
-  })
+  });
 
-  it('allows .txt files', () => {
+  it("allows .txt files", () => {
     const diff = `diff --git a/README.txt b/README.txt
 index e69de29..4b825dc 100644
 --- a/README.txt
@@ -99,9 +105,9 @@ index e69de29..4b825dc 100644
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
     expect(spec.ops.length).toBe(1);
     expect(warnings.length).toBe(0);
-  })
+  });
 
-  it('processes allowed files and filters disallowed in mixed diff', () => {
+  it("processes allowed files and filters disallowed in mixed diff", () => {
     const diff = `diff --git a/src/app.ts b/src/app.ts
 index e69de29..4b825dc 100644
 --- a/src/app.ts
@@ -126,11 +132,11 @@ index e69de29..4b825dc 100644
 `;
     const warnings: string[] = [];
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
-    
+
     expect(spec.ops.length).toBe(2);
-    expect(spec.ops.map((o: any) => o.path)).toContain('src/app.ts');
-    expect(spec.ops.map((o: any) => o.path)).toContain('package.json');
+    expect(spec.ops.map((o: any) => o.path)).toContain("src/app.ts");
+    expect(spec.ops.map((o: any) => o.path)).toContain("package.json");
     expect(warnings.length).toBe(1);
-    expect(warnings[0]).toContain('.git/config');
-  })
-})
+    expect(warnings[0]).toContain(".git/config");
+  });
+});

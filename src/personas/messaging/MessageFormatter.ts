@@ -1,6 +1,4 @@
-
 export class MessageFormatter {
-  
   formatSuccessResponse(params: {
     workflowId: string;
     persona: string;
@@ -14,15 +12,14 @@ export class MessageFormatter {
     return {
       workflow_id: workflowId,
       from_persona: persona,
-      status: 'done',
+      status: "done",
       corr_id: corrId,
       step: step,
       result: JSON.stringify(result),
-      duration_ms: String(durationMs)
+      duration_ms: String(durationMs),
     };
   }
 
-  
   formatErrorResponse(params: {
     workflowId: string;
     persona: string;
@@ -38,15 +35,15 @@ export class MessageFormatter {
     return {
       workflow_id: workflowId,
       from_persona: persona,
-      status: 'done',
+      status: "done",
       corr_id: corrId,
       step: step,
       result: JSON.stringify({
-        status: 'fail',
+        status: "fail",
         error: errorMessage,
-        details: 'Persona execution failed - check logs for details'
+        details: "Persona execution failed - check logs for details",
       }),
-      duration_ms: String(durationMs)
+      duration_ms: String(durationMs),
     };
   }
 }

@@ -1,5 +1,4 @@
-
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 export const makeRedis = vi.fn().mockResolvedValue({
   xGroupCreate: vi.fn().mockResolvedValue(null),
@@ -10,6 +9,6 @@ export const makeRedis = vi.fn().mockResolvedValue({
   disconnect: vi.fn().mockResolvedValue(null),
   quit: vi.fn().mockResolvedValue(null),
   xRevRange: vi.fn().mockResolvedValue([]),
-  xAdd: vi.fn().mockResolvedValue('test-id'),
-  exists: vi.fn().mockResolvedValue(1)
+  xAdd: vi.fn().mockResolvedValue("test-id"),
+  exists: vi.fn().mockResolvedValue(1),
 });

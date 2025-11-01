@@ -13,22 +13,25 @@ This guide explains how to use the DashboardClient mock helpers for testing code
 ### Basic Setup
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { createMockDashboardClient, mockBulkCreateResponse } from './helpers/dashboardMocks';
+import { describe, it, expect } from "vitest";
+import {
+  createMockDashboardClient,
+  mockBulkCreateResponse,
+} from "./helpers/dashboardMocks";
 
-describe('MyWorkflowStep', () => {
-  it('should create tasks successfully', async () => {
+describe("MyWorkflowStep", () => {
+  it("should create tasks successfully", async () => {
     // Create a mock client
     const mockClient = createMockDashboardClient();
-    
+
     // Configure the mock response
     mockClient.bulkCreateTasks.mockResolvedValue(
-      mockBulkCreateResponse({ created: 5, skipped: 0 })
+      mockBulkCreateResponse({ created: 5, skipped: 0 }),
     );
-    
+
     // Your test code here
     const result = await myStep.execute(context);
-    
+
     // Assertions
     expect(mockClient.bulkCreateTasks).toHaveBeenCalledTimes(1);
     expect(result.outputs?.tasks_created).toBe(5);
@@ -43,6 +46,7 @@ describe('MyWorkflowStep', () => {
 Creates a fully mocked Dashboard Client instance with all methods mocked.
 
 **Returns:** Mock client with these methods:
+
 - `createTask()`
 - `bulkCreateTasks()`
 - `updateTask()`
@@ -67,12 +71,13 @@ Creates a single Task response with default values.
 ```typescript
 const task = mockTaskResponse({
   id: 42,
-  title: 'My Test Task',
-  priority_score: 1500
+  title: "My Test Task",
+  priority_score: 1500,
 });
 ```
 
 **Default Values:**
+
 - `id`: 1
 - `project_id`: 1
 - `title`: "Test Task"
@@ -89,7 +94,7 @@ Creates a BulkTaskCreateResponse with created and skipped tasks.
 const response = mockBulkCreateResponse({
   created: 3,
   skipped: 2,
-  projectId: 1
+  projectId: 1,
 });
 
 // response.created: Task[] (3 tasks)
@@ -98,6 +103,7 @@ const response = mockBulkCreateResponse({
 ```
 
 **Options:**
+
 - `created` (default: 2) - Number of tasks created
 - `skipped` (default: 0) - Number of tasks skipped
 - `projectId` (default: 1) - Project ID for all tasks
@@ -119,9 +125,9 @@ Generates a TaskCreateInput object for task creation.
 
 ```typescript
 const input = mockTaskCreateInput({
-  title: 'My Task',
+  title: "My Task",
   priority_score: 1500,
-  external_id: 'my-task-123'
+  external_id: "my-task-123",
 });
 ```
 
@@ -139,10 +145,10 @@ const inputs = mockBulkTaskCreateInput(5, [1500, 1200, 800, 50]);
 ### 1. Successful Task Creation
 
 ```typescript
-import { mockSuccessfulTaskCreation } from './helpers/dashboardMocks';
+import { mockSuccessfulTaskCreation } from "./helpers/dashboardMocks";
 
 const mockClient = createMockDashboardClient();
-mockSuccessfulTaskCreation(mockClient, 'critical');
+mockSuccessfulTaskCreation(mockClient, "critical");
 
 // Test code that creates a task
 await myStep.execute(context);
@@ -151,15 +157,15 @@ await myStep.execute(context);
 expect(mockClient.createTask).toHaveBeenCalledWith(
   expect.any(Number),
   expect.objectContaining({
-    priority_score: 1500 // critical
-  })
+    priority_score: 1500, // critical
+  }),
 );
 ```
 
 ### 2. Successful Bulk Creation
 
 ```typescript
-import { mockSuccessfulBulkCreation } from './helpers/dashboardMocks';
+import { mockSuccessfulBulkCreation } from "./helpers/dashboardMocks";
 
 const mockClient = createMockDashboardClient();
 mockSuccessfulBulkCreation(mockClient, { created: 10, skipped: 0 });
@@ -176,17 +182,17 @@ expect(mockClient.bulkCreateTasks).toHaveBeenCalledTimes(1);
 Test that creating the same task twice returns the existing task.
 
 ```typescript
-import { mockIdempotentTaskCreation } from './helpers/dashboardMocks';
+import { mockIdempotentTaskCreation } from "./helpers/dashboardMocks";
 
 const mockClient = createMockDashboardClient();
-mockIdempotentTaskCreation(mockClient, 'my-external-id');
+mockIdempotentTaskCreation(mockClient, "my-external-id");
 
 // First call: creates task
-const result1 = await createTask('my-external-id');
+const result1 = await createTask("my-external-id");
 expect(result1.id).toBe(42);
 
 // Second call: returns existing task
-const result2 = await createTask('my-external-id');
+const result2 = await createTask("my-external-id");
 expect(result2.id).toBe(42); // Same ID!
 ```
 
@@ -195,7 +201,7 @@ expect(result2.id).toBe(42); // Same ID!
 Test that re-creating tasks in bulk skips duplicates.
 
 ```typescript
-import { mockIdempotentBulkCreation } from './helpers/dashboardMocks';
+import { mockIdempotentBulkCreation } from "./helpers/dashboardMocks";
 
 const mockClient = createMockDashboardClient();
 mockIdempotentBulkCreation(mockClient, 5);
@@ -216,13 +222,15 @@ expect(result2.skipped?.length).toBe(5);
 Test error handling when task creation fails.
 
 ```typescript
-import { mockTaskCreationFailure } from './helpers/dashboardMocks';
+import { mockTaskCreationFailure } from "./helpers/dashboardMocks";
 
 const mockClient = createMockDashboardClient();
-mockTaskCreationFailure(mockClient, 'Database connection failed');
+mockTaskCreationFailure(mockClient, "Database connection failed");
 
 // Test error handling
-await expect(myStep.execute(context)).rejects.toThrow('Database connection failed');
+await expect(myStep.execute(context)).rejects.toThrow(
+  "Database connection failed",
+);
 ```
 
 ### 6. Network Failure
@@ -230,13 +238,13 @@ await expect(myStep.execute(context)).rejects.toThrow('Database connection faile
 Test network error handling.
 
 ```typescript
-import { mockNetworkFailure } from './helpers/dashboardMocks';
+import { mockNetworkFailure } from "./helpers/dashboardMocks";
 
 const mockClient = createMockDashboardClient();
 mockNetworkFailure(mockClient);
 
 // All API calls will fail with fetch error
-await expect(myStep.execute(context)).rejects.toThrow('fetch failed');
+await expect(myStep.execute(context)).rejects.toThrow("fetch failed");
 ```
 
 ## Priority Mapping
@@ -246,12 +254,12 @@ await expect(myStep.execute(context)).rejects.toThrow('fetch failed');
 Converts priority strings to numeric scores (matches BulkTaskCreationStep).
 
 ```typescript
-import { priorityToPriorityScore } from './helpers/dashboardMocks';
+import { priorityToPriorityScore } from "./helpers/dashboardMocks";
 
-priorityToPriorityScore('critical'); // 1500
-priorityToPriorityScore('high');     // 1200
-priorityToPriorityScore('medium');   // 800
-priorityToPriorityScore('low');      // 50
+priorityToPriorityScore("critical"); // 1500
+priorityToPriorityScore("high"); // 1200
+priorityToPriorityScore("medium"); // 800
+priorityToPriorityScore("low"); // 50
 ```
 
 ### isUrgentPriority(priorityScore)
@@ -259,12 +267,12 @@ priorityToPriorityScore('low');      // 50
 Determines if a priority score represents an urgent task (>= 1000).
 
 ```typescript
-import { isUrgentPriority } from './helpers/dashboardMocks';
+import { isUrgentPriority } from "./helpers/dashboardMocks";
 
 isUrgentPriority(1500); // true (critical)
 isUrgentPriority(1200); // true (high)
-isUrgentPriority(800);  // false (medium)
-isUrgentPriority(50);   // false (low)
+isUrgentPriority(800); // false (medium)
+isUrgentPriority(50); // false (low)
 ```
 
 ## Assertion Helpers
@@ -274,7 +282,7 @@ isUrgentPriority(50);   // false (low)
 Asserts that a BulkTaskCreateResponse has the expected counts.
 
 ```typescript
-import { assertBulkCreateResponse } from './helpers/dashboardMocks';
+import { assertBulkCreateResponse } from "./helpers/dashboardMocks";
 
 const response = await bulkCreate(tasks);
 assertBulkCreateResponse(response, { created: 5, skipped: 0 });
@@ -286,10 +294,10 @@ assertBulkCreateResponse(response, { created: 5, skipped: 0 });
 Asserts that a Task has the expected priority.
 
 ```typescript
-import { assertTaskPriority } from './helpers/dashboardMocks';
+import { assertTaskPriority } from "./helpers/dashboardMocks";
 
-const task = await createTask({ priority: 'critical' });
-assertTaskPriority(task, 'critical');
+const task = await createTask({ priority: "critical" });
+assertTaskPriority(task, "critical");
 // Throws if priority doesn't match
 ```
 
@@ -304,21 +312,21 @@ const mockClient = createMockDashboardClient();
 
 mockClient.bulkCreateTasks.mockResolvedValue({
   created: [
-    mockTaskResponse({ id: 1, title: 'Critical Task', priority_score: 1500 }),
-    mockTaskResponse({ id: 2, title: 'High Task', priority_score: 1200 })
+    mockTaskResponse({ id: 1, title: "Critical Task", priority_score: 1500 }),
+    mockTaskResponse({ id: 2, title: "High Task", priority_score: 1200 }),
   ],
   skipped: [
     {
-      task: mockTaskResponse({ id: 3, title: 'Duplicate Task' }),
-      reason: 'Task already exists',
-      external_id: 'duplicate-123'
-    }
+      task: mockTaskResponse({ id: 3, title: "Duplicate Task" }),
+      reason: "Task already exists",
+      external_id: "duplicate-123",
+    },
   ],
   summary: {
     totalRequested: 3,
     created: 2,
-    skipped: 1
-  }
+    skipped: 1,
+  },
 });
 ```
 
@@ -330,9 +338,9 @@ Test retries or state changes by mocking a sequence:
 const mockClient = createMockDashboardClient();
 
 mockClient.createTask
-  .mockRejectedValueOnce(new Error('Transient failure'))  // First call fails
-  .mockRejectedValueOnce(new Error('Still failing'))      // Second call fails
-  .mockResolvedValue(mockTaskResponse({ id: 1 }));         // Third call succeeds
+  .mockRejectedValueOnce(new Error("Transient failure")) // First call fails
+  .mockRejectedValueOnce(new Error("Still failing")) // Second call fails
+  .mockResolvedValue(mockTaskResponse({ id: 1 })); // Third call succeeds
 
 // Test retry logic
 const result = await retryableCreate();
@@ -355,11 +363,11 @@ expect(mockClient.bulkCreateTasks).toHaveBeenCalledWith(
   {
     tasks: expect.arrayContaining([
       expect.objectContaining({
-        title: expect.stringContaining('Task'),
-        priority_score: expect.any(Number)
-      })
-    ])
-  }
+        title: expect.stringContaining("Task"),
+        priority_score: expect.any(Number),
+      }),
+    ]),
+  },
 );
 ```
 
@@ -372,11 +380,11 @@ Prefer using scenario helpers over manual mocking:
 ```typescript
 // ❌ Manual (verbose)
 mockClient.createTask.mockResolvedValue(
-  mockTaskResponse({ priority_score: 1500 })
+  mockTaskResponse({ priority_score: 1500 }),
 );
 
 // ✅ Scenario helper (concise)
-mockSuccessfulTaskCreation(mockClient, 'critical');
+mockSuccessfulTaskCreation(mockClient, "critical");
 ```
 
 ### 2. Test External ID Behavior
@@ -384,14 +392,14 @@ mockSuccessfulTaskCreation(mockClient, 'critical');
 Always test idempotency when using external_id:
 
 ```typescript
-it('should skip duplicate tasks with same external_id', async () => {
+it("should skip duplicate tasks with same external_id", async () => {
   const mockClient = createMockDashboardClient();
   mockIdempotentBulkCreation(mockClient, 3);
-  
+
   // First run
   const result1 = await runWorkflow();
   expect(result1.created).toBe(3);
-  
+
   // Second run (should skip all)
   const result2 = await runWorkflow();
   expect(result2.created).toBe(0);
@@ -404,24 +412,24 @@ it('should skip duplicate tasks with same external_id', async () => {
 Don't just test the happy path:
 
 ```typescript
-describe('error handling', () => {
-  it('should handle network failures', async () => {
+describe("error handling", () => {
+  it("should handle network failures", async () => {
     const mockClient = createMockDashboardClient();
     mockNetworkFailure(mockClient);
-    
+
     const result = await myStep.execute(context);
-    expect(result.status).toBe('failed');
-    expect(result.errors).toContain('fetch failed');
+    expect(result.status).toBe("failed");
+    expect(result.errors).toContain("fetch failed");
   });
-  
-  it('should retry on transient failures', async () => {
+
+  it("should retry on transient failures", async () => {
     const mockClient = createMockDashboardClient();
     mockClient.bulkCreateTasks
-      .mockRejectedValueOnce(new Error('Transient'))
+      .mockRejectedValueOnce(new Error("Transient"))
       .mockResolvedValue(mockBulkCreateResponse({ created: 5 }));
-    
+
     const result = await myStep.execute(context);
-    expect(result.status).toBe('success');
+    expect(result.status).toBe("success");
     expect(mockClient.bulkCreateTasks).toHaveBeenCalledTimes(2);
   });
 });
@@ -432,22 +440,22 @@ describe('error handling', () => {
 Always verify that the API was called correctly:
 
 ```typescript
-it('should call API with correct parameters', async () => {
+it("should call API with correct parameters", async () => {
   const mockClient = createMockDashboardClient();
   mockSuccessfulBulkCreation(mockClient);
-  
+
   await myStep.execute(context);
-  
+
   expect(mockClient.bulkCreateTasks).toHaveBeenCalledWith(
     expect.any(Number), // projectId
     expect.objectContaining({
       tasks: expect.arrayContaining([
         expect.objectContaining({
           external_id: expect.stringMatching(/^workflow-/),
-          priority_score: expect.any(Number)
-        })
-      ])
-    })
+          priority_score: expect.any(Number),
+        }),
+      ]),
+    }),
   );
 });
 ```
@@ -480,8 +488,8 @@ For tests that need consistent mocking:
 
 ```typescript
 // tests/setup.ts
-import { vi } from 'vitest';
-import { createMockDashboardClient } from './helpers/dashboardMocks';
+import { vi } from "vitest";
+import { createMockDashboardClient } from "./helpers/dashboardMocks";
 
 // Global mock (uncomment if needed)
 // vi.mock('../src/services/DashboardClient.js', () => ({

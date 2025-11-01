@@ -66,31 +66,19 @@
         "title": "Config loader and schema validation",
         "description": "Implement hierarchical config (env, file, CLI) with JSON schema validation and a .example.env. Include defaults for log paths, store, and LM Studio endpoint.",
         "status": "open",
-        "labels": [
-          "backend",
-          "config",
-          "infra"
-        ]
+        "labels": ["backend", "config", "infra"]
       },
       {
         "title": "Role prompts and guardrails scaffold",
         "description": "Create prompt files for Coordinator, Context, Lead Engineer, QA, and Security personas. Define scope, escalation rules, and safety limits to guide model behavior.",
         "status": "open",
-        "labels": [
-          "prompts",
-          "docs",
-          "summarization"
-        ]
+        "labels": ["prompts", "docs", "summarization"]
       },
       {
         "title": "Sample data packs",
         "description": "Curate small synthetic log runs (ok, flaky, fail, timeout) that reflect the agent workflow fields (persona, workflowId, intent). Use for demos, tests, and docs.",
         "status": "open",
-        "labels": [
-          "testing",
-          "fixtures",
-          "docs"
-        ]
+        "labels": ["testing", "fixtures", "docs"]
       }
     ],
     "log-ingestion-normalization": [
@@ -98,39 +86,25 @@
         "title": "LogEvent normalizer and type mapping",
         "description": "Define the LogEvent schema and map raw messages to types (worker_ready, request_started, git_op, persona_response, persona_apply, persona_completed, unknown). Capture fields: ts, level, persona, workflowId, intent, repo, branch, projectId, corrId, duration_ms, preview_raw/json, paths, source, hash.",
         "status": "open",
-        "labels": [
-          "backend",
-          "ingestion",
-          "parsing"
-        ]
+        "labels": ["backend", "ingestion", "parsing"]
       },
       {
         "title": "Preview extractor for fenced and bare JSON",
         "description": "Parse preview content whether it appears inside ```json fences or as bare JSON. On valid parse, store preview_json and extract status (pass|fail); otherwise retain preview_raw.",
         "status": "open",
-        "labels": [
-          "backend",
-          "parsing"
-        ]
+        "labels": ["backend", "parsing"]
       },
       {
         "title": "Windows path and repo URL extraction",
         "description": "Extract Windows file paths (e.g., C:\\...) and repo URLs from message/meta. Normalize to consistent formats and store in paths for deep linking and privacy controls.",
         "status": "open",
-        "labels": [
-          "backend",
-          "parsing",
-          "windows"
-        ]
+        "labels": ["backend", "parsing", "windows"]
       },
       {
         "title": "Idempotency and re-ingest de-duplication",
         "description": "Compute a stable hash (ts|msg|persona|workflowId|corrId|preview_raw[:512]) to suppress duplicate records across replays. Re-ingesting the same file should produce identical counts.",
         "status": "open",
-        "labels": [
-          "backend",
-          "reliability"
-        ]
+        "labels": ["backend", "reliability"]
       }
     ],
     "storage-query-api": [
@@ -138,30 +112,19 @@
         "title": "Define event store schema and indexes",
         "description": "Create events and event_meta tables/collections. Index by ts, (workflow_id, ts), (persona, ts), and (type, ts). Target write latency under 5ms p95 for batched writes.",
         "status": "open",
-        "labels": [
-          "backend",
-          "database",
-          "performance"
-        ]
+        "labels": ["backend", "database", "performance"]
       },
       {
         "title": "Write path and retention policies",
         "description": "Implement batched writes, size/time-based retention, and optional compaction/TTL jobs. Expose metrics for write latency and retention actions.",
         "status": "open",
-        "labels": [
-          "backend",
-          "database",
-          "ops"
-        ]
+        "labels": ["backend", "database", "ops"]
       },
       {
         "title": "Events query API with filters and cursor paging",
         "description": "Build /events and /events/{id} endpoints supporting filters (persona, workflowId, intent, type, level, hasPreview, status, q) and stable cursor pagination.",
         "status": "open",
-        "labels": [
-          "api",
-          "backend"
-        ]
+        "labels": ["api", "backend"]
       }
     ],
     "ui-list-details": [
@@ -169,21 +132,13 @@
         "title": "Virtualized log list with filters and chips",
         "description": "Implement high-performance list (virtualized) with filters and saved views. Show PASS/FAIL chip for persona_response, and display duration for persona_completed.",
         "status": "open",
-        "labels": [
-          "frontend",
-          "ui",
-          "performance"
-        ]
+        "labels": ["frontend", "ui", "performance"]
       },
       {
         "title": "Expandable event inspector with tabs",
         "description": "Add details panel with tabs: Normalized, Raw, Preview JSON, Meta. Support copy-as-JSON, redaction highlighting, and deep-linkable URLs.",
         "status": "open",
-        "labels": [
-          "frontend",
-          "ui",
-          "developer-experience"
-        ]
+        "labels": ["frontend", "ui", "developer-experience"]
       }
     ],
     "lmstudio-integration-telemetry": [
@@ -191,41 +146,25 @@
         "title": "LM Studio client adapter with healthcheck",
         "description": "Create a thin client for LM Studio chat/completions with timeouts, retries, and a health endpoint probe. Centralize configuration for model, context length, and temperature.",
         "status": "open",
-        "labels": [
-          "lmstudio",
-          "backend",
-          "integration"
-        ]
+        "labels": ["lmstudio", "backend", "integration"]
       },
       {
         "title": "Session registry keyed by persona and workflow",
         "description": "Maintain an in-memory session registry keyed by persona:workflowId to reuse sessions for concurrent runs while isolating context. Include eviction metrics and controls.",
         "status": "open",
-        "labels": [
-          "lmstudio",
-          "backend",
-          "performance"
-        ]
+        "labels": ["lmstudio", "backend", "performance"]
       },
       {
         "title": "Prompt/response telemetry emitters",
         "description": "Emit model_request and model_response events including persona, workflowId, token counts, and latency. Ensure redaction on sensitive fields before storing.",
         "status": "open",
-        "labels": [
-          "lmstudio",
-          "telemetry",
-          "observability"
-        ]
+        "labels": ["lmstudio", "telemetry", "observability"]
       },
       {
         "title": "Failure handling with circuit breaker and fallback",
         "description": "Implement retry with backoff and a circuit breaker that can switch to alternate parameters or models. Log model_fallback events for visibility.",
         "status": "open",
-        "labels": [
-          "lmstudio",
-          "resilience",
-          "backend"
-        ]
+        "labels": ["lmstudio", "resilience", "backend"]
       }
     ],
     "summarization-engine-time-windows": [
@@ -233,51 +172,31 @@
         "title": "Summary schema and levels",
         "description": "Define Summary objects for run-level, windowed, and incident summaries with fields for type, inputs, model, ts_range, text, metadata, and quality_score.",
         "status": "open",
-        "labels": [
-          "summarization",
-          "backend",
-          "schema"
-        ]
+        "labels": ["summarization", "backend", "schema"]
       },
       {
         "title": "Windowed event selection and chunking",
         "description": "Implement deterministic window queries and chunking by token budget. Prioritize persona_response and nearby git_op events to preserve context fidelity.",
         "status": "open",
-        "labels": [
-          "summarization",
-          "backend",
-          "performance"
-        ]
+        "labels": ["summarization", "backend", "performance"]
       },
       {
         "title": "Pass/Fail-aware prompt templates",
         "description": "Create system and task prompts for PASS vs FAIL flows. Include run metadata, commands, and next-action heuristics. Provide unit tests against fixtures.",
         "status": "open",
-        "labels": [
-          "summarization",
-          "prompts",
-          "testing"
-        ]
+        "labels": ["summarization", "prompts", "testing"]
       },
       {
         "title": "Summarization orchestrator and scoring",
         "description": "Build a map-reduce/rolling strategy to collect \u2192 chunk \u2192 call model(s) \u2192 merge \u2192 score summaries. Add deterministic seed mode for reproducible results.",
         "status": "open",
-        "labels": [
-          "summarization",
-          "backend",
-          "quality"
-        ]
+        "labels": ["summarization", "backend", "quality"]
       },
       {
         "title": "Incremental updates and caching",
         "description": "Cache summaries keyed by (ts_range, filters, store_version) and invalidate on new data arrival. Avoid full recomputation for large windows.",
         "status": "open",
-        "labels": [
-          "summarization",
-          "performance",
-          "caching"
-        ]
+        "labels": ["summarization", "performance", "caching"]
       }
     ],
     "e2e-fixtures-ci": [
@@ -285,40 +204,25 @@
         "title": "Golden fixture and invariants",
         "description": "Add the sample machine-client log and the normalized golden JSON. Assert invariants: request_started precedes git_op for a workflow; persona_response eventually leads to persona_completed; FAIL statuses elevate severity.",
         "status": "open",
-        "labels": [
-          "testing",
-          "fixtures",
-          "quality"
-        ]
+        "labels": ["testing", "fixtures", "quality"]
       },
       {
         "title": "Headless end-to-end pipeline test",
         "description": "Create a single command (e.g., make e2e) that ingests the fixture, writes to the store, renders minimal UI, and produces a summary, then asserts expected outcomes.",
         "status": "open",
-        "labels": [
-          "testing",
-          "e2e",
-          "devops"
-        ]
+        "labels": ["testing", "e2e", "devops"]
       },
       {
         "title": "CI pipeline with coverage and artifacts",
         "description": "Configure CI to run lint, unit, and e2e tests with caching. Upload coverage and golden-diff artifacts. Block PRs on failing gates.",
         "status": "open",
-        "labels": [
-          "ci",
-          "devops",
-          "quality"
-        ]
+        "labels": ["ci", "devops", "quality"]
       },
       {
         "title": "Docs and diagrams",
         "description": "Author quickstart, ingestion, and summary pipeline docs. Include a sequence diagram of ingest \u2192 store \u2192 summarize \u2192 UI with screenshots.",
         "status": "open",
-        "labels": [
-          "documentation",
-          "architecture"
-        ]
+        "labels": ["documentation", "architecture"]
       }
     ],
     "settings-observability-ux": [
@@ -326,40 +230,25 @@
         "title": "Settings panel with connections and previews",
         "description": "Build settings to configure sources, retention, LM Studio endpoint/model, and a redaction preview sandbox. Provide a Test Connection action.",
         "status": "open",
-        "labels": [
-          "frontend",
-          "ui",
-          "settings"
-        ]
+        "labels": ["frontend", "ui", "settings"]
       },
       {
         "title": "Error and empty states",
         "description": "Implement friendly error and empty states for ingest, query, and summary flows with actionable CTAs (retry, view raw, adjust settings).",
         "status": "open",
-        "labels": [
-          "frontend",
-          "ux"
-        ]
+        "labels": ["frontend", "ux"]
       },
       {
         "title": "Performance and accessibility",
         "description": "Ensure virtualized lists, keyboard shortcuts (j/k, Enter), ARIA roles, and Axe/Lighthouse checks. Target smooth 60fps scrolling at 50k rows.",
         "status": "open",
-        "labels": [
-          "frontend",
-          "a11y",
-          "performance"
-        ]
+        "labels": ["frontend", "a11y", "performance"]
       },
       {
         "title": "Observability dashboard",
         "description": "Expose ingest lag, events/sec, % pass vs fail for persona_response, average model RTT, and queue depth. Update every minute with color-coded thresholds.",
         "status": "open",
-        "labels": [
-          "observability",
-          "frontend",
-          "metrics"
-        ]
+        "labels": ["observability", "frontend", "metrics"]
       }
     ],
     "feature-security-enhancements": [
@@ -367,31 +256,19 @@
         "title": "PII and secret redaction rules",
         "description": "Introduce middleware that masks tokens/keys/emails in preview and meta before storage. Preserve last 4 characters for auditability and add allowlist controls.",
         "status": "open",
-        "labels": [
-          "security",
-          "privacy",
-          "backend"
-        ]
+        "labels": ["security", "privacy", "backend"]
       },
       {
         "title": "Path display privacy toggles",
         "description": "Add UI and server options to collapse or anonymize sensitive path segments (e.g., home directory) in event rows and inspectors.",
         "status": "open",
-        "labels": [
-          "privacy",
-          "frontend",
-          "backend"
-        ]
+        "labels": ["privacy", "frontend", "backend"]
       },
       {
         "title": "Run data export and delete endpoints",
         "description": "Implement endpoints to export events for a run and to delete a run (soft-delete with tombstones). Require confirmation and log an admin event.",
         "status": "open",
-        "labels": [
-          "security",
-          "api",
-          "compliance"
-        ]
+        "labels": ["security", "api", "compliance"]
       }
     ]
   }

@@ -1,9 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { parseUnifiedDiffToEditSpec } from '../src/fileops'
-import { extractDiffCandidates, parseAgentEditsFromResponse } from '../src/workflows/helpers/agentResponseParser'
+import { describe, it, expect } from "vitest";
+import { parseUnifiedDiffToEditSpec } from "../src/fileops";
+import {
+  extractDiffCandidates,
+  parseAgentEditsFromResponse,
+} from "../src/workflows/helpers/agentResponseParser";
 
-describe('parseUnifiedDiffToEditSpec', () => {
-  it('parses a multi-file unified diff bundle and produces upsert ops', () => {
+describe("parseUnifiedDiffToEditSpec", () => {
+  it("parses a multi-file unified diff bundle and produces upsert ops", () => {
     const diff = `diff --git a/package.json b/package.json
 index e69de29..4b825dc 100644
 --- a/package.json
@@ -21,26 +24,26 @@ index 0000000..e69de29
 @@ -0,0 +1,3 @@
 import React from 'react'
 import { render } from '@testing-library/react'
-`
+`;
 
-    const spec = parseUnifiedDiffToEditSpec(diff)
-    expect(spec).toBeDefined()
-    expect(spec.ops).toBeInstanceOf(Array)
-    
-    const upserts = spec.ops.filter((o: any) => o.action === 'upsert')
-    expect(upserts.length).toBeGreaterThanOrEqual(2)
-    
-    expect(upserts.map((u: any) => u.path)).toContain('package.json')
-    expect(upserts.map((u: any) => u.path)).toContain('src/App.test.tsx')
-  const pkg = upserts.find((u: any) => u.path === 'package.json')
-  expect(pkg).toBeDefined()
-  
-  expect(pkg!.content).toContain('"name": "example"')
-  })
-})
+    const spec = parseUnifiedDiffToEditSpec(diff);
+    expect(spec).toBeDefined();
+    expect(spec.ops).toBeInstanceOf(Array);
 
-describe('extractDiffCandidates', () => {
-  it('extracts diff from preview field with mixed content', () => {
+    const upserts = spec.ops.filter((o: any) => o.action === "upsert");
+    expect(upserts.length).toBeGreaterThanOrEqual(2);
+
+    expect(upserts.map((u: any) => u.path)).toContain("package.json");
+    expect(upserts.map((u: any) => u.path)).toContain("src/App.test.tsx");
+    const pkg = upserts.find((u: any) => u.path === "package.json");
+    expect(pkg).toBeDefined();
+
+    expect(pkg!.content).toContain('"name": "example"');
+  });
+});
+
+describe("extractDiffCandidates", () => {
+  it("extracts diff from preview field with mixed content", () => {
     const leadOutcome = {
       result: {
         preview: `Changed Files:
@@ -97,20 +100,24 @@ index d76787e..51d3ad1 100644
 +
      expect(linkElement).toBeInTheDocument();
    });
- });`
-      }
-    }
+ });`,
+      },
+    };
 
-    const candidates = extractDiffCandidates(leadOutcome)
-    
-    expect(candidates).toHaveLength(1)
-    expect(candidates[0]).toContain('diff --git a/src/__tests__/ingestion.test.ts')
-    expect(candidates[0]).toContain('diff --git a/src/__tests__/App.test.tsx')
-    expect(candidates[0]).toContain('@@ -1,6 +1,6 @@')
-    expect(candidates[0]).toContain('+import App from \'../App\'; // importing App from App.tsx')
-  })
+    const candidates = extractDiffCandidates(leadOutcome);
 
-  it('ignores fenced code blocks without diff markers', () => {
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toContain(
+      "diff --git a/src/__tests__/ingestion.test.ts",
+    );
+    expect(candidates[0]).toContain("diff --git a/src/__tests__/App.test.tsx");
+    expect(candidates[0]).toContain("@@ -1,6 +1,6 @@");
+    expect(candidates[0]).toContain(
+      "+import App from '../App'; // importing App from App.tsx",
+    );
+  });
+
+  it("ignores fenced code blocks without diff markers", () => {
     const leadOutcome = {
       result: {
         output: `Here's my analysis:
@@ -128,23 +135,23 @@ index 1111111..2222222 100644
 +++ b/README.md
 @@ -1,2 +1,2 @@
 -Old content
-+New content`
-      }
-    }
++New content`,
+      },
+    };
 
-    const candidates = extractDiffCandidates(leadOutcome)
-    
-    expect(candidates).toHaveLength(1)
-    expect(candidates[0]).toContain('diff --git a/README.md b/README.md')
-    expect(candidates[0]).toContain('-Old content')
-    expect(candidates[0]).toContain('+New content')
-    expect(candidates[0]).not.toContain('This is just a regular code block')
-  })
+    const candidates = extractDiffCandidates(leadOutcome);
 
-  it('extracts diff from nested result field', () => {
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toContain("diff --git a/README.md b/README.md");
+    expect(candidates[0]).toContain("-Old content");
+    expect(candidates[0]).toContain("+New content");
+    expect(candidates[0]).not.toContain("This is just a regular code block");
+  });
+
+  it("extracts diff from nested result field", () => {
     const leadOutcome = {
       result: {
-        output: 'done',
+        output: "done",
         result: `\`\`\`diff
 diff --git a/test.js b/test.js
 index 1111111..2222222 100644
@@ -153,35 +160,37 @@ index 1111111..2222222 100644
 @@ -1,1 +1,1 @@
 -console.log('old');
 +console.log('new');
-\`\`\``
-      }
-    }
+\`\`\``,
+      },
+    };
 
-    const candidates = extractDiffCandidates(leadOutcome)
-    
-    expect(candidates).toHaveLength(1)
-    expect(candidates[0]).toContain('diff --git a/test.js b/test.js')
-    expect(candidates[0]).toContain('-console.log(\'old\');')
-    expect(candidates[0]).toContain('+console.log(\'new\');')
-  })
+    const candidates = extractDiffCandidates(leadOutcome);
 
-  it('handles multiple response formats', () => {
-    
-    const stringResponse = { result: 'diff --git a/file.txt b/file.txt\n+added line' }
-    expect(extractDiffCandidates(stringResponse)).toHaveLength(1)
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toContain("diff --git a/test.js b/test.js");
+    expect(candidates[0]).toContain("-console.log('old');");
+    expect(candidates[0]).toContain("+console.log('new');");
+  });
 
-    
-    const topLevelPreview = { preview: 'diff --git a/file.txt b/file.txt\n+added line' }
-    expect(extractDiffCandidates(topLevelPreview)).toHaveLength(1)
+  it("handles multiple response formats", () => {
+    const stringResponse = {
+      result: "diff --git a/file.txt b/file.txt\n+added line",
+    };
+    expect(extractDiffCandidates(stringResponse)).toHaveLength(1);
 
-    
-    expect(extractDiffCandidates({})).toHaveLength(0)
-    expect(extractDiffCandidates({ result: null })).toHaveLength(0)
-    expect(extractDiffCandidates({ result: { preview: null } })).toHaveLength(0)
-  })
+    const topLevelPreview = {
+      preview: "diff --git a/file.txt b/file.txt\n+added line",
+    };
+    expect(extractDiffCandidates(topLevelPreview)).toHaveLength(1);
 
-  it('handles direct string input and raw field response structure', () => {
-    
+    expect(extractDiffCandidates({})).toHaveLength(0);
+    expect(extractDiffCandidates({ result: null })).toHaveLength(0);
+    expect(extractDiffCandidates({ result: { preview: null } })).toHaveLength(
+      0,
+    );
+  });
+
+  it("handles direct string input and raw field response structure", () => {
     const directString = `Here's the fix:
 
 \`\`\`diff
@@ -194,13 +203,12 @@ index 1234567..89abcde 100644
 +console.log('world');
  const x = 1;
 \`\`\``;
-    
+
     const candidates1 = extractDiffCandidates(directString);
     expect(candidates1).toHaveLength(1);
-    expect(candidates1[0]).toContain('diff --git a/src/test.js');
-    expect(candidates1[0]).toContain('+console.log(\'world\');');
+    expect(candidates1[0]).toContain("diff --git a/src/test.js");
+    expect(candidates1[0]).toContain("+console.log('world');");
 
-    
     const rawResponse = {
       raw: `Here's the fix:
 
@@ -215,61 +223,65 @@ index 1234567..89abcde 100644
 +  "version": "1.0.0",
    "dependencies": {}
  }
-\`\`\``
+\`\`\``,
     };
-    
+
     const candidates2 = extractDiffCandidates(rawResponse);
     expect(candidates2).toHaveLength(1);
-    expect(candidates2[0]).toContain('diff --git a/package.json');
+    expect(candidates2[0]).toContain("diff --git a/package.json");
     expect(candidates2[0]).toContain('+  "version": "1.0.0",');
-  })
-})
+  });
+});
 
-describe('parseAgentEditsFromResponse', () => {
-  it('prefers structured edit specs when present', async () => {
+describe("parseAgentEditsFromResponse", () => {
+  it("prefers structured edit specs when present", async () => {
     const structured = {
       result: {
-        ops: [
-          { action: 'upsert', path: 'foo.txt', content: 'hello' }
-        ]
-      }
-    }
+        ops: [{ action: "upsert", path: "foo.txt", content: "hello" }],
+      },
+    };
     const outcome = await parseAgentEditsFromResponse(structured, {
-      parseDiff: async () => ({ ops: [] })
-    })
-    const ops = Array.isArray(outcome.editSpec?.ops) ? outcome.editSpec?.ops : []
-    expect(outcome.source).toBe('structured')
-    expect(ops.length).toBe(1)
-    expect(outcome.diffCandidates).toHaveLength(0)
-  })
+      parseDiff: async () => ({ ops: [] }),
+    });
+    const ops = Array.isArray(outcome.editSpec?.ops)
+      ? outcome.editSpec?.ops
+      : [];
+    expect(outcome.source).toBe("structured");
+    expect(ops.length).toBe(1);
+    expect(outcome.diffCandidates).toHaveLength(0);
+  });
 
-  it('parses diff candidates when structured edits are absent', async () => {
+  it("parses diff candidates when structured edits are absent", async () => {
     const diff = `diff --git a/foo.txt b/foo.txt
 index 0000000..1111111 100644
 --- a/foo.txt
 +++ b/foo.txt
 @@ -0,0 +1 @@
 +hello
-`
-    const response = { result: { preview: diff } }
+`;
+    const response = { result: { preview: diff } };
     const outcome = await parseAgentEditsFromResponse(response, {
-      parseDiff: (txt: string) => parseUnifiedDiffToEditSpec(txt)
-    })
-    const ops = Array.isArray(outcome.editSpec?.ops) ? outcome.editSpec?.ops : []
-    expect(outcome.source).toBe('diff')
-    expect(ops.length).toBeGreaterThan(0)
-    expect(outcome.diffCandidates.length).toBeGreaterThan(0)
-  })
+      parseDiff: (txt: string) => parseUnifiedDiffToEditSpec(txt),
+    });
+    const ops = Array.isArray(outcome.editSpec?.ops)
+      ? outcome.editSpec?.ops
+      : [];
+    expect(outcome.source).toBe("diff");
+    expect(ops.length).toBeGreaterThan(0);
+    expect(outcome.diffCandidates.length).toBeGreaterThan(0);
+  });
 
-  it('records diff parse attempts when parsing yields no operations', async () => {
-    const diffOnly = '```diff\ndiff --git a/foo b/foo\n@@ -1 +1 @@\n-a\n+a\n```'
+  it("records diff parse attempts when parsing yields no operations", async () => {
+    const diffOnly =
+      "```diff\ndiff --git a/foo b/foo\n@@ -1 +1 @@\n-a\n+a\n```";
     const outcome = await parseAgentEditsFromResponse(diffOnly, {
-      parseDiff: async () => ({ ops: [] })
-    })
-    const ops = Array.isArray(outcome.editSpec?.ops) ? outcome.editSpec?.ops : []
-    expect(ops.length).toBe(0)
-    expect(outcome.errors.length).toBeGreaterThan(0)
-    expect(outcome.diffCandidates.length).toBeGreaterThan(0)
-  })
-})
-
+      parseDiff: async () => ({ ops: [] }),
+    });
+    const ops = Array.isArray(outcome.editSpec?.ops)
+      ? outcome.editSpec?.ops
+      : [];
+    expect(ops.length).toBe(0);
+    expect(outcome.errors.length).toBeGreaterThan(0);
+    expect(outcome.diffCandidates.length).toBeGreaterThan(0);
+  });
+});

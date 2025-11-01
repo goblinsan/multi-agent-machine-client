@@ -1,6 +1,17 @@
-import { TaskPriorityCalculator, TaskPriority } from './TaskPriorityCalculator.js';
-import { TaskDuplicateDetector, type ExistingTask, type DuplicateMatchStrategy } from './TaskDuplicateDetector.js';
-import { TaskRouter, type MilestoneStrategy, type ParentTaskMapping } from './TaskRouter.js';
+import {
+  TaskPriorityCalculator,
+  TaskPriority,
+} from "./TaskPriorityCalculator.js";
+import {
+  TaskDuplicateDetector,
+  type ExistingTask,
+  type DuplicateMatchStrategy,
+} from "./TaskDuplicateDetector.js";
+import {
+  TaskRouter,
+  type MilestoneStrategy,
+  type ParentTaskMapping,
+} from "./TaskRouter.js";
 
 export interface TaskToEnrich {
   title: string;
@@ -48,7 +59,9 @@ export class TaskEnricher {
 
   enrichTasks(tasks: TaskToEnrich[], config: EnrichmentConfig): EnrichedTask[] {
     if (config.priority_mapping) {
-      this.priorityCalculator = new TaskPriorityCalculator(config.priority_mapping);
+      this.priorityCalculator = new TaskPriorityCalculator(
+        config.priority_mapping,
+      );
     }
 
     const enriched: EnrichedTask[] = [];
@@ -61,42 +74,50 @@ export class TaskEnricher {
       const enrichedTask: EnrichedTask = {
         ...task,
         priority_score: 0,
-        is_urgent: false
+        is_urgent: false,
       };
 
       if (config.title_prefix) {
         enrichedTask.title = `${config.title_prefix}${task.title}`;
       }
 
-      if (config.check_duplicates && config.existing_tasks && config.existing_tasks.length > 0) {
-        const taskForDuplication = { 
-          title: enrichedTask.title, 
-          description: task.description || '', 
+      if (
+        config.check_duplicates &&
+        config.existing_tasks &&
+        config.existing_tasks.length > 0
+      ) {
+        const taskForDuplication = {
+          title: enrichedTask.title,
+          description: task.description || "",
           external_id: task.external_id,
-          milestone_slug: task.milestone_slug
+          milestone_slug: task.milestone_slug,
         };
-        
+
         const duplicateResult = this.duplicateDetector.findDuplicateWithDetails(
           taskForDuplication,
           config.existing_tasks,
-          config.duplicate_match_strategy || 'title'
+          config.duplicate_match_strategy || "title",
         );
 
         if (duplicateResult) {
           enrichedTask.is_duplicate = true;
-          enrichedTask.duplicate_of_task_id = String(duplicateResult.duplicate.id);
+          enrichedTask.duplicate_of_task_id = String(
+            duplicateResult.duplicate.id,
+          );
           enrichedTask.skip_reason = `Duplicate detected (${duplicateResult.strategy}, ${Math.round(duplicateResult.matchScore)}% match)`;
           enriched.push(enrichedTask);
           continue;
         }
       }
 
-      enrichedTask.priority_score = this.priorityCalculator.calculateScore(task.priority);
+      enrichedTask.priority_score = this.priorityCalculator.calculateScore(
+        task.priority,
+      );
 
       const routing = this.router.routeTask(
         task.priority,
         config.milestone_strategy,
-        config.parent_task_mapping
+        config.parent_task_mapping,
       );
 
       if (routing.milestone_slug) {
@@ -113,10 +134,14 @@ export class TaskEnricher {
           config.external_id_template,
           task,
           enriched.length,
-          config
+          config,
         );
       } else if (config.upsert_by_external_id && !enrichedTask.external_id) {
-        enrichedTask.external_id = this.generateDefaultExternalId(task, enriched.length, config);
+        enrichedTask.external_id = this.generateDefaultExternalId(
+          task,
+          enriched.length,
+          config,
+        );
       }
 
       enriched.push(enrichedTask);
@@ -126,25 +151,35 @@ export class TaskEnricher {
   }
 
   private generateExternalId(
-    template: string, 
-    task: TaskToEnrich, 
-    index: number, 
-    config: EnrichmentConfig
+    template: string,
+    task: TaskToEnrich,
+    index: number,
+    config: EnrichmentConfig,
   ): string {
     return template
-      .replace(/\$\{workflow_run_id\}/g, config.workflow_run_id || '')
-      .replace(/\$\{step_name\}/g, config.step_name || '')
-      .replace(/\$\{task\.title\}/g, task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
-      .replace(/\$\{task\.priority\}/g, task.priority || 'medium')
-      .replace(/\$\{task\.milestone_slug\}/g, task.milestone_slug || '')
+      .replace(/\$\{workflow_run_id\}/g, config.workflow_run_id || "")
+      .replace(/\$\{step_name\}/g, config.step_name || "")
+      .replace(
+        /\$\{task\.title\}/g,
+        task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      )
+      .replace(/\$\{task\.priority\}/g, task.priority || "medium")
+      .replace(/\$\{task\.milestone_slug\}/g, task.milestone_slug || "")
       .replace(/\$\{task_index\}/g, String(index));
   }
 
-  private generateDefaultExternalId(task: TaskToEnrich, index: number, config: EnrichmentConfig): string {
+  private generateDefaultExternalId(
+    task: TaskToEnrich,
+    index: number,
+    config: EnrichmentConfig,
+  ): string {
     if (config.workflow_run_id && config.step_name) {
       return `${config.workflow_run_id}:${config.step_name}:${index}`;
     }
-    const sanitizedTitle = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50);
+    const sanitizedTitle = task.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .substring(0, 50);
     return `${sanitizedTitle}-${index}`;
   }
 }

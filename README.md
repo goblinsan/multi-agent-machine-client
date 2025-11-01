@@ -1,14 +1,15 @@
 # Redis Machine Client (TypeScript)
 
 Per-machine worker that:
-1) Listens on Redis Streams for its **allowed personas**.
-2) Pulls project context from your dashboard.
-3) Calls the **local LM Studio** model (single-loaded identifier).
-4) Emits a result event to Redis and (optionally) updates the dashboard.
-5) (Optional) **Applies file edits** safely and commits to a branch.
-6) (Optional) **Context scanner** writes `.ma/context` artifacts before the model call when persona===context.
-7) **Multi-component scanning**: set SCAN_COMPONENTS or pass payload.components.
-8) **Alembic aware**: if an `alembic/` tree exists, summary includes latest version files.
+
+1. Listens on Redis Streams for its **allowed personas**.
+2. Pulls project context from your dashboard.
+3. Calls the **local LM Studio** model (single-loaded identifier).
+4. Emits a result event to Redis and (optionally) updates the dashboard.
+5. (Optional) **Applies file edits** safely and commits to a branch.
+6. (Optional) **Context scanner** writes `.ma/context` artifacts before the model call when persona===context.
+7. **Multi-component scanning**: set SCAN_COMPONENTS or pass payload.components.
+8. **Alembic aware**: if an `alembic/` tree exists, summary includes latest version files.
 
 See `.env.example` for config.
 
@@ -29,11 +30,11 @@ See `.env.example` for config.
 Example usage in a test:
 
 ```ts
-import { makeTempRepo } from './makeTempRepo';
+import { makeTempRepo } from "./makeTempRepo";
 
-it('does git things safely', async () => {
-	const repo = await makeTempRepo();
-	// shell out with { cwd: repo } or pass repoRoot: repo to functions under test
+it("does git things safely", async () => {
+  const repo = await makeTempRepo();
+  // shell out with { cwd: repo } or pass repoRoot: repo to functions under test
 });
 ```
 
@@ -45,10 +46,10 @@ The coordinator can infer Test-Driven Development (TDD) context directly from yo
 
 For each task, the coordinator aggregates TDD hints from (highest to lowest priority):
 
-1) Explicit message/payload hints passed at dispatch time
-2) Task metadata and labels/tags
-3) Milestone metadata and labels/tags
-4) Project metadata and labels/tags
+1. Explicit message/payload hints passed at dispatch time
+2. Task metadata and labels/tags
+3. Milestone metadata and labels/tags
+4. Project metadata and labels/tags
 
 Supported hint keys and label patterns:
 
@@ -119,14 +120,14 @@ steps:
     type: "persona-request"
     persona: "implementation-planner"
     timeout: 1800
-    
+
   - id: "implementation"
     name: "Lead Engineer Implementation"
     type: "persona-request"
     persona: "lead-engineer"
     dependencies: ["planning"]
     timeout: 3600
-    
+
   - id: "qa"
     name: "Quality Assurance"
     type: "persona-request"
@@ -165,15 +166,15 @@ What drives trigger matching
 
 Ways to select a different workflow
 
-1) Quick override (no code change): Rename or add a copy of your desired workflow file as `legacy-compatible-task-flow.yaml`. The coordinator will prefer it automatically.
+1. Quick override (no code change): Rename or add a copy of your desired workflow file as `legacy-compatible-task-flow.yaml`. The coordinator will prefer it automatically.
 
-2) Trigger-based selection (recommended):
+2. Trigger-based selection (recommended):
    - Add a new YAML to `src/workflows/definitions/` with a `trigger.condition` that matches your tasks, for example:
      - `task_type == 'feature' && scope == 'small'`
      - `task_type == 'analysis'`
    - Ensure your task title/description/labels in the dashboard include keywords so the coordinator infers the intended `task_type`/`scope`.
 
-3) Tune the mapping (advanced): Edit `determineTaskType`/`determineTaskScope` in `src/workflows/WorkflowCoordinator.ts` to change how tasks are classified for trigger matching.
+3. Tune the mapping (advanced): Edit `determineTaskType`/`determineTaskScope` in `src/workflows/WorkflowCoordinator.ts` to change how tasks are classified for trigger matching.
 
 Operational notes
 

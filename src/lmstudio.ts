@@ -3,9 +3,17 @@ import { fetch } from "undici";
 import { logger } from "./logger.js";
 import { sleep, calculateBackoffDelay } from "./util/retry.js";
 
-export type ChatMessage = { role: "system"|"user"|"assistant"; content: string };
+export type ChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
 
-export async function callLMStudio(model: string, messages: ChatMessage[], temperature = 0.2, opts?: { timeoutMs?: number; retries?: number }) {
+export async function callLMStudio(
+  model: string,
+  messages: ChatMessage[],
+  temperature = 0.2,
+  opts?: { timeoutMs?: number; retries?: number },
+) {
   const timeoutMs = opts?.timeoutMs ?? 20000;
   const maxRetries = Math.max(0, Math.floor(opts?.retries ?? 3));
   const url = `${cfg.lmsBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
@@ -15,9 +23,12 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const headers: Record<string,string> = { "Content-Type": "application/json" };
-      
-      if ((cfg as any).lmsApiKey) headers["Authorization"] = `Bearer ${(cfg as any).lmsApiKey}`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if ((cfg as any).lmsApiKey)
+        headers["Authorization"] = `Bearer ${(cfg as any).lmsApiKey}`;
 
       const payload = { model, messages, temperature };
       logger.debug("callLMStudio attempt", { url, attempt, timeoutMs, model });
@@ -26,14 +37,19 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
         method: "POST",
         headers,
         body: JSON.stringify(payload),
-        signal: controller.signal as any
+        signal: controller.signal as any,
       });
       clearTimeout(timer);
 
       if (!res.ok) {
         const text = await res.text().catch(() => "<no body>");
         const statusErr = new Error(`LM Studio error ${res.status}: ${text}`);
-        logger.warn("callLMStudio non-ok response", { url, status: res.status, body: text, attempt });
+        logger.warn("callLMStudio non-ok response", {
+          url,
+          status: res.status,
+          body: text,
+          attempt,
+        });
         throw statusErr;
       }
       const data: any = await res.json().catch(() => null);
@@ -42,31 +58,39 @@ export async function callLMStudio(model: string, messages: ChatMessage[], tempe
     } catch (err: any) {
       clearTimeout(timer);
       lastErr = err;
-      
-      if (err && (err.name === 'AbortError' || err.type === 'aborted')) {
+
+      if (err && (err.name === "AbortError" || err.type === "aborted")) {
         lastErr = new Error(`LM Studio request aborted after ${timeoutMs}ms`);
       }
-      
-      logger.warn("callLMStudio attempt failed", { url, attempt, errorName: err?.name, errorMessage: err?.message, code: err?.code, stack: err?.stack ? String(err.stack).slice(0,200) : undefined });
 
-      
+      logger.warn("callLMStudio attempt failed", {
+        url,
+        attempt,
+        errorName: err?.name,
+        errorMessage: err?.message,
+        code: err?.code,
+        stack: err?.stack ? String(err.stack).slice(0, 200) : undefined,
+      });
+
       if (attempt === maxRetries) break;
 
-      
       const backoff = calculateBackoffDelay(attempt, {
         initialDelayMs: 500,
         backoffMultiplier: 2,
         maxDelayMs: 15000,
         addJitter: true,
-        maxJitterMs: 300
+        maxJitterMs: 300,
       });
       await sleep(backoff);
     }
   }
 
-  const errDetails = lastErr && typeof lastErr === 'object' ? (lastErr.message || String(lastErr)) : String(lastErr || 'fetch failed');
+  const errDetails =
+    lastErr && typeof lastErr === "object"
+      ? lastErr.message || String(lastErr)
+      : String(lastErr || "fetch failed");
   const err = new Error(`callLMStudio fetch failed for ${url}: ${errDetails}`);
-  
+
   (err as any).cause = lastErr;
   logger.error("callLMStudio failed after retries", { url, error: errDetails });
   throw err;

@@ -1,17 +1,12 @@
-
-
 export type ParsedRemote = {
   host: string;
   path: string;
 };
 
-
 export function parseRemote(remote: string): ParsedRemote {
   const trimmed = remote.trim();
   if (!trimmed) throw new Error("Remote URL is empty");
 
-  
-  
   const isWindowsDrive = /^[A-Za-z]:[/\\]/.test(trimmed);
   const isUnc = /^\\\\/.test(trimmed);
   const isPosixAbs = /^\//.test(trimmed);
@@ -24,7 +19,7 @@ export function parseRemote(remote: string): ParsedRemote {
     if (sshMatch) {
       return {
         host: sshMatch[1],
-        path: sshMatch[2].replace(/^\/+/, "")
+        path: sshMatch[2].replace(/^\/+/, ""),
       };
     }
   }
@@ -33,13 +28,12 @@ export function parseRemote(remote: string): ParsedRemote {
     const url = new URL(trimmed);
     return {
       host: url.host,
-      path: url.pathname.replace(/^\/+/, "")
+      path: url.pathname.replace(/^\/+/, ""),
     };
   } catch {
     throw new Error(`Unable to parse git remote: ${trimmed}`);
   }
 }
-
 
 export function maskRemote(remote: string) {
   try {

@@ -1,44 +1,40 @@
-import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync, statSync } from "fs";
+import { join } from "path";
 
-
-
-describe('Architecture Validation', () => {
-  
-  it('should not have src/redis/ directory (old architecture removed)', () => {
-    const srcDir = join(process.cwd(), 'src');
+describe("Architecture Validation", () => {
+  it("should not have src/redis/ directory (old architecture removed)", () => {
+    const srcDir = join(process.cwd(), "src");
     const entries = readdirSync(srcDir);
-    
-    expect(entries).not.toContain('redis');
+
+    expect(entries).not.toContain("redis");
   });
 
-  it('should not import from redis/ subdirectory anywhere in src/', () => {
+  it("should not import from redis/ subdirectory anywhere in src/", () => {
     const violations: string[] = [];
-    
+
     function checkFile(filePath: string) {
-      if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) return;
-      
-      const content = readFileSync(filePath, 'utf-8');
-      const lines = content.split('\n');
-      
+      if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) return;
+
+      const content = readFileSync(filePath, "utf-8");
+      const lines = content.split("\n");
+
       lines.forEach((line, index) => {
-        
         if (line.match(/from\s+['"].*\/redis\//)) {
           violations.push(`${filePath}:${index + 1} - ${line.trim()}`);
         }
       });
     }
-    
+
     function walkDir(dir: string) {
       const entries = readdirSync(dir);
-      
+
       for (const entry of entries) {
         const fullPath = join(dir, entry);
         const stat = statSync(fullPath);
-        
+
         if (stat.isDirectory()) {
-          if (!['node_modules', 'dist', '.git'].includes(entry)) {
+          if (!["node_modules", "dist", ".git"].includes(entry)) {
             walkDir(fullPath);
           }
         } else if (stat.isFile()) {
@@ -46,53 +42,53 @@ describe('Architecture Validation', () => {
         }
       }
     }
-    
-    walkDir(join(process.cwd(), 'src'));
-    
+
+    walkDir(join(process.cwd(), "src"));
+
     if (violations.length > 0) {
       throw new Error(
-        `Found imports from redis/ subdirectory (old architecture):\n${violations.join('\n')}\n\n` +
-        `Use transport abstraction (LocalTransport/RedisTransport) instead.`
+        `Found imports from redis/ subdirectory (old architecture):\n${violations.join("\n")}\n\n` +
+          `Use transport abstraction (LocalTransport/RedisTransport) instead.`,
       );
     }
-    
+
     expect(violations).toHaveLength(0);
   });
 
-  it('should use transport abstraction, not direct redis helpers', () => {
+  it("should use transport abstraction, not direct redis helpers", () => {
     const violations: string[] = [];
-    
+
     function checkFile(filePath: string) {
-      if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) return;
-      if (filePath.includes('test') || filePath.includes('Test')) return;
-      
-      const content = readFileSync(filePath, 'utf-8');
-      const lines = content.split('\n');
-      
+      if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) return;
+      if (filePath.includes("test") || filePath.includes("Test")) return;
+
+      const content = readFileSync(filePath, "utf-8");
+      const lines = content.split("\n");
+
       lines.forEach((line, index) => {
         const oldPatterns = [
           /\bpublishEvent\s*\(/,
           /\backnowledgeRequest\s*\(/,
-          /\bgroupForPersona\s*\(/
+          /\bgroupForPersona\s*\(/,
         ];
-        
+
         for (const pattern of oldPatterns) {
-          if (line.match(pattern) && !line.includes('test')) {
+          if (line.match(pattern) && !line.includes("test")) {
             violations.push(`${filePath}:${index + 1} - ${line.trim()}`);
           }
         }
       });
     }
-    
+
     function walkDir(dir: string) {
       const entries = readdirSync(dir);
-      
+
       for (const entry of entries) {
         const fullPath = join(dir, entry);
         const stat = statSync(fullPath);
-        
+
         if (stat.isDirectory()) {
-          if (!['node_modules', 'dist', '.git', 'tests'].includes(entry)) {
+          if (!["node_modules", "dist", ".git", "tests"].includes(entry)) {
             walkDir(fullPath);
           }
         } else if (stat.isFile()) {
@@ -100,56 +96,56 @@ describe('Architecture Validation', () => {
         }
       }
     }
-    
-    walkDir(join(process.cwd(), 'src'));
-    
+
+    walkDir(join(process.cwd(), "src"));
+
     if (violations.length > 0) {
       throw new Error(
-        `Found usage of old redis helper functions:\n${violations.join('\n')}\n\n` +
-        `Use transport.xAdd(), transport.xAck(), etc. instead.`
+        `Found usage of old redis helper functions:\n${violations.join("\n")}\n\n` +
+          `Use transport.xAdd(), transport.xAck(), etc. instead.`,
       );
     }
-    
+
     expect(violations).toHaveLength(0);
   });
 
-  it('should not have worker.ts in src/ (replaced by PersonaConsumer)', () => {
-    const srcDir = join(process.cwd(), 'src');
+  it("should not have worker.ts in src/ (replaced by PersonaConsumer)", () => {
+    const srcDir = join(process.cwd(), "src");
     const entries = readdirSync(srcDir);
-    
-    expect(entries).not.toContain('worker.ts');
+
+    expect(entries).not.toContain("worker.ts");
   });
 
-  it('should have PersonaConsumer architecture', () => {
-    const personasDir = join(process.cwd(), 'src', 'personas');
+  it("should have PersonaConsumer architecture", () => {
+    const personasDir = join(process.cwd(), "src", "personas");
     const entries = readdirSync(personasDir);
-    
-    expect(entries).toContain('PersonaConsumer.ts');
-    expect(entries).toContain('PersonaRequestHandler.ts');
+
+    expect(entries).toContain("PersonaConsumer.ts");
+    expect(entries).toContain("PersonaRequestHandler.ts");
   });
 
-  it('should have persona worker runner', () => {
-    const toolsDir = join(process.cwd(), 'src', 'tools');
+  it("should have persona worker runner", () => {
+    const toolsDir = join(process.cwd(), "src", "tools");
     const entries = readdirSync(toolsDir);
-    
-    expect(entries).toContain('run_persona_workers.ts');
+
+    expect(entries).toContain("run_persona_workers.ts");
   });
 
-  it('should have transport abstraction files', () => {
-    const transportDir = join(process.cwd(), 'src', 'transport');
+  it("should have transport abstraction files", () => {
+    const transportDir = join(process.cwd(), "src", "transport");
     const entries = readdirSync(transportDir);
-    
-    expect(entries).toContain('LocalTransport.ts');
-    expect(entries).toContain('RedisTransport.ts');
-    expect(entries).toContain('MessageTransport.ts');
+
+    expect(entries).toContain("LocalTransport.ts");
+    expect(entries).toContain("RedisTransport.ts");
+    expect(entries).toContain("MessageTransport.ts");
   });
 
-  it('should use run_coordinator.ts and run_persona_workers.ts as main entry points', () => {
-    const toolsDir = join(process.cwd(), 'src', 'tools');
+  it("should use run_coordinator.ts and run_persona_workers.ts as main entry points", () => {
+    const toolsDir = join(process.cwd(), "src", "tools");
     const entries = readdirSync(toolsDir);
-    
-    expect(entries).toContain('run_coordinator.ts');
-    expect(entries).toContain('run_persona_workers.ts');
-    expect(entries).toContain('run_local.ts');
+
+    expect(entries).toContain("run_coordinator.ts");
+    expect(entries).toContain("run_persona_workers.ts");
+    expect(entries).toContain("run_local.ts");
   });
 });

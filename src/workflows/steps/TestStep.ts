@@ -1,6 +1,9 @@
-import { WorkflowStep, WorkflowStepConfig, StepResult } from '../engine/WorkflowStep.js';
-import { WorkflowContext } from '../engine/WorkflowContext.js';
-
+import {
+  WorkflowStep,
+  WorkflowStepConfig,
+  StepResult,
+} from "../engine/WorkflowStep.js";
+import { WorkflowContext } from "../engine/WorkflowContext.js";
 
 export class TestStep extends WorkflowStep {
   constructor(config: WorkflowStepConfig) {
@@ -9,37 +12,36 @@ export class TestStep extends WorkflowStep {
 
   async execute(context: WorkflowContext): Promise<StepResult> {
     const stepConfig = this.config.config || {};
-    const message = stepConfig.message || 'Test step executed';
+    const message = stepConfig.message || "Test step executed";
     const delay = stepConfig.delay_ms || 0;
 
-    context.logger.info('Test step starting', {
+    context.logger.info("Test step starting", {
       stepName: this.config.name,
       message,
-      delay
+      delay,
     });
 
-    
     if (delay > 0) {
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
     const result = {
       message,
       timestamp: new Date().toISOString(),
-      stepName: this.config.name
+      stepName: this.config.name,
     };
 
-    context.logger.info('Test step completed', {
+    context.logger.info("Test step completed", {
       stepName: this.config.name,
-      result
+      result,
     });
 
     return {
-      status: 'success',
+      status: "success",
       data: result,
       outputs: {
-        test_result: result
-      }
+        test_result: result,
+      },
     };
   }
 }

@@ -1,11 +1,14 @@
-import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
-import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { logger } from '../../logger.js';
+import {
+  WorkflowStep,
+  StepResult,
+  ValidationResult,
+} from "../engine/WorkflowStep.js";
+import { WorkflowContext } from "../engine/WorkflowContext.js";
+import { logger } from "../../logger.js";
 
 interface VariableConfig {
   variables: Record<string, any>;
 }
-
 
 export class VariableResolutionStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
@@ -14,11 +17,11 @@ export class VariableResolutionStep extends WorkflowStep {
 
     if (!variables || Object.keys(variables).length === 0) {
       return {
-        status: 'success',
+        status: "success",
         data: {
           variablesSet: 0,
-          message: 'No variables to resolve'
-        }
+          message: "No variables to resolve",
+        },
       };
     }
 
@@ -26,22 +29,20 @@ export class VariableResolutionStep extends WorkflowStep {
       workflowId: context.workflowId,
       stepName: this.config.name,
       variableCount: Object.keys(variables).length,
-      variables: Object.keys(variables)
+      variables: Object.keys(variables),
     });
 
     try {
       const resolvedVariables: Record<string, any> = {};
       const errors: Record<string, string> = {};
 
-      
       for (const [key, expression] of Object.entries(variables)) {
         try {
-          
-          const resolvedValue = typeof expression === 'string' && expression.includes('${')
-            ? this.resolveVariableExpression(expression, context)
-            : expression;
+          const resolvedValue =
+            typeof expression === "string" && expression.includes("${")
+              ? this.resolveVariableExpression(expression, context)
+              : expression;
 
-          
           context.setVariable(key, resolvedValue);
           resolvedVariables[key] = resolvedValue;
 
@@ -50,11 +51,11 @@ export class VariableResolutionStep extends WorkflowStep {
             stepName: this.config.name,
             key,
             expression,
-            resolvedValue: typeof resolvedValue === 'object' 
-              ? JSON.stringify(resolvedValue).substring(0, 100) 
-              : resolvedValue
+            resolvedValue:
+              typeof resolvedValue === "object"
+                ? JSON.stringify(resolvedValue).substring(0, 100)
+                : resolvedValue,
           });
-
         } catch (error: any) {
           errors[key] = error.message;
           logger.warn(`Failed to resolve variable`, {
@@ -62,46 +63,40 @@ export class VariableResolutionStep extends WorkflowStep {
             stepName: this.config.name,
             key,
             expression,
-            error: error.message
+            error: error.message,
           });
         }
       }
 
-      
       const outputs = Object.entries(resolvedVariables).map(([key, value]) => ({
         name: key,
-        value
+        value,
       }));
 
-      
-      
-      
-
       const hasErrors = Object.keys(errors).length > 0;
-      
+
       return {
-        status: hasErrors ? 'failure' : 'success',
+        status: hasErrors ? "failure" : "success",
         data: {
           variablesSet: Object.keys(resolvedVariables).length,
           variables: resolvedVariables,
           errors: hasErrors ? errors : undefined,
-          outputs
-        }
+          outputs,
+        },
       };
-
     } catch (error: any) {
       logger.error(`Variable resolution step failed`, {
         workflowId: context.workflowId,
         stepName: this.config.name,
-        error: error.message
+        error: error.message,
       });
 
       return {
-        status: 'failure',
+        status: "failure",
         error: new Error(`Failed to resolve variables: ${error.message}`),
         data: {
-          variablesSet: 0
-        }
+          variablesSet: 0,
+        },
       };
     }
   }
@@ -113,15 +108,18 @@ export class VariableResolutionStep extends WorkflowStep {
       return {
         valid: false,
         errors: ['VariableResolutionStep requires "variables" configuration'],
-        warnings: []
+        warnings: [],
       };
     }
 
-    if (typeof config.variables !== 'object' || Array.isArray(config.variables)) {
+    if (
+      typeof config.variables !== "object" ||
+      Array.isArray(config.variables)
+    ) {
       return {
         valid: false,
         errors: ['VariableResolutionStep "variables" must be an object'],
-        warnings: []
+        warnings: [],
       };
     }
 
@@ -129,20 +127,21 @@ export class VariableResolutionStep extends WorkflowStep {
       return {
         valid: false,
         errors: ['VariableResolutionStep "variables" cannot be empty'],
-        warnings: ['No variables defined - step will do nothing']
+        warnings: ["No variables defined - step will do nothing"],
       };
     }
 
-    return { 
+    return {
       valid: true,
       errors: [],
-      warnings: []
+      warnings: [],
     };
   }
 
-  
-  private resolveVariableExpression(expression: string, context: WorkflowContext): any {
-    
+  private resolveVariableExpression(
+    expression: string,
+    context: WorkflowContext,
+  ): any {
     const variablePattern = /\$\{([^}]+)\}/g;
     let result: string = expression;
     let match: RegExpExecArray | null;
@@ -151,38 +150,35 @@ export class VariableResolutionStep extends WorkflowStep {
       const fullMatch = match[0];
       const variablePath = match[1];
 
-      
       const resolvedValue = this.evaluateExpression(variablePath, context);
-      
-      
+
       if (expression === fullMatch) {
         return resolvedValue;
       }
 
-      
-      result = result.replace(fullMatch, String(resolvedValue ?? ''));
+      result = result.replace(fullMatch, String(resolvedValue ?? ""));
     }
 
     return result;
   }
 
-  
-  private evaluateExpression(expression: string, context: WorkflowContext): any {
-    
-    if (expression.includes('||')) {
-      const parts = expression.split('||').map(p => p.trim());
+  private evaluateExpression(
+    expression: string,
+    context: WorkflowContext,
+  ): any {
+    if (expression.includes("||")) {
+      const parts = expression.split("||").map((p) => p.trim());
       for (const part of parts) {
         const value = this.evaluateSingleExpression(part, context);
-        if (value !== null && value !== undefined && value !== '') {
+        if (value !== null && value !== undefined && value !== "") {
           return value;
         }
       }
       return null;
     }
 
-    
-    if (expression.includes('&&')) {
-      const parts = expression.split('&&').map(p => p.trim());
+    if (expression.includes("&&")) {
+      const parts = expression.split("&&").map((p) => p.trim());
       for (const part of parts) {
         const value = this.evaluateSingleExpression(part, context);
         if (!value) {
@@ -192,53 +188,50 @@ export class VariableResolutionStep extends WorkflowStep {
       return true;
     }
 
-    
-    if (expression.includes('==')) {
-      const [left, right] = expression.split('==').map(p => p.trim());
+    if (expression.includes("==")) {
+      const [left, right] = expression.split("==").map((p) => p.trim());
       const leftValue = this.evaluateSingleExpression(left, context);
       const rightValue = this.evaluateSingleExpression(right, context);
       return leftValue == rightValue;
     }
 
-    if (expression.includes('!=')) {
-      const [left, right] = expression.split('!=').map(p => p.trim());
+    if (expression.includes("!=")) {
+      const [left, right] = expression.split("!=").map((p) => p.trim());
       const leftValue = this.evaluateSingleExpression(left, context);
       const rightValue = this.evaluateSingleExpression(right, context);
       return leftValue != rightValue;
     }
 
-    
     return this.evaluateSingleExpression(expression, context);
   }
 
-  
-  private evaluateSingleExpression(expr: string, context: WorkflowContext): any {
+  private evaluateSingleExpression(
+    expr: string,
+    context: WorkflowContext,
+  ): any {
     expr = expr.trim();
 
-    
-    if ((expr.startsWith("'") && expr.endsWith("'")) || 
-        (expr.startsWith('"') && expr.endsWith('"'))) {
+    if (
+      (expr.startsWith("'") && expr.endsWith("'")) ||
+      (expr.startsWith('"') && expr.endsWith('"'))
+    ) {
       return expr.slice(1, -1);
     }
 
-    
     if (!isNaN(Number(expr))) {
       return Number(expr);
     }
 
-    
-    if (expr === 'true') return true;
-    if (expr === 'false') return false;
-    if (expr === 'null') return null;
-    if (expr === 'undefined') return undefined;
+    if (expr === "true") return true;
+    if (expr === "false") return false;
+    if (expr === "null") return null;
+    if (expr === "undefined") return undefined;
 
-    
     return this.getVariableByPath(expr, context);
   }
 
-  
   private getVariableByPath(path: string, context: WorkflowContext): any {
-    const parts = path.split('.');
+    const parts = path.split(".");
     let value: any = context.getVariable(parts[0]);
 
     for (let i = 1; i < parts.length; i++) {

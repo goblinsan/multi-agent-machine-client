@@ -1,4 +1,4 @@
-declare module 'fastify' {
+declare module "fastify" {
   export interface FastifyInstance {
     get(path: string, handler: any): void;
     post(path: string, handler: any): void;
@@ -10,5 +10,4 @@ declare module 'fastify' {
   export default fastify;
 }
 
-
-declare module '*.sql';
+declare module "*.sql";

@@ -1,5 +1,3 @@
-
-
 export interface Task {
   id: number;
   project_id: number;
@@ -7,7 +5,13 @@ export interface Task {
   parent_task_id: number | null;
   title: string;
   description: string | null;
-  status: 'open' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'archived';
+  status:
+    | "open"
+    | "in_progress"
+    | "in_review"
+    | "blocked"
+    | "done"
+    | "archived";
   priority_score: number;
   external_id: string | null;
   milestone_slug: string | null;
@@ -26,7 +30,13 @@ export interface Task {
 export interface TaskCreateInput {
   title: string;
   description?: string;
-  status?: 'open' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'archived';
+  status?:
+    | "open"
+    | "in_progress"
+    | "in_review"
+    | "blocked"
+    | "done"
+    | "archived";
   priority_score?: number;
   milestone_id?: number;
   parent_task_id?: number;
@@ -38,7 +48,13 @@ export interface TaskCreateInput {
 export interface TaskUpdateInput {
   title?: string;
   description?: string;
-  status?: 'open' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'archived';
+  status?:
+    | "open"
+    | "in_progress"
+    | "in_review"
+    | "blocked"
+    | "done"
+    | "archived";
   priority_score?: number;
   milestone_id?: number;
   parent_task_id?: number;
@@ -83,7 +99,6 @@ export interface DashboardClientConfig {
   timeout?: number;
 }
 
-
 export class DashboardClient {
   private baseUrl: string;
   private timeout: number;
@@ -93,14 +108,13 @@ export class DashboardClient {
     this.timeout = config.timeout || 5000;
   }
 
-  
   async createTask(projectId: number, task: TaskCreateInput): Promise<Task> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks`;
-    
+
     const response = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(task),
       signal: AbortSignal.timeout(this.timeout),
@@ -108,20 +122,24 @@ export class DashboardClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Dashboard API error (${response.status}): ${JSON.stringify(error)}`);
+      throw new Error(
+        `Dashboard API error (${response.status}): ${JSON.stringify(error)}`,
+      );
     }
 
     return response.json();
   }
 
-  
-  async bulkCreateTasks(projectId: number, input: BulkTaskCreateInput): Promise<BulkTaskCreateResponse> {
+  async bulkCreateTasks(
+    projectId: number,
+    input: BulkTaskCreateInput,
+  ): Promise<BulkTaskCreateResponse> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks:bulk`;
-    
+
     const response = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
       signal: AbortSignal.timeout(this.timeout),
@@ -129,20 +147,25 @@ export class DashboardClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Dashboard API bulk create error (${response.status}): ${JSON.stringify(error)}`);
+      throw new Error(
+        `Dashboard API bulk create error (${response.status}): ${JSON.stringify(error)}`,
+      );
     }
 
     return response.json();
   }
 
-  
-  async updateTask(projectId: number, taskId: number, updates: TaskUpdateInput): Promise<Task> {
+  async updateTask(
+    projectId: number,
+    taskId: number,
+    updates: TaskUpdateInput,
+  ): Promise<Task> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks/${taskId}`;
-    
+
     const response = await fetch(url, {
-      method: 'PATCH',
+      method: "PATCH",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(updates),
       signal: AbortSignal.timeout(this.timeout),
@@ -150,70 +173,79 @@ export class DashboardClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Dashboard API update error (${response.status}): ${JSON.stringify(error)}`);
+      throw new Error(
+        `Dashboard API update error (${response.status}): ${JSON.stringify(error)}`,
+      );
     }
 
     return response.json();
   }
 
-  
-  async listTasks(projectId: number, filters?: {
-    status?: string;
-    milestone_id?: number;
-    parent_task_id?: number;
-    labels?: string[];
-  }): Promise<TaskListResponse> {
+  async listTasks(
+    projectId: number,
+    filters?: {
+      status?: string;
+      milestone_id?: number;
+      parent_task_id?: number;
+      labels?: string[];
+    },
+  ): Promise<TaskListResponse> {
     const params = new URLSearchParams();
-    
+
     if (filters?.status) {
-      params.append('status', filters.status);
+      params.append("status", filters.status);
     }
     if (filters?.milestone_id !== undefined) {
-      params.append('milestone_id', filters.milestone_id.toString());
+      params.append("milestone_id", filters.milestone_id.toString());
     }
     if (filters?.parent_task_id !== undefined) {
-      params.append('parent_task_id', filters.parent_task_id.toString());
+      params.append("parent_task_id", filters.parent_task_id.toString());
     }
     if (filters?.labels && filters.labels.length > 0) {
-      params.append('labels', filters.labels.join(','));
+      params.append("labels", filters.labels.join(","));
     }
 
     const url = `${this.baseUrl}/projects/${projectId}/tasks?${params.toString()}`;
-    
+
     const response = await fetch(url, {
-      method: 'GET',
+      method: "GET",
       signal: AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Dashboard API list error (${response.status}): ${JSON.stringify(error)}`);
+      throw new Error(
+        `Dashboard API list error (${response.status}): ${JSON.stringify(error)}`,
+      );
     }
 
     return response.json();
   }
 
-  
   async getTask(projectId: number, taskId: number): Promise<Task> {
     const url = `${this.baseUrl}/projects/${projectId}/tasks/${taskId}`;
-    
+
     const response = await fetch(url, {
-      method: 'GET',
+      method: "GET",
       signal: AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`Dashboard API get error (${response.status}): ${JSON.stringify(error)}`);
+      throw new Error(
+        `Dashboard API get error (${response.status}): ${JSON.stringify(error)}`,
+      );
     }
 
     return response.json();
   }
 }
 
-
-export function createDashboardClient(config?: Partial<DashboardClientConfig>): DashboardClient {
-  const baseUrl = config?.baseUrl || process.env.DASHBOARD_API_URL || 'http://localhost:3000';
+export function createDashboardClient(
+  config?: Partial<DashboardClientConfig>,
+): DashboardClient {
+  const baseUrl =
+    config?.baseUrl || process.env.DASHBOARD_API_URL || "http://localhost:3000";
   const timeout = config?.timeout || 5000;
 
   return new DashboardClient({ baseUrl, timeout });

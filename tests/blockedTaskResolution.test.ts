@@ -1,301 +1,297 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { makeTempRepo } from './makeTempRepo';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { makeTempRepo } from "./makeTempRepo";
 
-
-vi.mock('../src/dashboard.js', () => ({
+vi.mock("../src/dashboard.js", () => ({
   fetchProjectStatus: vi.fn().mockResolvedValue({
-    id: 'proj-blocked',
-    name: 'Blocked Task Project',
-    status: 'active'
+    id: "proj-blocked",
+    name: "Blocked Task Project",
+    status: "active",
   }),
   fetchProjectStatusDetails: vi.fn().mockResolvedValue({
-    tasks: [{
-      id: 'blocked-task-1',
-      name: 'Blocked Task',
-      status: 'blocked',
-      blocked_attempt_count: 2,
-      blocked_reason: 'Context scan failed',
-      failed_step: 'context_request'
-    }],
-    repositories: [{ url: 'https://example/repo.git' }]
+    tasks: [
+      {
+        id: "blocked-task-1",
+        name: "Blocked Task",
+        status: "blocked",
+        blocked_attempt_count: 2,
+        blocked_reason: "Context scan failed",
+        failed_step: "context_request",
+      },
+    ],
+    repositories: [{ url: "https://example/repo.git" }],
   }),
   updateTaskStatus: vi.fn().mockResolvedValue({ ok: true, status: 200 }),
-  createDashboardTask: vi.fn().mockResolvedValue({ id: 'new-task-123', ok: true })
+  createDashboardTask: vi
+    .fn()
+    .mockResolvedValue({ id: "new-task-123", ok: true }),
 }));
 
+vi.mock("../src/gitUtils.js");
 
-vi.mock('../src/gitUtils.js');
+vi.mock("../src/agents/persona.js", () => ({
+  sendPersonaRequest: vi.fn().mockResolvedValue("corr-unblock-123"),
+  waitForPersonaCompletion: vi
+    .fn()
+    .mockImplementation(
+      async (redis, workflowId, corrId, persona, _timeout) => {
+        if (persona === "context") {
+          return {
+            id: "event-context-1",
+            fields: {
+              result: JSON.stringify({
+                status: "success",
+                snapshot: {
+                  files: [],
+                  totals: { files: 10, bytes: 1000, lines: 100 },
+                },
+              }),
+            },
+          };
+        }
 
-vi.mock('../src/agents/persona.js', () => ({
-  sendPersonaRequest: vi.fn().mockResolvedValue('corr-unblock-123'),
-  waitForPersonaCompletion: vi.fn().mockImplementation(async (redis, workflowId, corrId, persona, _timeout) => {
-    
-    if (persona === 'context') {
-      return {
-        id: 'event-context-1',
-        fields: {
-          result: JSON.stringify({
-            status: 'success',
-            snapshot: { files: [], totals: { files: 10, bytes: 1000, lines: 100 } }
-          })
+        if (persona === "lead-engineer") {
+          return {
+            id: "event-lead-1",
+            fields: {
+              result: JSON.stringify({
+                status: "success",
+                strategy: "retry_with_context",
+                resolution_plan: {
+                  description: "Retry with fresh context scan",
+                  steps: ["Clear cache", "Re-scan repository", "Retry task"],
+                },
+              }),
+            },
+          };
         }
-      };
-    }
-    
-    if (persona === 'lead-engineer') {
-      return {
-        id: 'event-lead-1',
-        fields: {
-          result: JSON.stringify({
-            status: 'success',
-            strategy: 'retry_with_context',
-            resolution_plan: {
-              description: 'Retry with fresh context scan',
-              steps: ['Clear cache', 'Re-scan repository', 'Retry task']
-            }
-          })
+
+        if (persona === "tester-qa") {
+          return {
+            id: "event-qa-1",
+            fields: {
+              result: JSON.stringify({
+                status: "pass",
+                normalizedStatus: "pass",
+                message: "Unblock successful, task can proceed",
+              }),
+            },
+          };
         }
-      };
-    }
-    
-    if (persona === 'tester-qa') {
-      return {
-        id: 'event-qa-1',
-        fields: {
-          result: JSON.stringify({
-            status: 'pass',
-            normalizedStatus: 'pass',
-            message: 'Unblock successful, task can proceed'
-          })
-        }
-      };
-    }
-    
-    return {
-      id: 'event-generic',
-      fields: {
-        result: JSON.stringify({ status: 'success' })
-      }
-    };
-  }),
+
+        return {
+          id: "event-generic",
+          fields: {
+            result: JSON.stringify({ status: "success" }),
+          },
+        };
+      },
+    ),
   parseEventResult: vi.fn().mockImplementation((event) => {
     const result = JSON.parse(event.fields.result);
     return result;
-  })
+  }),
 }));
 
+vi.mock("../src/redisClient.js");
 
-vi.mock('../src/redisClient.js');
+vi.mock("../src/scanRepo.js");
 
-
-vi.mock('../src/scanRepo.js');
-
-vi.mock('../src/process.js', () => ({
+vi.mock("../src/process.js", () => ({
   processPersonaRequest: vi.fn().mockResolvedValue({
-    status: 'success',
-    result: { message: 'Mock processing complete' }
-  })
+    status: "success",
+    result: { message: "Mock processing complete" },
+  }),
 }));
 
-import { createFastCoordinator } from './helpers/coordinatorTestHelper.js';
+import { createFastCoordinator } from "./helpers/coordinatorTestHelper.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('Blocked Task Resolution Workflow', () => {
-  it('routes blocked tasks to blocked-task-resolution workflow', async () => {
+describe("Blocked Task Resolution Workflow", () => {
+  it("routes blocked tasks to blocked-task-resolution workflow", async () => {
     const tempRepo = await makeTempRepo();
-    
+
     const coordinator = createFastCoordinator();
-    
+
     try {
       const result = await Promise.race([
         coordinator.handleCoordinator(
           {} as any,
           {} as any,
-          { workflow_id: 'wf-blocked-test', project_id: 'proj-blocked' },
-          { repo: tempRepo }
+          { workflow_id: "wf-blocked-test", project_id: "proj-blocked" },
+          { repo: tempRepo },
         ),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 100)
-        )
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Test timeout")), 100),
+        ),
       ]);
-      
-      
+
       expect(result).toBeDefined();
       expect(result.success).toBe(true);
       expect(result.results).toBeDefined();
       expect(result.results.length).toBeGreaterThan(0);
-      
     } catch (error: any) {
-      if (error.message === 'Test timeout') {
-        throw new Error('Blocked task workflow hung - did not complete within timeout');
+      if (error.message === "Test timeout") {
+        throw new Error(
+          "Blocked task workflow hung - did not complete within timeout",
+        );
       }
-      
-      console.log('Workflow failed (expected in test):', error.message);
+
+      console.log("Workflow failed (expected in test):", error.message);
     }
   });
 
-  it('respects max unblock attempts configuration', async () => {
-    const { fetchProjectStatusDetails, updateTaskStatus } = await import('../src/dashboard.js');
-    
-    
+  it("respects max unblock attempts configuration", async () => {
+    const { fetchProjectStatusDetails, updateTaskStatus } = await import(
+      "../src/dashboard.js"
+    );
+
     (fetchProjectStatusDetails as any).mockResolvedValueOnce({
-      tasks: [{
-        id: 'blocked-task-max',
-        name: 'Task at Max Attempts',
-        status: 'blocked',
-        blocked_attempt_count: 10,
-        blocked_reason: 'Repeated failure',
-        failed_step: 'implementation'
-      }],
-      repositories: [{ url: 'https://example/repo.git' }]
+      tasks: [
+        {
+          id: "blocked-task-max",
+          name: "Task at Max Attempts",
+          status: "blocked",
+          blocked_attempt_count: 10,
+          blocked_reason: "Repeated failure",
+          failed_step: "implementation",
+        },
+      ],
+      repositories: [{ url: "https://example/repo.git" }],
     });
 
     const tempRepo = await makeTempRepo();
     const coordinator = createFastCoordinator();
-    
+
     try {
       await Promise.race([
         coordinator.handleCoordinator(
           {} as any,
           {} as any,
-          { workflow_id: 'wf-blocked-max', project_id: 'proj-blocked' },
-          { repo: tempRepo }
+          { workflow_id: "wf-blocked-max", project_id: "proj-blocked" },
+          { repo: tempRepo },
         ),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 100)
-        )
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Test timeout")), 100),
+        ),
       ]);
-      
-      
-      
+
       expect(updateTaskStatus).toHaveBeenCalled();
-      
     } catch (error: any) {
-      if (error.message === 'Test timeout') {
-        throw new Error('Max attempts workflow hung');
+      if (error.message === "Test timeout") {
+        throw new Error("Max attempts workflow hung");
       }
-      
     }
   });
 
-  it('increments blocked_attempt_count on each unblock attempt', async () => {
-    const { fetchProjectStatusDetails } = await import('../src/dashboard.js');
-    
-    
+  it("increments blocked_attempt_count on each unblock attempt", async () => {
+    const { fetchProjectStatusDetails } = await import("../src/dashboard.js");
+
     (fetchProjectStatusDetails as any).mockResolvedValueOnce({
-      tasks: [{
-        id: 'blocked-task-increment',
-        name: 'Task to Increment',
-        status: 'blocked',
-        blocked_attempt_count: 3,
-        blocked_reason: 'QA failure',
-        failed_step: 'qa_request'
-      }],
-      repositories: [{ url: 'https://example/repo.git' }]
+      tasks: [
+        {
+          id: "blocked-task-increment",
+          name: "Task to Increment",
+          status: "blocked",
+          blocked_attempt_count: 3,
+          blocked_reason: "QA failure",
+          failed_step: "qa_request",
+        },
+      ],
+      repositories: [{ url: "https://example/repo.git" }],
     });
 
     const tempRepo = await makeTempRepo();
     const coordinator = createFastCoordinator();
-    
+
     try {
       const result = await Promise.race([
         coordinator.handleCoordinator(
           {} as any,
           {} as any,
-          { workflow_id: 'wf-blocked-increment', project_id: 'proj-blocked' },
-          { repo: tempRepo }
+          { workflow_id: "wf-blocked-increment", project_id: "proj-blocked" },
+          { repo: tempRepo },
         ),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 100)
-        )
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Test timeout")), 100),
+        ),
       ]);
-      
-      
+
       expect(result).toBeDefined();
-      
     } catch (error: any) {
-      if (error.message === 'Test timeout') {
-        throw new Error('Increment test workflow hung');
+      if (error.message === "Test timeout") {
+        throw new Error("Increment test workflow hung");
       }
     }
   });
 
-  it('analyzes blockage before attempting unblock', async () => {
-    const { sendPersonaRequest } = await import('../src/agents/persona.js');
-    
+  it("analyzes blockage before attempting unblock", async () => {
+    const { sendPersonaRequest } = await import("../src/agents/persona.js");
+
     const tempRepo = await makeTempRepo();
     const coordinator = createFastCoordinator();
-    
+
     try {
       await Promise.race([
         coordinator.handleCoordinator(
           {} as any,
           {} as any,
-          { workflow_id: 'wf-blocked-analyze', project_id: 'proj-blocked' },
-          { repo: tempRepo }
+          { workflow_id: "wf-blocked-analyze", project_id: "proj-blocked" },
+          { repo: tempRepo },
         ),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 100)
-        )
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Test timeout")), 100),
+        ),
       ]);
-      
-      
+
       expect(sendPersonaRequest).toHaveBeenCalled();
-      
-      
+
       const calls = (sendPersonaRequest as any).mock.calls;
-      const leadEngineerCall = calls.find((call: any[]) => 
-        call[1]?.persona === 'lead-engineer' || call[2] === 'lead-engineer'
+      const leadEngineerCall = calls.find(
+        (call: any[]) =>
+          call[1]?.persona === "lead-engineer" || call[2] === "lead-engineer",
       );
-      
+
       if (leadEngineerCall) {
         expect(leadEngineerCall).toBeDefined();
       }
-      
     } catch (error: any) {
-      if (error.message === 'Test timeout') {
-        throw new Error('Analysis test workflow hung');
+      if (error.message === "Test timeout") {
+        throw new Error("Analysis test workflow hung");
       }
     }
   });
 
-  it('marks task as open after successful unblock', async () => {
-    const { updateTaskStatus } = await import('../src/dashboard.js');
-    
+  it("marks task as open after successful unblock", async () => {
+    const { updateTaskStatus } = await import("../src/dashboard.js");
+
     const tempRepo = await makeTempRepo();
     const coordinator = createFastCoordinator();
-    
+
     try {
       await Promise.race([
         coordinator.handleCoordinator(
           {} as any,
           {} as any,
-          { workflow_id: 'wf-blocked-success', project_id: 'proj-blocked' },
-          { repo: tempRepo }
+          { workflow_id: "wf-blocked-success", project_id: "proj-blocked" },
+          { repo: tempRepo },
         ),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Test timeout')), 100)
-        )
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Test timeout")), 100),
+        ),
       ]);
-      
-      
+
       expect(updateTaskStatus).toHaveBeenCalled();
-      
-      
+
       const statusCalls = (updateTaskStatus as any).mock.calls;
-      statusCalls.find((call: any[]) => 
-        call[1] === 'open' || call[0]?.status === 'open'
+      statusCalls.find(
+        (call: any[]) => call[1] === "open" || call[0]?.status === "open",
       );
-      
-      
-      
-      
     } catch (error: any) {
-      if (error.message === 'Test timeout') {
-        throw new Error('Success test workflow hung');
+      if (error.message === "Test timeout") {
+        throw new Error("Success test workflow hung");
       }
     }
   });

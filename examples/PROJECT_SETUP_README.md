@@ -24,6 +24,7 @@ BASE_URL=http://api.example.com ./examples/create-project.sh
 ```
 
 **Requirements:**
+
 - `curl` (pre-installed on macOS/Linux)
 - `jq` (optional, for pretty output)
   - macOS: `brew install jq`
@@ -51,6 +52,7 @@ BASE_URL=http://api.example.com tsx examples/create-project.ts my-project.json
 ```
 
 **Requirements:**
+
 - Node.js 18+
 - `tsx` installed: `npm install -g tsx`
 
@@ -59,6 +61,7 @@ BASE_URL=http://api.example.com tsx examples/create-project.ts my-project.json
 ## Quick Examples
 
 ### Example 1: Use Default Project Data
+
 ```bash
 # TypeScript
 tsx examples/create-project.ts
@@ -68,6 +71,7 @@ tsx examples/create-project.ts
 ```
 
 ### Example 2: Use Custom Project File
+
 ```bash
 # TypeScript
 tsx examples/create-project.ts examples/custom-project-example.json
@@ -77,6 +81,7 @@ PROJECT_FILE=examples/custom-project-example.json ./examples/create-project.sh
 ```
 
 ### Example 3: Create Your Own Project
+
 ```bash
 # 1. Copy the template
 cp examples/custom-project-example.json my-project.json
@@ -88,6 +93,7 @@ tsx examples/create-project.ts my-project.json
 ```
 
 ### Example 4: Use Stdin (for programmatic generation)
+
 ```bash
 # Generate JSON dynamically and pipe it
 echo '{
@@ -98,6 +104,7 @@ echo '{
 ```
 
 ### Example 5: Different API Server
+
 ```bash
 # Point to a different dashboard API
 BASE_URL=https://api.production.com tsx examples/create-project.ts my-project.json
@@ -110,73 +117,81 @@ BASE_URL=https://api.production.com tsx examples/create-project.ts my-project.js
 You can also import and use the setup functions in your own TypeScript code:
 
 ```typescript
-import { readFileSync } from 'fs';
+import { readFileSync } from "fs";
 
 // Define your project structure
 const projectData = {
   project: {
     name: "AI Assistant Platform",
     slug: "ai-assistant",
-    description: "Build an AI-powered assistant"
+    description: "Build an AI-powered assistant",
   },
   milestones: [
     { name: "Foundation", slug: "foundation", status: "active" },
-    { name: "AI Integration", slug: "ai", status: "active" }
+    { name: "AI Integration", slug: "ai", status: "active" },
   ],
   tasks: {
     foundation: [
       { title: "Setup project", status: "open", labels: ["setup"] },
-      { title: "Configure CI/CD", status: "open", labels: ["devops"] }
+      { title: "Configure CI/CD", status: "open", labels: ["devops"] },
     ],
     ai: [
-      { title: "Integrate OpenAI API", status: "open", labels: ["ai", "backend"] },
-      { title: "Build chat interface", status: "open", labels: ["ai", "frontend"] }
-    ]
-  }
+      {
+        title: "Integrate OpenAI API",
+        status: "open",
+        labels: ["ai", "backend"],
+      },
+      {
+        title: "Build chat interface",
+        status: "open",
+        labels: ["ai", "frontend"],
+      },
+    ],
+  },
 };
 
 // Setup project
 async function createMyProject() {
-  const BASE_URL = 'http://localhost:3000';
-  
+  const BASE_URL = "http://localhost:3000";
+
   // 1. Create project
   const projectResponse = await fetch(`${BASE_URL}/projects`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(projectData.project)
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(projectData.project),
   });
   const project = await projectResponse.json();
-  console.log('Created project:', project.id);
-  
+  console.log("Created project:", project.id);
+
   // 2. Create milestones and tasks
   for (const milestone of projectData.milestones) {
     const milestoneResponse = await fetch(
       `${BASE_URL}/projects/${project.id}/milestones`,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(milestone)
-      }
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(milestone),
+      },
     );
     const createdMilestone = await milestoneResponse.json();
-    
+
     // 3. Create tasks for this milestone
     const tasks = projectData.tasks[milestone.slug];
     if (tasks && tasks.length > 0) {
-      const tasksWithMilestone = tasks.map(t => ({
+      const tasksWithMilestone = tasks.map((t) => ({
         ...t,
-        milestone_id: createdMilestone.id
+        milestone_id: createdMilestone.id,
       }));
-      
+
       await fetch(`${BASE_URL}/projects/${project.id}/tasks:bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: tasksWithMilestone })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tasks: tasksWithMilestone }),
       });
     }
   }
-  
-  console.log('✓ Project setup complete!');
+
+  console.log("✓ Project setup complete!");
 }
 
 createMyProject();
@@ -244,11 +259,13 @@ curl -X POST http://localhost:3000/projects/1/tasks:bulk \
 The example project contains:
 
 ### 📦 Project
+
 - **Name**: E-Commerce Platform Redesign
 - **Slug**: `ecommerce-redesign-v2`
 - **Description**: Complete platform redesign with modern architecture
 
 ### 🎯 9 Milestones
+
 1. **Foundation** (`foundation`) - 5 tasks
 2. **Authentication** (`auth`) - 6 tasks
 3. **Product Catalog** (`product-catalog`) - 4 tasks
@@ -272,6 +289,7 @@ Tasks are processed in order based on:
 3. **Priority score** - If specified, higher priority tasks are processed first
 
 Since all tasks have the same default priority (0), they will be processed:
+
 - Milestone 1 → Milestone 2 → ... → Milestone 9
 - Within each milestone: Task 1 → Task 2 → ... → Task N
 
@@ -309,6 +327,7 @@ Since all tasks have the same default priority (0), they will be processed:
 ```
 
 ### Key Points:
+
 - ✅ **Milestone slugs** must match between `milestones[]` and `tasks{}`
 - ✅ **Status** values: `"open"`, `"in_progress"`, `"in_review"`, `"blocked"`, `"done"`, `"archived"`
 - ✅ **Labels** are optional arrays of strings
@@ -362,17 +381,21 @@ Next Steps:
 ## Troubleshooting
 
 ### Error: "Connection refused"
+
 - Ensure dashboard backend is running: `cd src/dashboard-backend && npm run dev`
 
 ### Error: "UNIQUE constraint failed"
+
 - Project slug already exists - change `slug` in JSON file
 - Or delete existing project first
 
 ### Error: "jq: command not found"
+
 - Bash script works without `jq`, just less pretty output
 - Install `jq` for better formatting: `brew install jq` (macOS)
 
 ### Tasks appear out of order
+
 - Verify all tasks have same `priority_score` (or none set)
 - Check that milestones were created sequentially
 - Ensure tasks array order is correct in JSON file
@@ -389,6 +412,7 @@ After creating your project:
 4. **Review results**: Track completion via milestone completion percentages
 
 For more details, see:
+
 - **Upload Schema Guide**: `docs/dashboard-api/UPLOAD_SCHEMA_GUIDE.md`
 - **Workflow API Usage**: `docs/dashboard-api/WORKFLOW_API_USAGE.md`
 - **API Implementation**: `docs/dashboard-api/IMPLEMENTATION_GUIDE.md`

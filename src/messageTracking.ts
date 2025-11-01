@@ -1,5 +1,3 @@
-
-
 import { logger } from "./logger.js";
 
 interface ProcessedMessage {
@@ -10,28 +8,25 @@ interface ProcessedMessage {
   workflowId: string;
 }
 
-
-
 const processedMessages = new Map<string, ProcessedMessage>();
-
 
 const MESSAGE_TTL_MS = 24 * 60 * 60 * 1000;
 
-
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
-
-function generateMessageKey(taskId: string, corrId: string, persona: string): string {
+function generateMessageKey(
+  taskId: string,
+  corrId: string,
+  persona: string,
+): string {
   return `${taskId}:${corrId}:${persona.toLowerCase()}`;
 }
-
 
 export function isDuplicateMessage(
   taskId: string | undefined,
   corrId: string | undefined,
-  persona: string
+  persona: string,
 ): boolean {
-  
   if (!taskId || !corrId) {
     return false;
   }
@@ -45,7 +40,7 @@ export function isDuplicateMessage(
       corrId,
       persona,
       originalTimestamp: new Date(existing.timestamp).toISOString(),
-      originalWorkflowId: existing.workflowId
+      originalWorkflowId: existing.workflowId,
     });
     return true;
   }
@@ -53,14 +48,12 @@ export function isDuplicateMessage(
   return false;
 }
 
-
 export function markMessageProcessed(
   taskId: string | undefined,
   corrId: string | undefined,
   persona: string,
-  workflowId: string
+  workflowId: string,
 ): void {
-  
   if (!taskId || !corrId) {
     return;
   }
@@ -71,7 +64,7 @@ export function markMessageProcessed(
     corrId,
     persona,
     timestamp: Date.now(),
-    workflowId
+    workflowId,
   });
 
   logger.debug("Message marked as processed", {
@@ -79,10 +72,9 @@ export function markMessageProcessed(
     corrId,
     persona,
     workflowId,
-    totalTracked: processedMessages.size
+    totalTracked: processedMessages.size,
   });
 }
-
 
 function cleanupExpiredMessages(): void {
   const now = Date.now();
@@ -98,11 +90,10 @@ function cleanupExpiredMessages(): void {
   if (removedCount > 0) {
     logger.info("Cleaned up expired message tracking records", {
       removedCount,
-      remainingCount: processedMessages.size
+      remainingCount: processedMessages.size,
     });
   }
 }
-
 
 let cleanupIntervalHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -111,13 +102,15 @@ export function startMessageTrackingCleanup(): void {
     return;
   }
 
-  cleanupIntervalHandle = setInterval(cleanupExpiredMessages, CLEANUP_INTERVAL_MS);
+  cleanupIntervalHandle = setInterval(
+    cleanupExpiredMessages,
+    CLEANUP_INTERVAL_MS,
+  );
   logger.info("Message tracking cleanup started", {
     cleanupIntervalMs: CLEANUP_INTERVAL_MS,
-    ttlMs: MESSAGE_TTL_MS
+    ttlMs: MESSAGE_TTL_MS,
   });
 }
-
 
 export function stopMessageTrackingCleanup(): void {
   if (cleanupIntervalHandle) {
@@ -127,12 +120,10 @@ export function stopMessageTrackingCleanup(): void {
   }
 }
 
-
 export function clearMessageTracking(): void {
   processedMessages.clear();
   logger.debug("Message tracking cleared");
 }
-
 
 export function getMessageTrackingStats(): {
   totalTracked: number;
@@ -154,6 +145,6 @@ export function getMessageTrackingStats(): {
   return {
     totalTracked: processedMessages.size,
     oldestTimestamp: oldest,
-    newestTimestamp: newest
+    newestTimestamp: newest,
   };
 }

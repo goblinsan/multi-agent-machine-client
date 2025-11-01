@@ -1,6 +1,6 @@
-import { WorkflowStep, StepResult } from '../engine/WorkflowStep.js';
-import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { logger } from '../../logger.js';
+import { WorkflowStep, StepResult } from "../engine/WorkflowStep.js";
+import { WorkflowContext } from "../engine/WorkflowContext.js";
+import { logger } from "../../logger.js";
 
 interface UnblockAttemptConfig {
   task_id: string;
@@ -19,141 +19,149 @@ interface UnblockResult {
   error?: string;
 }
 
-
 export class UnblockAttemptStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as UnblockAttemptConfig;
     const { task_id, strategy, resolution_plan } = config;
 
-    logger.info('Attempting to unblock task', {
+    logger.info("Attempting to unblock task", {
       workflowId: context.workflowId,
       taskId: task_id,
-      strategy
+      strategy,
     });
 
     try {
-      const blockageAnalysis = context.getVariable('blockage_analysis');
-      
+      const blockageAnalysis = context.getVariable("blockage_analysis");
+
       let result: UnblockResult;
 
-      
       switch (strategy) {
-        case 'retry_with_context':
-          result = await this.retryWithContext(context, config, blockageAnalysis);
+        case "retry_with_context":
+          result = await this.retryWithContext(
+            context,
+            config,
+            blockageAnalysis,
+          );
           break;
 
-        case 'create_subtasks':
+        case "create_subtasks":
           result = await this.createSubtasks(context, config, resolution_plan);
           break;
 
-        case 'request_clarification':
-          result = await this.requestClarification(context, config, resolution_plan);
+        case "request_clarification":
+          result = await this.requestClarification(
+            context,
+            config,
+            resolution_plan,
+          );
           break;
 
-        case 'automated_fix':
-          result = await this.applyAutomatedFix(context, config, resolution_plan);
+        case "automated_fix":
+          result = await this.applyAutomatedFix(
+            context,
+            config,
+            resolution_plan,
+          );
           break;
 
-        case 'escalate':
-          result = await this.escalateForManualIntervention(context, config, blockageAnalysis);
+        case "escalate":
+          result = await this.escalateForManualIntervention(
+            context,
+            config,
+            blockageAnalysis,
+          );
           break;
 
         default:
-          logger.warn('Unknown unblock strategy, defaulting to retry', {
+          logger.warn("Unknown unblock strategy, defaulting to retry", {
             strategy,
-            taskId: task_id
+            taskId: task_id,
           });
-          result = await this.retryWithContext(context, config, blockageAnalysis);
+          result = await this.retryWithContext(
+            context,
+            config,
+            blockageAnalysis,
+          );
       }
 
-      
-      context.setVariable('unblock_attempt', result);
+      context.setVariable("unblock_attempt", result);
 
-      logger.info('Unblock attempt completed', {
+      logger.info("Unblock attempt completed", {
         workflowId: context.workflowId,
         taskId: task_id,
         strategy,
         success: result.success,
-        actionsTaken: result.actions_taken.length
+        actionsTaken: result.actions_taken.length,
       });
 
       return {
-        status: result.success ? 'success' : 'failure',
+        status: result.success ? "success" : "failure",
         data: { result },
-        outputs: { unblock_attempt: result }
+        outputs: { unblock_attempt: result },
       };
-
     } catch (error: any) {
-      logger.error('Failed to execute unblock attempt', {
+      logger.error("Failed to execute unblock attempt", {
         error: error.message,
         taskId: task_id,
-        workflowId: context.workflowId
+        workflowId: context.workflowId,
       });
 
       return {
-        status: 'failure',
-        error: new Error(`Unblock attempt failed: ${error.message}`)
+        status: "failure",
+        error: new Error(`Unblock attempt failed: ${error.message}`),
       };
     }
   }
 
-  
   private async retryWithContext(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
-    blockageAnalysis: any
+    blockageAnalysis: any,
   ): Promise<UnblockResult> {
-    logger.info('Executing retry_with_context strategy', {
-      taskId: config.task_id
+    logger.info("Executing retry_with_context strategy", {
+      taskId: config.task_id,
     });
 
     const actions: string[] = [];
 
-    
-    actions.push('Cleared cached context');
+    actions.push("Cleared cached context");
 
-    
-    actions.push('Prepared task for retry');
+    actions.push("Prepared task for retry");
 
-    
     if (blockageAnalysis) {
       actions.push(`Added blockage analysis: ${blockageAnalysis.reason}`);
     }
 
     return {
       success: true,
-      resolution: 'Task prepared for retry with fresh context',
-      actions_taken: actions
+      resolution: "Task prepared for retry with fresh context",
+      actions_taken: actions,
     };
   }
 
-  
   private async createSubtasks(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
-    resolutionPlan: any
+    resolutionPlan: any,
   ): Promise<UnblockResult> {
-    logger.info('Executing create_subtasks strategy', {
-      taskId: config.task_id
+    logger.info("Executing create_subtasks strategy", {
+      taskId: config.task_id,
     });
 
     const actions: string[] = [];
     const subtasks: any[] = [];
 
-    
     const subtaskDefs = resolutionPlan?.subtasks || [];
 
     if (subtaskDefs.length === 0) {
       return {
         success: false,
-        resolution: 'No subtasks defined in resolution plan',
+        resolution: "No subtasks defined in resolution plan",
         actions_taken: actions,
-        error: 'No subtasks to create'
+        error: "No subtasks to create",
       };
     }
 
-    
-    
     for (const subtask of subtaskDefs) {
       actions.push(`Identified subtask: ${subtask.title || subtask.name}`);
       subtasks.push(subtask);
@@ -165,99 +173,102 @@ export class UnblockAttemptStep extends WorkflowStep {
       success: true,
       resolution: `Breaking task into ${subtasks.length} smaller subtasks`,
       actions_taken: actions,
-      subtasks_created: subtasks
+      subtasks_created: subtasks,
     };
   }
 
-  
   private async requestClarification(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
-    resolutionPlan: any
+    resolutionPlan: any,
   ): Promise<UnblockResult> {
-    logger.info('Executing request_clarification strategy', {
-      taskId: config.task_id
+    logger.info("Executing request_clarification strategy", {
+      taskId: config.task_id,
     });
 
     const actions: string[] = [];
 
-    
-    const questions = resolutionPlan?.questions || ['Need more information to proceed'];
+    const questions = resolutionPlan?.questions || [
+      "Need more information to proceed",
+    ];
 
-    
-    actions.push(`Prepared clarification request with ${questions.length} question(s)`);
-    
+    actions.push(
+      `Prepared clarification request with ${questions.length} question(s)`,
+    );
+
     for (const question of questions) {
       actions.push(`- ${question}`);
     }
 
     return {
       success: true,
-      resolution: 'Clarification requested from task owner',
-      actions_taken: actions
+      resolution: "Clarification requested from task owner",
+      actions_taken: actions,
     };
   }
 
-  
   private async applyAutomatedFix(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
-    resolutionPlan: any
+    resolutionPlan: any,
   ): Promise<UnblockResult> {
-    logger.info('Executing automated_fix strategy', {
-      taskId: config.task_id
+    logger.info("Executing automated_fix strategy", {
+      taskId: config.task_id,
     });
 
     const actions: string[] = [];
 
-    
-    const fixType = resolutionPlan?.fix_type || 'unknown';
+    const fixType = resolutionPlan?.fix_type || "unknown";
 
     actions.push(`Identified fix type: ${fixType}`);
 
-    
     switch (fixType) {
-      case 'dependency_update':
-        actions.push('Would update dependencies (not implemented in this version)');
+      case "dependency_update":
+        actions.push(
+          "Would update dependencies (not implemented in this version)",
+        );
         break;
 
-      case 'config_fix':
-        actions.push('Would apply configuration fix (not implemented in this version)');
+      case "config_fix":
+        actions.push(
+          "Would apply configuration fix (not implemented in this version)",
+        );
         break;
 
-      case 'permission_fix':
-        actions.push('Would fix file permissions (not implemented in this version)');
+      case "permission_fix":
+        actions.push(
+          "Would fix file permissions (not implemented in this version)",
+        );
         break;
 
       default:
         actions.push(`Unknown fix type: ${fixType}`);
     }
 
-    
     return {
       success: true,
       resolution: `Prepared automated fix: ${fixType}`,
-      actions_taken: actions
+      actions_taken: actions,
     };
   }
 
-  
   private async escalateForManualIntervention(
     context: WorkflowContext,
     config: UnblockAttemptConfig,
-    blockageAnalysis: any
+    blockageAnalysis: any,
   ): Promise<UnblockResult> {
-    logger.info('Executing escalate strategy', {
-      taskId: config.task_id
+    logger.info("Executing escalate strategy", {
+      taskId: config.task_id,
     });
 
     const actions: string[] = [];
 
-    
-    actions.push('Marked task for manual intervention');
-    
+    actions.push("Marked task for manual intervention");
+
     if (blockageAnalysis?.previous_attempts?.length > 0) {
-      actions.push(`Failed after ${blockageAnalysis.previous_attempts.length} previous attempt(s)`);
+      actions.push(
+        `Failed after ${blockageAnalysis.previous_attempts.length} previous attempt(s)`,
+      );
     }
 
     if (blockageAnalysis?.reason) {
@@ -265,13 +276,13 @@ export class UnblockAttemptStep extends WorkflowStep {
     }
 
     if (blockageAnalysis?.context_hints) {
-      actions.push(`Hints: ${blockageAnalysis.context_hints.join(', ')}`);
+      actions.push(`Hints: ${blockageAnalysis.context_hints.join(", ")}`);
     }
 
     return {
       success: true,
-      resolution: 'Task escalated for manual intervention',
-      actions_taken: actions
+      resolution: "Task escalated for manual intervention",
+      actions_taken: actions,
     };
   }
 }

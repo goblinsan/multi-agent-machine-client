@@ -1,7 +1,7 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { parse as parseYaml } from 'yaml';
-import { WorkflowStepConfig } from './WorkflowStep.js';
+import { readFileSync } from "fs";
+import { join } from "path";
+import { parse as parseYaml } from "yaml";
+import { WorkflowStepConfig } from "./WorkflowStep.js";
 
 interface StepTemplate {
   type: string;
@@ -20,8 +20,11 @@ export class TemplateLoader {
   load(): void {
     if (this.loaded) return;
 
-    const templatePath = join(process.cwd(), 'src/workflows/templates/step-templates.yaml');
-    const content = readFileSync(templatePath, 'utf-8');
+    const templatePath = join(
+      process.cwd(),
+      "src/workflows/templates/step-templates.yaml",
+    );
+    const content = readFileSync(templatePath, "utf-8");
     const registry = parseYaml(content) as TemplateRegistry;
 
     for (const [name, template] of Object.entries(registry.templates)) {
@@ -44,20 +47,23 @@ export class TemplateLoader {
   expandTemplate(
     name: string,
     stepName: string,
-    overrides?: Partial<WorkflowStepConfig>
+    overrides?: Partial<WorkflowStepConfig>,
   ): WorkflowStepConfig {
     const template = this.getTemplate(name);
     if (!template) {
       throw new Error(`Template not found: ${name}`);
     }
 
-    const mergedConfig = this.deepMerge(template.config, overrides?.config || {});
+    const mergedConfig = this.deepMerge(
+      template.config,
+      overrides?.config || {},
+    );
 
     const result: WorkflowStepConfig = {
       name: stepName,
       type: template.type,
       outputs: template.outputs,
-      config: mergedConfig
+      config: mergedConfig,
     };
 
     if (overrides) {
@@ -71,10 +77,18 @@ export class TemplateLoader {
 
   private deepMerge(target: any, source: any): any {
     const result = { ...target };
-    
+
     for (const key of Object.keys(source)) {
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-        if (result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])) {
+      if (
+        source[key] &&
+        typeof source[key] === "object" &&
+        !Array.isArray(source[key])
+      ) {
+        if (
+          result[key] &&
+          typeof result[key] === "object" &&
+          !Array.isArray(result[key])
+        ) {
           result[key] = this.deepMerge(result[key], source[key]);
         } else {
           result[key] = source[key];
@@ -83,7 +97,7 @@ export class TemplateLoader {
         result[key] = source[key];
       }
     }
-    
+
     return result;
   }
 }

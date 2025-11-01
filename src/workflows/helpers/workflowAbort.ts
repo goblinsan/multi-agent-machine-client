@@ -5,22 +5,18 @@ import type { WorkflowContext } from "../engine/WorkflowContext.js";
 
 const STREAM_NAME = cfg.requestStream;
 
-
-
-
-
-
-
 async function purgeWorkflowRedisQueues(
   transport: any,
-  workflowId: string
+  workflowId: string,
 ): Promise<{ removed: number; acked: number }> {
   try {
-    if (!transport || typeof transport.xRange !== 'function') {
+    if (!transport || typeof transport.xRange !== "function") {
       return { removed: 0, acked: 0 };
     }
 
-    const entries = await transport.xRange(STREAM_NAME, '-', '+', { COUNT: 200 });
+    const entries = await transport.xRange(STREAM_NAME, "-", "+", {
+      COUNT: 200,
+    });
     const toRemove: string[] = [];
     let acked = 0;
 
@@ -29,16 +25,30 @@ async function purgeWorkflowRedisQueues(
       const message = (entry as any).message || (entry as any).fields || {};
       if (message.workflow_id === workflowId) {
         toRemove.push(id);
-        
+
         try {
-          acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:lead-engineer`, id);
+          acked += await transport.xAck(
+            STREAM_NAME,
+            `${cfg.groupPrefix}:lead-engineer`,
+            id,
+          );
         } catch (e) {
-          logger.debug('Failed to ack message in lead-engineer group', { id, error: String(e) });
+          logger.debug("Failed to ack message in lead-engineer group", {
+            id,
+            error: String(e),
+          });
         }
         try {
-          acked += await transport.xAck(STREAM_NAME, `${cfg.groupPrefix}:coordination`, id);
+          acked += await transport.xAck(
+            STREAM_NAME,
+            `${cfg.groupPrefix}:coordination`,
+            id,
+          );
         } catch (e) {
-          logger.debug('Failed to ack message in coordination group', { id, error: String(e) });
+          logger.debug("Failed to ack message in coordination group", {
+            id,
+            error: String(e),
+          });
         }
       }
     }
@@ -49,7 +59,6 @@ async function purgeWorkflowRedisQueues(
     }
     return { removed, acked };
   } catch (err) {
-    
     return { removed: 0, acked: 0 };
   }
 }
@@ -57,10 +66,13 @@ async function purgeWorkflowRedisQueues(
 export async function abortWorkflowWithReason(
   context: WorkflowContext,
   reason: string,
-  details: Record<string, any> = {}
+  details: Record<string, any> = {},
 ): Promise<{ cleanupResult: { removed: number; acked: number } | null }> {
   if (context.getVariable("workflowAborted")) {
-    context.logger.debug("workflow abort already recorded", { reason, details });
+    context.logger.debug("workflow abort already recorded", {
+      reason,
+      details,
+    });
     const abortMeta = context.getVariable("workflowAbort");
     return { cleanupResult: abortMeta?.cleanupResult ?? null };
   }
@@ -75,26 +87,34 @@ export async function abortWorkflowWithReason(
     context.logger.warn("failed to create diagnostic snapshot", {
       workflowId,
       reason,
-      error: err instanceof Error ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 
   try {
-    cleanupResult = await purgeWorkflowRedisQueues(context.transport, workflowId);
-    context.logger.warn("cleared pending persona requests after workflow abort", {
+    cleanupResult = await purgeWorkflowRedisQueues(
+      context.transport,
       workflowId,
-      reason,
-      removed: cleanupResult.removed,
-      acked: cleanupResult.acked
-    });
+    );
+    context.logger.warn(
+      "cleared pending persona requests after workflow abort",
+      {
+        workflowId,
+        reason,
+        removed: cleanupResult.removed,
+        acked: cleanupResult.acked,
+      },
+    );
   } catch (err) {
-    
-    const level = process.env.NODE_ENV === 'test' ? 'debug' : 'warn';
-    (context.logger as any)[level]("failed to purge redis queues during workflow abort", {
-      workflowId,
-      reason,
-      error: err instanceof Error ? err.message : String(err)
-    });
+    const level = process.env.NODE_ENV === "test" ? "debug" : "warn";
+    (context.logger as any)[level](
+      "failed to purge redis queues during workflow abort",
+      {
+        workflowId,
+        reason,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
   }
 
   context.setVariable("workflowAborted", true);
@@ -102,7 +122,7 @@ export async function abortWorkflowWithReason(
     reason,
     details,
     cleanupResult,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 
   return { cleanupResult };
@@ -111,9 +131,10 @@ export async function abortWorkflowWithReason(
 export async function abortWorkflowDueToPushFailure(
   context: WorkflowContext,
   commitResult: Record<string, any>,
-  meta: { message: string; paths: string[] }
+  meta: { message: string; paths: string[] },
 ): Promise<void> {
-  const branch = commitResult.branch || context.getVariable("branch") || context.branch;
+  const branch =
+    commitResult.branch || context.getVariable("branch") || context.branch;
   const reason = commitResult.reason || "push_failed";
 
   context.logger.error("git push failed during commitAndPushPaths", {
@@ -121,15 +142,15 @@ export async function abortWorkflowDueToPushFailure(
     reason,
     commitResult,
     commitMessage: meta.message,
-    changedPaths: meta.paths
+    changedPaths: meta.paths,
   });
 
   const { cleanupResult } = await abortWorkflowWithReason(context, reason, {
     commitResult,
-    meta
+    meta,
   });
   context.setVariable("pushFailure", {
     commitResult,
-    cleanupResult
+    cleanupResult,
   });
 }

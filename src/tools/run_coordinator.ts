@@ -3,83 +3,95 @@ import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
 
 function printUsage() {
-  console.error("Usage: npm run coordinator [--drain|--drain-only|--nuke] <project_id> [repo_url] [base_branch]");
-  console.error("  --drain       Clear messages from streams before dispatching (preserves consumer groups).");
-  console.error("  --drain-only  Clear messages and exit without dispatching (preserves consumer groups).");
-  console.error("  --nuke        Nuclear option: destroy streams AND consumer groups, then exit.");
+  console.error(
+    "Usage: npm run coordinator [--drain|--drain-only|--nuke] <project_id> [repo_url] [base_branch]",
+  );
+  console.error(
+    "  --drain       Clear messages from streams before dispatching (preserves consumer groups).",
+  );
+  console.error(
+    "  --drain-only  Clear messages and exit without dispatching (preserves consumer groups).",
+  );
+  console.error(
+    "  --nuke        Nuclear option: destroy streams AND consumer groups, then exit.",
+  );
   console.error("");
   console.error("Examples:");
-  console.error("  npm run coordinator -- --drain-only              # Clear messages, keep groups");
-  console.error("  npm run coordinator -- --nuke                    # Destroy everything");
-  console.error("  npm run coordinator -- PROJECT_ID                # Send coordinator message");
+  console.error(
+    "  npm run coordinator -- --drain-only              # Clear messages, keep groups",
+  );
+  console.error(
+    "  npm run coordinator -- --nuke                    # Destroy everything",
+  );
+  console.error(
+    "  npm run coordinator -- PROJECT_ID                # Send coordinator message",
+  );
 }
-
 
 async function drainStreams(redis: any) {
   const streams = [cfg.requestStream, cfg.eventStream];
-  
+
   for (const stream of streams) {
     try {
       console.log(`Draining messages from stream: ${stream}`);
-      
-      
+
       const len = await redis.xLen(stream).catch(() => 0);
       if (len === 0) {
         console.log(`Stream ${stream} is empty or doesn't exist`);
         continue;
       }
-      
-      
-      
+
       const removed = await redis.del(stream);
-      console.log(`Deleted stream ${stream} - removed ${len} messages`, { removed });
-      
+      console.log(`Deleted stream ${stream} - removed ${len} messages`, {
+        removed,
+      });
     } catch (error) {
       console.warn(`Failed to drain ${stream}`, error);
     }
   }
-  
-  console.log("Stream drain complete - all messages cleared, consumer groups preserved");
-}
 
+  console.log(
+    "Stream drain complete - all messages cleared, consumer groups preserved",
+  );
+}
 
 async function nukeStreams(redis: any) {
   const streams = [cfg.requestStream, cfg.eventStream];
-  
+
   for (const stream of streams) {
     try {
       console.log(`Nuking stream: ${stream}`);
-      
-      
+
       let groups: any[] = [];
       try {
         groups = await redis.xInfoGroups(stream);
         console.log(`Found ${groups.length} consumer groups for ${stream}`);
       } catch (error) {
-        
-        console.log(`No consumer groups found for ${stream}:`, (error as Error).message);
+        console.log(
+          `No consumer groups found for ${stream}:`,
+          (error as Error).message,
+        );
       }
-      
-      
+
       for (const group of groups) {
         try {
           await redis.xGroupDestroy(stream, group.name);
           console.log(`Destroyed consumer group: ${group.name}`);
         } catch (error) {
-          console.warn(`Failed to destroy group ${group.name}:`, (error as Error).message);
+          console.warn(
+            `Failed to destroy group ${group.name}:`,
+            (error as Error).message,
+          );
         }
       }
-      
-      
+
       const removed = await redis.del(stream);
       console.log(`Deleted stream ${stream}`, { removed });
-      
     } catch (error) {
       console.warn(`Failed to nuke ${stream}`, error);
     }
   }
-  
-  
+
   console.log("Cleaning up persona-specific consumer groups...");
   const personas = cfg.allowedPersonas || [];
   for (const persona of personas) {
@@ -91,8 +103,7 @@ async function nukeStreams(redis: any) {
       console.log(`Persona group ${groupName} not found (this is normal)`);
     }
   }
-  
-  
+
   try {
     const coordGroupName = `${cfg.groupPrefix}:coordinator`;
     await redis.xGroupDestroy(cfg.eventStream, coordGroupName);
@@ -100,8 +111,10 @@ async function nukeStreams(redis: any) {
   } catch (error) {
     console.log(`Coordinator group not found (this is normal)`);
   }
-  
-  console.log("Nuke complete - all streams, groups, and pending messages destroyed");
+
+  console.log(
+    "Nuke complete - all streams, groups, and pending messages destroyed",
+  );
 }
 
 async function main() {
@@ -164,11 +177,11 @@ async function main() {
 
   const projectId = (projectIdArg ?? "").trim();
   const repo =
-    repoArg
-    || process.env.COORDINATOR_REPO
-    || process.env.SEED_REPO
-    || process.env.REPO_URL
-    || "";
+    repoArg ||
+    process.env.COORDINATOR_REPO ||
+    process.env.SEED_REPO ||
+    process.env.REPO_URL ||
+    "";
   const baseBranch = baseBranchArg || process.env.COORDINATOR_BASE_BRANCH || "";
 
   const payload: Record<string, unknown> = { project_id: projectId };
@@ -181,22 +194,29 @@ async function main() {
     workflow_id: `wf_coord_${Date.now()}`,
     step: "00",
     from: "user",
-  to_persona: PERSONAS.COORDINATION,
+    to_persona: PERSONAS.COORDINATION,
     intent: "orchestrate_milestone",
     corr_id: corrId,
     payload: JSON.stringify(payload),
     deadline_s: "900",
     project_id: projectId,
     ...(repo ? { repo } : {}),
-    ...(baseBranch ? { branch: baseBranch } : {})
+    ...(baseBranch ? { branch: baseBranch } : {}),
   } as Record<string, string>;
 
   const entryId = await transport.xAdd(cfg.requestStream, "*", msg);
-  console.log("Coordinator workflow dispatched", { entryId, workflow_id: msg.workflow_id, corr_id: corrId, project_id: projectId, repo, baseBranch });
+  console.log("Coordinator workflow dispatched", {
+    entryId,
+    workflow_id: msg.workflow_id,
+    corr_id: corrId,
+    project_id: projectId,
+    repo,
+    baseBranch,
+  });
   await transport.quit();
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error("Failed to dispatch coordinator workflow:", err);
   process.exit(1);
 });

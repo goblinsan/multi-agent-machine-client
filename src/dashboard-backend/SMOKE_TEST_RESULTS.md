@@ -20,14 +20,15 @@
 
 ### Response Times
 
-| Endpoint | Method | Test Case | Response Time | Target | Status |
-|----------|--------|-----------|---------------|--------|--------|
-| `/projects/1/tasks` | POST | Create single task | **8.1ms** | <50ms | ✅ PASS |
-| `/projects/1/tasks` | GET | List all tasks | **2.0ms** | <50ms | ✅ PASS |
-| `/projects/1/tasks/1` | PATCH | Update task | **6.0ms** | <50ms | ✅ PASS |
-| `/projects/1/tasks:bulk` | POST | Bulk create 20 tasks | **~5ms** | <100ms | ✅ PASS |
+| Endpoint                 | Method | Test Case            | Response Time | Target | Status  |
+| ------------------------ | ------ | -------------------- | ------------- | ------ | ------- |
+| `/projects/1/tasks`      | POST   | Create single task   | **8.1ms**     | <50ms  | ✅ PASS |
+| `/projects/1/tasks`      | GET    | List all tasks       | **2.0ms**     | <50ms  | ✅ PASS |
+| `/projects/1/tasks/1`    | PATCH  | Update task          | **6.0ms**     | <50ms  | ✅ PASS |
+| `/projects/1/tasks:bulk` | POST   | Bulk create 20 tasks | **~5ms**      | <100ms | ✅ PASS |
 
 **Performance Assessment:** All endpoints significantly exceed Phase 1 targets:
+
 - Query operations: **2-8ms** (target <50ms) = **83-96% faster than target**
 - Bulk operations: **~5ms for 20 tasks** (target <100ms) = **95% faster than target**
 
@@ -36,6 +37,7 @@
 ## Functional Validation
 
 ### ✅ Test 1: Create Single Task
+
 **Endpoint:** `POST /projects/1/tasks`
 
 ```bash
@@ -45,6 +47,7 @@ curl -X POST http://localhost:3000/projects/1/tasks \
 ```
 
 **Result:**
+
 - **HTTP Status:** 201 Created
 - **Response Time:** 8.1ms
 - **Validation:** ✅ Zod schema validation working (rejected "todo" status, required valid enum)
@@ -52,6 +55,7 @@ curl -X POST http://localhost:3000/projects/1/tasks \
 - **Database Persistence:** ✅ Task saved and retrievable via GET
 
 **Sample Response:**
+
 ```json
 {
   "id": 1,
@@ -69,6 +73,7 @@ curl -X POST http://localhost:3000/projects/1/tasks \
 ---
 
 ### ✅ Test 2: List Tasks
+
 **Endpoint:** `GET /projects/1/tasks`
 
 ```bash
@@ -76,12 +81,14 @@ curl http://localhost:3000/projects/1/tasks
 ```
 
 **Result:**
+
 - **HTTP Status:** 200 OK
 - **Response Time:** 2.0ms
 - **Data Structure:** ✅ Returns `{"data": [...]}` wrapper as per API spec
 - **Fields:** ✅ Minimal projection (id, title, status, priority_score, milestone_id, labels)
 
 **Sample Response:**
+
 ```json
 {
   "data": [
@@ -100,6 +107,7 @@ curl http://localhost:3000/projects/1/tasks
 ---
 
 ### ✅ Test 3: Update Task
+
 **Endpoint:** `PATCH /projects/1/tasks/1`
 
 ```bash
@@ -109,6 +117,7 @@ curl -X PATCH http://localhost:3000/projects/1/tasks/1 \
 ```
 
 **Result:**
+
 - **HTTP Status:** 200 OK
 - **Response Time:** 6.0ms
 - **JSON Labels:** ✅ Labels stored as JSON, parsed correctly on read
@@ -116,6 +125,7 @@ curl -X PATCH http://localhost:3000/projects/1/tasks/1 \
 - **Persistence:** ✅ saveDb() called after mutation
 
 **Sample Response:**
+
 ```json
 {
   "id": 1,
@@ -128,6 +138,7 @@ curl -X PATCH http://localhost:3000/projects/1/tasks/1 \
 ---
 
 ### ✅ Test 4: Bulk Create
+
 **Endpoint:** `POST /projects/1/tasks:bulk`
 
 ```bash
@@ -137,6 +148,7 @@ curl -X POST 'http://localhost:3000/projects/1/tasks:bulk' \
 ```
 
 **Result:**
+
 - **HTTP Status:** 201 Created
 - **Response Time:** ~5ms for 20 tasks (**0.25ms per task**)
 - **Transaction:** ✅ All tasks created atomically
@@ -144,11 +156,12 @@ curl -X POST 'http://localhost:3000/projects/1/tasks:bulk' \
 - **Database Verification:** ✅ All 20 tasks persisted (confirmed via sqlite3)
 
 **Sample Response:**
+
 ```json
 {
   "created": [
-    {"id": 2, "title": "Task 1", "status": "open"},
-    {"id": 3, "title": "Task 2", "status": "open"}
+    { "id": 2, "title": "Task 1", "status": "open" },
+    { "id": 3, "title": "Task 2", "status": "open" }
   ],
   "summary": {
     "totalRequested": 2,
@@ -162,7 +175,9 @@ curl -X POST 'http://localhost:3000/projects/1/tasks:bulk' \
 ## Schema Validation
 
 ### Database Structure
+
 **Tables Created:** ✅ All tables from `docs/dashboard-api/schema.sql`
+
 ```
 projects
 repositories
@@ -172,6 +187,7 @@ schema_migrations
 ```
 
 ### Constraints Verified
+
 - ✅ **Foreign Keys:** Enabled and enforced (rejected task with invalid project_id)
 - ✅ **Check Constraints:** Status enum validation working
 - ✅ **Indexes:** Created per schema (not explicitly tested, but no errors)
@@ -179,6 +195,7 @@ schema_migrations
 - ✅ **JSON Columns:** Labels stored as JSON TEXT, parsed on read
 
 ### Migrations
+
 - ✅ Schema loaded from authoritative source: `docs/dashboard-api/schema.sql`
 - ✅ WAL pragmas stripped (sql.js limitation - in-memory only)
 - ✅ Migration tracking: `schema_migrations` table created, version 1.0.0 recorded
@@ -189,22 +206,33 @@ schema_migrations
 ## API Compliance
 
 ### RFC 9457 Problem Details
+
 **Test:** Send invalid status "todo" (not in enum)
 
 **Response:**
+
 ```json
 {
   "type": "https://api.example.com/errors/validation-error",
   "title": "Validation Error",
   "status": 400,
   "detail": "Invalid payload",
-  "errors": [{
-    "received": "todo",
-    "code": "invalid_enum_value",
-    "options": ["open", "in_progress", "in_review", "blocked", "done", "archived"],
-    "path": ["status"],
-    "message": "Invalid enum value..."
-  }]
+  "errors": [
+    {
+      "received": "todo",
+      "code": "invalid_enum_value",
+      "options": [
+        "open",
+        "in_progress",
+        "in_review",
+        "blocked",
+        "done",
+        "archived"
+      ],
+      "path": ["status"],
+      "message": "Invalid enum value..."
+    }
+  ]
 }
 ```
 
@@ -240,12 +268,14 @@ schema_migrations
 ### Recommendations for USER CHECKPOINT #2
 
 **APPROVE** Phase 1 API design:
+
 - All 5 task endpoints functional
 - Schema constraints validated
 - Performance targets exceeded
 - RFC 9457 compliance confirmed
 
 **Next Steps:**
+
 - Day 3: Create integration adapter (thin HTTP client for workflows)
 - Day 4: Wire into one sub-workflow (e.g., review-failure-handling)
 - Day 5: Full USER CHECKPOINT #2 demo with live workflow → API calls
@@ -255,6 +285,7 @@ schema_migrations
 ## Reproducibility
 
 ### Setup
+
 ```bash
 cd src/dashboard-backend
 npm install
@@ -262,6 +293,7 @@ npm run dev
 ```
 
 ### Smoke Tests
+
 ```bash
 # Create project first
 sqlite3 data/dashboard.db "INSERT INTO projects (name, slug) VALUES ('Test', 'test')"

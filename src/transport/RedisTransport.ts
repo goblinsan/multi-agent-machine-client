@@ -1,14 +1,11 @@
-
-
-import { createClient, RedisClientType } from 'redis';
+import { createClient, RedisClientType } from "redis";
 import {
   MessageTransport,
   ReadResult,
   ConsumerGroup,
   CreateGroupOptions,
-  ReadOptions
-} from './MessageTransport.js';
-
+  ReadOptions,
+} from "./MessageTransport.js";
 
 export class RedisTransport implements MessageTransport {
   private client: RedisClientType | null = null;
@@ -27,7 +24,7 @@ export class RedisTransport implements MessageTransport {
 
     this.client = createClient({
       url: this.url,
-      password: this.password
+      password: this.password,
     }) as RedisClientType;
 
     await this.client.connect();
@@ -49,12 +46,16 @@ export class RedisTransport implements MessageTransport {
 
   private ensureConnected(): RedisClientType {
     if (!this.client) {
-      throw new Error('Redis transport not connected. Call connect() first.');
+      throw new Error("Redis transport not connected. Call connect() first.");
     }
     return this.client;
   }
 
-  async xAdd(stream: string, id: string, fields: Record<string, string>): Promise<string> {
+  async xAdd(
+    stream: string,
+    id: string,
+    fields: Record<string, string>,
+  ): Promise<string> {
     const client = this.ensureConnected();
     return await client.xAdd(stream, id, fields);
   }
@@ -63,7 +64,7 @@ export class RedisTransport implements MessageTransport {
     stream: string,
     group: string,
     startId: string,
-    options?: CreateGroupOptions
+    options?: CreateGroupOptions,
   ): Promise<void> {
     const client = this.ensureConnected();
     const redisOptions: any = {};
@@ -77,7 +78,7 @@ export class RedisTransport implements MessageTransport {
     group: string,
     consumer: string,
     streams: { key: string; id: string } | Array<{ key: string; id: string }>,
-    options?: ReadOptions
+    options?: ReadOptions,
   ): Promise<ReadResult | null> {
     const client = this.ensureConnected();
     const result = await client.xReadGroup(group, consumer, streams, options);
@@ -86,7 +87,7 @@ export class RedisTransport implements MessageTransport {
 
   async xRead(
     streams: { key: string; id: string } | Array<{ key: string; id: string }>,
-    options?: ReadOptions
+    options?: ReadOptions,
   ): Promise<ReadResult | null> {
     const client = this.ensureConnected();
     const result = await client.xRead(streams, options);
@@ -111,23 +112,22 @@ export class RedisTransport implements MessageTransport {
   async xInfoGroups(stream: string): Promise<ConsumerGroup[]> {
     const client = this.ensureConnected();
     const groups = await client.xInfoGroups(stream);
-    
+
     return groups.map((g: any) => ({
       name: g.name,
       consumers: g.consumers,
       pending: g.pending,
-      lastDeliveredId: g['last-delivered-id']
+      lastDeliveredId: g["last-delivered-id"],
     }));
   }
 
   async xGroupDestroy(stream: string, group: string): Promise<boolean> {
     const client = this.ensureConnected();
     const result = await client.xGroupDestroy(stream, group);
-    
+
     return Boolean(result);
   }
 
-  
   getClient(): RedisClientType {
     return this.ensureConnected();
   }

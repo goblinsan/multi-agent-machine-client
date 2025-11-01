@@ -1,7 +1,7 @@
-import { logger } from '../logger.js';
-import { callLMStudio } from '../lmstudio.js';
+import { logger } from "../logger.js";
+import { callLMStudio } from "../lmstudio.js";
 
-export type ChatMessage = { role: 'system' | 'user'; content: string };
+export type ChatMessage = { role: "system" | "user"; content: string };
 
 export type BuildMessagesInput = {
   persona: string;
@@ -27,37 +27,44 @@ export function buildPersonaMessages(input: BuildMessagesInput): ChatMessage[] {
     qaHistory,
     planningHistory,
     promptFileSnippets,
-    extraSystemMessages
+    extraSystemMessages,
   } = input;
 
-  const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
+  const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
 
   if (scanSummaryForPrompt && scanSummaryForPrompt.length) {
-    const label = labelForScanSummary && labelForScanSummary.trim().length
-      ? labelForScanSummary
-      : 'File scan summary';
-    messages.push({ role: 'system', content: `${label}:
-${scanSummaryForPrompt}` });
+    const label =
+      labelForScanSummary && labelForScanSummary.trim().length
+        ? labelForScanSummary
+        : "File scan summary";
+    messages.push({
+      role: "system",
+      content: `${label}:
+${scanSummaryForPrompt}`,
+    });
   }
 
   if (dashboardContext && dashboardContext.trim().length) {
-    messages.push({ role: 'system', content: `Dashboard context (may be stale):
-${dashboardContext}` });
+    messages.push({
+      role: "system",
+      content: `Dashboard context (may be stale):
+${dashboardContext}`,
+    });
   }
 
   if (qaHistory && qaHistory.trim().length) {
     messages.push({
-      role: 'system',
+      role: "system",
       content: `Latest QA Test Results:
 ${qaHistory}
 
-Use this to understand what failed in previous attempts and adjust your plan accordingly.`
+Use this to understand what failed in previous attempts and adjust your plan accordingly.`,
     });
   }
 
   if (planningHistory && planningHistory.trim().length) {
     messages.push({
-      role: 'system',
+      role: "system",
       content: `Previous Planning Iterations:
 ${planningHistory}
 
@@ -66,30 +73,36 @@ You have created plans before for this task. Review the previous planning attemp
 2. Refine and improve the plan based on new information
 3. Create a new plan if requirements have changed significantly
 
-Be clear about whether you're reusing, refining, or replacing the previous plan.`
+Be clear about whether you're reusing, refining, or replacing the previous plan.`,
     });
   }
 
   if (Array.isArray(promptFileSnippets) && promptFileSnippets.length) {
-    const snippetParts: string[] = ['Existing project files for reference (read-only):'];
+    const snippetParts: string[] = [
+      "Existing project files for reference (read-only):",
+    ];
     for (const snippet of promptFileSnippets) {
       snippetParts.push(`File: ${snippet.path}`);
-      snippetParts.push('```');
+      snippetParts.push("```");
       snippetParts.push(snippet.content);
-      snippetParts.push('```');
+      snippetParts.push("```");
     }
-    messages.push({ role: 'system', content: snippetParts.join('\n') });
+    messages.push({ role: "system", content: snippetParts.join("\n") });
   }
 
   if (Array.isArray(extraSystemMessages) && extraSystemMessages.length) {
     for (const msg of extraSystemMessages) {
-      if (msg && msg.trim().length) messages.push({ role: 'system', content: msg });
+      if (msg && msg.trim().length)
+        messages.push({ role: "system", content: msg });
     }
   }
 
-  messages.push({ role: 'user', content: userText });
+  messages.push({ role: "user", content: userText });
 
-  logger.debug('PersonaRequestHandler: built messages', { persona, systemCount: messages.filter(m => m.role === 'system').length });
+  logger.debug("PersonaRequestHandler: built messages", {
+    persona,
+    systemCount: messages.filter((m) => m.role === "system").length,
+  });
   return messages;
 }
 
@@ -100,18 +113,27 @@ export type CallModelInput = {
   timeoutMs?: number;
 };
 
-export async function callPersonaModel(input: CallModelInput): Promise<{ content: string; duration_ms: number }>{
+export async function callPersonaModel(
+  input: CallModelInput,
+): Promise<{ content: string; duration_ms: number }> {
   const { persona, model, messages, timeoutMs } = input;
   const started = Date.now();
   try {
     const resp = await callLMStudio(model, messages as any, 0.2, { timeoutMs });
     const duration_ms = Date.now() - started;
-    const preview = resp.content && resp.content.length > 4000 ? resp.content.slice(0, 4000) + '... (truncated)' : resp.content;
-    logger.info('persona response', { persona, preview });
+    const preview =
+      resp.content && resp.content.length > 4000
+        ? resp.content.slice(0, 4000) + "... (truncated)"
+        : resp.content;
+    logger.info("persona response", { persona, preview });
     return { content: resp.content, duration_ms };
   } catch (e: any) {
     const duration_ms = Date.now() - started;
-    logger.error('PersonaRequestHandler: LM call failed', { persona, error: e?.message || String(e), duration_ms });
+    logger.error("PersonaRequestHandler: LM call failed", {
+      persona,
+      error: e?.message || String(e),
+      duration_ms,
+    });
     throw e;
   }
 }

@@ -1,10 +1,22 @@
-import { WorkflowStep, StepResult, ValidationResult } from '../engine/WorkflowStep.js';
-import { WorkflowContext } from '../engine/WorkflowContext.js';
-import { logger } from '../../logger.js';
-import { abortWorkflowDueToPushFailure, abortWorkflowWithReason } from '../helpers/workflowAbort.js';
+import {
+  WorkflowStep,
+  StepResult,
+  ValidationResult,
+} from "../engine/WorkflowStep.js";
+import { WorkflowContext } from "../engine/WorkflowContext.js";
+import { logger } from "../../logger.js";
+import {
+  abortWorkflowDueToPushFailure,
+  abortWorkflowWithReason,
+} from "../helpers/workflowAbort.js";
 
 interface GitOperationConfig {
-  operation: 'checkoutBranchFromBase' | 'commitAndPushPaths' | 'verifyRemoteBranchHasDiff' | 'ensureBranchPublished' | 'checkContextFreshness';
+  operation:
+    | "checkoutBranchFromBase"
+    | "commitAndPushPaths"
+    | "verifyRemoteBranchHasDiff"
+    | "ensureBranchPublished"
+    | "checkContextFreshness";
   repoRoot?: string;
   baseBranch?: string;
   newBranch?: string;
@@ -15,15 +27,13 @@ interface GitOperationConfig {
   artifactPath?: string;
 }
 
-
 export class GitOperationStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
-    
-    if (context.getVariable('SKIP_GIT_OPERATIONS') === true) {
+    if (context.getVariable("SKIP_GIT_OPERATIONS") === true) {
       return {
-        status: 'success',
+        status: "success",
         data: { skipped: true },
-        outputs: { operation: 'skipped', skipped: true }
+        outputs: { operation: "skipped", skipped: true },
       };
     }
     const config = this.config.config as GitOperationConfig;
@@ -32,256 +42,304 @@ export class GitOperationStep extends WorkflowStep {
     logger.info(`Executing git operation`, {
       workflowId: context.workflowId,
       operation,
-      config
+      config,
     });
 
     try {
-      
-      const gitUtils = await import('../../gitUtils.js');
-      
-      
-      const repoRoot = this.resolveVariable(config.repoRoot, context) || context.repoRoot;
-      const baseBranch = this.resolveVariable(config.baseBranch, context) || context.getVariable('baseBranch') || 'main';
-      const newBranch = this.resolveVariable(config.newBranch, context) || context.getVariable('newBranch') || context.getVariable('branch') || 'feat/task';
-      const branch = this.resolveVariable(config.branch, context) || context.getVariable('branch') || newBranch;
-      const message = this.resolveVariable(config.message, context) || 'feat: automated changes';
-      const rawPaths = config.paths ?? context.getVariable('changedPaths') ?? [];
+      const gitUtils = await import("../../gitUtils.js");
+
+      const repoRoot =
+        this.resolveVariable(config.repoRoot, context) || context.repoRoot;
+      const baseBranch =
+        this.resolveVariable(config.baseBranch, context) ||
+        context.getVariable("baseBranch") ||
+        "main";
+      const newBranch =
+        this.resolveVariable(config.newBranch, context) ||
+        context.getVariable("newBranch") ||
+        context.getVariable("branch") ||
+        "feat/task";
+      const branch =
+        this.resolveVariable(config.branch, context) ||
+        context.getVariable("branch") ||
+        newBranch;
+      const message =
+        this.resolveVariable(config.message, context) ||
+        "feat: automated changes";
+      const rawPaths =
+        config.paths ?? context.getVariable("changedPaths") ?? [];
       const paths = Array.isArray(rawPaths)
         ? rawPaths
-        : typeof rawPaths === 'string'
+        : typeof rawPaths === "string"
           ? [rawPaths]
           : [];
 
       let result: any;
 
       switch (operation) {
-        case 'checkoutBranchFromBase':
+        case "checkoutBranchFromBase":
           try {
-            if (typeof gitUtils.describeWorkingTree === 'function') {
+            if (typeof gitUtils.describeWorkingTree === "function") {
               const workingTree = await gitUtils.describeWorkingTree(repoRoot);
               if (workingTree.dirty) {
                 const branchInfo = workingTree.branch || branch || newBranch;
                 const detailPreview = workingTree.porcelain.slice(0, 20);
 
-                context.logger.error('Dirty working tree detected before branch checkout', {
-                  workflowId: context.workflowId,
-                  repoRoot,
-                  branch: branchInfo,
-                  baseBranch,
-                  summary: workingTree.summary,
-                  sample: detailPreview
-                });
+                context.logger.error(
+                  "Dirty working tree detected before branch checkout",
+                  {
+                    workflowId: context.workflowId,
+                    repoRoot,
+                    branch: branchInfo,
+                    baseBranch,
+                    summary: workingTree.summary,
+                    sample: detailPreview,
+                  },
+                );
 
-                await abortWorkflowWithReason(context, 'dirty_working_tree', {
+                await abortWorkflowWithReason(context, "dirty_working_tree", {
                   repoRoot,
                   baseBranch,
                   branch: branchInfo,
-                  workingTree
+                  workingTree,
                 });
 
                 return {
-                  status: 'failure',
-                  error: new Error(`Workflow aborted: repository at ${repoRoot} has uncommitted changes.`),
+                  status: "failure",
+                  error: new Error(
+                    `Workflow aborted: repository at ${repoRoot} has uncommitted changes.`,
+                  ),
                   data: {
                     operation,
                     repoRoot,
-                    workingTree
-                  }
+                    workingTree,
+                  },
                 } satisfies StepResult;
               }
             }
           } catch (dirtyCheckError: any) {
-            context.logger.warn('Unable to evaluate working tree cleanliness', {
+            context.logger.warn("Unable to evaluate working tree cleanliness", {
               workflowId: context.workflowId,
               repoRoot,
-              error: dirtyCheckError instanceof Error ? dirtyCheckError.message : String(dirtyCheckError)
+              error:
+                dirtyCheckError instanceof Error
+                  ? dirtyCheckError.message
+                  : String(dirtyCheckError),
             });
           }
 
-          logger.info('Checking out branch from base', {
+          logger.info("Checking out branch from base", {
             repoRoot,
             baseBranch,
             newBranch,
-            workflowId: context.workflowId
+            workflowId: context.workflowId,
           });
-          
-          await gitUtils.checkoutBranchFromBase(repoRoot, baseBranch, newBranch);
+
+          await gitUtils.checkoutBranchFromBase(
+            repoRoot,
+            baseBranch,
+            newBranch,
+          );
           result = { repoRoot, baseBranch, newBranch };
-          
-          
-          context.setVariable('branch', newBranch);
-          context.setVariable('currentBranch', newBranch);
-          context.setVariable('baseBranch', baseBranch);
+
+          context.setVariable("branch", newBranch);
+          context.setVariable("currentBranch", newBranch);
+          context.setVariable("baseBranch", baseBranch);
           break;
 
-        case 'commitAndPushPaths':
-          logger.info('Committing and pushing paths', {
+        case "commitAndPushPaths":
+          logger.info("Committing and pushing paths", {
             repoRoot,
             branch,
             message,
             pathsCount: paths.length,
-            workflowId: context.workflowId
+            workflowId: context.workflowId,
           });
-          
+
           result = await gitUtils.commitAndPushPaths({
             repoRoot,
             branch,
             message,
-            paths
+            paths,
           });
-          
-          
-          context.setVariable('commitResult', result);
-          context.setVariable('committed', result.committed);
-          context.setVariable('pushed', result.pushed);
 
-          if ((result?.committed && result?.pushed === false) || result?.reason === 'push_failed') {
+          context.setVariable("commitResult", result);
+          context.setVariable("committed", result.committed);
+          context.setVariable("pushed", result.pushed);
+
+          if (
+            (result?.committed && result?.pushed === false) ||
+            result?.reason === "push_failed"
+          ) {
             await abortWorkflowDueToPushFailure(context, result, {
               message,
-              paths
+              paths,
             });
 
             return {
-              status: 'failure',
-              error: new Error(`Git push failed for branch ${branch || 'unknown'}`),
+              status: "failure",
+              error: new Error(
+                `Git push failed for branch ${branch || "unknown"}`,
+              ),
               data: {
                 operation,
-                result
+                result,
               },
               outputs: {
                 operation,
                 result,
-                commitResult: result
-              }
+                commitResult: result,
+              },
             } satisfies StepResult;
           }
           break;
 
-        case 'verifyRemoteBranchHasDiff':
-          logger.info('Verifying remote branch has diff', {
+        case "verifyRemoteBranchHasDiff":
+          logger.info("Verifying remote branch has diff", {
             repoRoot,
             branch,
             baseBranch,
-            workflowId: context.workflowId
+            workflowId: context.workflowId,
           });
-          
+
           result = await gitUtils.verifyRemoteBranchHasDiff({
             repoRoot,
             branch,
-            baseBranch
+            baseBranch,
           });
-          
-          
-          context.setVariable('diffVerification', result);
-          context.setVariable('hasDiff', result.hasDiff);
-          context.setVariable('diffSummary', result.diffSummary);
+
+          context.setVariable("diffVerification", result);
+          context.setVariable("hasDiff", result.hasDiff);
+          context.setVariable("diffSummary", result.diffSummary);
           break;
 
-        case 'ensureBranchPublished':
-          logger.info('Ensuring branch is published', {
+        case "ensureBranchPublished":
+          logger.info("Ensuring branch is published", {
             repoRoot,
             branch,
-            workflowId: context.workflowId
+            workflowId: context.workflowId,
           });
-          
+
           await gitUtils.ensureBranchPublished(repoRoot, branch);
           result = { repoRoot, branch, published: true };
-          
-          context.setVariable('branchPublished', true);
+
+          context.setVariable("branchPublished", true);
           break;
 
-        case 'checkContextFreshness': {
-          logger.info('Checking context freshness', {
+        case "checkContextFreshness": {
+          logger.info("Checking context freshness", {
             repoRoot,
-            workflowId: context.workflowId
+            workflowId: context.workflowId,
           });
-          
-          
-          const fs = await import('fs/promises');
-          const path = await import('path');
-          
-          
-          const taskId = this.resolveVariable(config.taskId?.toString(), context) || context.getVariable('taskId') || context.getVariable('task_id') || context.getVariable('task')?.id;
-          const artifactPath = this.resolveVariable(config.artifactPath, context) || `.ma/tasks/${taskId}/01-context.md`;
+
+          const fs = await import("fs/promises");
+          const path = await import("path");
+
+          const taskId =
+            this.resolveVariable(config.taskId?.toString(), context) ||
+            context.getVariable("taskId") ||
+            context.getVariable("task_id") ||
+            context.getVariable("task")?.id;
+          const artifactPath =
+            this.resolveVariable(config.artifactPath, context) ||
+            `.ma/tasks/${taskId}/01-context.md`;
           const fullArtifactPath = path.join(repoRoot, artifactPath);
-          
+
           let contextExists = false;
           let hasNewFiles = true;
-          
+
           try {
             await fs.access(fullArtifactPath);
             contextExists = true;
-            logger.info('Context artifact exists', { artifactPath, fullArtifactPath });
-            
-            
+            logger.info("Context artifact exists", {
+              artifactPath,
+              fullArtifactPath,
+            });
+
             try {
-              
-              const artifactGitArgs = ['log', '-1', '--pretty=format:%H', '--', artifactPath];
-              const artifactGitResult = await gitUtils.runGit(artifactGitArgs, { cwd: repoRoot });
+              const artifactGitArgs = [
+                "log",
+                "-1",
+                "--pretty=format:%H",
+                "--",
+                artifactPath,
+              ];
+              const artifactGitResult = await gitUtils.runGit(artifactGitArgs, {
+                cwd: repoRoot,
+              });
               const artifactCommitHash = artifactGitResult.stdout.trim();
-              
+
               if (!artifactCommitHash) {
-                
-                logger.warn('Artifact exists but not in git history', { artifactPath });
+                logger.warn("Artifact exists but not in git history", {
+                  artifactPath,
+                });
                 hasNewFiles = true;
               } else {
-                
-                
-                const newCommitsArgs = ['log', `${artifactCommitHash}..HEAD`, '--name-status', '--pretty=format:', '--', '.', ':(exclude).ma/'];
-                const newCommitsResult = await gitUtils.runGit(newCommitsArgs, { cwd: repoRoot });
+                const newCommitsArgs = [
+                  "log",
+                  `${artifactCommitHash}..HEAD`,
+                  "--name-status",
+                  "--pretty=format:",
+                  "--",
+                  ".",
+                  ":(exclude).ma/",
+                ];
+                const newCommitsResult = await gitUtils.runGit(newCommitsArgs, {
+                  cwd: repoRoot,
+                });
                 const newCommitsOutput = newCommitsResult.stdout.trim();
-                
+
                 if (!newCommitsOutput) {
-                  
                   hasNewFiles = false;
                 } else {
-                  
-                  const lines = newCommitsOutput.split('\n').filter((line: string) => line.trim());
+                  const lines = newCommitsOutput
+                    .split("\n")
+                    .filter((line: string) => line.trim());
                   hasNewFiles = lines.some((line: string) => {
                     const trimmed = line.trim();
-                    return trimmed.startsWith('A\t') || trimmed.startsWith('M\t');
+                    return (
+                      trimmed.startsWith("A\t") || trimmed.startsWith("M\t")
+                    );
                   });
                 }
-                
-                logger.info('Git log check completed', {
+
+                logger.info("Git log check completed", {
                   artifactPath,
                   artifactCommitHash,
-                  hasNewFiles
+                  hasNewFiles,
                 });
               }
             } catch (gitError: any) {
-              logger.warn('Could not check git history for new files', {
+              logger.warn("Could not check git history for new files", {
                 artifactPath,
-                error: gitError.message
+                error: gitError.message,
               });
-              
+
               hasNewFiles = true;
             }
           } catch (accessError) {
-            
             contextExists = false;
             hasNewFiles = true;
-            logger.info('Context artifact does not exist', { artifactPath });
+            logger.info("Context artifact does not exist", { artifactPath });
           }
-          
-          
+
           const needsRescan = !contextExists || hasNewFiles;
-          context.setVariable('context_exists', contextExists);
-          context.setVariable('has_new_files', hasNewFiles);
-          context.setVariable('needs_rescan', needsRescan);
-          
+          context.setVariable("context_exists", contextExists);
+          context.setVariable("has_new_files", hasNewFiles);
+          context.setVariable("needs_rescan", needsRescan);
+
           result = {
             contextExists,
             hasNewFiles,
             needsRescan,
-            artifactPath
+            artifactPath,
           };
-          
-          logger.info('Context freshness check complete', {
+
+          logger.info("Context freshness check complete", {
             contextExists,
             hasNewFiles,
             needsRescan,
-            artifactPath
+            artifactPath,
           });
           break;
         }
@@ -293,79 +351,102 @@ export class GitOperationStep extends WorkflowStep {
       logger.info(`Git operation completed successfully`, {
         workflowId: context.workflowId,
         operation,
-        result
+        result,
       });
 
       return {
-        status: 'success',
+        status: "success",
         data: result,
         outputs: {
           operation,
           result,
-          ...result
-        }
+          ...result,
+        },
       };
-
     } catch (error: any) {
       logger.error(`Git operation failed`, {
         workflowId: context.workflowId,
         operation,
-        error: error.message
+        error: error.message,
       });
 
       return {
-        status: 'failure',
+        status: "failure",
         error: new Error(error.message),
-        data: { operation }
+        data: { operation },
       };
     }
   }
 
-  private resolveVariable(value: string | undefined, context: WorkflowContext): string | undefined {
+  private resolveVariable(
+    value: string | undefined,
+    context: WorkflowContext,
+  ): string | undefined {
     if (!value) return undefined;
-    
-    if (typeof value === 'string' && value.startsWith('${') && value.endsWith('}')) {
+
+    if (
+      typeof value === "string" &&
+      value.startsWith("${") &&
+      value.endsWith("}")
+    ) {
       const variableName = value.slice(2, -1);
       return context.getVariable(variableName);
     }
-    
+
     return value;
   }
 
-  protected async validateConfig(context: WorkflowContext): Promise<ValidationResult> {
+  protected async validateConfig(
+    context: WorkflowContext,
+  ): Promise<ValidationResult> {
     const errors: string[] = [];
     const _warnings: string[] = [];
     const config = this.config.config as GitOperationConfig;
 
     if (!config.operation) {
-      errors.push('GitOperationStep: operation is required');
+      errors.push("GitOperationStep: operation is required");
     }
 
-    const validOperations = ['checkoutBranchFromBase', 'commitAndPushPaths', 'verifyRemoteBranchHasDiff', 'ensureBranchPublished', 'checkContextFreshness'];
+    const validOperations = [
+      "checkoutBranchFromBase",
+      "commitAndPushPaths",
+      "verifyRemoteBranchHasDiff",
+      "ensureBranchPublished",
+      "checkContextFreshness",
+    ];
     if (config.operation && !validOperations.includes(config.operation)) {
-      errors.push(`GitOperationStep: operation must be one of: ${validOperations.join(', ')}`);
+      errors.push(
+        `GitOperationStep: operation must be one of: ${validOperations.join(", ")}`,
+      );
     }
 
-    
-    if (config.operation === 'checkoutBranchFromBase') {
-      if (!config.baseBranch && !context.getVariable('baseBranch')) {
-        errors.push('GitOperationStep: checkoutBranchFromBase requires baseBranch');
+    if (config.operation === "checkoutBranchFromBase") {
+      if (!config.baseBranch && !context.getVariable("baseBranch")) {
+        errors.push(
+          "GitOperationStep: checkoutBranchFromBase requires baseBranch",
+        );
       }
-      if (!config.newBranch && !context.getVariable('newBranch') && !context.getVariable('branch')) {
-        errors.push('GitOperationStep: checkoutBranchFromBase requires newBranch');
+      if (
+        !config.newBranch &&
+        !context.getVariable("newBranch") &&
+        !context.getVariable("branch")
+      ) {
+        errors.push(
+          "GitOperationStep: checkoutBranchFromBase requires newBranch",
+        );
       }
     }
 
-    if (config.operation === 'commitAndPushPaths') {
-      if (!config.paths && !context.getVariable('changedPaths')) {
-        errors.push('GitOperationStep: commitAndPushPaths requires paths');
+    if (config.operation === "commitAndPushPaths") {
+      if (!config.paths && !context.getVariable("changedPaths")) {
+        errors.push("GitOperationStep: commitAndPushPaths requires paths");
       }
     }
 
     return {
       valid: errors.length === 0,
       errors,
-      warnings: []
+      warnings: [],
     };
   }
 }

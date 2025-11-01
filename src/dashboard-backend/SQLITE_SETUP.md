@@ -2,7 +2,7 @@
 
 ## Issue: Native Module Compilation with Node 24
 
-Node 24.2.0 requires C++20 and has V8 API changes that aren't compatible with current `better-sqlite3` versions. 
+Node 24.2.0 requires C++20 and has V8 API changes that aren't compatible with current `better-sqlite3` versions.
 
 ## Recommended Solution: Use Node LTS 20.x
 
@@ -51,6 +51,7 @@ npm run dev
 ### Option 3: Build with Current Node (Advanced)
 
 If you must use Node 24, you'll need to:
+
 1. Wait for `better-sqlite3` to release a version compatible with Node 24's V8 API
 2. Or use a different SQLite binding (e.g., `sql.js` which is WASM-based)
 

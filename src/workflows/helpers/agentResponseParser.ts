@@ -42,7 +42,7 @@ const DEFAULT_PRIORITY_KEYS = [
   "raw",
   "result",
   "response",
-  "content"
+  "content",
 ];
 
 const DIFF_LANG_HINTS = new Set(["diff", "patch", "git", "udiff"]);
@@ -105,7 +105,7 @@ function findFirstDiffIndex(text: string): number {
     /(^|\n)diff --git /,
     /(^|\n)@@ /,
     /(^|\n)\+\+\+\s+[ab]\//,
-    /(^|\n)---\s+[ab]\//
+    /(^|\n)---\s+[ab]\//,
   ];
   let idx = -1;
   for (const pattern of patterns) {
@@ -121,7 +121,8 @@ function containsDiffMarkers(text: string): boolean {
   if (!text) return false;
   if (/^diff --git\s+/m.test(text)) return true;
   if (/^index\s+[0-9a-f]+\.{2}[0-9a-f]+\s+\d+/m.test(text)) return true;
-  if (/^\+\+\+\s+[ab]\//m.test(text) && /^---\s+[ab]\//m.test(text)) return true;
+  if (/^\+\+\+\s+[ab]\//m.test(text) && /^---\s+[ab]\//m.test(text))
+    return true;
   if (/^@@\s+-?\d+/m.test(text)) return true;
   return false;
 }
@@ -142,7 +143,10 @@ function normalizeDiffSnippet(raw: string): string | null {
   return trimmed;
 }
 
-function collectStrings(input: unknown, options: DiffExtractionOptions | undefined): string[] {
+function collectStrings(
+  input: unknown,
+  options: DiffExtractionOptions | undefined,
+): string[] {
   const strings: string[] = [];
   const seen = new Set<any>();
   let nodes = 0;
@@ -191,11 +195,17 @@ function collectStrings(input: unknown, options: DiffExtractionOptions | undefin
   return strings;
 }
 
-export function extractDiffCandidates(input: unknown, options?: DiffExtractionOptions): string[] {
+export function extractDiffCandidates(
+  input: unknown,
+  options?: DiffExtractionOptions,
+): string[] {
   const strings = collectStrings(input, options);
   const uniq = new Set<string>();
   const diffs: string[] = [];
-  const max = options?.maxCandidates && options.maxCandidates > 0 ? options.maxCandidates : Infinity;
+  const max =
+    options?.maxCandidates && options.maxCandidates > 0
+      ? options.maxCandidates
+      : Infinity;
 
   for (const str of strings) {
     const normalized = normalizeDiffSnippet(str);
@@ -209,13 +219,23 @@ export function extractDiffCandidates(input: unknown, options?: DiffExtractionOp
   return diffs;
 }
 
-export function findEditSpecCandidate(value: unknown): EditSpecCandidate | null {
-  const queue: Array<{ value: unknown; path: string[] }> = [{ value, path: [] }];
+export function findEditSpecCandidate(
+  value: unknown,
+): EditSpecCandidate | null {
+  const queue: Array<{ value: unknown; path: string[] }> = [
+    { value, path: [] },
+  ];
   const visited = new Set<any>();
   const seenStrings = new Set<string>();
 
-  const normalizeContainer = (container: any, path: string[], source: EditSpecCandidate["source"], ops: any[]): EditSpecCandidate => {
-    const spec = container && typeof container === "object" ? container : { ops };
+  const normalizeContainer = (
+    container: any,
+    path: string[],
+    source: EditSpecCandidate["source"],
+    ops: any[],
+  ): EditSpecCandidate => {
+    const spec =
+      container && typeof container === "object" ? container : { ops };
     return { ops, container: spec, path, source };
   };
 
@@ -226,7 +246,13 @@ export function findEditSpecCandidate(value: unknown): EditSpecCandidate | null 
     if (current === null || current === undefined) continue;
 
     if (Array.isArray(current)) {
-      if (isOpArray(current)) return normalizeContainer({ ops: current }, entry.path, "array", current);
+      if (isOpArray(current))
+        return normalizeContainer(
+          { ops: current },
+          entry.path,
+          "array",
+          current,
+        );
       let idx = 0;
       const arr = current as unknown[];
       for (const item of arr) {
@@ -242,7 +268,12 @@ export function findEditSpecCandidate(value: unknown): EditSpecCandidate | null 
       const obj = current as Record<string, unknown>;
 
       if (isOpArray((obj as any).ops)) {
-        return normalizeContainer(current, [...entry.path, "ops"], "object", (obj as any).ops);
+        return normalizeContainer(
+          current,
+          [...entry.path, "ops"],
+          "object",
+          (obj as any).ops,
+        );
       }
 
       const candidateKeys = [
@@ -257,17 +288,27 @@ export function findEditSpecCandidate(value: unknown): EditSpecCandidate | null 
         "response",
         "output",
         "body",
-        "diff"
+        "diff",
       ];
 
       for (const key of candidateKeys) {
         if (obj[key] === undefined) continue;
         const val = obj[key];
         if (isOpArray((val as any)?.ops)) {
-          return normalizeContainer(val, [...entry.path, key, "ops"], "object", (val as any).ops);
+          return normalizeContainer(
+            val,
+            [...entry.path, key, "ops"],
+            "object",
+            (val as any).ops,
+          );
         }
         if (isOpArray(val)) {
-          return normalizeContainer({ ops: val }, [...entry.path, key], "array", val as any);
+          return normalizeContainer(
+            { ops: val },
+            [...entry.path, key],
+            "array",
+            val as any,
+          );
         }
         queue.push({ value: val, path: [...entry.path, key] });
       }
@@ -284,17 +325,24 @@ export function findEditSpecCandidate(value: unknown): EditSpecCandidate | null 
       if (!trimmed.length) continue;
       if (seenStrings.has(trimmed)) continue;
       seenStrings.add(trimmed);
-      const parsed = safeJsonParse(trimmed) || extractJsonPayloadFromText(trimmed);
-      if (parsed) queue.push({ value: parsed, path: [...entry.path, "<parsed>"] });
+      const parsed =
+        safeJsonParse(trimmed) || extractJsonPayloadFromText(trimmed);
+      if (parsed)
+        queue.push({ value: parsed, path: [...entry.path, "<parsed>"] });
     }
   }
 
   return null;
 }
 
-export async function parseAgentEditsFromResponse(input: unknown, options: ParseAgentEditsOptions): Promise<ParseAgentEditsResult> {
+export async function parseAgentEditsFromResponse(
+  input: unknown,
+  options: ParseAgentEditsOptions,
+): Promise<ParseAgentEditsResult> {
   if (!options || typeof options.parseDiff !== "function") {
-    throw new Error("parseAgentEditsFromResponse requires a parseDiff function");
+    throw new Error(
+      "parseAgentEditsFromResponse requires a parseDiff function",
+    );
   }
 
   const structured = findEditSpecCandidate(input);
@@ -303,21 +351,26 @@ export async function parseAgentEditsFromResponse(input: unknown, options: Parse
     source: structured ? "structured" : null,
     structuredCandidate: structured,
     diffCandidates: [],
-    errors: []
+    errors: [],
   };
 
-  if (structured && Array.isArray(structured.ops) && structured.ops.length > 0) {
+  if (
+    structured &&
+    Array.isArray(structured.ops) &&
+    structured.ops.length > 0
+  ) {
     return result;
   }
 
   const diffCandidates = extractDiffCandidates(input, {
     maxCandidates: options.maxDiffCandidates,
-    extraKeys: options.diffHintKeys
+    extraKeys: options.diffHintKeys,
   });
   result.diffCandidates = diffCandidates;
 
   if (!diffCandidates.length) {
-    if (options.logger?.debug) options.logger.debug("agent-parser: no diff candidates", {});
+    if (options.logger?.debug)
+      options.logger.debug("agent-parser: no diff candidates", {});
     return result;
   }
 
@@ -325,20 +378,34 @@ export async function parseAgentEditsFromResponse(input: unknown, options: Parse
     try {
       const parsed = await options.parseDiff(candidate);
       if (parsed && Array.isArray(parsed.ops) && parsed.ops.length > 0) {
-        if (options.logger?.debug) options.logger.debug("agent-parser: parsed diff candidate", { ops: parsed.ops.length });
+        if (options.logger?.debug)
+          options.logger.debug("agent-parser: parsed diff candidate", {
+            ops: parsed.ops.length,
+          });
         return {
           editSpec: parsed,
           source: "diff",
           structuredCandidate: structured,
           diffCandidates,
-          errors: result.errors
+          errors: result.errors,
         };
       }
-      result.errors.push({ type: "diff_parse_empty", message: "Parsed diff produced no operations", snippet: candidate.slice(0, 200) });
+      result.errors.push({
+        type: "diff_parse_empty",
+        message: "Parsed diff produced no operations",
+        snippet: candidate.slice(0, 200),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      result.errors.push({ type: "diff_parse_error", message, snippet: candidate.slice(0, 200) });
-      if (options.logger?.warn) options.logger.warn("agent-parser: diff parse failure", { error: message });
+      result.errors.push({
+        type: "diff_parse_error",
+        message,
+        snippet: candidate.slice(0, 200),
+      });
+      if (options.logger?.warn)
+        options.logger.warn("agent-parser: diff parse failure", {
+          error: message,
+        });
     }
   }
 
