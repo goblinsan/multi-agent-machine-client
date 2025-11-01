@@ -430,7 +430,7 @@ export class PlanningLoopStep extends WorkflowStep {
 
     if (planData?.plan && Array.isArray(planData.plan)) {
       content += `## Implementation Plan\n\n`;
-      parsed.plan.forEach((step: any, idx: number) => {
+      planData.plan.forEach((step: any, idx: number) => {
         content += `### Step ${idx + 1}: ${step.goal || "Untitled Step"}\n\n`;
         if (step.key_files && Array.isArray(step.key_files)) {
           content += `**Files:** ${step.key_files.map((f: string) => `\`${f}\``).join(", ")}\n\n`;
