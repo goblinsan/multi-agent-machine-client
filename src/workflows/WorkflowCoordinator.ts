@@ -18,6 +18,7 @@ export class WorkflowCoordinator {
   private workflowsLoaded: boolean = false;
   private taskFetcher: TaskFetcher;
   private workflowSelector: WorkflowSelector;
+  private static activeTaskWorkflows: Map<string, string> = new Map();
 
   private isTestEnv(): boolean {
     try {
@@ -336,31 +337,56 @@ export class WorkflowCoordinator {
       throw new Error("Transport is required for task processing");
     }
 
-    const taskType = this.workflowSelector.determineTaskType(task);
-    const scope = this.workflowSelector.determineTaskScope(task);
+    const taskKey = `${context.projectId}:${task?.id}`;
+    const existingWorkflow =
+      WorkflowCoordinator.activeTaskWorkflows.get(taskKey);
 
-    const selection = this.workflowSelector.selectWorkflowForTask(
-      this.engine,
-      task,
-    );
-
-    if (!selection) {
-      throw new Error(
-        `No suitable workflow found for task ${task?.id} (type: ${taskType}, scope: ${scope})`,
-      );
+    if (existingWorkflow) {
+      logger.warn("Task already being processed by another workflow, skipping", {
+        taskId: task?.id,
+        projectId: context.projectId,
+        existingWorkflowId: existingWorkflow,
+        currentWorkflowId: context.workflowId,
+      });
+      return {
+        success: true,
+        taskId: task?.id,
+        skipped: true,
+        reason: "already_in_progress",
+      };
     }
 
-    const { workflow, reason } = selection;
+    WorkflowCoordinator.activeTaskWorkflows.set(taskKey, context.workflowId);
 
-    logger.info(`Executing workflow for task`, {
-      taskId: task?.id,
-      workflowName: workflow.name,
-      taskType,
-      scope,
-      selectionReason: reason,
-    });
+    try {
+      const taskType = this.workflowSelector.determineTaskType(task);
+      const scope = this.workflowSelector.determineTaskScope(task);
 
-    return this.executeWorkflow(transport, workflow, task, context);
+      const selection = this.workflowSelector.selectWorkflowForTask(
+        this.engine,
+        task,
+      );
+
+      if (!selection) {
+        throw new Error(
+          `No suitable workflow found for task ${task?.id} (type: ${taskType}, scope: ${scope})`,
+        );
+      }
+
+      const { workflow, reason } = selection;
+
+      logger.info(`Executing workflow for task`, {
+        taskId: task?.id,
+        workflowName: workflow.name,
+        taskType,
+        scope,
+        selectionReason: reason,
+      });
+
+      return await this.executeWorkflow(transport, workflow, task, context);
+    } finally {
+      WorkflowCoordinator.activeTaskWorkflows.delete(taskKey);
+    }
   }
 
   private async executeWorkflow(

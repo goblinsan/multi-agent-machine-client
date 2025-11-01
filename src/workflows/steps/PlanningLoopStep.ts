@@ -15,6 +15,11 @@ import { logger } from "../../logger.js";
 import { runGit } from "../../gitUtils.js";
 import fs from "fs/promises";
 import path from "path";
+import {
+  loadContextDirectory,
+  summarizePlanResult,
+  summarizeEvaluationResult,
+} from "./helpers/planningHelpers.js";
 
 interface PlanningLoopConfig {
   maxIterations?: number;
@@ -79,6 +84,8 @@ export class PlanningLoopStep extends WorkflowStep {
           context.getVariable("effective_repo_path");
         const currentBranch = context.getCurrentBranch();
 
+        const contextDir = await loadContextDirectory(context.repoRoot);
+
         const payloadWithContext = {
           ...payload,
           iteration: currentIteration,
@@ -89,6 +96,7 @@ export class PlanningLoopStep extends WorkflowStep {
           repo: repoRemote,
           branch: currentBranch,
           project_id: context.projectId,
+          context_directory: contextDir,
         };
 
         const planCorrId = await sendPersonaRequest(transport, {
@@ -402,28 +410,89 @@ export class PlanningLoopStep extends WorkflowStep {
 
   private formatPlanArtifact(planResult: any, iteration: number): string {
     const fields = planResult?.fields || {};
-    const parsed = parseEventResult(fields.result);
+    const resultText = fields.result || "";
+    const parsed = parseEventResult(resultText);
 
     let content = `# Plan Iteration ${iteration}\n\n`;
     content += `Generated: ${new Date().toISOString()}\n\n`;
 
-    const planText =
-      typeof parsed?.plan === "string" ? parsed.plan : fields.result;
-    if (planText) {
-      content += `## Plan\n\n${planText}\n\n`;
-    }
-
-    if (Array.isArray(parsed?.breakdown) && parsed.breakdown.length > 0) {
-      content += `## Implementation Steps\n\n`;
-      parsed.breakdown.forEach((step: any, idx: number) => {
-        content += `### ${idx + 1}. ${typeof step === "string" ? step : JSON.stringify(step)}\n\n`;
+    if (parsed?.plan && Array.isArray(parsed.plan)) {
+      content += `## Implementation Plan\n\n`;
+      parsed.plan.forEach((step: any, idx: number) => {
+        content += `### Step ${idx + 1}: ${step.goal || "Untitled Step"}\n\n`;
+        if (step.key_files && Array.isArray(step.key_files)) {
+          content += `**Files:** ${step.key_files.map((f: string) => `\`${f}\``).join(", ")}\n\n`;
+        }
+        if (step.owners && Array.isArray(step.owners)) {
+          content += `**Owners:** ${step.owners.join(", ")}\n\n`;
+        }
+        if (step.dependencies && Array.isArray(step.dependencies)) {
+          content += `**Dependencies:**\n`;
+          step.dependencies.forEach((dep: any) => {
+            if (typeof dep === "string") {
+              content += `  - ${dep}\n`;
+            } else if (dep.goal || dep.dependency) {
+              content += `  - ${dep.goal || dep.dependency}\n`;
+            }
+          });
+          content += `\n`;
+        }
+        if (step.acceptance_criteria && Array.isArray(step.acceptance_criteria)) {
+          content += `**Acceptance Criteria:**\n`;
+          step.acceptance_criteria.forEach((ac: string) => {
+            content += `  - ${ac}\n`;
+          });
+          content += `\n`;
+        }
       });
+    } else {
+      const planText = typeof parsed?.plan === "string" ? parsed.plan : resultText;
+      if (planText) {
+        content += `## Plan\n\n${planText}\n\n`;
+      }
     }
 
-    if (Array.isArray(parsed?.risks) && parsed.risks.length > 0) {
+    if (parsed?.risks && Array.isArray(parsed.risks) && parsed.risks.length > 0) {
       content += `## Risks\n\n`;
       parsed.risks.forEach((risk: any, idx: number) => {
-        content += `${idx + 1}. ${typeof risk === "string" ? risk : JSON.stringify(risk)}\n`;
+        if (typeof risk === "object") {
+          content += `${idx + 1}. **${risk.risk || risk.description || "Unknown Risk"}**\n`;
+          if (risk.mitigation) {
+            content += `   - Mitigation: ${risk.mitigation}\n`;
+          }
+        } else {
+          content += `${idx + 1}. ${risk}\n`;
+        }
+      });
+      content += `\n`;
+    }
+
+    if (parsed?.open_questions && Array.isArray(parsed.open_questions) && parsed.open_questions.length > 0) {
+      content += `## Open Questions\n\n`;
+      parsed.open_questions.forEach((q: any, idx: number) => {
+        if (typeof q === "object") {
+          content += `${idx + 1}. ${q.question || q.description || JSON.stringify(q)}\n`;
+          if (q.answer) {
+            content += `   - Answer: ${q.answer}\n`;
+          }
+        } else {
+          content += `${idx + 1}. ${q}\n`;
+        }
+      });
+      content += `\n`;
+    }
+
+    if (parsed?.notes && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+      content += `## Notes\n\n`;
+      parsed.notes.forEach((note: any, idx: number) => {
+        if (typeof note === "object") {
+          content += `${idx + 1}. ${note.note || note.description || JSON.stringify(note)}\n`;
+          if (note.author) {
+            content += `   - By: ${note.author}\n`;
+          }
+        } else {
+          content += `${idx + 1}. ${note}\n`;
+        }
       });
       content += `\n`;
     }
@@ -457,68 +526,4 @@ export class PlanningLoopStep extends WorkflowStep {
 
     return content;
   }
-}
-
-function truncate(value: any, max = 1000): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  const text =
-    typeof value === "string"
-      ? value
-      : (() => {
-          try {
-            return JSON.stringify(value);
-          } catch {
-            return String(value);
-          }
-        })();
-
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}…(+${text.length - max} chars)`;
-}
-
-function summarizePlanResult(event: any) {
-  if (!event) return null;
-  const fields = event.fields ?? {};
-  const parsed = parseEventResult(fields.result);
-  const planText =
-    typeof parsed?.plan === "string"
-      ? parsed.plan
-      : (fields.result ?? undefined);
-  const breakdown = Array.isArray(parsed?.breakdown)
-    ? parsed.breakdown
-    : undefined;
-  const risks = Array.isArray(parsed?.risks) ? parsed.risks : undefined;
-
-  const breakdownPreview = breakdown ? truncate(breakdown, 2000) : undefined;
-  const risksPreview = risks ? truncate(risks, 1500) : undefined;
-
-  return {
-    corrId: fields.corr_id,
-    status: event.status ?? fields.status ?? "unknown",
-    planPreview: truncate(planText, 2000),
-    breakdownSteps: breakdown?.length,
-    breakdownPreview,
-    riskCount: risks?.length,
-    risksPreview,
-    metadata: parsed?.metadata,
-    rawLength:
-      typeof fields.result === "string" ? fields.result.length : undefined,
-  };
-}
-
-function summarizeEvaluationResult(event: any) {
-  if (!event) return null;
-  const fields = event.fields ?? {};
-  const payload = parseEventResult(fields.result);
-  const normalized = interpretPersonaStatus(fields.result);
-
-  return {
-    corrId: fields.corr_id,
-    status: event.status ?? fields.status ?? normalized.status ?? "unknown",
-    normalizedStatus: normalized.status,
-    statusDetails: truncate(normalized.details, 2000),
-    payloadPreview: payload ? truncate(payload, 2000) : undefined,
-    rawLength:
-      typeof fields.result === "string" ? fields.result.length : undefined,
-  };
 }

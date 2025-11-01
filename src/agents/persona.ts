@@ -105,17 +105,6 @@ export async function sendPersonaRequest(
 ): Promise<string> {
   const corrId = opts.corrId || randomUUID();
 
-  if (opts.payload?.task) {
-    logger.debug("sendPersonaRequest: task payload debug", {
-      workflowId: opts.workflowId,
-      toPersona: opts.toPersona,
-      taskType: typeof opts.payload.task,
-      isArray: Array.isArray(opts.payload.task),
-      taskKeys: Object.keys(opts.payload.task).slice(0, 20),
-      taskId: opts.payload.task?.id || opts.payload.task?.data?.id,
-    });
-  }
-
   const entry: Record<string, string> = {
     workflow_id: opts.workflowId,
     step: opts.step || "",
