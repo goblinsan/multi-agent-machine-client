@@ -418,6 +418,7 @@ export class WorkflowEngine {
     );
     context.setVariable("REPO_PATH", context.repoRoot);
     context.setVariable("repoRoot", context.repoRoot);
+    context.setVariable("repo_root", context.repoRoot);
   }
 
   private validatePrerequisites(

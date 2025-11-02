@@ -57,7 +57,10 @@ steps:
         task: ${task}
         context: "${context_request_result}"
         repo: "${repo_remote}"
+        repo_root: "${repo_root}"
         project_id: "${projectId}"
+        project_slug: "${projectSlug}"
+        project_name: "${projectName}"
 
   - template: implementation
     name: implementation_request
@@ -120,6 +123,9 @@ steps:
         config:
           block_original_task: true
         project_id: "${projectId}"
+        repo_root: "${repo_root}"
+        project_slug: "${projectSlug}"
+        project_name: "${projectName}"
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
@@ -167,6 +173,9 @@ steps:
         config:
           block_original_task: true
         project_id: "${projectId}"
+        repo_root: "${repo_root}"
+        project_slug: "${projectSlug}"
+        project_name: "${projectName}"
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
@@ -207,6 +216,9 @@ steps:
         config:
           block_original_task: true
         project_id: "${projectId}"
+        repo_root: "${repo_root}"
+        project_slug: "${projectSlug}"
+        project_name: "${projectName}"
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
@@ -247,6 +259,9 @@ steps:
         config:
           block_original_task: true
         project_id: "${projectId}"
+        repo_root: "${repo_root}"
+        project_slug: "${projectSlug}"
+        project_name: "${projectName}"
         repo: "${repo_remote}"
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
@@ -287,6 +302,9 @@ steps:
         milestone_completion_percentage: "${milestone_completion_percentage}"
         repo: "${repo_remote}"
         project_id: "${projectId}"
+        repo_root: "${repo_root}"
+        project_slug: "${projectSlug}"
+        project_name: "${projectName}"
 
 failure_handling:
   on_workflow_failure:

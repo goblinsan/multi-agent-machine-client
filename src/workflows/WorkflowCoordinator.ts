@@ -481,8 +481,9 @@ export class WorkflowCoordinator {
 
       SKIP_PULL_TASK: true,
 
+      repo_root: context.repoRoot,
       repo_remote: context.remote,
-      effective_repo_path: context.remote,
+      effective_repo_path: context.repoRoot,
       force_rescan: context.force_rescan || false,
     };
 

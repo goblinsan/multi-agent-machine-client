@@ -9,7 +9,10 @@ templates:
       payload:
         task: ${task}
         repo: ${repo_remote}
+        repo_root: ${repo_root}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         milestone: ${milestone}
         milestone_name: ${milestone_name}
         repoScan: ${repoScan}
@@ -26,7 +29,10 @@ templates:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
         repo: ${repo_remote}
+        repo_root: ${repo_root}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
 
   qa_review:
     type: PersonaRequestStep
@@ -41,7 +47,10 @@ templates:
         implementation: ${implementation_request_result}
         qa_result: ${qa_request_result}
         repo: ${repo_remote}
+        repo_root: ${repo_root}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
 
@@ -59,7 +68,10 @@ templates:
         qa_result: ${qa_request_result}
         repo: ${repo_remote}
         branch: ${featureBranchName}
+        repo_root: ${repo_root}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
@@ -79,7 +91,10 @@ templates:
         code_review_result: ${code_review_request_result}
         repo: ${repo_remote}
         branch: ${featureBranchName}
+        repo_root: ${repo_root}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
@@ -100,5 +115,10 @@ templates:
         security_result: ${security_request_result}
         repo: ${repo_remote}
         branch: ${featureBranchName}
+        repo_root: ${repo_root}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         resume_review: ${resume_review}
+        tdd_aware: ${tdd_aware}
+        tdd_stage: ${tdd_stage}

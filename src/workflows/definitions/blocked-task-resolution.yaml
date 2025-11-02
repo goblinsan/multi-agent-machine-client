@@ -82,8 +82,11 @@ steps:
         max_attempts: ${max_attempts}
         context_snapshot: ${context_request.snapshot}
         repo: ${repo_remote}
+        repo_root: ${repo_root}
         branch: ${branch}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
         tdd_context: |
@@ -122,8 +125,11 @@ steps:
         unblock_result: ${unblock_attempt.result}
         resolution_applied: ${unblock_attempt.resolution}
         repo: ${repo_remote}
+        repo_root: ${repo_root}
         branch: ${branch}
         project_id: ${projectId}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
       timeout: 300000
 
   - name: mark_task_status

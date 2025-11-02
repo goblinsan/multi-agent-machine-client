@@ -44,6 +44,9 @@ steps:
         config:
           block_original_task: true
         project_id: ${projectId}
+        repo_root: ${repo_root}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
         tdd_stage: ${tdd_stage || 'implementation'}
@@ -86,6 +89,9 @@ steps:
         config:
           block_original_task: true
         project_id: ${projectId}
+        repo_root: ${repo_root}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
         tdd_stage: ${tdd_stage || 'implementation'}
@@ -124,6 +130,9 @@ steps:
         config:
           block_original_task: true
         project_id: ${projectId}
+        repo_root: ${repo_root}
+        project_slug: ${projectSlug}
+        project_name: ${projectName}
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
         tdd_stage: ${tdd_stage || 'implementation'}
