@@ -60,10 +60,10 @@ index e69de29..4b825dc 100644
     expect(spec.ops.length).toBe(0);
     expect(warnings.length).toBeGreaterThan(0);
     expect(warnings[0]).toContain(".git/HEAD");
-    expect(warnings[0]).toContain("disallowed extension");
+    expect(warnings[0]).toContain("policy");
   });
 
-  it("filters out .env file and emits warning", () => {
+  it("allows .env file by default", () => {
     const diff = `diff --git a/.env b/.env
 index e69de29..4b825dc 100644
 --- a/.env
@@ -74,12 +74,14 @@ index e69de29..4b825dc 100644
 `;
     const warnings: string[] = [];
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
-    expect(spec.ops.length).toBe(0);
-    expect(warnings.length).toBeGreaterThan(0);
-    expect(warnings[0]).toContain(".env");
+    expect(spec.ops.length).toBe(1);
+    expect(spec.ops[0]).toEqual(
+      expect.objectContaining({ action: "upsert", path: ".env" }),
+    );
+    expect(warnings.length).toBe(0);
   });
 
-  it("filters out files without extensions", () => {
+  it("allows files without extensions", () => {
     const diff = `diff --git a/LICENSE b/LICENSE
 index e69de29..4b825dc 100644
 --- a/LICENSE
@@ -89,8 +91,8 @@ index e69de29..4b825dc 100644
 `;
     const warnings: string[] = [];
     const spec = parseUnifiedDiffToEditSpec(diff, { warnings });
-    expect(spec.ops.length).toBe(0);
-    expect(warnings.length).toBeGreaterThan(0);
+    expect(spec.ops.length).toBe(1);
+    expect(warnings.length).toBe(0);
   });
 
   it("allows .txt files", () => {
@@ -138,5 +140,26 @@ index e69de29..4b825dc 100644
     expect(spec.ops.map((o: any) => o.path)).toContain("package.json");
     expect(warnings.length).toBe(1);
     expect(warnings[0]).toContain(".git/config");
+    expect(warnings[0]).toContain("policy");
+  });
+
+  it("honors explicit blocked extensions", () => {
+    const diff = `diff --git a/.env b/.env
+index e69de29..4b825dc 100644
+--- a/.env
++++ b/.env
+@@ -0,0 +1,1 @@
++FOO=bar
+`;
+    const warnings: string[] = [];
+    const spec = parseUnifiedDiffToEditSpec(diff, {
+      warnings,
+      blockedExts: [".env"],
+    });
+
+    expect(spec.ops.length).toBe(0);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toContain(".env");
+    expect(warnings[0]).toContain("blocked");
   });
 });

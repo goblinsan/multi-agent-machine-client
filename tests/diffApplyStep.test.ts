@@ -182,4 +182,68 @@ describe("DiffApplyStep Critical Error Handling", () => {
       }),
     );
   });
+
+  it("should throw when allowed_extensions override is provided", async () => {
+    diffApplyStep = new DiffApplyStep({
+      name: "test-diff-apply",
+      type: "DiffApplyStep",
+      config: {
+        source_output: "test_output",
+        allowed_extensions: [".ts"],
+      },
+    });
+
+    (mockContext.getStepOutput as any).mockReturnValue("some diff content");
+
+    const { DiffParser } = await import("../src/agents/parsers/DiffParser.js");
+    (DiffParser.parsePersonaResponse as any).mockReturnValue({
+      success: true,
+      editSpec: { ops: [{ path: "test.ts", operation: "edit" }] },
+      diffBlocks: [],
+      errors: [],
+      warnings: [],
+    });
+
+    await expect(diffApplyStep.execute(mockContext)).rejects.toThrow(
+      "allowed_extensions is no longer supported",
+    );
+
+    const { applyEditOps } = await import("../src/fileops.js");
+    expect(applyEditOps).not.toHaveBeenCalled();
+  });
+
+  it("should pass blocked_extensions override to applyEditOps", async () => {
+    diffApplyStep = new DiffApplyStep({
+      name: "test-diff-apply",
+      type: "DiffApplyStep",
+      config: {
+        source_output: "test_output",
+        blocked_extensions: [".env"],
+      },
+    });
+
+    (mockContext.getStepOutput as any).mockReturnValue("some diff content");
+
+    const { DiffParser } = await import("../src/agents/parsers/DiffParser.js");
+    (DiffParser.parsePersonaResponse as any).mockReturnValue({
+      success: true,
+      editSpec: { ops: [{ path: "test.ts", operation: "edit" }] },
+      diffBlocks: [],
+      errors: [],
+      warnings: [],
+    });
+
+    const { applyEditOps } = await import("../src/fileops.js");
+    (applyEditOps as any).mockResolvedValue({
+      changed: ["test.ts"],
+      branch: "test-branch",
+      sha: "commit-sha-123",
+    });
+
+    const result = await diffApplyStep.execute(mockContext);
+
+    expect(result.status).toBe("success");
+    const applyArgs = (applyEditOps as any).mock.calls.at(-1)[1];
+    expect(applyArgs.blockedExts).toEqual([".env"]);
+  });
 });

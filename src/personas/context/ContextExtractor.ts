@@ -137,7 +137,11 @@ export class ContextExtractor {
   ): Promise<string | null> {
     try {
       const resolvedPath = this.resolveArtifactPath(artifactPath, payload);
-      const content = await this.readArtifactFromGit(resolvedPath, repo);
+      const content = await this.readArtifactFromGit(
+        resolvedPath,
+        repo,
+        payload?.repo_root,
+      );
 
       logger.info(`Loaded ${artifactType} from git`, {
         persona,
@@ -241,35 +245,65 @@ export class ContextExtractor {
   async readArtifactFromGit(
     artifactPath: string,
     repoUrl: string | undefined,
+    repoRoot?: string | undefined,
   ): Promise<string> {
-    if (!repoUrl) {
-      throw new Error("Repository URL is required to read artifact");
+    const candidates: string[] = [];
+
+    if (repoRoot && typeof repoRoot === "string" && repoRoot.trim().length) {
+      candidates.push(path.resolve(repoRoot.trim()));
     }
 
-    const repoName = repoUrl.split("/").pop()?.replace(".git", "") || repoUrl;
-    const repoPath = path.join(cfg.projectBase, repoName);
+    if (repoUrl && typeof repoUrl === "string" && repoUrl.trim().length) {
+      const repoName =
+        repoUrl.split("/").pop()?.replace(".git", "") || repoUrl;
+      candidates.push(path.join(cfg.projectBase, repoName));
+    }
 
-    const fullPath = path.join(repoPath, artifactPath);
+    const uniqueCandidates = Array.from(
+      new Set(candidates.map((candidate) => path.resolve(candidate))),
+    );
 
-    logger.debug("Reading artifact from git", {
-      repoUrl,
-      repoName,
-      repoPath,
+    if (uniqueCandidates.length === 0) {
+      throw new Error("Repository path or URL is required to read artifact");
+    }
+
+    let lastError: unknown = null;
+
+    for (const repoPath of uniqueCandidates) {
+      const fullPath = path.join(repoPath, artifactPath);
+
+      logger.debug("Reading artifact from git", {
+        repoUrl,
+        repoRoot,
+        resolvedRepoPath: repoPath,
+        artifactPath,
+        fullPath,
+      });
+
+      try {
+        const content = await fs.readFile(fullPath, "utf-8");
+        return content;
+      } catch (error) {
+        lastError = error;
+        logger.debug("Artifact read attempt failed", {
+          artifactPath,
+          fullPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    logger.error("Failed to read artifact file", {
       artifactPath,
-      fullPath,
+      attempts: uniqueCandidates.length,
+      repoUrl,
+      repoRoot,
+      error:
+        lastError instanceof Error ? lastError.message : String(lastError),
     });
 
-    try {
-      const content = await fs.readFile(fullPath, "utf-8");
-      return content;
-    } catch (error) {
-      logger.error("Failed to read artifact file", {
-        fullPath,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new Error(
-        `Failed to read artifact at ${artifactPath}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    throw new Error(
+      `Failed to read artifact at ${artifactPath}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    );
   }
 }

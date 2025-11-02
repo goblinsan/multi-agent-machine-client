@@ -200,7 +200,7 @@ describe("ContextExtractor", () => {
     it("should throw error if repo URL not provided", async () => {
       await expect(
         extractor.readArtifactFromGit("artifacts/plan.md", undefined),
-      ).rejects.toThrow("Repository URL is required");
+      ).rejects.toThrow("Repository path or URL is required");
     });
 
     it("should throw error if artifact file does not exist", async () => {
@@ -217,6 +217,47 @@ describe("ContextExtractor", () => {
       } finally {
         cfg.projectBase = originalProjectBase;
       }
+    });
+
+    it("should prefer repo_root when provided", async () => {
+      const repoRoot = path.join(tempDir, "custom-root");
+      const artifactPath = ".ma/tasks/1/03-plan-final.md";
+      const fullPath = path.join(repoRoot, artifactPath);
+
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.writeFile(fullPath, "Plan via repo_root", "utf8");
+
+      const originalProjectBase = cfg.projectBase;
+      cfg.projectBase = path.join(tempDir, "project-base");
+
+      try {
+        const content = await extractor.readArtifactFromGit(
+          artifactPath,
+          "https://github.com/test/machine-client-log-summarizer.git",
+          repoRoot,
+        );
+
+        expect(content).toBe("Plan via repo_root");
+      } finally {
+        cfg.projectBase = originalProjectBase;
+      }
+    });
+
+    it("should read artifact when only repo_root is supplied", async () => {
+      const repoRoot = path.join(tempDir, "root-only");
+      const artifactPath = "docs/plan.md";
+      const fullPath = path.join(repoRoot, artifactPath);
+
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.writeFile(fullPath, "root only content", "utf8");
+
+      const content = await extractor.readArtifactFromGit(
+        artifactPath,
+        undefined,
+        repoRoot,
+      );
+
+      expect(content).toBe("root only content");
     });
   });
 
@@ -322,6 +363,7 @@ describe("ContextExtractor", () => {
           payload: {
             plan_artifact: artifactPath,
             repo: `https://github.com/test/${repoName}.git`,
+            repo_root: repoPath,
           },
           repo: `https://github.com/test/${repoName}.git`,
         });

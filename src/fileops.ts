@@ -3,6 +3,7 @@ import path from "path";
 import { runGit } from "./gitUtils.js";
 import { cfg } from "./config.js";
 import { logger } from "./logger.js";
+import { buildExtensionPolicy, evaluatePolicy, isGloballyBlockedPath } from "./fileopsPolicy.js";
 
 export type Hunk = {
   oldStart: number;
@@ -23,7 +24,7 @@ export type EditSpec = { ops: Array<UpsertOp | DeleteOp>; warnings?: string[] };
 export type ApplyOptions = {
   repoRoot: string;
   maxBytes?: number;
-  allowedExts?: string[];
+  blockedExts?: string[];
   branchName?: string;
   commitMessage?: string;
 };
@@ -38,11 +39,6 @@ function insideRepo(repoRoot: string, relPath: string) {
   if (!full.startsWith(normRoot))
     throw new Error(`Path escapes repo: ${relPath}`);
   return full;
-}
-
-function extAllowed(p: string, allowed: string[]) {
-  const ext = path.extname(p).toLowerCase();
-  return allowed.length === 0 || allowed.includes(ext);
 }
 
 async function upsertFile(fullPath: string, content: string, maxBytes: number) {
@@ -88,21 +84,11 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
     );
   }
   const maxBytes = opts.maxBytes ?? 512 * 1024;
-  const allowedExts = opts.allowedExts ?? [
-    ".ts",
-    ".tsx",
-    ".js",
-    ".jsx",
-    ".py",
-    ".md",
-    ".json",
-    ".yml",
-    ".yaml",
-    ".css",
-    ".html",
-    ".sh",
-    ".bat",
+  const blockedPolicy = [
+    ...(cfg.blockedExts || []),
+    ...(opts.blockedExts || []),
   ];
+  const extensionPolicy = buildExtensionPolicy(blockedPolicy);
 
   let spec: EditSpec;
   try {
@@ -125,8 +111,12 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
     if ((op as any).action === "upsert") {
       const u = op as UpsertOp;
       if (typeof u.path !== "string") throw new Error("Bad upsert op fields");
-      if (!extAllowed(u.path, allowedExts))
-        throw new Error(`Extension not allowed: ${u.path}`);
+      if (isGloballyBlockedPath(u.path))
+        throw new Error(`Path blocked by policy: ${u.path}`);
+      const verdict = evaluatePolicy(u.path, extensionPolicy);
+      if (!verdict.allowed) {
+        throw new Error(`Extension blocked by policy: ${u.path}`);
+      }
       const full = insideRepo(repoRoot, u.path);
       let contentToWrite: string | undefined = u.content;
 
@@ -175,6 +165,12 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
     } else if ((op as any).action === "delete") {
       const d = op as DeleteOp;
       if (typeof d.path !== "string") throw new Error("Bad delete op fields");
+      if (isGloballyBlockedPath(d.path))
+        throw new Error(`Path blocked by policy: ${d.path}`);
+      const verdict = evaluatePolicy(d.path, extensionPolicy);
+      if (!verdict.allowed) {
+        throw new Error(`Extension blocked by policy: ${d.path}`);
+      }
       const full = insideRepo(repoRoot, d.path);
 
       try {
@@ -297,29 +293,15 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
 
 export function parseUnifiedDiffToEditSpec(
   diffText: string,
-  opts?: { allowedExts?: string[]; warnings?: string[] },
+  opts?: { blockedExts?: string[]; warnings?: string[] },
 ) {
-  const allowedExts = opts?.allowedExts ?? [
-    ".ts",
-    ".tsx",
-    ".js",
-    ".jsx",
-    ".py",
-    ".md",
-    ".json",
-    ".yml",
-    ".yaml",
-    ".css",
-    ".html",
-    ".sh",
-    ".bat",
-    ".scss",
-    ".less",
-    ".txt",
-    ".xml",
-    ".properties",
+  const blockedPolicy = [
+    ...(cfg.blockedExts || []),
+    ...(opts?.blockedExts || []),
   ];
+  const extensionPolicy = buildExtensionPolicy(blockedPolicy);
   const warnings: string[] = opts?.warnings || [];
+  const skippedPolicyPaths = new Set<string>();
   const ops: Array<UpsertOp | DeleteOp> = [];
   if (!diffText || !diffText.length) return { ops, warnings };
 
@@ -381,6 +363,19 @@ export function parseUnifiedDiffToEditSpec(
     const targetPath = bPath && bPath !== "/dev/null" ? bPath : aPath;
     if (!targetPath) continue;
 
+    if (isGloballyBlockedPath(targetPath)) {
+      warnings.push(`Skipped path blocked by policy: ${targetPath}`);
+      skippedPolicyPaths.add(targetPath);
+      continue;
+    }
+
+    const verdict = evaluatePolicy(targetPath, extensionPolicy);
+    if (!verdict.allowed) {
+      warnings.push(`Skipped path blocked by extension policy: ${targetPath}`);
+      skippedPolicyPaths.add(targetPath);
+      continue;
+    }
+
     const hunks: Array<{
       oldStart: number;
       oldCount: number;
@@ -418,11 +413,6 @@ export function parseUnifiedDiffToEditSpec(
         continue;
       }
       i += 1;
-    }
-
-    if (!extAllowed(targetPath, allowedExts)) {
-      warnings.push(`Skipped file with disallowed extension: ${targetPath}`);
-      continue;
     }
 
     if (!hunks.length) {
@@ -488,10 +478,22 @@ export function parseUnifiedDiffToEditSpec(
           const targetPath = bPath && bPath !== "/dev/null" ? bPath : aPath;
           if (!targetPath) continue;
 
-          if (!extAllowed(targetPath, allowedExts)) {
-            warnings.push(
-              `Skipped file with disallowed extension (fallback parser): ${targetPath}`,
-            );
+          if (isGloballyBlockedPath(targetPath)) {
+            if (!skippedPolicyPaths.has(targetPath)) {
+              warnings.push(`Skipped path blocked by policy: ${targetPath}`);
+              skippedPolicyPaths.add(targetPath);
+            }
+            continue;
+          }
+
+          const verdict = evaluatePolicy(targetPath, extensionPolicy);
+          if (!verdict.allowed) {
+            if (!skippedPolicyPaths.has(targetPath)) {
+              warnings.push(
+                `Skipped path blocked by extension policy (fallback parser): ${targetPath}`,
+              );
+              skippedPolicyPaths.add(targetPath);
+            }
             continue;
           }
           const deleted =

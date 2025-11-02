@@ -17,7 +17,7 @@ interface DiffApplyStepConfig {
   validation?: "none" | "syntax_check" | "full";
   backup?: boolean;
   max_file_size?: number;
-  allowed_extensions?: string[];
+  blocked_extensions?: string[];
   commit_message?: string;
   dry_run?: boolean;
 }
@@ -28,7 +28,14 @@ export class DiffApplyStep extends WorkflowStep {
   }
 
   async execute(context: WorkflowContext): Promise<StepResult> {
-    const stepConfig = (this.config.config as DiffApplyStepConfig) || {};
+    const rawConfig = (this.config.config as Record<string, unknown>) || {};
+    if (Object.prototype.hasOwnProperty.call(rawConfig, "allowed_extensions")) {
+      throw new Error(
+        "DiffApplyStep: allowed_extensions is no longer supported; use blocked_extensions instead",
+      );
+    }
+
+    const stepConfig = rawConfig as DiffApplyStepConfig;
     const startTime = Date.now();
 
     try {
@@ -147,28 +154,25 @@ export class DiffApplyStep extends WorkflowStep {
 
         const currentBranch = context.getCurrentBranch();
 
-        applyResult = await applyEditOps(editSpecJson, {
+        const blockedExtsOverride =
+          stepConfig.blocked_extensions &&
+          stepConfig.blocked_extensions.length > 0
+            ? stepConfig.blocked_extensions
+            : undefined;
+
+        const applyOptions = {
           repoRoot: context.repoRoot,
           maxBytes: stepConfig.max_file_size || 512 * 1024,
-          allowedExts: stepConfig.allowed_extensions || [
-            ".ts",
-            ".tsx",
-            ".js",
-            ".jsx",
-            ".py",
-            ".md",
-            ".json",
-            ".yml",
-            ".yaml",
-            ".css",
-            ".html",
-            ".sh",
-            ".bat",
-          ],
           branchName: currentBranch,
           commitMessage:
             stepConfig.commit_message || this.generateCommitMessage(context),
-        });
+        } as Parameters<typeof applyEditOps>[1];
+
+        if (blockedExtsOverride) {
+          applyOptions.blockedExts = blockedExtsOverride;
+        }
+
+        applyResult = await applyEditOps(editSpecJson, applyOptions);
 
         if (!applyResult.changed || applyResult.changed.length === 0) {
           context.logger.error(
@@ -247,7 +251,13 @@ export class DiffApplyStep extends WorkflowStep {
   ): Promise<ValidationResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
-    const stepConfig = (this.config.config as DiffApplyStepConfig) || {};
+    const rawConfig = (this.config.config as Record<string, unknown>) || {};
+    const stepConfig = rawConfig as DiffApplyStepConfig;
+    if (Object.prototype.hasOwnProperty.call(rawConfig, "allowed_extensions")) {
+      errors.push(
+        "allowed_extensions is no longer supported; use blocked_extensions to restrict file types",
+      );
+    }
 
     if (!stepConfig.source_output && !stepConfig.source_variable) {
       errors.push(
