@@ -38,7 +38,7 @@ steps:
         repo_root: ${repo_root}
         branch: ${featureBranchName}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         hotfix_mode: true
         time_constraint: "This is an EMERGENCY HOTFIX. Prioritize speed and correctness over perfect design."
@@ -82,7 +82,7 @@ steps:
           block_original_task: true
         project_id: ${projectId}
         repo_root: ${repo_root}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
@@ -126,7 +126,7 @@ steps:
           block_original_task: true
         project_id: ${projectId}
         repo_root: ${repo_root}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
@@ -164,7 +164,7 @@ steps:
           block_original_task: true
         project_id: ${projectId}
         repo_root: ${repo_root}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}

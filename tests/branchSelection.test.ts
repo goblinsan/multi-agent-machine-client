@@ -76,7 +76,7 @@ describe("Coordinator branch selection", () => {
       expect(repoRoot).toBe("/tmp/repo");
       expect(baseBranch).toBe("main");
 
-      expect(newBranch).toBe("milestone/demo-project");
+  expect(newBranch).toBe("milestone/repo");
     },
   );
 });

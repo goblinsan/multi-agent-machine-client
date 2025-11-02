@@ -85,7 +85,7 @@ steps:
         repo_root: ${repo_root}
         branch: ${branch}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
@@ -128,7 +128,7 @@ steps:
         repo_root: ${repo_root}
         branch: ${branch}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
       timeout: 300000
 

@@ -6,7 +6,12 @@ import {
 import { logger } from "../../../logger.js";
 import fs from "fs/promises";
 import path from "path";
-import { languageForPath } from "../context/languageMap.js";
+import {
+  findLanguageViolationsForFiles,
+  type LanguageViolation,
+} from "./languagePolicy.js";
+
+export { collectAllowedLanguages } from "./languagePolicy.js";
 
 export async function loadContextDirectory(
   repoRoot: string,
@@ -135,10 +140,7 @@ export function collectPlanKeyFiles(planData: any): string[] {
   return Array.from(files);
 }
 
-export type PlanLanguageViolation = {
-  file: string;
-  language: string;
-};
+export type PlanLanguageViolation = LanguageViolation;
 
 export function findPlanLanguageViolations(
   planData: any,
@@ -146,45 +148,7 @@ export function findPlanLanguageViolations(
 ): PlanLanguageViolation[] {
   if (!planData?.plan || allowedLanguages.size === 0) return [];
   const files = collectPlanKeyFiles(planData);
-  const violations: PlanLanguageViolation[] = [];
-  files.forEach((file) => {
-    const language = languageForPath(file);
-    if (!language) return;
-    if (!allowedLanguages.has(language.toLowerCase())) {
-      violations.push({ file, language });
-    }
-  });
-  return violations;
-}
-
-export function collectAllowedLanguages(insights: any): {
-  normalized: Set<string>;
-  display: string[];
-} {
-  const normalized = new Set<string>();
-  const display: string[] = [];
-
-  const add = (value: unknown) => {
-    if (typeof value !== "string") return;
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    const lowered = trimmed.toLowerCase();
-    if (normalized.has(lowered)) return;
-    normalized.add(lowered);
-    display.push(trimmed);
-  };
-
-  if (insights) {
-    add(insights.primaryLanguage);
-    if (Array.isArray(insights.secondaryLanguages)) {
-      insights.secondaryLanguages.forEach(add);
-    }
-    if (Array.isArray(insights.languages)) {
-      insights.languages.forEach(add);
-    }
-  }
-
-  return { normalized, display };
+  return findLanguageViolationsForFiles(files, allowedLanguages);
 }
 
 export function buildSyntheticEvaluationFailure(reason: string, details: any) {

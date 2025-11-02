@@ -11,7 +11,7 @@ templates:
         repo: ${repo_remote}
         repo_root: ${repo_root}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         milestone: ${milestone}
         milestone_name: ${milestone_name}
@@ -31,7 +31,7 @@ templates:
         repo: ${repo_remote}
         repo_root: ${repo_root}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
 
   qa_review:
@@ -49,7 +49,7 @@ templates:
         repo: ${repo_remote}
         repo_root: ${repo_root}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
@@ -70,11 +70,20 @@ templates:
         branch: ${featureBranchName}
         repo_root: ${repo_root}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
+        context_summary: ${context_summary_md}
+        context_insights: ${context_insights}
+        context_primary_language: ${context_primary_language}
+        context_secondary_languages: ${context_secondary_languages}
+        context_frameworks: ${context_frameworks}
+        context_potential_issues: ${context_potential_issues}
+        allowed_languages: ${context_allowed_languages}
+        allowed_languages_normalized: ${context_allowed_languages_normalized}
+        applied_files: ${last_applied_files}
 
   security_review:
     type: PersonaRequestStep
@@ -93,7 +102,7 @@ templates:
         branch: ${featureBranchName}
         repo_root: ${repo_root}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}
@@ -117,7 +126,7 @@ templates:
         branch: ${featureBranchName}
         repo_root: ${repo_root}
         project_id: ${projectId}
-        project_slug: ${projectSlug}
+        repo_slug: ${repoSlug}
         project_name: ${projectName}
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}

@@ -42,7 +42,7 @@ describe("resolveRepoFromPayload respects PROJECT_BASE and remote URLs", () => {
     const res = await gitUtils.resolveRepoFromPayload(payload);
     expect(res.repoRoot).toContain(tmpBase);
 
-    expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/test-repo$/);
+  expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/machine-client-log-summarizer$/);
 
     const cloneCall = calls.find(
       (c) => Array.isArray(c.args) && c.args[0] === "clone",
@@ -61,7 +61,7 @@ describe("resolveRepoFromPayload respects PROJECT_BASE and remote URLs", () => {
 
     const res = await gitUtils.resolveRepoFromPayload(payload);
     expect(res.repoRoot).toContain(tmpBase);
-    expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/test-repo$/);
+  expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/machine-client-log-summarizer$/);
 
     const joined = calls.map((c) => c.args.join(" ")).join("\n");
     expect(joined).not.toContain(
