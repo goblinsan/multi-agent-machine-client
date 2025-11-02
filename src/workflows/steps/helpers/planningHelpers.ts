@@ -1,7 +1,12 @@
-import { parseEventResult, interpretPersonaStatus } from "../../../agents/persona.js";
+import { randomUUID } from "crypto";
+import {
+  parseEventResult,
+  interpretPersonaStatus,
+} from "../../../agents/persona.js";
 import { logger } from "../../../logger.js";
 import fs from "fs/promises";
 import path from "path";
+import { languageForPath } from "../context/languageMap.js";
 
 export async function loadContextDirectory(
   repoRoot: string,
@@ -12,7 +17,10 @@ export async function loadContextDirectory(
   try {
     const entries = await fs.readdir(contextDir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.isFile() && (entry.name.endsWith(".json") || entry.name.endsWith(".md"))) {
+      if (
+        entry.isFile() &&
+        (entry.name.endsWith(".json") || entry.name.endsWith(".md"))
+      ) {
         const filePath = path.join(contextDir, entry.name);
         const content = await fs.readFile(filePath, "utf-8");
         contextFiles[entry.name] = content;
@@ -89,4 +97,237 @@ export function summarizeEvaluationResult(event: any) {
     rawLength:
       typeof fields.result === "string" ? fields.result.length : undefined,
   };
+}
+
+export function normalizePlanPayload(planResult: any) {
+  const fields = planResult?.fields || {};
+  const resultText = typeof fields.result === "string" ? fields.result : "";
+  const parsed = parseEventResult(resultText);
+  let planData = parsed;
+  if (parsed?.output && typeof parsed.output === "string") {
+    const jsonMatch = parsed.output.match(/```json\s*\n([\s\S]*?)\n```/);
+    if (jsonMatch) {
+      try {
+        planData = JSON.parse(jsonMatch[1]);
+      } catch {
+        planData = parsed;
+      }
+    }
+  }
+  return { planData, parsed, rawText: resultText };
+}
+
+export function collectPlanKeyFiles(planData: any): string[] {
+  if (!planData?.plan || !Array.isArray(planData.plan)) return [];
+  const files = new Set<string>();
+  planData.plan.forEach((step: any) => {
+    if (step && Array.isArray(step.key_files)) {
+      step.key_files.forEach((file: any) => {
+        if (typeof file === "string") {
+          const trimmed = file.trim();
+          if (trimmed.length > 0) {
+            files.add(trimmed);
+          }
+        }
+      });
+    }
+  });
+  return Array.from(files);
+}
+
+export type PlanLanguageViolation = {
+  file: string;
+  language: string;
+};
+
+export function findPlanLanguageViolations(
+  planData: any,
+  allowedLanguages: Set<string>,
+): PlanLanguageViolation[] {
+  if (!planData?.plan || allowedLanguages.size === 0) return [];
+  const files = collectPlanKeyFiles(planData);
+  const violations: PlanLanguageViolation[] = [];
+  files.forEach((file) => {
+    const language = languageForPath(file);
+    if (!language) return;
+    if (!allowedLanguages.has(language.toLowerCase())) {
+      violations.push({ file, language });
+    }
+  });
+  return violations;
+}
+
+export function collectAllowedLanguages(insights: any): {
+  normalized: Set<string>;
+  display: string[];
+} {
+  const normalized = new Set<string>();
+  const display: string[] = [];
+
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const lowered = trimmed.toLowerCase();
+    if (normalized.has(lowered)) return;
+    normalized.add(lowered);
+    display.push(trimmed);
+  };
+
+  if (insights) {
+    add(insights.primaryLanguage);
+    if (Array.isArray(insights.secondaryLanguages)) {
+      insights.secondaryLanguages.forEach(add);
+    }
+    if (Array.isArray(insights.languages)) {
+      insights.languages.forEach(add);
+    }
+  }
+
+  return { normalized, display };
+}
+
+export function buildSyntheticEvaluationFailure(reason: string, details: any) {
+  return {
+    fields: {
+      status: "done",
+      corr_id: `guard-language-${randomUUID()}`,
+      result: JSON.stringify({
+        status: "fail",
+        reason,
+        guard: "language_policy",
+        details,
+      }),
+    },
+  };
+}
+
+export function formatPlanArtifact(planResult: any, iteration: number): string {
+  const { planData, rawText } = normalizePlanPayload(planResult);
+
+  let content = `# Plan Iteration ${iteration}\n\n`;
+  content += `Generated: ${new Date().toISOString()}\n\n`;
+
+  if (planData?.plan && Array.isArray(planData.plan)) {
+    content += `## Implementation Plan\n\n`;
+    planData.plan.forEach((step: any, idx: number) => {
+      content += `### Step ${idx + 1}: ${step.goal || "Untitled Step"}\n\n`;
+      if (step.key_files && Array.isArray(step.key_files)) {
+        content += `**Files:** ${step.key_files.map((f: string) => `\`${f}\``).join(", ")}\n\n`;
+      }
+      if (step.owners && Array.isArray(step.owners)) {
+        content += `**Owners:** ${step.owners.join(", ")}\n\n`;
+      }
+      if (step.dependencies && Array.isArray(step.dependencies)) {
+        content += `**Dependencies:**\n`;
+        step.dependencies.forEach((dep: any) => {
+          if (typeof dep === "string") {
+            content += `  - ${dep}\n`;
+          } else if (dep.goal || dep.dependency) {
+            content += `  - ${dep.goal || dep.dependency}\n`;
+          }
+        });
+        content += `\n`;
+      }
+      if (step.acceptance_criteria && Array.isArray(step.acceptance_criteria)) {
+        content += `**Acceptance Criteria:**\n`;
+        step.acceptance_criteria.forEach((ac: string) => {
+          content += `  - ${ac}\n`;
+        });
+        content += `\n`;
+      }
+    });
+  } else {
+    const planText =
+      typeof planData?.plan === "string" ? planData.plan : rawText;
+    if (planText) {
+      content += `## Plan\n\n${planText}\n\n`;
+    }
+  }
+
+  if (
+    planData?.risks &&
+    Array.isArray(planData.risks) &&
+    planData.risks.length > 0
+  ) {
+    content += `## Risks\n\n`;
+    planData.risks.forEach((risk: any, idx: number) => {
+      if (typeof risk === "object") {
+        content += `${idx + 1}. **${risk.risk || risk.description || "Unknown Risk"}**\n`;
+        if (risk.mitigation) {
+          content += `   - Mitigation: ${risk.mitigation}\n`;
+        }
+      } else {
+        content += `${idx + 1}. ${risk}\n`;
+      }
+    });
+    content += `\n`;
+  }
+
+  if (
+    planData?.open_questions &&
+    Array.isArray(planData.open_questions) &&
+    planData.open_questions.length > 0
+  ) {
+    content += `## Open Questions\n\n`;
+    planData.open_questions.forEach((q: any, idx: number) => {
+      if (typeof q === "object") {
+        content += `${idx + 1}. ${q.question || q.description || JSON.stringify(q)}\n`;
+        if (q.answer) {
+          content += `   - Answer: ${q.answer}\n`;
+        }
+      } else {
+        content += `${idx + 1}. ${q}\n`;
+      }
+    });
+    content += `\n`;
+  }
+
+  if (
+    planData?.notes &&
+    Array.isArray(planData.notes) &&
+    planData.notes.length > 0
+  ) {
+    content += `## Notes\n\n`;
+    planData.notes.forEach((note: any, idx: number) => {
+      if (typeof note === "object") {
+        content += `${idx + 1}. ${note.note || note.description || JSON.stringify(note)}\n`;
+        if (note.author) {
+          content += `   - By: ${note.author}\n`;
+        }
+      } else {
+        content += `${idx + 1}. ${note}\n`;
+      }
+    });
+    content += `\n`;
+  }
+
+  if (planData?.metadata) {
+    content += `## Metadata\n\n\`\`\`json\n${JSON.stringify(planData.metadata, null, 2)}\n\`\`\`\n`;
+  }
+
+  return content;
+}
+
+export function formatEvaluationArtifact(
+  evaluationResult: any,
+  iteration: number,
+): string {
+  const fields = evaluationResult?.fields || {};
+  const parsed = parseEventResult(fields.result);
+  const normalized = interpretPersonaStatus(fields.result);
+
+  let content = `# Plan Evaluation - Iteration ${iteration}\n\n`;
+  content += `Generated: ${new Date().toISOString()}\n\n`;
+  content += `**Status:** ${normalized.status}\n\n`;
+
+  if (normalized.details) {
+    content += `## Evaluation Details\n\n${normalized.details}\n\n`;
+  }
+
+  if (parsed && typeof parsed === "object") {
+    content += `## Structured Feedback\n\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\`\n`;
+  }
+
+  return content;
 }

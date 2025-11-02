@@ -7,12 +7,15 @@ import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
 import { scanRepo, ScanSpec, FileInfo } from "../../scanRepo.js";
 import fs from "fs/promises";
-import path from "path";
 import {
   ensureContextDir,
   loadExistingSnapshot,
   writeContextArtifacts,
 } from "./context/ContextArtifacts.js";
+import {
+  buildContextSummary,
+  ContextInsights,
+} from "./context/contextSummary.js";
 import {
   determineRepoPath,
   lookupContextValue,
@@ -137,64 +140,6 @@ export class ContextStep extends WorkflowStep {
     }
   }
 
-  private generateContextSummary(contextData: ContextData): string {
-    const { repoScan, metadata } = contextData;
-
-    const dirTree: Record<string, FileInfo[]> = {};
-    repoScan.forEach((file) => {
-      const dir = path.dirname(file.path);
-      if (!dirTree[dir]) dirTree[dir] = [];
-      dirTree[dir].push(file);
-    });
-
-    let summary = `# Repository Context Summary\n\n`;
-    summary += `Generated: ${new Date(metadata.scannedAt).toISOString()}\n\n`;
-    summary += `## Statistics\n\n`;
-    summary += `- **Total Files**: ${metadata.fileCount}\n`;
-    summary += `- **Total Size**: ${(metadata.totalBytes / 1024).toFixed(2)} KB\n`;
-    summary += `- **Max Depth**: ${metadata.maxDepth}\n\n`;
-
-    summary += `## Directory Structure\n\n\`\`\`\n`;
-    const sortedDirs = Object.keys(dirTree).sort();
-    sortedDirs.forEach((dir) => {
-      const files = dirTree[dir];
-      summary += `${dir}/\n`;
-      files.forEach((file) => {
-        const name = path.basename(file.path);
-        const size = `${(file.bytes / 1024).toFixed(1)}KB`;
-        summary += `  ${name} (${size})\n`;
-      });
-    });
-    summary += `\`\`\`\n\n`;
-
-    const largeFiles = repoScan.filter(
-      (f) => (f.lines && f.lines > 200) || f.bytes > 50 * 1024,
-    );
-    if (largeFiles.length > 0) {
-      summary += `## Large Files\n\n`;
-      largeFiles.forEach((f) => {
-        const size = `${(f.bytes / 1024).toFixed(1)}KB`;
-        const lines = f.lines ? `, ${f.lines} lines` : "";
-        summary += `- \`${f.path}\` (${size}${lines})\n`;
-      });
-      summary += `\n`;
-    }
-
-    const extMap: Record<string, number> = {};
-    repoScan.forEach((f) => {
-      const ext = path.extname(f.path) || "(no extension)";
-      extMap[ext] = (extMap[ext] || 0) + 1;
-    });
-    summary += `## File Types\n\n`;
-    Object.entries(extMap)
-      .sort((a, b) => b[1] - a[1])
-      .forEach(([ext, count]) => {
-        summary += `- ${ext}: ${count} file${count > 1 ? "s" : ""}\n`;
-      });
-
-    return summary;
-  }
-
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as ContextConfig;
     const startedAt = Date.now();
@@ -241,7 +186,11 @@ export class ContextStep extends WorkflowStep {
       }
     } catch (err) {
       const error = `FATAL: Resolved repo_root does not exist or is not accessible: ${repoPath}`;
-      logger.error(error, { repoPath, rawRepoPath: configRepoPath, error: err });
+      logger.error(error, {
+        repoPath,
+        rawRepoPath: configRepoPath,
+        error: err,
+      });
       return {
         status: "failure",
         error: new Error(error),
@@ -288,6 +237,9 @@ export class ContextStep extends WorkflowStep {
         }
       }
 
+      let summaryBundle: { summary: string; insights: ContextInsights } | null =
+        null;
+
       if (!contextData || forceRescan) {
         logger.info("Performing new repository scan", {
           reason: forceRescan ? "forced rescan" : "source files changed",
@@ -330,6 +282,8 @@ export class ContextStep extends WorkflowStep {
           totalBytes: contextData.metadata.totalBytes,
         });
 
+        summaryBundle = buildContextSummary(contextData);
+
         const writtenPaths = await writeContextArtifacts(
           repoPath,
           {
@@ -342,7 +296,7 @@ export class ContextStep extends WorkflowStep {
               depth: contextData.metadata.maxDepth,
             },
           },
-          this.generateContextSummary(contextData),
+          summaryBundle.summary,
           contextData.repoScan,
         );
 
@@ -351,6 +305,32 @@ export class ContextStep extends WorkflowStep {
         contextPaths.filesNdjsonPath = writtenPaths.filesNdjsonPath;
       }
 
+      if (!contextData) {
+        throw new Error("Context data unavailable after gather step");
+      }
+
+      if (!summaryBundle) {
+        summaryBundle = buildContextSummary(contextData);
+      }
+
+      context.setVariable("context_summary_md", summaryBundle.summary);
+      context.setVariable("context_insights", summaryBundle.insights);
+      context.setVariable(
+        "context_primary_language",
+        summaryBundle.insights.primaryLanguage,
+      );
+      context.setVariable(
+        "context_secondary_languages",
+        summaryBundle.insights.secondaryLanguages,
+      );
+      context.setVariable(
+        "context_frameworks",
+        summaryBundle.insights.frameworks,
+      );
+      context.setVariable(
+        "context_potential_issues",
+        summaryBundle.insights.potentialIssues,
+      );
       context.setVariable("context", contextData);
       context.setVariable("repoScan", contextData.repoScan);
       context.setVariable("context_snapshot_path", contextPaths.snapshotPath);
@@ -371,6 +351,8 @@ export class ContextStep extends WorkflowStep {
           snapshot_path: contextPaths.snapshotPath,
           summary_path: contextPaths.summaryPath,
           files_ndjson_path: contextPaths.filesNdjsonPath,
+          summary_md: summaryBundle.summary,
+          insights: summaryBundle.insights,
         },
         metrics: {
           duration_ms: Date.now() - startedAt,
@@ -502,3 +484,4 @@ export class ContextStep extends WorkflowStep {
     }
   }
 }
+

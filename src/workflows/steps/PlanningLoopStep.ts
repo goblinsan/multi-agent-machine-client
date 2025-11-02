@@ -7,7 +7,6 @@ import { WorkflowContext } from "../engine/WorkflowContext.js";
 import {
   sendPersonaRequest,
   waitForPersonaCompletion,
-  parseEventResult,
   interpretPersonaStatus,
 } from "../../agents/persona.js";
 import { getContextualPrompt } from "../../personas.context.js";
@@ -19,6 +18,12 @@ import {
   loadContextDirectory,
   summarizePlanResult,
   summarizeEvaluationResult,
+  normalizePlanPayload,
+  findPlanLanguageViolations,
+  collectAllowedLanguages,
+  buildSyntheticEvaluationFailure,
+  formatPlanArtifact,
+  formatEvaluationArtifact,
 } from "./helpers/planningHelpers.js";
 
 interface PlanningLoopConfig {
@@ -71,6 +76,23 @@ export class PlanningLoopStep extends WorkflowStep {
         },
       );
 
+      const repoRemote =
+        context.getVariable("repo_remote") ||
+        context.getVariable("effective_repo_path");
+      const currentBranch = context.getCurrentBranch();
+
+      const contextDir = await loadContextDirectory(context.repoRoot);
+      const contextAnalysis = context.getVariable("context_request_result");
+      const contextSummaryMd =
+        context.getVariable("context_summary_md") ||
+        contextDir["summary.md"] ||
+        contextDir["summary.txt"];
+      const contextInsights = context.getVariable("context_insights");
+      const contextOverview = this.buildContextOverview(
+        contextInsights,
+        contextSummaryMd,
+      );
+
       try {
         logger.info("Making planning request", {
           workflowId: context.workflowId,
@@ -78,14 +100,6 @@ export class PlanningLoopStep extends WorkflowStep {
           persona: plannerPersona,
           iteration: currentIteration,
         });
-
-        const repoRemote =
-          context.getVariable("repo_remote") ||
-          context.getVariable("effective_repo_path");
-        const currentBranch = context.getCurrentBranch();
-
-        const contextDir = await loadContextDirectory(context.repoRoot);
-        const contextAnalysis = context.getVariable("context_request_result");
 
         const payloadWithContext = {
           ...payload,
@@ -99,6 +113,12 @@ export class PlanningLoopStep extends WorkflowStep {
           project_id: context.projectId,
           context_directory: contextDir,
           context_analysis: contextAnalysis || payload.context,
+          context_summary: contextSummaryMd,
+          context_overview: contextOverview,
+          context_insights: contextInsights,
+          context_primary_language: contextInsights?.primaryLanguage,
+          context_frameworks: contextInsights?.frameworks,
+          context_potential_issues: contextInsights?.potentialIssues,
         };
 
         const planCorrId = await sendPersonaRequest(transport, {
@@ -122,6 +142,7 @@ export class PlanningLoopStep extends WorkflowStep {
         );
 
         const parsedPlanResult = summarizePlanResult(planResult);
+        const { planData } = normalizePlanPayload(planResult);
 
         logger.info("Planning request completed", {
           workflowId: context.workflowId,
@@ -142,16 +163,53 @@ export class PlanningLoopStep extends WorkflowStep {
         }
 
         const taskId = context.getVariable("task")?.id || "unknown";
-        const planContent = this.formatPlanArtifact(
-          planResult,
-          currentIteration,
-        );
+        const planContent = formatPlanArtifact(planResult, currentIteration);
         await this.commitArtifact(
           context,
           planContent,
           `.ma/tasks/${taskId}/02-plan-iteration-${currentIteration}.md`,
           `docs(ma): plan iteration ${currentIteration} for task ${taskId}`,
         );
+
+        const allowedLanguageInfo = collectAllowedLanguages(contextInsights);
+        const languageViolations = findPlanLanguageViolations(
+          planData,
+          allowedLanguageInfo.normalized,
+        );
+
+        if (languageViolations.length > 0) {
+          const allowedLabel =
+            allowedLanguageInfo.display.length > 0
+              ? allowedLanguageInfo.display.join(", ")
+              : "none detected";
+          const violationSummary = languageViolations
+            .map((violation) => `${violation.file} (${violation.language})`)
+            .join(", ");
+          const reason = `Plan references files in languages outside the repository context: ${violationSummary}. Allowed languages: ${allowedLabel}.`;
+          evaluationResult = buildSyntheticEvaluationFailure(reason, {
+            allowed_languages: allowedLanguageInfo.display,
+            violations: languageViolations,
+          });
+
+          const syntheticEvalContent = formatEvaluationArtifact(
+            evaluationResult,
+            currentIteration,
+          );
+          await this.commitArtifact(
+            context,
+            syntheticEvalContent,
+            `.ma/tasks/${taskId}/02-plan-eval-iteration-${currentIteration}.md`,
+            `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+          );
+          lastEvaluationPassed = false;
+          logger.warn("Plan rejected due to language policy violation", {
+            workflowId: context.workflowId,
+            iteration: currentIteration,
+            violations: languageViolations,
+            allowed_languages: allowedLanguageInfo.display,
+          });
+          continue;
+        }
       } catch (error) {
         logger.error("Planning request failed", {
           workflowId: context.workflowId,
@@ -175,11 +233,6 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration,
         });
 
-        const repoRemote =
-          context.getVariable("repo_remote") ||
-          context.getVariable("effective_repo_path");
-        const currentBranch = context.getCurrentBranch();
-
         let evalContext = "planning";
         if (currentIteration > 3) {
           evalContext = "revision";
@@ -198,6 +251,12 @@ export class PlanningLoopStep extends WorkflowStep {
           repo: repoRemote,
           branch: currentBranch,
           project_id: context.projectId,
+          context_summary: contextSummaryMd,
+          context_overview: contextOverview,
+          context_insights: contextInsights,
+          context_primary_language: contextInsights?.primaryLanguage,
+          context_frameworks: contextInsights?.frameworks,
+          context_potential_issues: contextInsights?.potentialIssues,
 
           ...(contextualPrompt ? { _system_prompt: contextualPrompt } : {}),
         };
@@ -249,7 +308,7 @@ export class PlanningLoopStep extends WorkflowStep {
         }
 
         const taskId = context.getVariable("task")?.id || "unknown";
-        const evalContent = this.formatEvaluationArtifact(
+        const evalContent = formatEvaluationArtifact(
           evaluationResult,
           currentIteration,
         );
@@ -270,7 +329,7 @@ export class PlanningLoopStep extends WorkflowStep {
             evaluationStatus: evaluationStatusInfo.status,
           });
 
-          const finalPlanContent = this.formatPlanArtifact(
+          const finalPlanContent = formatPlanArtifact(
             planResult,
             currentIteration,
           );
@@ -335,6 +394,49 @@ export class PlanningLoopStep extends WorkflowStep {
     };
   }
 
+  private buildContextOverview(
+    insights: any,
+    summary: string | undefined,
+  ): string | undefined {
+    if (insights && typeof insights === "object") {
+      const parts: string[] = [];
+
+      if (
+        typeof insights.primaryLanguage === "string" &&
+        insights.primaryLanguage.length > 0
+      ) {
+        parts.push(`Primary Language: ${insights.primaryLanguage}`);
+      }
+
+      if (
+        Array.isArray(insights.frameworks) &&
+        insights.frameworks.length > 0
+      ) {
+        parts.push(`Frameworks: ${insights.frameworks.join(", ")}`);
+      }
+
+      if (
+        Array.isArray(insights.potentialIssues) &&
+        insights.potentialIssues.length > 0
+      ) {
+        parts.push(`Potential Issues: ${insights.potentialIssues.join("; ")}`);
+      }
+
+      if (parts.length > 0) {
+        return parts.join("\n");
+      }
+    }
+
+    if (typeof summary === "string" && summary.length > 0) {
+      const statsIndex = summary.indexOf("## Statistics");
+      const overview =
+        statsIndex >= 0 ? summary.slice(0, statsIndex).trim() : summary.trim();
+      return overview.length > 0 ? overview : undefined;
+    }
+
+    return undefined;
+  }
+
   private async commitArtifact(
     context: WorkflowContext,
     content: string,
@@ -348,7 +450,6 @@ export class PlanningLoopStep extends WorkflowStep {
         return false;
       }
     })();
-
     if (skipGitOps) {
       logger.debug("Skipping artifact commit (SKIP_GIT_OPERATIONS)", {
         artifactPath,
@@ -408,136 +509,5 @@ export class PlanningLoopStep extends WorkflowStep {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }
-
-  private formatPlanArtifact(planResult: any, iteration: number): string {
-    const fields = planResult?.fields || {};
-    const resultText = fields.result || "";
-    const parsed = parseEventResult(resultText);
-
-    let planData = parsed;
-    if (parsed?.output && typeof parsed.output === "string") {
-      const jsonMatch = parsed.output.match(/```json\s*\n([\s\S]*?)\n```/);
-      if (jsonMatch) {
-        try {
-          planData = JSON.parse(jsonMatch[1]);
-        } catch {
-          planData = parsed;
-        }
-      }
-    }
-
-    let content = `# Plan Iteration ${iteration}\n\n`;
-    content += `Generated: ${new Date().toISOString()}\n\n`;
-
-    if (planData?.plan && Array.isArray(planData.plan)) {
-      content += `## Implementation Plan\n\n`;
-      planData.plan.forEach((step: any, idx: number) => {
-        content += `### Step ${idx + 1}: ${step.goal || "Untitled Step"}\n\n`;
-        if (step.key_files && Array.isArray(step.key_files)) {
-          content += `**Files:** ${step.key_files.map((f: string) => `\`${f}\``).join(", ")}\n\n`;
-        }
-        if (step.owners && Array.isArray(step.owners)) {
-          content += `**Owners:** ${step.owners.join(", ")}\n\n`;
-        }
-        if (step.dependencies && Array.isArray(step.dependencies)) {
-          content += `**Dependencies:**\n`;
-          step.dependencies.forEach((dep: any) => {
-            if (typeof dep === "string") {
-              content += `  - ${dep}\n`;
-            } else if (dep.goal || dep.dependency) {
-              content += `  - ${dep.goal || dep.dependency}\n`;
-            }
-          });
-          content += `\n`;
-        }
-        if (step.acceptance_criteria && Array.isArray(step.acceptance_criteria)) {
-          content += `**Acceptance Criteria:**\n`;
-          step.acceptance_criteria.forEach((ac: string) => {
-            content += `  - ${ac}\n`;
-          });
-          content += `\n`;
-        }
-      });
-    } else {
-      const planText = typeof planData?.plan === "string" ? planData.plan : resultText;
-      if (planText) {
-        content += `## Plan\n\n${planText}\n\n`;
-      }
-    }
-
-    if (planData?.risks && Array.isArray(planData.risks) && planData.risks.length > 0) {
-      content += `## Risks\n\n`;
-      planData.risks.forEach((risk: any, idx: number) => {
-        if (typeof risk === "object") {
-          content += `${idx + 1}. **${risk.risk || risk.description || "Unknown Risk"}**\n`;
-          if (risk.mitigation) {
-            content += `   - Mitigation: ${risk.mitigation}\n`;
-          }
-        } else {
-          content += `${idx + 1}. ${risk}\n`;
-        }
-      });
-      content += `\n`;
-    }
-
-    if (planData?.open_questions && Array.isArray(planData.open_questions) && planData.open_questions.length > 0) {
-      content += `## Open Questions\n\n`;
-      planData.open_questions.forEach((q: any, idx: number) => {
-        if (typeof q === "object") {
-          content += `${idx + 1}. ${q.question || q.description || JSON.stringify(q)}\n`;
-          if (q.answer) {
-            content += `   - Answer: ${q.answer}\n`;
-          }
-        } else {
-          content += `${idx + 1}. ${q}\n`;
-        }
-      });
-      content += `\n`;
-    }
-
-    if (planData?.notes && Array.isArray(planData.notes) && planData.notes.length > 0) {
-      content += `## Notes\n\n`;
-      planData.notes.forEach((note: any, idx: number) => {
-        if (typeof note === "object") {
-          content += `${idx + 1}. ${note.note || note.description || JSON.stringify(note)}\n`;
-          if (note.author) {
-            content += `   - By: ${note.author}\n`;
-          }
-        } else {
-          content += `${idx + 1}. ${note}\n`;
-        }
-      });
-      content += `\n`;
-    }
-
-    if (planData?.metadata) {
-      content += `## Metadata\n\n\`\`\`json\n${JSON.stringify(planData.metadata, null, 2)}\n\`\`\`\n`;
-    }
-
-    return content;
-  }
-
-  private formatEvaluationArtifact(
-    evaluationResult: any,
-    iteration: number,
-  ): string {
-    const fields = evaluationResult?.fields || {};
-    const parsed = parseEventResult(fields.result);
-    const normalized = interpretPersonaStatus(fields.result);
-
-    let content = `# Plan Evaluation - Iteration ${iteration}\n\n`;
-    content += `Generated: ${new Date().toISOString()}\n\n`;
-    content += `**Status:** ${normalized.status}\n\n`;
-
-    if (normalized.details) {
-      content += `## Evaluation Details\n\n${normalized.details}\n\n`;
-    }
-
-    if (parsed && typeof parsed === "object") {
-      content += `## Structured Feedback\n\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\`\n`;
-    }
-
-    return content;
   }
 }
