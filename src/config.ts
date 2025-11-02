@@ -119,7 +119,7 @@ function parsePersonaMaxRetries(raw: Record<string, unknown>) {
     }
 
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-      out[normalizedKey] = Math.floor(value);
+      out[normalizedKey] = Math.floor(value as number);
       continue;
     }
   }
@@ -132,11 +132,7 @@ const defaultRepoName = "active";
 const repoRoot = projectBase;
 
 const maxFileBytes = Number(process.env.MAX_FILE_BYTES || 524288);
-const allowedExts = splitCsv(
-  process.env.ALLOWED_EXTS ||
-    ".ts,.tsx,.js,.jsx,.py,.md,.json,.yml,.yaml,.css,.html,.sh,.bat",
-  [],
-)
+const allowedExts = splitCsv(process.env.ALLOWED_EXTS, [])
   .map((s) => s.toLowerCase())
   .map((s) => (s.startsWith(".") ? s : "." + s))
   .filter(Boolean);

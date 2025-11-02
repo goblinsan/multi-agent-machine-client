@@ -291,10 +291,24 @@ export class ContextStep extends WorkflowStep {
     } = config;
 
     const repoPath = this.resolveVariables(rawRepoPath, context);
-    const forceRescan =
-      typeof rawForceRescan === "string"
-        ? this.resolveVariables(rawForceRescan, context) === "true"
-        : Boolean(rawForceRescan);
+    let forceRescan: boolean;
+    const _r: any = rawForceRescan;
+    if (typeof _r === "string") {
+      const expr = _r.trim();
+      const orIndex = expr.indexOf("||");
+      if (orIndex !== -1) {
+        const left = expr.slice(0, orIndex).trim();
+        const varMatch = left.match(/\$?\{?\s*([^}]+)\s*\}?/);
+        const varName = varMatch ? varMatch[1].trim() : left;
+        const resolved = this.resolveVariables(`${"${"}${varName}${"}"}`, context);
+        const resolvedStr = String(resolved);
+        forceRescan = ((resolved as any) === true) || (typeof resolved === "string" && resolvedStr.trim() === "true");
+      } else {
+        forceRescan = this.resolveVariables(_r, context) === "true";
+      }
+    } else {
+      forceRescan = Boolean(_r);
+    }
 
     if (!repoPath || repoPath.includes("${")) {
       const error = `FATAL: repo_root variable not resolved! Got: "${repoPath}" from config: "${rawRepoPath}"`;

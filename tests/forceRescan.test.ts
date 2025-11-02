@@ -1,60 +1,53 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeTempRepo } from "./makeTempRepo.js";
+import { WorkflowCoordinator } from "../src/workflows/WorkflowCoordinator.js";
+import * as gitUtils from "../src/gitUtils.js";
 
 vi.mock("../src/redisClient.js");
 
-describe("force_rescan flag propagation", () => {
-  it("passes force_rescan=true from payload to processTask context parameter", () => {
-    const payload = { force_rescan: true };
-    const context = {
-      workflowId: "test-wf",
-      projectId: "test-proj",
-      projectName: "Test",
-      projectSlug: "test",
-      repoRoot: "/tmp/test",
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("force_rescan flag propagation - integration-ish", () => {
+  it("passes force_rescan from payload into workflow initialVariables", async () => {
+    const tempRepo = await makeTempRepo();
+
+    const coordinator = new WorkflowCoordinator();
+    await coordinator.loadWorkflows();
+
+    vi.spyOn(gitUtils, "resolveRepoFromPayload").mockResolvedValue({
+      repoRoot: tempRepo,
       branch: "main",
-      remote: "git@example.com:test/repo.git",
-      force_rescan: payload.force_rescan || false,
-    };
+      remote: "https://example/repo.git",
+    } as any);
 
-    expect(context.force_rescan).toBe(true);
-  });
+    let capturedInitialVars: any = null;
+    const engine = (coordinator as any).engine;
+    vi.spyOn(coordinator as any, "fetchProjectTasks")
+      .mockResolvedValueOnce([
+        { id: "t-1", name: "task", status: "open", type: "feature" },
+      ])
+      .mockResolvedValueOnce([]);
 
-  it("defaults force_rescan=false when not in payload", () => {
-    const payload = {};
-    const context = {
-      workflowId: "test-wf",
-      projectId: "test-proj",
-      projectName: "Test",
-      projectSlug: "test",
-      repoRoot: "/tmp/test",
-      branch: "main",
-      remote: "git@example.com:test/repo.git",
-      force_rescan: (payload as any).force_rescan || false,
-    };
+    vi.spyOn(engine, "executeWorkflowDefinition").mockImplementation(async (...args: any[]) => {
+      capturedInitialVars = args[5];
+      return {
+        success: true,
+        outputs: {},
+        stepResults: [],
+        variables: capturedInitialVars,
+        completedSteps: [],
+        duration: 0,
+        finalContext: {} as any,
+      };
+    });
 
-    expect(context.force_rescan).toBe(false);
-  });
+    const payload = { project_id: "test-proj", force_rescan: true, repo: tempRepo };
 
-  it("force_rescan is passed to executeWorkflow initialVariables", () => {
-    const context = {
-      workflowId: "test-wf",
-      projectId: "test-proj",
-      projectName: "Test Project",
-      projectSlug: "test-project",
-      repoRoot: "/tmp/test",
-      branch: "main",
-      remote: "git@example.com:test/repo.git",
-      force_rescan: true,
-    };
+    await coordinator.handleCoordinator({} as any, {} as any, { workflow_id: "wf-test", project_id: "test-proj" }, payload);
 
-    const initialVariables = {
-      taskId: "task-1",
-      projectId: context.projectId,
-      projectName: context.projectName,
-      repo_remote: context.remote,
-      force_rescan: context.force_rescan || false,
-    };
-
-    expect(initialVariables.force_rescan).toBe(true);
+    expect(capturedInitialVars).toBeTruthy();
+    expect(capturedInitialVars.force_rescan).toBe(true);
   });
 });
