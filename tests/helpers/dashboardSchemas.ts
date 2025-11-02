@@ -10,7 +10,6 @@ export const TaskCreateUpsertSchema = {
     description: { type: "string" },
     external_id: { type: "string" },
     project_id: { type: "string" },
-    project_slug: { type: "string" },
     milestone_id: { type: "string" },
     milestone_slug: { type: "string" },
     parent_task_id: { type: "string" },

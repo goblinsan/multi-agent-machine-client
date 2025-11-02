@@ -6,7 +6,7 @@ import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import type { MessageTransport } from "../transport/index.js";
-import { join as _join } from "path";
+import { join as _join, basename } from "path";
 
 const projectAPI = new ProjectAPI();
 import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
@@ -102,11 +102,6 @@ export class WorkflowCoordinator {
 
       const projectName =
         firstString(projectInfo?.name, payload?.project_name) || "project";
-      const projectSlug = slugify(
-        firstString(projectInfo?.slug, payload?.project_slug, projectName) ||
-          projectName ||
-          "project",
-      );
 
       let repoRemoteCandidate = this.extractRepoRemote(
         details,
@@ -131,8 +126,10 @@ export class WorkflowCoordinator {
         ...payload,
         repo: repoRemoteCandidate,
         project_name: projectName,
-        project_slug: projectSlug,
       });
+
+      const repoSlugSource = basename(repoResolution.repoRoot) || projectName;
+      const repoSlug = slugify(repoSlugSource) || "repository";
 
       const results = [];
       let iterationCount = 0;
@@ -209,7 +206,7 @@ export class WorkflowCoordinator {
               workflowId,
               projectId,
               projectName,
-              projectSlug,
+              repoSlug,
               repoRoot: repoResolution.repoRoot,
               branch: repoResolution.branch || "main",
               remote: repoResolution.remote || null,
@@ -321,7 +318,7 @@ export class WorkflowCoordinator {
       workflowId: string;
       projectId: string;
       projectName: string;
-      projectSlug: string;
+      repoSlug: string;
       repoRoot: string;
       branch: string;
       remote?: string | null;
@@ -399,7 +396,7 @@ export class WorkflowCoordinator {
       workflowId: string;
       projectId: string;
       projectName: string;
-      projectSlug: string;
+      repoSlug: string;
       repoRoot: string;
       branch: string;
       remote?: string | null;
@@ -463,7 +460,7 @@ export class WorkflowCoordinator {
       taskScope: this.workflowSelector.determineTaskScope(task),
       projectId: context.projectId,
       projectName: context.projectName,
-      projectSlug: context.projectSlug,
+  repoSlug: context.repoSlug,
 
       milestone: task?.milestone || null,
       milestone_name: task?.milestone?.name || task?.milestone_name || null,
@@ -476,7 +473,7 @@ export class WorkflowCoordinator {
 
       featureBranchName: this.workflowSelector.computeFeatureBranchName(
         task,
-        context.projectSlug,
+        context.repoSlug,
       ),
 
       SKIP_PULL_TASK: true,

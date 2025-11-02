@@ -5,7 +5,6 @@ import { fetch } from "undici";
 
 export type CreateTaskInput = {
   projectId?: string;
-  projectSlug?: string;
   milestoneId?: string;
   milestoneSlug?: string;
   parentTaskId?: string;

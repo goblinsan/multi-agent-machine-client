@@ -275,7 +275,7 @@ describe("WorkflowCoordinator Task Processing", () => {
         workflowId: "wf-top",
         projectId: "proj-1",
         projectName: "Project",
-        projectSlug: "project",
+        repoSlug: "project",
         repoRoot: "/tmp/repo",
         branch: "main",
         remote: "https://github.com/test/repo.git",

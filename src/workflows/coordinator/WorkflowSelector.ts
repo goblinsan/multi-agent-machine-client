@@ -128,7 +128,7 @@ export class WorkflowSelector {
     return null;
   }
 
-  computeFeatureBranchName(task: any, projectSlug: string): string {
+  computeFeatureBranchName(task: any, repoSlug: string): string {
     const milestone = task?.milestone;
     const milestoneSlug = task?.milestone?.slug || task?.milestone_slug || null;
     const taskSlug = task?.slug || task?.task_slug || null;
@@ -161,6 +161,6 @@ export class WorkflowSelector {
       return `feat/${taskSlug}`;
     }
 
-    return `milestone/${projectSlug}`;
+    return `milestone/${repoSlug}`;
   }
 }

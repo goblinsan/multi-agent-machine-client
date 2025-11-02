@@ -34,8 +34,8 @@ describe("buildBranchName", () => {
     expect(name).toBe("milestone/refactor-module");
   });
 
-  it("avoids milestone/milestone and uses project slug instead", () => {
-    const name = buildBranchName({}, {}, "project-slug", "milestone", null);
-    expect(name).toBe("milestone/project-slug");
+  it("avoids milestone/milestone and uses repo slug instead", () => {
+    const name = buildBranchName({}, {}, "repository-slug", "milestone", null);
+    expect(name).toBe("milestone/repository-slug");
   });
 });

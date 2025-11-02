@@ -109,8 +109,6 @@ export async function createDashboardTaskEntries(
       }
     }
 
-    const derivedProjectSlug = options.projectName || undefined;
-
     const externalId =
       options.stage === "qa"
         ? computeQaFollowupExternalId(
@@ -163,7 +161,6 @@ export async function createDashboardTaskEntries(
 
     const body = await taskAPI.createDashboardTask({
       projectId: options.projectId || undefined,
-      projectSlug: derivedProjectSlug || undefined,
       milestoneId: resolvedMilestoneId || undefined,
       milestoneSlug: resolvedMilestoneSlug || undefined,
       parentTaskId: targetParentTaskId,

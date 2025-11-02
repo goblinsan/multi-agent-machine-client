@@ -55,6 +55,7 @@ export class DiffApplyStep extends WorkflowStep {
           stepName: this.config.name,
         });
         const branch = context.getCurrentBranch();
+        context.setVariable("last_applied_files", []);
         return {
           status: "success",
           data: {
@@ -211,6 +212,14 @@ export class DiffApplyStep extends WorkflowStep {
         commitSha: applyResult.sha,
         branch: applyResult.branch,
       });
+
+      context.setVariable("last_applied_files", applyResult.changed || []);
+      if (applyResult.sha) {
+        context.setVariable("last_apply_commit_sha", applyResult.sha);
+      }
+      if (applyResult.branch) {
+        context.setVariable("last_apply_branch", applyResult.branch);
+      }
 
       return {
         status: "success",

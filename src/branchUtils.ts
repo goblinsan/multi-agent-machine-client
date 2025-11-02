@@ -3,7 +3,7 @@ import { firstString } from "./util.js";
 export function buildBranchName(
   selectedMilestone: any,
   selectedTask: any,
-  projectSlug: string,
+  repoSlug: string,
   milestoneSlug: string | null,
   taskSlug: string | null,
 ): string {
@@ -26,5 +26,5 @@ export function buildBranchName(
   if (milestoneSlug && milestoneSlug !== "milestone")
     return `milestone/${milestoneSlug}`;
 
-  return `milestone/${projectSlug}`;
+  return `milestone/${repoSlug}`;
 }

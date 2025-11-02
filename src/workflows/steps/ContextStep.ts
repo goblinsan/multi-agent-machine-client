@@ -21,6 +21,7 @@ import {
   lookupContextValue,
 } from "./context/ContextPathResolver.js";
 import { coalesceRescanFlags } from "./context/ContextBoolean.js";
+import { collectAllowedLanguages } from "./helpers/languagePolicy.js";
 
 export interface ContextConfig {
   repoPath?: string;
@@ -330,6 +331,15 @@ export class ContextStep extends WorkflowStep {
       context.setVariable(
         "context_potential_issues",
         summaryBundle.insights.potentialIssues,
+      );
+      const allowedLanguages = collectAllowedLanguages(summaryBundle.insights);
+      context.setVariable(
+        "context_allowed_languages",
+        allowedLanguages.display,
+      );
+      context.setVariable(
+        "context_allowed_languages_normalized",
+        Array.from(allowedLanguages.normalized),
       );
       context.setVariable("context", contextData);
       context.setVariable("repoScan", contextData.repoScan);

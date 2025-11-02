@@ -13,8 +13,6 @@ const projectId =
   process.env.SEED_PROJECT_ID || "8c02ff6e-1dab-456a-8806-df1bf3520dbe";
 const projectName =
   process.env.SEED_PROJECT_NAME || "Multi-Agent Machine Client";
-const projectSlug =
-  process.env.SEED_PROJECT_SLUG || "multi-agent-machine-client";
 
 const payload =
   persona === PERSONAS.CONTEXT
@@ -23,7 +21,6 @@ const payload =
         branch: repoBranch,
         project_id: projectId,
         project_name: projectName,
-        project_slug: projectSlug,
         upload_dashboard: true,
         components: [
           {
@@ -43,7 +40,6 @@ const payload =
         branch: repoBranch,
         project_id: projectId,
         project_name: projectName,
-        project_slug: projectSlug,
         upload_dashboard: true,
       };
 

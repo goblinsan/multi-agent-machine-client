@@ -28,35 +28,16 @@ function branchFromPayload(payload: any): string | null {
   return null;
 }
 
-function isUuidLike(value: string) {
-  const s = value.trim();
-
-  const uuidRe =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-  const numericRe = /^[0-9]+$/;
-  return uuidRe.test(s) || numericRe.test(s);
-}
-
 function projectHintFromPayload(payload: any): string | null {
   if (!payload || typeof payload !== "object") return null;
 
   const candidates = [
-    payload.project_name,
-    payload.projectName,
-    payload.project_title,
-    payload.projectTitle,
-    payload.project_slug,
-    payload.projectSlug,
-    payload.project,
-    payload.projectId,
-    payload.project_id,
+    payload.repo_directory_hint,
+    payload.repo_directory_name,
   ];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length) {
-      const trimmed = candidate.trim();
-      if (isUuidLike(trimmed)) continue;
-      return trimmed;
+      return candidate.trim();
     }
   }
   return null;
