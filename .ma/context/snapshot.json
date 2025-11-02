@@ -1,5 +1,5 @@
 {
-  "timestamp": 1761881477322,
+  "timestamp": 1762044724737,
   "files": [
     {
       "path": ".DS_Store",
@@ -15,8 +15,8 @@
     },
     {
       "path": ".env",
-      "bytes": 3697,
-      "mtime": 1760990610119.515,
+      "bytes": 3704,
+      "mtime": 1762041086464.412,
       "lines": 85
     },
     {
@@ -32,12 +32,6 @@
       "lines": 55
     },
     {
-      "path": ".eslintignore",
-      "bytes": 61,
-      "mtime": 1761260707182.119,
-      "lines": 8
-    },
-    {
       "path": ".eslintrc.cjs",
       "bytes": 742,
       "mtime": 1761260707160.6465,
@@ -45,9 +39,9 @@
     },
     {
       "path": ".github/copilot-instructions.md",
-      "bytes": 1130,
-      "mtime": 1760054836579.7434,
-      "lines": 33
+      "bytes": 2513,
+      "mtime": 1762004808653.0503,
+      "lines": 59
     },
     {
       "path": ".gitignore",
@@ -177,21 +171,21 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 13939,
-      "mtime": 1760413824956.6975,
-      "lines": 468
+      "bytes": 13978,
+      "mtime": 1761968935549.3499,
+      "lines": 519
     },
     {
       "path": "README.md",
-      "bytes": 8083,
-      "mtime": 1760176928080.6775,
-      "lines": 182
+      "bytes": 8078,
+      "mtime": 1761968935687.027,
+      "lines": 183
     },
     {
       "path": "REFACTOR_SUMMARY.md",
-      "bytes": 2658,
-      "mtime": 1761345500885.2017,
-      "lines": 59
+      "bytes": 2664,
+      "mtime": 1761968935694.7139,
+      "lines": 68
     },
     {
       "path": "dashboard-actions.log",
@@ -206,166 +200,28 @@
       "lines": 60291
     },
     {
-      "path": "docs/ARCHITECTURE.md",
-      "bytes": 6132,
-      "mtime": 1761402497787.4285,
-      "lines": 200
+      "path": "docs/PERSONA_TIMEOUT_RETRY_SYSTEM.md",
+      "bytes": 11826,
+      "mtime": 1762044674476.0327,
+      "lines": 450
     },
     {
-      "path": "docs/COMMENT_DENSITY_ANALYSIS.md",
-      "bytes": 6440,
-      "mtime": 1761880261736.8367,
-      "lines": 187
+      "path": "docs/REFACTOR_PLAN.md",
+      "bytes": 3003,
+      "mtime": 1762044674476.0889,
+      "lines": 116
     },
     {
-      "path": "docs/CONDITION_EVALUATION_REFACTOR.md",
-      "bytes": 7579,
-      "mtime": 1761844845298.1797,
-      "lines": 202
+      "path": "docs/SYSTEM.md",
+      "bytes": 9688,
+      "mtime": 1761968935570.643,
+      "lines": 334
     },
     {
-      "path": "docs/CONTEXT_CACHE_OPTIMIZATION.md",
-      "bytes": 3727,
-      "mtime": 1761844845264.7878,
-      "lines": 123
-    },
-    {
-      "path": "docs/DISTRIBUTED_GIT_ARCHITECTURE.md",
-      "bytes": 7867,
-      "mtime": 1761844845265.078,
-      "lines": 243
-    },
-    {
-      "path": "docs/ESLINT_CLEANUP_EXECUTIVE_SUMMARY.md",
-      "bytes": 5155,
-      "mtime": 1761503514356.8164,
-      "lines": 141
-    },
-    {
-      "path": "docs/ESLINT_CLEANUP_QUICK_REF.md",
-      "bytes": 2374,
-      "mtime": 1761503514392.001,
-      "lines": 88
-    },
-    {
-      "path": "docs/ESLINT_CLEANUP_SESSION_RESULTS.md",
-      "bytes": 8705,
-      "mtime": 1761503514289.5596,
-      "lines": 274
-    },
-    {
-      "path": "docs/ESLINT_SETUP.md",
-      "bytes": 5027,
-      "mtime": 1761493942048.3977,
-      "lines": 212
-    },
-    {
-      "path": "docs/ESLINT_WARNING_ANALYSIS.md",
-      "bytes": 8457,
-      "mtime": 1761503514085.7473,
-      "lines": 257
-    },
-    {
-      "path": "docs/GIT_ARTIFACT_IMPLEMENTATION_COMPLETE.md",
-      "bytes": 7387,
-      "mtime": 1761483311562.3042,
-      "lines": 192
-    },
-    {
-      "path": "docs/GIT_ARTIFACT_PERSISTENCE_STRATEGY.md",
-      "bytes": 22157,
-      "mtime": 1761447436943.1384,
-      "lines": 642
-    },
-    {
-      "path": "docs/LARGE_FILES_ASSESSMENT.md",
-      "bytes": 5007,
-      "mtime": 1761877645415.8484,
-      "lines": 133
-    },
-    {
-      "path": "docs/LARGE_FILE_ASSESSMENT.md",
-      "bytes": 5256,
-      "mtime": 1761879373174.4824,
-      "lines": 171
-    },
-    {
-      "path": "docs/MAINTAINABILITY_GUIDELINES.md",
-      "bytes": 4133,
-      "mtime": 1761874758339.2373,
-      "lines": 169
-    },
-    {
-      "path": "docs/PRE_COMMIT_HOOKS_SETUP.md",
-      "bytes": 5370,
-      "mtime": 1761503513988.0874,
-      "lines": 216
-    },
-    {
-      "path": "docs/REFACTORING_COMPLETE.md",
-      "bytes": 6839,
-      "mtime": 1761877645339.4473,
-      "lines": 224
-    },
-    {
-      "path": "docs/REFACTORING_DIFFPARSER.md",
-      "bytes": 6492,
-      "mtime": 1761879782577.0945,
-      "lines": 165
-    },
-    {
-      "path": "docs/REFACTORING_PHASE1_COMPLETE.md",
-      "bytes": 4579,
-      "mtime": 1761876362858.3293,
-      "lines": 158
-    },
-    {
-      "path": "docs/REFACTORING_PLAN_PERSONA_CONSUMER.md",
-      "bytes": 5390,
-      "mtime": 1761874758298.173,
-      "lines": 160
-    },
-    {
-      "path": "docs/REFACTORING_REPOSITORY.md",
-      "bytes": 5101,
-      "mtime": 1761878864923.0957,
-      "lines": 136
-    },
-    {
-      "path": "docs/TESTING_STRATEGY.md",
-      "bytes": 13342,
-      "mtime": 1761844845265.3374,
-      "lines": 417
-    },
-    {
-      "path": "docs/WORKFLOW_OPTIMIZATION_COMPLETE.md",
-      "bytes": 13404,
-      "mtime": 1761489222789.381,
-      "lines": 373
-    },
-    {
-      "path": "docs/WORKFLOW_REDESIGN_REQUIREMENTS.md",
-      "bytes": 16431,
-      "mtime": 1761484975623.5894,
-      "lines": 541
-    },
-    {
-      "path": "docs/WORKFLOW_SYSTEM.md",
-      "bytes": 8623,
-      "mtime": 1761402497622.521,
-      "lines": 309
-    },
-    {
-      "path": "docs/steps/BULK_TASK_CREATION_STEP.md",
-      "bytes": 7475,
-      "mtime": 1761880261776.9392,
-      "lines": 268
-    },
-    {
-      "path": "docs/steps/REVIEW_FAILURE_TASKS_STEP.md",
-      "bytes": 7222,
-      "mtime": 1761880669478.9727,
-      "lines": 268
+      "path": "docs/TIMEOUT_REDESIGN_SUMMARY.md",
+      "bytes": 10294,
+      "mtime": 1762044674476.0479,
+      "lines": 325
     },
     {
       "path": "error_snippets/qa_errors.txt",
@@ -375,21 +231,21 @@
     },
     {
       "path": "eslint.config.js",
-      "bytes": 1376,
-      "mtime": 1761881442427.2048,
-      "lines": 52
+      "bytes": 1325,
+      "mtime": 1761968935576.2717,
+      "lines": 58
     },
     {
       "path": "examples/DATA_PASSING_GUIDE.md",
-      "bytes": 8362,
-      "mtime": 1760988999308.427,
-      "lines": 369
+      "bytes": 8569,
+      "mtime": 1761968935616.2715,
+      "lines": 397
     },
     {
       "path": "examples/PROJECT_SETUP_README.md",
-      "bytes": 10536,
-      "mtime": 1760988999265.116,
-      "lines": 395
+      "bytes": 10611,
+      "mtime": 1761968935639.4668,
+      "lines": 419
     },
     {
       "path": "examples/create-project.sh",
@@ -399,9 +255,9 @@
     },
     {
       "path": "examples/create-project.ts",
-      "bytes": 6738,
-      "mtime": 1761881450757.3384,
-      "lines": 234
+      "bytes": 5748,
+      "mtime": 1761968935595.3196,
+      "lines": 202
     },
     {
       "path": "examples/custom-project-example.json",
@@ -411,9 +267,9 @@
     },
     {
       "path": "examples/multi-agent-log-summarizer.json",
-      "bytes": 14691,
-      "mtime": 1760980638739.4485,
-      "lines": 398
+      "bytes": 13462,
+      "mtime": 1761968935621.3965,
+      "lines": 276
     },
     {
       "path": "examples/project-setup-example.json",
@@ -429,14 +285,242 @@
     },
     {
       "path": "examples/transport-examples.ts",
-      "bytes": 9294,
-      "mtime": 1760988999159.2048,
-      "lines": 329
+      "bytes": 6564,
+      "mtime": 1761968935656.3987,
+      "lines": 270
+    },
+    {
+      "path": "machine-client.log",
+      "bytes": 880572,
+      "mtime": 1762044724714.1982,
+      "lines": 3970
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 142802,
+      "mtime": 1761968924449.1006,
+      "lines": 4104
+    },
+    {
+      "path": "package.json",
+      "bytes": 1459,
+      "mtime": 1761968924422.6838,
+      "lines": 52
+    },
+    {
+      "path": "scripts/MONITOR_README.md",
+      "bytes": 2992,
+      "mtime": 1762044674475.8848,
+      "lines": 104
+    },
+    {
+      "path": "scripts/fix-empty-blocks.mjs",
+      "bytes": 1318,
+      "mtime": 1761965828458.9194,
+      "lines": 44
+    },
+    {
+      "path": "scripts/fix-milestones.mjs",
+      "bytes": 7660,
+      "mtime": 1762044674498.9724,
+      "lines": 189
+    },
+    {
+      "path": "scripts/monitor-redis-streams.ts",
+      "bytes": 6989,
+      "mtime": 1761968935708.9644,
+      "lines": 257
+    },
+    {
+      "path": "scripts/run_handleCoordinator_test_runner.ts",
+      "bytes": 2569,
+      "mtime": 1762044674499.0295,
+      "lines": 49
+    },
+    {
+      "path": "scripts/run_handle_coordinator_with_overrides.ts",
+      "bytes": 3218,
+      "mtime": 1762044674499.0503,
+      "lines": 74
+    },
+    {
+      "path": "scripts/strip-comments.mjs",
+      "bytes": 3056,
+      "mtime": 1761960155224.6719,
+      "lines": 139
+    },
+    {
+      "path": "scripts/test-dashboard-integration.ts",
+      "bytes": 5852,
+      "mtime": 1761968935715.2847,
+      "lines": 184
+    },
+    {
+      "path": "scripts/test-monitor.sh",
+      "bytes": 712,
+      "mtime": 1762044674475.8845,
+      "lines": 23
+    },
+    {
+      "path": "src/agents/parsers/DiffParser.ts",
+      "bytes": 2227,
+      "mtime": 1761968935725.323,
+      "lines": 88
+    },
+    {
+      "path": "src/agents/parsers/conversion/DiffConverter.ts",
+      "bytes": 1976,
+      "mtime": 1761968935720.616,
+      "lines": 87
+    },
+    {
+      "path": "src/agents/parsers/extraction/BlockExtractor.ts",
+      "bytes": 2620,
+      "mtime": 1761968935730.3853,
+      "lines": 112
+    },
+    {
+      "path": "src/agents/parsers/extraction/ContentExtractor.ts",
+      "bytes": 572,
+      "mtime": 1761968935732.4722,
+      "lines": 24
+    },
+    {
+      "path": "src/agents/parsers/utils/StringUtils.ts",
+      "bytes": 1032,
+      "mtime": 1761968935737.3127,
+      "lines": 39
+    },
+    {
+      "path": "src/agents/parsers/utils/TextCleaner.ts",
+      "bytes": 320,
+      "mtime": 1761968935739.2427,
+      "lines": 11
+    },
+    {
+      "path": "src/agents/parsers/validation/EditSpecValidator.ts",
+      "bytes": 1367,
+      "mtime": 1761968935742.8105,
+      "lines": 54
+    },
+    {
+      "path": "src/agents/persona.ts",
+      "bytes": 7888,
+      "mtime": 1762004558686.4836,
+      "lines": 266
+    },
+    {
+      "path": "src/agents/summarizer.ts",
+      "bytes": 1688,
+      "mtime": 1761968935759.2822,
+      "lines": 69
+    },
+    {
+      "path": "src/artifacts.ts",
+      "bytes": 1782,
+      "mtime": 1761968935762.804,
+      "lines": 67
+    },
+    {
+      "path": "src/branchUtils.ts",
+      "bytes": 783,
+      "mtime": 1761968935764.8152,
+      "lines": 31
+    },
+    {
+      "path": "src/config.ts",
+      "bytes": 12512,
+      "mtime": 1762042314017.7905,
+      "lines": 411
+    },
+    {
+      "path": "src/dashboard/DashboardClient.ts",
+      "bytes": 2414,
+      "mtime": 1761968935886.0974,
+      "lines": 91
+    },
+    {
+      "path": "src/dashboard/ProjectAPI.ts",
+      "bytes": 2951,
+      "mtime": 1761968935890.1626,
+      "lines": 122
+    },
+    {
+      "path": "src/dashboard/TaskAPI.ts",
+      "bytes": 11363,
+      "mtime": 1761968935900.8335,
+      "lines": 401
+    },
+    {
+      "path": "src/dashboard-backend/.npmrc",
+      "bytes": 22,
+      "mtime": 1760905943586.0845,
+      "lines": 2
+    },
+    {
+      "path": "src/dashboard-backend/README.md",
+      "bytes": 713,
+      "mtime": 1761968935798.2002,
+      "lines": 31
+    },
+    {
+      "path": "src/dashboard-backend/SMOKE_TEST_RESULTS.md",
+      "bytes": 7795,
+      "mtime": 1761968935809.822,
+      "lines": 308
+    },
+    {
+      "path": "src/dashboard-backend/SQLITE_SETUP.md",
+      "bytes": 1936,
+      "mtime": 1761968935812.7917,
+      "lines": 86
+    },
+    {
+      "path": "src/dashboard-backend/data/dashboard.db",
+      "bytes": 118784,
+      "mtime": 1762043492837.1284,
+      "lines": 477
+    },
+    {
+      "path": "src/dashboard-backend/dist/db/connection.js",
+      "bytes": 1662,
+      "mtime": 1760926618791.8171,
+      "lines": 56
+    },
+    {
+      "path": "src/dashboard-backend/dist/db/migrations.js",
+      "bytes": 1595,
+      "mtime": 1760926618789.713,
+      "lines": 36
+    },
+    {
+      "path": "src/dashboard-backend/dist/models/task.js",
+      "bytes": 707,
+      "mtime": 1760926618799.634,
+      "lines": 15
+    },
+    {
+      "path": "src/dashboard-backend/dist/routes/tasks.js",
+      "bytes": 10409,
+      "mtime": 1760926618798.137,
+      "lines": 187
+    },
+    {
+      "path": "src/dashboard-backend/dist/server.js",
+      "bytes": 1364,
+      "mtime": 1760926618799.0312,
+      "lines": 36
+    },
+    {
+      "path": "src/dashboard-backend/node_modules/.bin/acorn",
+      "bytes": 60,
+      "mtime": 1760904647335.3875,
+      "lines": 5
     }
   ],
   "totals": {
-    "files": 72,
-    "bytes": 3036236,
+    "files": 86,
+    "bytes": 4117768,
     "depth": 10
   }
 }
