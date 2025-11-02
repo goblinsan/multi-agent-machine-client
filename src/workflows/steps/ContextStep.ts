@@ -6,12 +6,21 @@ import {
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
 import { scanRepo, ScanSpec, FileInfo } from "../../scanRepo.js";
-import { Artifacts as _Artifacts } from "../../artifacts.js";
 import fs from "fs/promises";
 import path from "path";
+import {
+  ensureContextDir,
+  loadExistingSnapshot,
+  writeContextArtifacts,
+} from "./context/ContextArtifacts.js";
+import {
+  determineRepoPath,
+  lookupContextValue,
+} from "./context/ContextPathResolver.js";
+import { coalesceRescanFlags } from "./context/ContextBoolean.js";
 
 export interface ContextConfig {
-  repoPath: string;
+  repoPath?: string;
   includePatterns?: string[];
   excludePatterns?: string[];
   maxFiles?: number;
@@ -40,29 +49,18 @@ export class ContextStep extends WorkflowStep {
     excludePatterns: string[],
   ): Promise<boolean> {
     try {
-      const contextDir = path.join(repoPath, ".ma", "context");
-      const snapshotPath = path.join(contextDir, "snapshot.json");
-      const summaryPath = path.join(contextDir, "summary.md");
+      const snapshotInfo = await loadExistingSnapshot(repoPath);
 
-      const snapshotExists = await fs
-        .access(snapshotPath)
-        .then(() => true)
-        .catch(() => false);
-      const summaryExists = await fs
-        .access(summaryPath)
-        .then(() => true)
-        .catch(() => false);
-
-      if (!snapshotExists || !summaryExists) {
+      if (!snapshotInfo.exists) {
         logger.info("Context files not found, rescan needed", {
-          snapshotExists,
-          summaryExists,
-          contextDir,
+          repoPath,
+          snapshotExists: snapshotInfo.snapshotExists,
+          summaryExists: snapshotInfo.summaryExists,
         });
         return true;
       }
 
-      const snapshotStat = await fs.stat(snapshotPath);
+      const snapshotStat = await fs.stat(snapshotInfo.snapshotPath);
       const lastScanTime = snapshotStat.mtime.getTime();
 
       const quickScanSpec: ScanSpec = {
@@ -107,8 +105,7 @@ export class ContextStep extends WorkflowStep {
     repoPath: string,
   ): Promise<ContextData | null> {
     try {
-      const contextDir = path.join(repoPath, ".ma", "context");
-      const snapshotPath = path.join(contextDir, "snapshot.json");
+      const { snapshotPath } = await loadExistingSnapshot(repoPath);
 
       const snapshotContent = await fs.readFile(snapshotPath, "utf8");
       const snapshot = JSON.parse(snapshotContent);
@@ -137,84 +134,6 @@ export class ContextStep extends WorkflowStep {
         repoPath,
       });
       return null;
-    }
-  }
-
-  private async writeContextArtifacts(
-    repoPath: string,
-    contextData: ContextData,
-  ): Promise<void> {
-    try {
-      const contextDir = path.join(repoPath, ".ma", "context");
-      await fs.mkdir(contextDir, { recursive: true });
-
-      const snapshot = {
-        timestamp: contextData.metadata.scannedAt,
-        files: contextData.repoScan,
-        totals: {
-          files: contextData.metadata.fileCount,
-          bytes: contextData.metadata.totalBytes,
-          depth: contextData.metadata.maxDepth,
-        },
-      };
-
-      const snapshotPath = path.join(contextDir, "snapshot.json");
-      await fs.writeFile(
-        snapshotPath,
-        JSON.stringify(snapshot, null, 2),
-        "utf-8",
-      );
-
-      const summary = this.generateContextSummary(contextData);
-      const summaryPath = path.join(contextDir, "summary.md");
-      await fs.writeFile(summaryPath, summary, "utf-8");
-
-      logger.info("Context artifacts written", {
-        snapshotPath,
-        summaryPath,
-        fileCount: contextData.metadata.fileCount,
-      });
-
-      const { runGit } = await import("../../gitUtils.js");
-
-      try {
-        await runGit(
-          ["add", ".ma/context/snapshot.json", ".ma/context/summary.md"],
-          { cwd: repoPath },
-        );
-
-        const commitMsg = `chore(ma): update context scan (${contextData.metadata.fileCount} files)`;
-        await runGit(["commit", "--no-verify", "-m", commitMsg], {
-          cwd: repoPath,
-        });
-
-        const branchResult = await runGit(
-          ["rev-parse", "--abbrev-ref", "HEAD"],
-          { cwd: repoPath },
-        );
-        const branch = branchResult.stdout.trim();
-
-        try {
-          const remotes = await runGit(["remote"], { cwd: repoPath });
-          if (remotes.stdout.trim().length > 0) {
-            await runGit(["push", "origin", branch], { cwd: repoPath });
-            logger.info("Context artifacts pushed to remote", { branch });
-          }
-        } catch (pushErr) {
-          logger.warn("Failed to push context artifacts (will retry later)", {
-            error: pushErr instanceof Error ? pushErr.message : String(pushErr),
-          });
-        }
-      } catch (gitErr) {
-        logger.warn("Failed to commit context artifacts", {
-          error: gitErr instanceof Error ? gitErr.message : String(gitErr),
-        });
-      }
-    } catch (error) {
-      logger.warn("Failed to write context artifacts", {
-        error: String(error),
-        repoPath,
-      });
     }
   }
 
@@ -278,8 +197,9 @@ export class ContextStep extends WorkflowStep {
 
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as ContextConfig;
+    const startedAt = Date.now();
     const {
-      repoPath: rawRepoPath,
+      repoPath: configRepoPath,
       includePatterns = ["**/*"],
       excludePatterns = ["node_modules/**", ".git/**", "dist/**", "build/**"],
       maxFiles = 1000,
@@ -290,30 +210,14 @@ export class ContextStep extends WorkflowStep {
       forceRescan: rawForceRescan = false,
     } = config;
 
-    const repoPath = this.resolveVariables(rawRepoPath, context);
-    let forceRescan: boolean;
-    const _r: any = rawForceRescan;
-    if (typeof _r === "string") {
-      const expr = _r.trim();
-      const orIndex = expr.indexOf("||");
-      if (orIndex !== -1) {
-        const left = expr.slice(0, orIndex).trim();
-        const varMatch = left.match(/\$?\{?\s*([^}]+)\s*\}?/);
-        const varName = varMatch ? varMatch[1].trim() : left;
-        const resolved = this.resolveVariables(`${"${"}${varName}${"}"}`, context);
-        const resolvedStr = String(resolved);
-        forceRescan = ((resolved as any) === true) || (typeof resolved === "string" && resolvedStr.trim() === "true");
-      } else {
-        forceRescan = this.resolveVariables(_r, context) === "true";
-      }
-    } else {
-      forceRescan = Boolean(_r);
-    }
+    const lookup = (varPath: string) => lookupContextValue(varPath, context);
+    const repoPath = determineRepoPath(configRepoPath, context, lookup);
+    const forceRescan = coalesceRescanFlags(context, rawForceRescan, lookup);
 
     if (!repoPath || repoPath.includes("${")) {
-      const error = `FATAL: repo_root variable not resolved! Got: "${repoPath}" from config: "${rawRepoPath}"`;
+      const error = `FATAL: repo_root variable not resolved! Got: "${repoPath}" from config: "${configRepoPath}"`;
       logger.error(error, {
-        rawRepoPath,
+        rawRepoPath: configRepoPath,
         resolvedRepoPath: repoPath,
         workflowId: context.workflowId,
       });
@@ -328,7 +232,7 @@ export class ContextStep extends WorkflowStep {
       const stats = await fs.stat(repoPath);
       if (!stats.isDirectory()) {
         const error = `FATAL: Resolved repo_root is not a directory: ${repoPath}`;
-        logger.error(error, { repoPath, rawRepoPath });
+        logger.error(error, { repoPath, rawRepoPath: configRepoPath });
         return {
           status: "failure",
           error: new Error(error),
@@ -337,13 +241,15 @@ export class ContextStep extends WorkflowStep {
       }
     } catch (err) {
       const error = `FATAL: Resolved repo_root does not exist or is not accessible: ${repoPath}`;
-      logger.error(error, { repoPath, rawRepoPath, error: err });
+      logger.error(error, { repoPath, rawRepoPath: configRepoPath, error: err });
       return {
         status: "failure",
         error: new Error(error),
         data: {},
       };
     }
+
+    const contextPaths = await ensureContextDir(repoPath);
 
     logger.info(`Gathering context for repository: ${repoPath}`, {
       includePatterns,
@@ -402,7 +308,7 @@ export class ContextStep extends WorkflowStep {
 
         const totalBytes = repoScan.reduce((sum, file) => sum + file.bytes, 0);
 
-        logger.info(`Repository scan completed`, {
+        logger.info("Repository scan completed", {
           fileCount: repoScan.length,
           totalBytes,
           maxDepth,
@@ -424,11 +330,35 @@ export class ContextStep extends WorkflowStep {
           totalBytes: contextData.metadata.totalBytes,
         });
 
-        await this.writeContextArtifacts(repoPath, contextData);
+        const writtenPaths = await writeContextArtifacts(
+          repoPath,
+          {
+            timestamp: contextData.metadata.scannedAt,
+            repoPath,
+            files: contextData.repoScan,
+            totals: {
+              files: contextData.metadata.fileCount,
+              bytes: contextData.metadata.totalBytes,
+              depth: contextData.metadata.maxDepth,
+            },
+          },
+          this.generateContextSummary(contextData),
+          contextData.repoScan,
+        );
+
+        contextPaths.snapshotPath = writtenPaths.snapshotPath;
+        contextPaths.summaryPath = writtenPaths.summaryPath;
+        contextPaths.filesNdjsonPath = writtenPaths.filesNdjsonPath;
       }
 
       context.setVariable("context", contextData);
       context.setVariable("repoScan", contextData.repoScan);
+      context.setVariable("context_snapshot_path", contextPaths.snapshotPath);
+      context.setVariable("context_summary_path", contextPaths.summaryPath);
+      context.setVariable(
+        "context_files_ndjson_path",
+        contextPaths.filesNdjsonPath,
+      );
 
       return {
         status: "success",
@@ -438,10 +368,12 @@ export class ContextStep extends WorkflowStep {
           repoScan: contextData.repoScan,
           reused_existing: reusedExisting,
           scan_timestamp: contextData.metadata.scannedAt,
+          snapshot_path: contextPaths.snapshotPath,
+          summary_path: contextPaths.summaryPath,
+          files_ndjson_path: contextPaths.filesNdjsonPath,
         },
         metrics: {
-          duration_ms:
-            Date.now() - (contextData.metadata.scannedAt || Date.now()),
+          duration_ms: Date.now() - startedAt,
           operations_count: contextData.metadata.fileCount,
         },
       };
@@ -459,14 +391,17 @@ export class ContextStep extends WorkflowStep {
   }
 
   protected async validateConfig(
-    _context: WorkflowContext,
+    context: WorkflowContext,
   ): Promise<ValidationResult> {
     const config = this.config.config as any;
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    if (!config.repoPath || typeof config.repoPath !== "string") {
-      errors.push("ContextStep: repoPath is required and must be a string");
+    if (
+      config.repoPath !== undefined &&
+      typeof config.repoPath !== "string"
+    ) {
+      errors.push("ContextStep: repoPath must be a string when provided");
     }
 
     if (config.includePatterns !== undefined) {
@@ -528,17 +463,28 @@ export class ContextStep extends WorkflowStep {
       errors.push("ContextStep: trackHash must be a boolean");
     }
 
-    try {
-      const fs = await import("fs");
-      const stats = await fs.promises.stat(config.repoPath);
-      if (!stats.isDirectory()) {
+    const pathCandidate =
+      typeof config.repoPath === "string" && !config.repoPath.includes("${")
+        ? config.repoPath
+        : context.repoRoot;
+
+    if (typeof pathCandidate === "string" && pathCandidate.trim().length) {
+      try {
+        const fsModule = await import("fs");
+        const stats = await fsModule.promises.stat(pathCandidate);
+        if (!stats.isDirectory()) {
+          warnings.push(
+            `ContextStep: repoPath '${pathCandidate}' is not a directory`,
+          );
+        }
+      } catch (error: any) {
         warnings.push(
-          `ContextStep: repoPath '${config.repoPath}' is not a directory`,
+          `ContextStep: repoPath '${pathCandidate}' may not exist or be accessible`,
         );
       }
-    } catch (error: any) {
+    } else {
       warnings.push(
-        `ContextStep: repoPath '${config.repoPath}' may not exist or be accessible`,
+        "ContextStep: No resolvable repoPath during validation; will attempt resolution during execution",
       );
     }
 
@@ -554,41 +500,5 @@ export class ContextStep extends WorkflowStep {
     if (contextData) {
       logger.debug("Cleaning up context data");
     }
-  }
-
-  private resolveVariables(str: string, context: WorkflowContext): string {
-    return str.replace(/\$\{([^}]+)\}/g, (match, varPath) => {
-      try {
-        const parts = varPath.trim().split(".");
-
-        const firstPart = parts[0];
-        let value: any;
-
-        if (firstPart === "repo_root") {
-          value = context.repoRoot;
-        } else if (firstPart === "branch") {
-          value = context.branch;
-        } else if (firstPart === "workflow_id") {
-          value = context.workflowId;
-        } else if (firstPart === "project_id") {
-          value = context.projectId;
-        } else {
-          value = context.getVariable(firstPart);
-        }
-
-        for (let i = 1; i < parts.length; i++) {
-          if (value && typeof value === "object" && parts[i] in value) {
-            value = value[parts[i]];
-          } else {
-            return match;
-          }
-        }
-
-        return String(value ?? match);
-      } catch (error) {
-        logger.warn(`Failed to resolve variable ${varPath}`, { error });
-        return match;
-      }
-    });
   }
 }

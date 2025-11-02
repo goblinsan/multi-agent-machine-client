@@ -5,7 +5,15 @@ import { logger } from "../src/logger.js";
 import fs from "fs/promises";
 import _path from "path";
 
-vi.mock("fs/promises");
+vi.mock("fs/promises", () => ({
+  default: {
+    access: vi.fn(),
+    stat: vi.fn(),
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    mkdir: vi.fn(),
+  },
+}));
 vi.mock("../src/scanRepo.js", () => ({
   scanRepo: vi.fn(),
 }));
@@ -18,12 +26,31 @@ vi.mock("../src/logger.js", () => ({
   },
 }));
 
+const runGitMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../src/gitUtils.js", () => ({
+  runGit: runGitMock,
+}));
+
 describe("ContextStep Change Detection", () => {
   let contextStep: ContextStep;
   let mockContext: WorkflowContext;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    runGitMock.mockClear();
+    runGitMock.mockImplementation(async (args: string[]) => {
+      if (args[0] === "rev-parse") {
+        return { stdout: "main\n" };
+      }
+
+      return { stdout: "" };
+    });
+
+    (fs.mkdir as any).mockResolvedValue(undefined);
+    (fs.writeFile as any).mockResolvedValue(undefined);
+    (fs.access as any).mockResolvedValue(undefined);
+    (fs.readFile as any).mockResolvedValue("{}");
 
     contextStep = new ContextStep({
       name: "test-context",
@@ -37,7 +64,12 @@ describe("ContextStep Change Detection", () => {
 
     mockContext = {
       setVariable: vi.fn(),
+      getVariable: vi.fn(),
       logger: logger,
+      repoRoot: "/test/repo",
+      workflowId: "wf-123",
+      branch: "main",
+      projectId: "proj-456",
     } as any;
 
     (fs.stat as any).mockResolvedValue({
@@ -64,6 +96,11 @@ describe("ContextStep Change Detection", () => {
         snapshotExists: false,
         summaryExists: false,
       }),
+    );
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      _path.join("/test/repo", ".ma", "context", "files.ndjson"),
+      expect.any(String),
+      "utf-8",
     );
   });
 

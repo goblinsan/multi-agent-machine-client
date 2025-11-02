@@ -93,6 +93,14 @@ vi.mock("fs/promises", () => ({
   },
 }));
 
+vi.mock("fs", () => ({
+  promises: {
+    stat: vi.fn().mockResolvedValue({
+      isDirectory: () => true,
+    }),
+  },
+}));
+
 vi.mock("../src/gitUtils.js", () => ({
   runGit: vi.fn().mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 }),
   getCurrentBranch: vi.fn().mockResolvedValue("main"),
@@ -262,10 +270,9 @@ describe("Workflow Steps", () => {
       const step = new ContextStep(config);
       const validation = await step.validate(context);
 
-      expect(validation.valid).toBe(false);
-      expect(validation.errors).toContain(
-        "ContextStep: repoPath is required and must be a string",
-      );
+      expect(validation.valid).toBe(true);
+      expect(validation.errors).toEqual([]);
+      expect(validation.warnings).toEqual([]);
     });
   });
 
