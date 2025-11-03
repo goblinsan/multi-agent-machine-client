@@ -19,6 +19,7 @@ import {
 import {
   sendPersonaRequest,
   waitForPersonaCompletion,
+  interpretPersonaStatus,
 } from "../src/agents/persona.js";
 
 vi.mock("../src/redisClient.js", () => {
@@ -372,6 +373,74 @@ describe("Workflow Steps", () => {
       const resolvedPayload =
         vi.mocked(sendPersonaRequest).mock.calls[0][1]?.payload;
       expect(resolvedPayload?.repo_path).toBe("https://example.com/repo.git");
+    });
+
+    it("continues execution when abortOnFailure is false", async () => {
+      context.setVariable("repo_remote", "https://example.com/repo.git");
+      vi.mocked(interpretPersonaStatus).mockReturnValueOnce({
+        status: "fail",
+        details: "security findings",
+        raw: "",
+      });
+      vi.mocked(waitForPersonaCompletion).mockResolvedValueOnce({
+        id: "event-1",
+        fields: {
+          result: JSON.stringify({ status: "fail", summary: "security" }),
+        },
+      } as any);
+
+      const config = {
+        name: "security_request",
+        type: "PersonaRequestStep",
+        config: {
+          step: "5-security",
+          persona: "security-review",
+          intent: "security_review",
+          payload: {},
+          abortOnFailure: false,
+        },
+        outputs: ["security_request_result", "security_request_status"],
+      } as any;
+
+      const step = new PersonaRequestStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe("success");
+      expect(context.getVariable("security_request_status")).toBe("fail");
+      expect(result.outputs?.status).toBe("fail");
+    });
+
+    it("aborts execution when abortOnFailure is not overridden", async () => {
+      context.setVariable("repo_remote", "https://example.com/repo.git");
+      vi.mocked(interpretPersonaStatus).mockReturnValueOnce({
+        status: "fail",
+        details: "critical security issue",
+        raw: "",
+      });
+      vi.mocked(waitForPersonaCompletion).mockResolvedValueOnce({
+        id: "event-1",
+        fields: {
+          result: JSON.stringify({ status: "fail", summary: "security" }),
+        },
+      } as any);
+
+      const config = {
+        name: "security_request",
+        type: "PersonaRequestStep",
+        config: {
+          step: "5-security",
+          persona: "security-review",
+          intent: "security_review",
+          payload: {},
+        },
+        outputs: ["security_request_result", "security_request_status"],
+      } as any;
+
+      const step = new PersonaRequestStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe("failure");
+      expect(result.data?.personaFailureReason).toBe("critical security issue");
     });
   });
 

@@ -84,7 +84,7 @@ export class SubWorkflowStep extends WorkflowStep {
       const inheritedFlags: Record<string, any> = {
         SKIP_GIT_OPERATIONS: context.getVariable("SKIP_GIT_OPERATIONS") ?? true,
         SKIP_PERSONA_OPERATIONS:
-          context.getVariable("SKIP_PERSONA_OPERATIONS") ?? true,
+          context.getVariable("SKIP_PERSONA_OPERATIONS") ?? false,
 
         repo_remote:
           context.getVariable("repo_remote") || subWorkflowInputs.repo,

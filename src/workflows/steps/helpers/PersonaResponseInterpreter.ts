@@ -1,5 +1,6 @@
 import { interpretPersonaStatus } from "../../../agents/persona.js";
 import { logger } from "../../../logger.js";
+import { requiresStatus } from "./personaStatusPolicy.js";
 
 interface PersonaStatusInfo {
   status: "pass" | "fail" | "unknown";
@@ -44,20 +45,23 @@ export class PersonaResponseInterpreter {
       result = { raw: rawResponse };
     }
 
-    let statusInfo = interpretPersonaStatus(rawResponse);
+    const statusInfo = interpretPersonaStatus(rawResponse, {
+      persona,
+      statusRequired: requiresStatus(persona),
+    });
+    const adjustedStatusInfo =
+      persona === "tester-qa" && statusInfo.status === "pass"
+        ? this.validateQATestExecution(
+            rawResponse,
+            statusInfo,
+            workflowId,
+            step,
+            persona,
+            corrId,
+          )
+        : statusInfo;
 
-    if (persona === "tester-qa" && statusInfo.status === "pass") {
-      statusInfo = this.validateQATestExecution(
-        rawResponse,
-        statusInfo,
-        workflowId,
-        step,
-        persona,
-        corrId,
-      );
-    }
-
-    return { result, statusInfo };
+    return { result, statusInfo: adjustedStatusInfo };
   }
 
   private validateQATestExecution(

@@ -10,6 +10,7 @@ import {
   findLanguageViolationsForFiles,
   type LanguageViolation,
 } from "./languagePolicy.js";
+import { requiresStatus } from "./personaStatusPolicy.js";
 
 export { collectAllowedLanguages } from "./languagePolicy.js";
 
@@ -91,7 +92,11 @@ export function summarizeEvaluationResult(event: any) {
   if (!event) return null;
   const fields = event.fields ?? {};
   const payload = parseEventResult(fields.result);
-  const normalized = interpretPersonaStatus(fields.result);
+  const persona = fields.from_persona || fields.persona;
+  const normalized = interpretPersonaStatus(fields.result, {
+    persona,
+    statusRequired: requiresStatus(persona),
+  });
 
   return {
     corrId: fields.corr_id,
@@ -279,7 +284,11 @@ export function formatEvaluationArtifact(
 ): string {
   const fields = evaluationResult?.fields || {};
   const parsed = parseEventResult(fields.result);
-  const normalized = interpretPersonaStatus(fields.result);
+  const persona = fields.from_persona || fields.persona;
+  const normalized = interpretPersonaStatus(fields.result, {
+    persona,
+    statusRequired: requiresStatus(persona),
+  });
 
   let content = `# Plan Evaluation - Iteration ${iteration}\n\n`;
   content += `Generated: ${new Date().toISOString()}\n\n`;

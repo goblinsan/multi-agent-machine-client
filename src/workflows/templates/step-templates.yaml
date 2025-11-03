@@ -41,6 +41,7 @@ templates:
       step: "3-qa"
       persona: tester-qa
       intent: qa
+      abortOnFailure: false
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
@@ -61,6 +62,7 @@ templates:
       step: "4-code-review"
       persona: code-reviewer
       intent: code_review
+      abortOnFailure: false
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
@@ -92,6 +94,7 @@ templates:
       step: "5-security"
       persona: security-review
       intent: security_review
+      abortOnFailure: false
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
@@ -115,6 +118,7 @@ templates:
       step: "6-devops"
       persona: devops
       intent: devops_review
+      abortOnFailure: false
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md

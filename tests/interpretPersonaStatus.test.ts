@@ -164,4 +164,38 @@ describe("interpretPersonaStatus - robust status parsing", () => {
       expect(result.status).toBe("fail");
     });
   });
+
+  describe("status optional personas", () => {
+    it("should default to pass when status is optional and content is present", () => {
+      const result = interpretPersonaStatus("Context analysis completed", {
+        persona: "context",
+        statusRequired: false,
+      });
+      expect(result.status).toBe("pass");
+    });
+
+    it("should default to unknown when optional status and response empty", () => {
+      const result = interpretPersonaStatus("", {
+        persona: "context",
+        statusRequired: false,
+      });
+      expect(result.status).toBe("unknown");
+    });
+
+    it("should return fail when optional persona payload includes error field", () => {
+      const result = interpretPersonaStatus(
+        '{ "error": "Unable to gather context" }',
+        { persona: "context", statusRequired: false },
+      );
+      expect(result.status).toBe("fail");
+    });
+
+    it("should honor success boolean in optional payloads", () => {
+      const result = interpretPersonaStatus(
+        '{ "success": false, "details": "git fetch failed" }',
+        { persona: "coordination", statusRequired: false },
+      );
+      expect(result.status).toBe("fail");
+    });
+  });
 });

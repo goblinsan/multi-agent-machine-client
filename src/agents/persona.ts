@@ -194,9 +194,16 @@ type PersonaStatusInfo = {
   payload?: any;
 };
 
+type InterpretPersonaStatusOptions = {
+  persona?: string;
+  statusRequired?: boolean;
+};
+
 export function interpretPersonaStatus(
   output: string | undefined,
+  options: InterpretPersonaStatusOptions = {},
 ): PersonaStatusInfo {
+  const statusRequired = options.statusRequired ?? true;
   const raw = (output || "").trim();
   let json = extractJsonPayloadFromText(raw);
 
@@ -225,7 +232,24 @@ export function interpretPersonaStatus(
     }
   }
 
-  if (!raw.length) return { status: "unknown", details: raw, raw };
+  if (json && typeof json.error === "string" && json.error.trim().length > 0) {
+    return {
+      status: "fail",
+      details: json.error,
+      raw,
+      payload: json,
+    };
+  }
+
+  if (json && typeof json.success === "boolean") {
+    const normalized = json.success ? "pass" : "fail";
+    const details = typeof json.details === "string" ? json.details : raw;
+    return { status: normalized, details, raw, payload: json };
+  }
+
+  if (!raw.length) {
+    return { status: "unknown", details: raw, raw, payload: json };
+  }
   const firstPart = raw.substring(0, 500);
   const statusLineMatch = firstPart.match(
     /^(?:status|result):\s*(pass|fail|passed|failed|success|error|ok|approved|rejected)/im,
@@ -255,7 +279,17 @@ export function interpretPersonaStatus(
     return { status: normalized, details: raw, raw, payload: json };
   }
 
+  if (!statusRequired) {
+    return {
+      status: "pass",
+      details: raw,
+      raw,
+      payload: json,
+    };
+  }
+
   logger.warn("Persona status unclear - no explicit status declaration found", {
+    persona: options.persona,
     rawPreview: raw.substring(0, 200),
     hasJson: !!json,
     recommendation: "Persona should return JSON with explicit status field",

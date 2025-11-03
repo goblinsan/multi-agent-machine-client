@@ -27,6 +27,7 @@ interface PersonaRequestConfig {
   timeout?: number;
   deadlineSeconds?: number;
   maxRetries?: number;
+  abortOnFailure?: boolean;
 }
 
 export class PersonaRequestStep extends WorkflowStep {
@@ -266,7 +267,14 @@ export class PersonaRequestStep extends WorkflowStep {
       this.setOutputVariables(context, result);
       context.setVariable(`${this.config.name}_status`, statusInfo.status);
 
-      if (statusInfo.status === "fail") {
+      const abortOnFailure =
+        config.abortOnFailure === undefined
+          ? true
+          : Boolean(config.abortOnFailure);
+      const isFailureStatus =
+        statusInfo.status === "fail" || statusInfo.status === "unknown";
+
+      if (isFailureStatus && abortOnFailure) {
         logger.error(`Persona request failed - workflow will abort`, {
           workflowId: context.workflowId,
           step,
@@ -289,6 +297,32 @@ export class PersonaRequestStep extends WorkflowStep {
             result,
             completion: retryResult.completion,
             personaFailureReason: statusInfo.details,
+          },
+          outputs: result,
+        };
+      }
+
+      if (isFailureStatus && !abortOnFailure) {
+        logger.warn(`Persona request returned ${statusInfo.status} status`, {
+          workflowId: context.workflowId,
+          step,
+          persona,
+          corrId: retryResult.lastCorrId,
+          statusDetails: statusInfo.details,
+          handledByAbortOverride: true,
+        });
+
+        return {
+          status: "success",
+          data: {
+            step,
+            persona,
+            corrId: retryResult.lastCorrId,
+            totalAttempts: retryResult.totalAttempts,
+            result,
+            completion: retryResult.completion,
+            personaFailureReason: statusInfo.details,
+            abortOverrideApplied: true,
           },
           outputs: result,
         };

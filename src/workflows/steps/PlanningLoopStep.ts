@@ -25,6 +25,7 @@ import {
   formatPlanArtifact,
   formatEvaluationArtifact,
 } from "./helpers/planningHelpers.js";
+import { requiresStatus } from "./helpers/personaStatusPolicy.js";
 
 interface PlanningLoopConfig {
   maxIterations?: number;
@@ -285,6 +286,10 @@ export class PlanningLoopStep extends WorkflowStep {
 
         const evaluationStatusInfo = interpretPersonaStatus(
           evaluationResult?.fields?.result,
+          {
+            persona: evaluatorPersona,
+            statusRequired: requiresStatus(evaluatorPersona),
+          },
         );
 
         logger.info("Evaluation request completed", {
