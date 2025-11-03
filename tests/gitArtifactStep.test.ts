@@ -1,10 +1,26 @@
 import { describe, it, expect, beforeEach, vi as _vi } from "vitest";
 import { GitArtifactStep } from "../src/workflows/steps/GitArtifactStep.js";
 import { WorkflowContext } from "../src/workflows/engine/WorkflowContext.js";
+import type { StepResult } from "../src/workflows/engine/WorkflowStep.js";
 import { makeTempRepo } from "./makeTempRepo.js";
 import { runGit } from "../src/gitUtils.js";
 import fs from "fs/promises";
 import path from "path";
+
+type SuccessResult = StepResult & { status: "success"; data: Record<string, any> };
+
+const assertSuccess = (result: StepResult): SuccessResult => {
+  if (result.status !== "success") {
+    const reason = result.error?.message ?? "unknown error";
+    throw new Error(`Expected success result but received ${result.status}: ${reason}`);
+  }
+
+  if (!result.data) {
+    throw new Error("Expected success result to include data payload");
+  }
+
+  return result as SuccessResult;
+};
 
 describe("GitArtifactStep", () => {
   let repoDir: string;
@@ -43,9 +59,8 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
+      const result = assertSuccess(await step.execute(context));
 
-      expect(result.status).toBe("success");
       expect(result.data.path).toBe(".ma/tasks/1/03-plan-final.md");
       expect(result.data.sha).toBeDefined();
       expect(result.data.sha).not.toBe("skipped");
@@ -82,9 +97,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("success");
+      assertSuccess(await step.execute(context));
       const filePath = path.join(repoDir, ".ma/tasks/1/03-plan-final.md");
       const content = await fs.readFile(filePath, "utf-8");
       expect(content).toContain("This is the nested plan content");
@@ -110,9 +123,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("success");
+      const result = assertSuccess(await step.execute(context));
       expect(result.data.format).toBe("json");
 
       const filePath = path.join(repoDir, ".ma/tasks/1/05-qa-result.json");
@@ -135,9 +146,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("success");
+      const result = assertSuccess(await step.execute(context));
       expect(result.data.format).toBe("markdown");
 
       const filePath = path.join(repoDir, ".ma/tasks/1/03-plan-final.md");
@@ -161,9 +170,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("success");
+      const result = assertSuccess(await step.execute(context));
       expect(result.data.path).toBe(".ma/tasks/42/03-plan-final.md");
 
       const filePath = path.join(repoDir, ".ma/tasks/42/03-plan-final.md");
@@ -188,7 +195,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const _result = await step.execute(context);
+      assertSuccess(await step.execute(context));
 
       const log = await runGit(["log", "--oneline", "-1"], { cwd: repoDir });
       expect(log.stdout).toContain("Bug Fix plan for Sprint 3");
@@ -207,9 +214,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("success");
+      const result = assertSuccess(await step.execute(context));
       expect(result.data.path).toBe(".ma/tasks/${nonexistent.id}/plan.md");
     });
   });
@@ -228,9 +233,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("success");
+      assertSuccess(await step.execute(context));
       const filePath = path.join(
         repoDir,
         ".ma/tasks/1/deep/nested/path/plan.md",
@@ -251,7 +254,7 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
+      const result = assertSuccess(await step.execute(context));
 
       expect(result.outputs).toBeDefined();
       expect(result.outputs?.save_plan_sha).toBeDefined();
@@ -276,13 +279,45 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("success");
+      const result = assertSuccess(await step.execute(context));
       expect(result.data.sha).toBeDefined();
 
       const log = await runGit(["log", "--oneline", "-1"], { cwd: repoDir });
       expect(log.stdout).toContain("docs(ma): plan");
+    });
+  });
+
+  describe("Branch Guard", () => {
+    it("should fail when active branch does not match expected branch", async () => {
+      context.setVariable("plan", "Test plan");
+      context.setVariable("branch", "feature/mismatch-branch");
+      context.setVariable("featureBranchName", "feature/mismatch-branch");
+
+      const step = new GitArtifactStep({
+        name: "commit_plan",
+        type: "GitArtifactStep",
+        config: {
+          source_output: "plan",
+          artifact_path: ".ma/tasks/1/plan.md",
+          commit_message: "docs(ma): plan",
+        },
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe("failure");
+      expect(result.error?.message).toContain(
+        "does not match expected branch",
+      );
+      expect(result.data?.failed).toBe(true);
+      expect(result.data?.activeBranch).toBe("main");
+      expect(result.data?.expectedBranch).toBe("feature/mismatch-branch");
+
+      const filePath = path.join(repoDir, ".ma/tasks/1/plan.md");
+      await expect(fs.access(filePath)).rejects.toThrow();
+
+      const status = await runGit(["status", "--short"], { cwd: repoDir });
+      expect(status.stdout.trim()).toBe("");
     });
   });
 
@@ -360,12 +395,11 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = await step.execute(context);
+  const result = assertSuccess(await step.execute(context));
 
-      expect(result.status).toBe("success");
-      expect(result.data.bypassed).toBe(true);
-      expect(result.data.sha).toBe("skipped");
-      expect(result.outputs?.commit_plan_sha).toBe("skipped");
+  expect(result.data.bypassed).toBe(true);
+  expect(result.data.sha).toBe("skipped");
+  expect(result.outputs?.commit_plan_sha).toBe("skipped");
 
       const filePath = path.join(repoDir, ".ma/tasks/1/plan.md");
       await expect(fs.access(filePath)).rejects.toThrow();

@@ -112,6 +112,47 @@ export class GitArtifactStep extends WorkflowStep {
       }
 
       const repoRoot = context.repoRoot;
+      const expectedBranch = this.resolveExpectedBranch(context);
+
+      if (!expectedBranch) {
+        throw new Error(
+          "GitArtifactStep: Unable to determine expected branch for guard check",
+        );
+      }
+
+      const branchResult = await runGit(
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        { cwd: repoRoot },
+      );
+      const activeBranch = branchResult.stdout.trim();
+
+      if (!activeBranch) {
+        throw new Error(
+          "GitArtifactStep: Unable to determine current git branch for guard check",
+        );
+      }
+
+      if (activeBranch !== expectedBranch) {
+        const message =
+          `GitArtifactStep: Active branch '${activeBranch}' does not match expected branch '${expectedBranch}'`;
+        context.logger.error("Branch guard failed before committing artifact", {
+          stepName: this.config.name,
+          activeBranch,
+          expectedBranch,
+        });
+
+        return {
+          status: "failure",
+          error: new Error(message),
+          data: {
+            path: resolvedPath,
+            failed: true,
+            activeBranch,
+            expectedBranch,
+          },
+        } satisfies StepResult;
+      }
+
       const fullPath = path.join(repoRoot, resolvedPath);
 
       context.logger.info("Writing artifact to git", {
@@ -273,7 +314,6 @@ export class GitArtifactStep extends WorkflowStep {
       try {
         const parts = varPath.trim().split(".");
         let value: any = context.getVariable(parts[0]);
-
         for (let i = 1; i < parts.length; i++) {
           if (value && typeof value === "object" && parts[i] in value) {
             value = value[parts[i]];
@@ -294,5 +334,22 @@ export class GitArtifactStep extends WorkflowStep {
         return match;
       }
     });
+  }
+
+  private resolveExpectedBranch(context: WorkflowContext): string | null {
+    const candidates = [
+      context.getVariable("branch"),
+      context.getVariable("currentBranch"),
+      context.getVariable("featureBranchName"),
+      context.branch,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+
+    return null;
   }
 }
