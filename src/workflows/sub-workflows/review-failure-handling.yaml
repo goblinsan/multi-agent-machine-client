@@ -80,7 +80,7 @@ steps:
     description: "Parse and normalize PM decision (handles multiple formats)"
     depends_on: ["pm_evaluation"]
     config:
-      input: "${pm_evaluation}"
+      input: "${pm_decision}"
       normalize: true
       review_type: "${review_type}"
     outputs:

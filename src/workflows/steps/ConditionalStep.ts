@@ -9,6 +9,7 @@ import { logger } from "../../logger.js";
 import { PersonaRequestStep } from "./PersonaRequestStep.js";
 import { TaskCreationStep } from "./TaskCreationStep.js";
 import { TaskUpdateStep } from "./TaskUpdateStep.js";
+import { resolveVariablePath } from "../engine/conditionUtils.js";
 
 interface ConditionalConfig {
   condition: string;
@@ -53,14 +54,18 @@ export class ConditionalStep extends WorkflowStep {
         };
       }
 
-      const stepResults: any[] = [];
+      const stepResults: Array<{
+        name: string;
+        type: string;
+        result: StepResult;
+      }> = [];
       let allSuccessful = true;
 
       for (const stepConfig of stepsToExecute) {
         try {
           const step = this.createStepInstance(stepConfig);
-
           const result = await step.execute(context);
+
           stepResults.push({
             name: stepConfig.name,
             type: stepConfig.type,
@@ -77,19 +82,21 @@ export class ConditionalStep extends WorkflowStep {
           }
         } catch (error: any) {
           allSuccessful = false;
+          const failureResult: StepResult = {
+            status: "failure",
+            error: error instanceof Error ? error : new Error(String(error)),
+          };
+
           stepResults.push({
             name: stepConfig.name,
             type: stepConfig.type,
-            result: {
-              status: "failure",
-              error: new Error(error.message),
-            },
+            result: failureResult,
           });
 
           logger.error(`Conditional step execution failed`, {
             workflowId: context.workflowId,
             stepName: stepConfig.name,
-            error: error.message,
+            error: failureResult.error?.message,
           });
         }
       }
@@ -111,12 +118,12 @@ export class ConditionalStep extends WorkflowStep {
       logger.error(`Conditional step failed`, {
         workflowId: context.workflowId,
         condition,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
 
       return {
         status: "failure",
-        error: new Error(error.message),
+        error: error instanceof Error ? error : new Error(String(error)),
         data: { condition },
       };
     }
@@ -127,62 +134,69 @@ export class ConditionalStep extends WorkflowStep {
     context: WorkflowContext,
   ): boolean {
     try {
-      if (condition.includes("qaStatus")) {
-        const qaStatus =
-          context.getVariable("qaStatus") || context.getVariable("qa_status");
+      const cleanCondition = condition.replace(/\$\{([^}]+)\}/g, "$1").trim();
 
-        if (
-          condition.includes('== "fail"') ||
-          condition.includes('=== "fail"')
-        ) {
-          return qaStatus === "fail";
-        }
-        if (
-          condition.includes('== "pass"') ||
-          condition.includes('=== "pass"')
-        ) {
-          return qaStatus === "pass";
-        }
-        if (
-          condition.includes('!= "pass"') ||
-          condition.includes('!== "pass"')
-        ) {
-          return qaStatus !== "pass";
-        }
-      }
+      const lengthMatch = cleanCondition.match(
+        /^([\w.]+)\.length\s*(==|!=|>=|<=|>|<)\s*(-?\d+)$/,
+      );
+      if (lengthMatch) {
+        const [, rawPath, operator, numericLiteral] = lengthMatch;
+        const varPath = this.normalizePath(rawPath);
+        const targetValue = resolveVariablePath(varPath, context);
+        const length = this.getComparableLength(targetValue);
+        const compareValue = Number(numericLiteral);
 
-      if (condition.includes("stepOutput")) {
-        const match = condition.match(
-          /stepOutput\.(\w+)\.(\w+)\s*(==|!=|===|!==)\s*"([^"]+)"/,
-        );
-        if (match) {
-          const [, stepName, property, operator, value] = match;
-          const stepOutput = context.getStepOutput(stepName);
-          const actualValue = stepOutput?.[property];
-
-          switch (operator) {
-            case "==":
-            case "===":
-              return actualValue === value;
-            case "!=":
-            case "!==":
-              return actualValue !== value;
-          }
+        switch (operator) {
+          case ">":
+            return length > compareValue;
+          case ">=":
+            return length >= compareValue;
+          case "<":
+            return length < compareValue;
+          case "<=":
+            return length <= compareValue;
+          case "==":
+            return length === compareValue;
+          case "!=":
+            return length !== compareValue;
         }
       }
 
-      const match = condition.match(/(\w+)\s*(==|!=|===|!==)\s*"([^"]+)"/);
-      if (match) {
-        const [, varName, operator, value] = match;
-        const actualValue = context.getVariable(varName);
+      const boolMatch = cleanCondition.match(
+        /^([\w.]+)\s*(==|!=|===|!==)\s*(true|false)$/,
+      );
+      if (boolMatch) {
+        const [, rawPath, operator, boolLiteral] = boolMatch;
+        const varPath = this.normalizePath(rawPath);
+        const actualValue = resolveVariablePath(varPath, context);
+        const expectedValue = boolLiteral === "true";
 
         switch (operator) {
           case "==":
           case "===":
-            return actualValue === value;
+            return actualValue === expectedValue;
           case "!=":
           case "!==":
-            return actualValue !== value;
+            return actualValue !== expectedValue;
+        }
+      }
+
+      const equalityMatch = cleanCondition.match(
+        /^([\w.]+)\s*(==|!=|===|!==|equals)\s*['"]([^'"]*)['"]$/,
+      );
+      if (equalityMatch) {
+        const [, rawPath, operator, stringLiteral] = equalityMatch;
+        const varPath = this.normalizePath(rawPath);
+        const actualValue = resolveVariablePath(varPath, context);
+
+        switch (operator) {
+          case "==":
+          case "===":
+          case "equals":
+            return actualValue === stringLiteral;
+          case "!=":
+          case "!==":
+            return actualValue !== stringLiteral;
         }
       }
 
@@ -193,10 +207,30 @@ export class ConditionalStep extends WorkflowStep {
     } catch (error: any) {
       logger.error(`Condition evaluation failed, defaulting to false`, {
         condition,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       return false;
     }
+  }
+
+  private getComparableLength(value: unknown): number {
+    if (Array.isArray(value) || typeof value === "string") {
+      return value.length;
+    }
+
+    if (value && typeof value === "object") {
+      return Object.keys(value as Record<string, unknown>).length;
+    }
+
+    if (typeof value === "number") {
+      return value;
+    }
+
+    return 0;
+  }
+
+  private normalizePath(path: string): string {
+    return path.startsWith("stepOutput.") ? path.slice("stepOutput.".length) : path;
   }
 
   private createStepInstance(stepConfig: WorkflowStepConfig): WorkflowStep {
