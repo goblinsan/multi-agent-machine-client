@@ -194,7 +194,7 @@ export class GitArtifactStep extends WorkflowStep {
         commitMessage: commitMsg,
       });
 
-      const branch = context.getCurrentBranch();
+      const branch = expectedBranch ?? activeBranch;
       try {
         const remotes = await runGit(["remote"], { cwd: repoRoot });
         const hasRemote = remotes.stdout.trim().length > 0;
