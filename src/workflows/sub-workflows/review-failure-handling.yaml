@@ -95,10 +95,10 @@ steps:
     type: BulkTaskCreationStep
     description: "Create all follow-up tasks in single bulk operation with duplicate detection"
     depends_on: ["parse_pm_decision"]
-    condition: "follow_up_tasks.length > 0"
+    condition: "parse_pm_decision.follow_up_tasks.length > 0"
     config:
       project_id: "${project_id}"
-      tasks: "${parse_pm_decision.pm_decision.follow_up_tasks}"
+      tasks: "${parse_pm_decision.follow_up_tasks}"
       priority_mapping:
         critical: "${priority_scores.urgent}"
         high: "${priority_scores.urgent}"

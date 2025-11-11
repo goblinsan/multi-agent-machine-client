@@ -113,6 +113,16 @@ export class PMDecisionParserStep extends WorkflowStep {
         explanation: enrichedDecision.reasoning,
       };
 
+      const outputs = {
+        pm_decision: behaviorCompatDecision,
+        decision: enrichedDecision.decision,
+        reasoning: enrichedDecision.reasoning,
+        immediate_issues: enrichedDecision.immediate_issues,
+        deferred_issues: enrichedDecision.deferred_issues,
+        follow_up_tasks: enrichedDecision.follow_up_tasks,
+        detected_stage: enrichedDecision.detected_stage ?? null,
+      } as const;
+
       context.logger.info("PM decision parsed successfully", {
         stepName: this.config.name,
         decision: enrichedDecision.decision,
@@ -121,8 +131,18 @@ export class PMDecisionParserStep extends WorkflowStep {
         followUpTasks: enrichedDecision.follow_up_tasks.length,
       });
 
+      const setVariable = (context as any).setVariable as
+        | ((key: string, value: any) => void)
+        | undefined;
+      if (typeof setVariable === "function") {
+        setVariable.call(context, "pm_decision", behaviorCompatDecision);
+        setVariable.call(context, "pm_follow_up_tasks", enrichedDecision.follow_up_tasks);
+        setVariable.call(context, "pm_immediate_issues", enrichedDecision.immediate_issues);
+        setVariable.call(context, "pm_deferred_issues", enrichedDecision.deferred_issues);
+      }
+
       try {
-        (context as any).pm_decision = behaviorCompatDecision as any;
+        (context as any).pm_decision = behaviorCompatDecision;
       } catch (e) {
         logger.debug("Failed to set pm_decision on context", {
           error: String(e),
@@ -131,10 +151,12 @@ export class PMDecisionParserStep extends WorkflowStep {
 
       return {
         status: "success",
-        data: { parsed_decision: behaviorCompatDecision },
-        outputs: {
-          pm_decision: behaviorCompatDecision,
+        data: {
+          parsed_decision: behaviorCompatDecision,
+          decision: enrichedDecision.decision,
+          follow_up_tasks: enrichedDecision.follow_up_tasks,
         },
+        outputs: { ...outputs },
         metrics: {
           duration_ms: Date.now() - startTime,
         },

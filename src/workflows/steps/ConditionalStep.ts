@@ -135,75 +135,7 @@ export class ConditionalStep extends WorkflowStep {
   ): boolean {
     try {
       const cleanCondition = condition.replace(/\$\{([^}]+)\}/g, "$1").trim();
-
-      const lengthMatch = cleanCondition.match(
-        /^([\w.]+)\.length\s*(==|!=|>=|<=|>|<)\s*(-?\d+)$/,
-      );
-      if (lengthMatch) {
-        const [, rawPath, operator, numericLiteral] = lengthMatch;
-        const varPath = this.normalizePath(rawPath);
-        const targetValue = resolveVariablePath(varPath, context);
-        const length = this.getComparableLength(targetValue);
-        const compareValue = Number(numericLiteral);
-
-        switch (operator) {
-          case ">":
-            return length > compareValue;
-          case ">=":
-            return length >= compareValue;
-          case "<":
-            return length < compareValue;
-          case "<=":
-            return length <= compareValue;
-          case "==":
-            return length === compareValue;
-          case "!=":
-            return length !== compareValue;
-        }
-      }
-
-      const boolMatch = cleanCondition.match(
-        /^([\w.]+)\s*(==|!=|===|!==)\s*(true|false)$/,
-      );
-      if (boolMatch) {
-        const [, rawPath, operator, boolLiteral] = boolMatch;
-        const varPath = this.normalizePath(rawPath);
-        const actualValue = resolveVariablePath(varPath, context);
-        const expectedValue = boolLiteral === "true";
-
-        switch (operator) {
-          case "==":
-          case "===":
-            return actualValue === expectedValue;
-          case "!=":
-          case "!==":
-            return actualValue !== expectedValue;
-        }
-      }
-
-      const equalityMatch = cleanCondition.match(
-        /^([\w.]+)\s*(==|!=|===|!==|equals)\s*['"]([^'"]*)['"]$/,
-      );
-      if (equalityMatch) {
-        const [, rawPath, operator, stringLiteral] = equalityMatch;
-        const varPath = this.normalizePath(rawPath);
-        const actualValue = resolveVariablePath(varPath, context);
-
-        switch (operator) {
-          case "==":
-          case "===":
-          case "equals":
-            return actualValue === stringLiteral;
-          case "!=":
-          case "!==":
-            return actualValue !== stringLiteral;
-        }
-      }
-
-      logger.warn(`Unsupported condition pattern, defaulting to false`, {
-        condition,
-      });
-      return false;
+      return this.evaluateLogicalExpression(cleanCondition, context);
     } catch (error: any) {
       logger.error(`Condition evaluation failed, defaulting to false`, {
         condition,
@@ -211,6 +143,188 @@ export class ConditionalStep extends WorkflowStep {
       });
       return false;
     }
+  }
+
+  private evaluateLogicalExpression(
+    expression: string,
+    context: WorkflowContext,
+  ): boolean {
+    const expr = expression.trim();
+    if (!expr.length) return false;
+
+    if (this.isWrappedInParens(expr)) {
+      return this.evaluateLogicalExpression(expr.slice(1, -1), context);
+    }
+
+    const orParts = this.splitTopLevel(expr, "||");
+    if (orParts.length > 1) {
+      return orParts.some((part: string) =>
+        this.evaluateLogicalExpression(part, context),
+      );
+    }
+
+    const andParts = this.splitTopLevel(expr, "&&");
+    if (andParts.length > 1) {
+      return andParts.every((part: string) =>
+        this.evaluateLogicalExpression(part, context),
+      );
+    }
+
+    if (expr === "true") return true;
+    if (expr === "false") return false;
+
+    return this.evaluateSimpleCondition(expr, context);
+  }
+
+  private evaluateSimpleCondition(
+    expression: string,
+    context: WorkflowContext,
+  ): boolean {
+    const clean = expression.trim();
+    if (!clean.length) return false;
+
+    if (clean.startsWith("!")) {
+      return !this.evaluateLogicalExpression(clean.slice(1), context);
+    }
+
+    const lengthMatch = clean.match(
+      /^([\w.]+)\.length\s*(==|!=|>=|<=|>|<)\s*(-?\d+)$/,
+    );
+    if (lengthMatch) {
+      const [, rawPath, operator, numericLiteral] = lengthMatch;
+      const varPath = this.normalizePath(rawPath);
+      const targetValue = resolveVariablePath(varPath, context);
+      const length = this.getComparableLength(targetValue);
+      const compareValue = Number(numericLiteral);
+
+      switch (operator) {
+        case ">":
+          return length > compareValue;
+        case ">=":
+          return length >= compareValue;
+        case "<":
+          return length < compareValue;
+        case "<=":
+          return length <= compareValue;
+        case "==":
+          return length === compareValue;
+        case "!=":
+          return length !== compareValue;
+      }
+    }
+
+    const boolMatch = clean.match(
+      /^([\w.]+)\s*(==|!=|===|!==)?\s*(true|false)$/,
+    );
+    if (boolMatch) {
+      const [, rawPath, operator = "==", boolLiteral] = boolMatch;
+      const varPath = this.normalizePath(rawPath);
+      const actualValue = resolveVariablePath(varPath, context);
+      const expectedValue = boolLiteral === "true";
+
+      switch (operator) {
+        case "==":
+        case "===":
+          return actualValue === expectedValue;
+        case "!=":
+        case "!==":
+          return actualValue !== expectedValue;
+      }
+    }
+
+    const equalityMatch = clean.match(
+      /^([\w.]+)\s*(==|!=|===|!==|equals)\s*['"]([^'"]*)['"]$/,
+    );
+    if (equalityMatch) {
+      const [, rawPath, operator, stringLiteral] = equalityMatch;
+      const varPath = this.normalizePath(rawPath);
+      const actualValue = resolveVariablePath(varPath, context);
+
+      switch (operator) {
+        case "==":
+        case "===":
+        case "equals":
+          return actualValue === stringLiteral;
+        case "!=":
+        case "!==":
+          return actualValue !== stringLiteral;
+      }
+    }
+
+    const pathMatch = clean.match(/^([\w.]+)$/);
+    if (pathMatch) {
+      const [, rawPath] = pathMatch;
+      const varPath = this.normalizePath(rawPath);
+      const value = resolveVariablePath(varPath, context);
+      return Boolean(value);
+    }
+
+    logger.warn(`Unsupported condition pattern, defaulting to false`, {
+      condition: clean,
+    });
+    return false;
+  }
+
+  private splitTopLevel(expression: string, operator: "||" | "&&"): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let lastIndex = 0;
+    let found = false;
+
+    for (let i = 0; i < expression.length; i += 1) {
+      const char = expression[i];
+      if (char === "(") {
+        depth += 1;
+      } else if (char === ")") {
+        depth = Math.max(0, depth - 1);
+      }
+
+      if (
+        depth === 0 &&
+        expression.slice(i, i + operator.length) === operator
+      ) {
+        parts.push(expression.slice(lastIndex, i).trim());
+        lastIndex = i + operator.length;
+        i += operator.length - 1;
+        found = true;
+      }
+    }
+
+    if (!found) {
+      return [expression.trim()];
+    }
+
+    const tail = expression.slice(lastIndex).trim();
+    if (tail.length) {
+      parts.push(tail);
+    }
+
+    return parts.filter((part) => part.length > 0);
+  }
+
+  private isWrappedInParens(expression: string): boolean {
+    if (!expression.startsWith("(") || !expression.endsWith(")")) {
+      return false;
+    }
+
+    let depth = 0;
+    for (let i = 0; i < expression.length; i += 1) {
+      const char = expression[i];
+      if (char === "(") {
+        depth += 1;
+      } else if (char === ")") {
+        depth -= 1;
+        if (depth === 0 && i < expression.length - 1) {
+          return false;
+        }
+      }
+
+      if (depth < 0) {
+        return false;
+      }
+    }
+
+    return depth === 0;
   }
 
   private getComparableLength(value: unknown): number {
