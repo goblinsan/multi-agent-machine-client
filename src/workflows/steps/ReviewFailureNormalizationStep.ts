@@ -2,10 +2,8 @@ import {
   WorkflowStep,
   StepResult,
   ValidationResult,
-  WorkflowStepConfig,
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
-import { logger } from "../../logger.js";
 
 interface NormalizationConfig {
   review_type: string;

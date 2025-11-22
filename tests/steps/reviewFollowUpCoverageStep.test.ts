@@ -32,6 +32,69 @@ describe("ReviewFollowUpCoverageStep", () => {
 		);
 	});
 
+	it("aborts when QA blocking issues lack test-focused follow-ups", async () => {
+		const step = new ReviewFollowUpCoverageStep({
+			name: "enforce_follow_up_coverage",
+			type: "ReviewFollowUpCoverageStep",
+			config: {
+				follow_up_tasks: [
+					{
+						title: "Define default values",
+						description: "Set default config schema fields",
+					},
+				],
+				review_type: "qa",
+				normalized_review: {
+					reviewType: "qa",
+					hasBlockingIssues: true,
+					blockingIssues: [
+						{
+							title: "Tests missing",
+							description: "QA cannot run tests because Vitest is not installed",
+							severity: "high",
+							blocking: true,
+						},
+					],
+				},
+			},
+		});
+
+		await expect(step.execute(context)).rejects.toThrow(
+			"PM decision ignored QA test failure",
+		);
+	});
+
+	it("allows QA flow when PM follow-ups include test remediation", async () => {
+		const step = new ReviewFollowUpCoverageStep({
+			name: "enforce_follow_up_coverage",
+			type: "ReviewFollowUpCoverageStep",
+			config: {
+				follow_up_tasks: [
+					{
+						title: "Install Vitest",
+						description: "Add Vitest config and smoke tests",
+					},
+				],
+				review_type: "qa",
+				normalized_review: {
+					reviewType: "qa",
+					hasBlockingIssues: true,
+					blockingIssues: [
+						{
+							title: "Tests missing",
+							description: "QA cannot run tests because Vitest is not installed",
+							severity: "high",
+							blocking: true,
+						},
+					],
+				},
+			},
+		});
+
+		const result = await step.execute(context);
+		expect(result.status).toBe("success");
+	});
+
 	it("synthesizes normalized blocking follow-ups with severity-aware metadata", async () => {
 		const step = new ReviewFollowUpCoverageStep({
 			name: "enforce_follow_up_coverage",
@@ -48,8 +111,8 @@ describe("ReviewFollowUpCoverageStep", () => {
 					blockingIssues: [
 						{
 							id: "qa-gap-1",
-							title: "Tests missing",
-							description: "QA cannot run because Vitest is not installed",
+							title: "Config mismatch",
+							description: "Configuration defaults missing in schema",
 							severity: "high",
 							blocking: true,
 							labels: ["qa-gap", "infra"],
@@ -93,7 +156,7 @@ describe("ReviewFollowUpCoverageStep", () => {
 				review_type: "qa",
 				existing_tasks: [
 					{
-						description: "qa cannot run because vitest is not installed",
+						description: "configuration defaults missing in schema",
 					},
 				],
 				normalized_review: {
@@ -102,8 +165,8 @@ describe("ReviewFollowUpCoverageStep", () => {
 					blockingIssues: [
 						{
 							id: "qa-gap-1",
-							title: "Tests missing",
-							description: "QA cannot run because Vitest is not installed",
+							title: "Config mismatch",
+							description: "Configuration defaults missing in schema",
 							severity: "high",
 						},
 					],

@@ -2,6 +2,8 @@
 
 You are the Project Manager for this software development project. A review has failed and you need to prioritize the follow-up work.
 
+⚠️ **ABSOLUTE RULE: Every reviewer root cause, blocker, or recommendation mentioned anywhere below must be mirrored verbatim in either `immediate_issues`, `deferred_issues`, or the `follow_up_tasks` descriptions. If a reviewer called it out, you must echo it. There are zero exceptions.**
+
 ## Review Context
 
 **Review Type:** {{review_type}}
@@ -184,6 +186,7 @@ The following tasks already exist on the dashboard. **DO NOT create duplicate ta
 ### Mandatory Coverage Checklist
 
 - For **every** entry in `Root Causes` and every `critical_validation` failure, explicitly state how it is addressed in `immediate_issues`, `deferred_issues`, or `follow_up_tasks`.
+- If a reviewer mentions a blocker anywhere else (failed tests, `issues`, `failures`, `recommendations`, or free-form text), repeat that wording in your output and create a follow-up task unless the exact existing task already covers it.
 - When the reviewer reports missing or unusable **test infrastructure** (e.g., "no test framework", "unable to run tests"), you **must** create a `follow_up_task` titled after that gap (e.g., "Add Vitest harness for config loader") with `priority` set to `high`, `category` set to `urgent`, and the description quoting the reviewer wording verbatim.
 - If an existing dashboard task already solves the gap, mark the corresponding `follow_up_task` as a duplicate and set `duplicate_of_task_id` to that task ID—never leave a root cause unmapped.
 
