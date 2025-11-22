@@ -2,15 +2,24 @@ import { describe, it, expect } from "vitest";
 import { ConfigResolver } from "../src/workflows/engine/ConfigResolver";
 import { WorkflowContext } from "../src/workflows/engine/WorkflowContext";
 
+const createContext = (
+  workflowId = "test-workflow",
+  initialVariables: Record<string, any> = {},
+) =>
+  new WorkflowContext(
+    workflowId,
+    "test-project",
+    "/tmp/repo",
+    "main",
+    { name: "test-workflow", version: "1.0.0", steps: [] },
+    {} as any,
+    initialVariables,
+  );
+
 describe("ConfigResolver", () => {
   it("preserves object structure for exact ${variable} matches", () => {
     const resolver = new ConfigResolver();
-    const context = new WorkflowContext(
-      "test-workflow",
-      "test-project",
-      "/tmp/repo",
-      null as any,
-    );
+    const context = createContext();
 
     const taskObject = {
       id: "task-123",
@@ -39,12 +48,7 @@ describe("ConfigResolver", () => {
 
   it("converts to string for inline variable interpolation", () => {
     const resolver = new ConfigResolver();
-    const context = new WorkflowContext(
-      "test-workflow",
-      "test-project",
-      "/tmp/repo",
-      null as any,
-    );
+    const context = createContext();
 
     context.setVariable("taskId", "task-456");
     context.setVariable("status", "pending");
@@ -61,12 +65,7 @@ describe("ConfigResolver", () => {
 
   it("handles nested objects with exact matches", () => {
     const resolver = new ConfigResolver();
-    const context = new WorkflowContext(
-      "test-workflow",
-      "test-project",
-      "/tmp/repo",
-      null as any,
-    );
+    const context = createContext();
 
     const complexObject = {
       metadata: { version: "1.0", author: "test" },
@@ -93,12 +92,7 @@ describe("ConfigResolver", () => {
 
   it("preserves arrays for exact matches", () => {
     const resolver = new ConfigResolver();
-    const context = new WorkflowContext(
-      "test-workflow",
-      "test-project",
-      "/tmp/repo",
-      null as any,
-    );
+    const context = createContext();
 
     const arrayValue = ["item1", "item2", { key: "value" }];
     context.setVariable("list", arrayValue);
@@ -116,12 +110,7 @@ describe("ConfigResolver", () => {
 
   it("returns original template string when variable not found", () => {
     const resolver = new ConfigResolver();
-    const context = new WorkflowContext(
-      "test-workflow",
-      "test-project",
-      "/tmp/repo",
-      null as any,
-    );
+    const context = createContext();
 
     const config = {
       missing: "${nonexistent}",
@@ -134,12 +123,7 @@ describe("ConfigResolver", () => {
 
   it("handles multiple variables in same object", () => {
     const resolver = new ConfigResolver();
-    const context = new WorkflowContext(
-      "test-workflow",
-      "test-project",
-      "/tmp/repo",
-      null as any,
-    );
+    const context = createContext();
 
     const task = { id: "t1", type: "bug" };
     const repo = { url: "https://github.com/test/repo", branch: "main" };
@@ -167,12 +151,7 @@ describe("ConfigResolver", () => {
 
   it("regression test: task object should not become [object Object] string", () => {
     const resolver = new ConfigResolver();
-    const context = new WorkflowContext(
-      "test-workflow",
-      "test-project",
-      "/tmp/repo",
-      null as any,
-    );
+    const context = createContext();
 
     const task = {
       id: "task-789",
@@ -225,5 +204,43 @@ describe("ConfigResolver", () => {
       "13",
       "14",
     ]);
+  });
+
+  it("applies string transforms within templates", () => {
+    const resolver = new ConfigResolver();
+    const context = createContext("wf-transform");
+
+    context.setVariable("review_type", "code_review");
+
+    const config = {
+      prefix: "${review_type.toUpperCase()}",
+      message: "Task ${review_type.toUpperCase()} follow-up",
+    };
+
+    const resolved = resolver.resolveConfiguration(config, context);
+
+    expect(resolved.prefix).toBe("CODE_REVIEW");
+    expect(resolved.message).toBe("Task CODE_REVIEW follow-up");
+  });
+
+  it("supports logical-or fallbacks with literals", () => {
+    const resolver = new ConfigResolver();
+    const context = createContext("wf-fallback");
+
+    const config = {
+      existing: "${existing_tasks || []}",
+      stage: "${tdd_stage || 'implementation'}",
+    };
+
+    const resolvedDefaults = resolver.resolveConfiguration(config, context);
+    expect(resolvedDefaults.existing).toEqual([]);
+    expect(resolvedDefaults.stage).toBe("implementation");
+
+    context.setVariable("existing_tasks", [{ id: 1 }]);
+    context.setVariable("tdd_stage", "failing_test");
+
+    const resolvedWithValues = resolver.resolveConfiguration(config, context);
+    expect(resolvedWithValues.existing).toEqual([{ id: 1 }]);
+    expect(resolvedWithValues.stage).toBe("failing_test");
   });
 });

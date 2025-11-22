@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PlanningLoopStep } from "../src/workflows/steps/PlanningLoopStep.js";
 import { WorkflowContext } from "../src/workflows/engine/WorkflowContext.js";
 import { logger } from "../src/logger.js";
+import { cfg } from "../src/config.js";
 
 const personaMocks = vi.hoisted(() => ({
   sendPersonaRequestMock: vi.fn(),
@@ -49,6 +50,7 @@ describe("PlanningLoopStep logging", () => {
       "/tmp/repo",
       "main",
       mockWorkflowConfig as any,
+      {} as any,
     );
     context.setVariable("task", {
       id: "task-1",
@@ -163,5 +165,192 @@ describe("PlanningLoopStep logging", () => {
         payloadPreview: expect.stringContaining("Looks great"),
       }),
     });
+  });
+
+  it("uses persona-configured timeouts when step timeout is not provided", async () => {
+    const mockWorkflowConfig = {
+      name: "test-workflow",
+      version: "1.0.0",
+      steps: [],
+    };
+
+    const context = new WorkflowContext(
+      "wf-timeouts",
+      "proj-timeouts",
+      "/tmp/repo",
+      "main",
+      mockWorkflowConfig as any,
+      {} as any,
+    );
+    context.setVariable("task", {
+      id: "task-timeout",
+      type: "feature",
+      data: { description: "Timeout verification" },
+    });
+    context.setVariable("SKIP_GIT_OPERATIONS", true);
+
+    const plannerTimeoutOverride = 120000;
+    const evaluatorTimeoutOverride = 45000;
+    const originalPlannerTimeout = cfg.personaTimeouts["implementation-planner"];
+    const originalEvaluatorTimeout = cfg.personaTimeouts["plan-evaluator"];
+    const originalDefaultTimeout = cfg.personaDefaultTimeoutMs;
+
+    personaMocks.sendPersonaRequestMock
+      .mockResolvedValueOnce("corr-plan-timeout")
+      .mockResolvedValueOnce("corr-eval-timeout");
+
+    personaMocks.waitForPersonaCompletionMock
+      .mockResolvedValueOnce({
+        id: "plan-event-timeout",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-plan-timeout",
+          result: JSON.stringify({
+            plan: "Step data",
+            breakdown: [],
+            risks: [],
+            metadata: {},
+          }),
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "eval-event-timeout",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-eval-timeout",
+          result: JSON.stringify({ status: "approved" }),
+        },
+      });
+
+    const stepConfig = {
+      name: "planning_loop_timeout",
+      type: "PlanningLoopStep",
+      config: {
+        maxIterations: 1,
+        plannerPersona: "implementation-planner",
+        evaluatorPersona: "plan-evaluator",
+        planStep: "2-plan",
+        evaluateStep: "2.5-evaluate-plan",
+        payload: {},
+      },
+    } as any;
+
+    const step = new PlanningLoopStep(stepConfig);
+
+    try {
+      cfg.personaTimeouts["implementation-planner"] = plannerTimeoutOverride;
+      cfg.personaTimeouts["plan-evaluator"] = evaluatorTimeoutOverride;
+      cfg.personaDefaultTimeoutMs = 30000;
+
+      const result = await step.execute(context);
+      expect(result.status).toBe("success");
+
+      expect(personaMocks.waitForPersonaCompletionMock).toHaveBeenCalledTimes(2);
+      expect(
+        personaMocks.waitForPersonaCompletionMock.mock.calls[0][4],
+      ).toBe(plannerTimeoutOverride);
+      expect(
+        personaMocks.waitForPersonaCompletionMock.mock.calls[1][4],
+      ).toBe(evaluatorTimeoutOverride);
+    } finally {
+      if (originalPlannerTimeout === undefined)
+        delete cfg.personaTimeouts["implementation-planner"];
+      else cfg.personaTimeouts["implementation-planner"] = originalPlannerTimeout;
+
+      if (originalEvaluatorTimeout === undefined)
+        delete cfg.personaTimeouts["plan-evaluator"];
+      else cfg.personaTimeouts["plan-evaluator"] = originalEvaluatorTimeout;
+
+      cfg.personaDefaultTimeoutMs = originalDefaultTimeout;
+    }
+  });
+
+  it("includes plan artifact path in evaluation payload", async () => {
+    const mockWorkflowConfig = {
+      name: "test-workflow",
+      version: "1.0.0",
+      steps: [],
+    };
+
+    const context = new WorkflowContext(
+      "wf-handshake",
+      "proj-handshake",
+      "/tmp/repo-handshake",
+      "main",
+      mockWorkflowConfig as any,
+      {} as any,
+    );
+    context.setVariable("task", {
+      id: 42,
+      title: "Example",
+      description: "Ensure plan artifact handshake",
+    });
+    context.setVariable("SKIP_GIT_OPERATIONS", true);
+
+    const planPayload = {
+      plan: "Sample draft plan",
+      breakdown: [],
+      risks: [],
+    };
+
+    const evaluationPayload = {
+      status: "pass",
+    };
+
+    personaMocks.sendPersonaRequestMock
+      .mockResolvedValueOnce("corr-plan-handshake")
+      .mockResolvedValueOnce("corr-eval-handshake");
+
+    personaMocks.waitForPersonaCompletionMock
+      .mockResolvedValueOnce({
+        id: "plan-event-handshake",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-plan-handshake",
+          result: JSON.stringify(planPayload),
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "eval-event-handshake",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-eval-handshake",
+          result: JSON.stringify(evaluationPayload),
+        },
+      });
+
+    const stepConfig = {
+      name: "planning_loop_handshake",
+      type: "PlanningLoopStep",
+      config: {
+        maxIterations: 1,
+        plannerPersona: "implementation-planner",
+        evaluatorPersona: "plan-evaluator",
+        planStep: "2-plan",
+        evaluateStep: "2.5-evaluate-plan",
+        payload: {},
+      },
+    } as any;
+
+    const step = new PlanningLoopStep(stepConfig);
+    await step.execute(context);
+
+    const evalCall = personaMocks.sendPersonaRequestMock.mock.calls.find(
+      ([, opts]) => opts.toPersona === "plan-evaluator",
+    );
+    expect(evalCall).toBeDefined();
+    const evalPayload = evalCall?.[1].payload;
+    expect(evalPayload?.plan_artifact).toBe(
+      ".ma/tasks/42/02-plan-iteration-1.md",
+    );
+    expect(evalPayload?.plan_iteration_artifact).toBe(
+      ".ma/tasks/42/02-plan-iteration-1.md",
+    );
+    expect(evalPayload?.plan_iteration).toBe(1);
+    expect(evalPayload?.repo_root).toBe("/tmp/repo-handshake");
   });
 });

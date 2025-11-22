@@ -1,12 +1,17 @@
 import { randomUUID } from "crypto";
 import { cfg } from "../config.js";
 import { ProjectAPI } from "../dashboard/ProjectAPI.js";
-import { resolveRepoFromPayload } from "../gitUtils.js";
+import {
+  resolveRepoFromPayload,
+  type RepoResolution,
+} from "../gitUtils.js";
 import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import type { MessageTransport } from "../transport/index.js";
 import { join as _join, basename } from "path";
+import { extractRepoRemote } from "./helpers/repoRemoteResolver.js";
+import { createTaskInjectedWorkflow } from "./helpers/taskWorkflowAdapter.js";
 
 const projectAPI = new ProjectAPI();
 import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
@@ -122,14 +127,47 @@ export class WorkflowCoordinator {
         }
       }
 
-      const repoResolution = await resolveRepoFromPayload({
+      const repoPayload = {
         ...payload,
-        repo: repoRemoteCandidate,
         project_name: projectName,
-      });
+      };
+
+      let repoResolution: RepoResolution;
+
+      try {
+        repoResolution = await resolveRepoFromPayload(repoPayload);
+      } catch (initialError) {
+        if (!repoRemoteCandidate) {
+          throw initialError;
+        }
+
+        try {
+          repoResolution = await resolveRepoFromPayload({
+            ...payload,
+            project_name: projectName,
+            repo: repoRemoteCandidate,
+            repository: repoRemoteCandidate,
+            remote: repoRemoteCandidate,
+          });
+        } catch (fallbackError) {
+          throw initialError;
+        }
+      }
+
+      if (!repoResolution?.repoRoot) {
+        throw new Error(
+          `Failed to resolve repository location for project ${projectId}`,
+        );
+      }
 
       const repoSlugSource = basename(repoResolution.repoRoot) || projectName;
       const repoSlug = slugify(repoSlugSource) || "repository";
+      const effectiveRemote =
+        repoResolution.remote ||
+        repoRemoteCandidate ||
+        payload?.remote ||
+        payload?.repo_remote ||
+        null;
 
       const results = [];
       let iterationCount = 0;
@@ -209,7 +247,7 @@ export class WorkflowCoordinator {
               repoSlug,
               repoRoot: repoResolution.repoRoot,
               branch: repoResolution.branch || "main",
-              remote: repoResolution.remote || null,
+              remote: effectiveRemote,
               force_rescan: payload?.force_rescan || false,
             });
             results.push(result);
@@ -309,6 +347,14 @@ export class WorkflowCoordinator {
       });
       throw error;
     }
+  }
+
+  private extractRepoRemote(
+    projectDetails: any,
+    projectInfo: any,
+    payload: any,
+  ): string | null {
+    return extractRepoRemote(projectDetails, projectInfo, payload);
   }
 
   private async processTask(
@@ -484,7 +530,7 @@ export class WorkflowCoordinator {
       force_rescan: context.force_rescan || false,
     };
 
-    if (!context.remote) {
+      if (!context.remote) {
       logger.error(
         "No repository remote URL available for workflow execution",
         {
@@ -498,7 +544,7 @@ export class WorkflowCoordinator {
       );
     }
 
-    const modifiedWorkflow = this.createTaskInjectedWorkflow(workflow, task);
+    const modifiedWorkflow = createTaskInjectedWorkflow(workflow, task);
 
     const result = await this.engine.executeWorkflowDefinition(
       modifiedWorkflow,
@@ -542,55 +588,4 @@ export class WorkflowCoordinator {
     };
   }
 
-  private createTaskInjectedWorkflow(workflow: any, task: any): any {
-    if (!task || !workflow.steps) {
-      return workflow;
-    }
-
-    const modifiedWorkflow = JSON.parse(JSON.stringify(workflow));
-
-    modifiedWorkflow.steps = workflow.steps.filter(
-      (step: any) => step.type !== "PullTaskStep",
-    );
-
-    modifiedWorkflow.steps.forEach((step: any) => {
-      if (step.depends_on && Array.isArray(step.depends_on)) {
-        step.depends_on = step.depends_on.filter(
-          (dep: string) => dep !== "pull-task",
-        );
-
-        if (step.depends_on.length === 0) {
-          delete step.depends_on;
-        }
-      }
-    });
-
-    return modifiedWorkflow;
-  }
-
-  private extractRepoRemote(
-    details: any,
-    projectInfo: any,
-    payload: any,
-  ): string {
-    const pickRemoteFrom = (obj: any) =>
-      firstString(
-        obj?.repository?.clone_url,
-        obj?.repository?.url,
-        obj?.repository?.remote,
-        obj?.repo?.clone_url,
-        obj?.repo?.url,
-        obj?.repo?.remote,
-        obj?.repo,
-        obj?.repository,
-      );
-
-    return (
-      firstString(
-        pickRemoteFrom(details),
-        pickRemoteFrom(projectInfo),
-        pickRemoteFrom(payload),
-      ) || ""
-    );
-  }
 }

@@ -1,6 +1,8 @@
 import { WorkflowContext } from "../../engine/WorkflowContext.js";
 import { logger } from "../../../logger.js";
 
+type TransformName = "toUpperCase" | "toLowerCase";
+
 export class VariableResolver {
   resolvePayload(
     payload: Record<string, any>,
@@ -45,64 +47,46 @@ export class VariableResolver {
   ): any {
     const variablePattern =
       /\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}/g;
+    const transformPattern =
+      /\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\.(toUpperCase|toLowerCase)\(\)\}/g;
+
+    const transformExactMatch = template.match(
+      /^\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\.(toUpperCase|toLowerCase)\(\)\}$/,
+    );
+    if (transformExactMatch) {
+      const [, path, transform] = transformExactMatch;
+      const value = this.resolvePath(path, context);
+      if (value === undefined || value === null) {
+        return template;
+      }
+      return this.applyTransform(value, transform as TransformName);
+    }
 
     const exactMatch = template.match(
       /^\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}$/,
     );
     if (exactMatch) {
-      const path = exactMatch[1];
-      try {
-        const parts = path.split(".");
-        let value = context.getVariable(parts[0]);
-
-        for (let i = 1; i < parts.length; i++) {
-          if (value === null || value === undefined) {
-            return template;
-          }
-          if (typeof value === "object" && parts[i] in value) {
-            value = value[parts[i]];
-          } else {
-            return template;
-          }
-        }
-
-        return value !== undefined && value !== null ? value : template;
-      } catch (error) {
-        return template;
-      }
+      const value = this.resolvePath(exactMatch[1], context);
+      return value !== undefined && value !== null ? value : template;
     }
 
-    return template.replace(variablePattern, (match, path) => {
-      try {
-        const parts = path.split(".");
-        let value = context.getVariable(parts[0]);
-
-        for (let i = 1; i < parts.length; i++) {
-          if (value === null || value === undefined) {
-            logger.warn(`Variable path not found, preserving template`, {
-              template: match,
-              path,
-              stoppedAt: parts.slice(0, i).join("."),
-            });
-            return match;
-          }
-
-          if (typeof value === "object" && parts[i] in value) {
-            value = value[parts[i]];
-          } else {
-            logger.warn(`Variable property not found, preserving template`, {
-              template: match,
-              path,
-              missingProperty: parts[i],
-            });
-            return match;
-          }
+    let workingTemplate = template.replace(
+      transformPattern,
+      (match, path, transform) => {
+        const value = this.resolvePath(path, context);
+        if (value === undefined || value === null) {
+          return match;
         }
+        return this.applyTransform(value, transform as TransformName);
+      },
+    );
 
+    return workingTemplate.replace(variablePattern, (match, path) => {
+      try {
+        const value = this.resolvePath(path, context, match);
         if (value === null || value === undefined) {
           return match;
         }
-
         return String(value);
       } catch (error) {
         logger.warn(`Failed to resolve variable, preserving template`, {
@@ -113,5 +97,49 @@ export class VariableResolver {
         return match;
       }
     });
+  }
+
+  private applyTransform(value: any, transform: TransformName): string {
+    const asString = typeof value === "string" ? value : String(value);
+    return transform === "toUpperCase"
+      ? asString.toUpperCase()
+      : asString.toLowerCase();
+  }
+
+  private resolvePath(
+    path: string,
+    context: WorkflowContext,
+    templateForWarnings?: string,
+  ): any {
+    const parts = path.split(".");
+    let value = context.getVariable(parts[0]);
+
+    for (let i = 1; i < parts.length; i++) {
+      if (value === null || value === undefined) {
+        if (templateForWarnings) {
+          logger.warn(`Variable path not found, preserving template`, {
+            template: templateForWarnings,
+            path,
+            stoppedAt: parts.slice(0, i).join("."),
+          });
+        }
+        return undefined;
+      }
+
+      if (typeof value === "object" && parts[i] in value) {
+        value = (value as any)[parts[i]];
+      } else {
+        if (templateForWarnings) {
+          logger.warn(`Variable property not found, preserving template`, {
+            template: templateForWarnings,
+            path,
+            missingProperty: parts[i],
+          });
+        }
+        return undefined;
+      }
+    }
+
+    return value;
   }
 }

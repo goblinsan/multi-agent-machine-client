@@ -22,10 +22,15 @@ import { BlockedTaskAnalysisStep } from "./steps/BlockedTaskAnalysisStep";
 import { UnblockAttemptStep } from "./steps/UnblockAttemptStep";
 import { MilestoneStatusCheckStep } from "./steps/MilestoneStatusCheckStep";
 import { ReviewFailureTasksStep } from "./steps/ReviewFailureTasksStep";
+import { FetchProjectTasksStep } from "./steps/FetchProjectTasksStep";
+import { GitDiffExportStep } from "./steps/GitDiffExportStep";
 import { SubWorkflowStep } from "./steps/SubWorkflowStep";
 import { BulkTaskCreationStep } from "./steps/BulkTaskCreationStep";
 import { PMDecisionParserStep } from "./steps/PMDecisionParserStep";
 import { VariableResolutionStep } from "./steps/VariableResolutionStep";
+import { DependencyStatusStep } from "./steps/DependencyStatusStep";
+import { RegisterBlockedDependenciesStep } from "./steps/RegisterBlockedDependenciesStep";
+import { ReviewFollowUpFilterStep } from "./steps/ReviewFollowUpFilterStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -112,11 +117,22 @@ export class WorkflowEngine {
     this.stepRegistry.set("UnblockAttemptStep", UnblockAttemptStep);
     this.stepRegistry.set("MilestoneStatusCheckStep", MilestoneStatusCheckStep);
     this.stepRegistry.set("ReviewFailureTasksStep", ReviewFailureTasksStep);
+    this.stepRegistry.set("FetchProjectTasksStep", FetchProjectTasksStep);
+    this.stepRegistry.set("GitDiffExportStep", GitDiffExportStep);
 
     this.stepRegistry.set("SubWorkflowStep", SubWorkflowStep);
     this.stepRegistry.set("BulkTaskCreationStep", BulkTaskCreationStep);
     this.stepRegistry.set("PMDecisionParserStep", PMDecisionParserStep);
     this.stepRegistry.set("VariableResolutionStep", VariableResolutionStep);
+    this.stepRegistry.set("DependencyStatusStep", DependencyStatusStep);
+    this.stepRegistry.set(
+      "RegisterBlockedDependenciesStep",
+      RegisterBlockedDependenciesStep,
+    );
+    this.stepRegistry.set(
+      "ReviewFollowUpFilterStep",
+      ReviewFollowUpFilterStep,
+    );
   }
 
   public registerStep(

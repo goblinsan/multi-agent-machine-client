@@ -274,6 +274,46 @@ describe("Phase 4 - BulkTaskCreationStep", () => {
       expect(result.outputs?.tasks_created).toBe(0);
     });
 
+    it("should detect duplicates using content hash fingerprints", async () => {
+      const existingTasks = [
+        {
+          id: "task-200",
+          title: "Harden queue processor",
+          description:
+            "Normalize queue payloads before persisting to Redis to avoid duplicates.",
+          milestone_slug: "stability",
+        },
+      ];
+
+      const step = new BulkTaskCreationStep({
+        name: "create_tasks",
+        type: "BulkTaskCreationStep",
+        config: {
+          project_id: "1",
+          tasks: [
+            {
+              title: "Normalize Redis queue payloads",
+              description:
+                "Normalize queue payloads before persisting to Redis and avoid duplicates during future retries.",
+              priority: "high" as const,
+              milestone_slug: "stability",
+            },
+          ],
+          options: {
+            check_duplicates: true,
+            existing_tasks: existingTasks,
+            duplicate_match_strategy: "content_hash" as const,
+          },
+        },
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe("success");
+      expect(result.outputs?.skipped_duplicates).toBe(1);
+      expect(result.outputs?.tasks_created).toBe(0);
+    });
+
     it("should use external_id match strategy (100% match)", async () => {
       const existingTasks = [
         {
@@ -308,6 +348,63 @@ describe("Phase 4 - BulkTaskCreationStep", () => {
 
       expect(result.outputs?.skipped_duplicates).toBe(1);
       expect(result.outputs?.tasks_created).toBe(0);
+    });
+
+    it("should skip duplicate follow-ups within the same batch", async () => {
+      const step = new BulkTaskCreationStep({
+        name: "create_tasks",
+        type: "BulkTaskCreationStep",
+        config: {
+          project_id: "1",
+          tasks: [
+            {
+              title: "Document retry strategy",
+              description:
+                "Capture the retry and backoff changes applied to the queue consumer.",
+              priority: "medium" as const,
+              milestone_slug: "documentation",
+            },
+            {
+              title: "Document retry strategy",
+              description:
+                "Capture the retry and backoff changes applied to the queue consumer.",
+              priority: "medium" as const,
+              milestone_slug: "documentation",
+            },
+          ],
+          options: {
+            check_duplicates: true,
+            existing_tasks: [],
+            duplicate_match_strategy: "content_hash" as const,
+          },
+        },
+      });
+
+      const createTasksSpy = vi
+        .spyOn(step as any, "createTasksViaDashboard")
+        .mockImplementation(async (_projectId, tasksArg: EnrichedTask[]) => {
+          const duplicates = tasksArg.filter((t) => t.is_duplicate);
+          const toCreate = tasksArg.filter((t) => !t.is_duplicate);
+
+          expect(duplicates).toHaveLength(1);
+          expect(toCreate).toHaveLength(1);
+
+          return {
+            tasks_created: toCreate.length,
+            urgent_tasks_created: 0,
+            deferred_tasks_created: toCreate.length,
+            task_ids: ["task-1"],
+            duplicate_task_ids: [],
+            skipped_duplicates: duplicates.length,
+            errors: [],
+          };
+        });
+
+      const result = await step.execute(context);
+
+      expect(createTasksSpy).toHaveBeenCalled();
+      expect(result.outputs?.skipped_duplicates).toBe(1);
+      expect(result.outputs?.tasks_created).toBe(1);
     });
   });
 

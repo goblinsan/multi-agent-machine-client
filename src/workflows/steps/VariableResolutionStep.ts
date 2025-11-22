@@ -166,10 +166,19 @@ export class VariableResolutionStep extends WorkflowStep {
     expression: string,
     context: WorkflowContext,
   ): any {
-    if (expression.includes("||")) {
-      const parts = expression.split("||").map((p) => p.trim());
-      for (const part of parts) {
-        const value = this.evaluateSingleExpression(part, context);
+    const trimmed = expression.trim();
+    if (!trimmed.length) {
+      return "";
+    }
+
+    if (this.isWrappedInParens(trimmed)) {
+      return this.evaluateExpression(trimmed.slice(1, -1), context);
+    }
+
+    const orParts = this.splitExpression(trimmed, "||");
+    if (orParts.length > 1) {
+      for (const part of orParts) {
+        const value = this.evaluateExpression(part, context);
         if (value !== null && value !== undefined && value !== "") {
           return value;
         }
@@ -177,10 +186,10 @@ export class VariableResolutionStep extends WorkflowStep {
       return null;
     }
 
-    if (expression.includes("&&")) {
-      const parts = expression.split("&&").map((p) => p.trim());
-      for (const part of parts) {
-        const value = this.evaluateSingleExpression(part, context);
+    const andParts = this.splitExpression(trimmed, "&&");
+    if (andParts.length > 1) {
+      for (const part of andParts) {
+        const value = this.evaluateExpression(part, context);
         if (!value) {
           return false;
         }
@@ -188,21 +197,55 @@ export class VariableResolutionStep extends WorkflowStep {
       return true;
     }
 
-    if (expression.includes("==")) {
-      const [left, right] = expression.split("==").map((p) => p.trim());
-      const leftValue = this.evaluateSingleExpression(left, context);
-      const rightValue = this.evaluateSingleExpression(right, context);
-      return leftValue == rightValue;
+    if (trimmed.includes("===")) {
+      const parts = this.splitExpression(trimmed, "===");
+      if (parts.length === 2) {
+        const left = this.evaluateExpression(parts[0], context);
+        const right = this.evaluateExpression(parts[1], context);
+        return left === right;
+      }
     }
 
-    if (expression.includes("!=")) {
-      const [left, right] = expression.split("!=").map((p) => p.trim());
-      const leftValue = this.evaluateSingleExpression(left, context);
-      const rightValue = this.evaluateSingleExpression(right, context);
-      return leftValue != rightValue;
+    if (trimmed.includes("!==")) {
+      const parts = this.splitExpression(trimmed, "!==");
+      if (parts.length === 2) {
+        const left = this.evaluateExpression(parts[0], context);
+        const right = this.evaluateExpression(parts[1], context);
+        return left !== right;
+      }
     }
 
-    return this.evaluateSingleExpression(expression, context);
+    if (!trimmed.includes("===")) {
+      const eqParts = this.splitExpression(trimmed, "==");
+      if (eqParts.length === 2) {
+        const left = this.evaluateExpression(eqParts[0], context);
+        const right = this.evaluateExpression(eqParts[1], context);
+        return left == right;
+      }
+    }
+
+    if (!trimmed.includes("!==")) {
+      const neParts = this.splitExpression(trimmed, "!=");
+      if (neParts.length === 2) {
+        const left = this.evaluateExpression(neParts[0], context);
+        const right = this.evaluateExpression(neParts[1], context);
+        return left != right;
+      }
+    }
+
+    const sumParts = this.splitExpression(trimmed, "+");
+    if (sumParts.length > 1) {
+      return sumParts.reduce((acc, part) => {
+        const value = this.evaluateExpression(part, context);
+        const numeric =
+          typeof value === "number"
+            ? value
+            : Number(value ?? 0);
+        return acc + (Number.isFinite(numeric) ? numeric : 0);
+      }, 0);
+    }
+
+    return this.evaluateSingleExpression(trimmed, context);
   }
 
   private evaluateSingleExpression(
@@ -210,6 +253,18 @@ export class VariableResolutionStep extends WorkflowStep {
     context: WorkflowContext,
   ): any {
     expr = expr.trim();
+
+    if (!expr.length) {
+      return "";
+    }
+
+    if (this.isWrappedInParens(expr)) {
+      return this.evaluateExpression(expr.slice(1, -1), context);
+    }
+
+    if (expr === "Date.now()" || expr === "Date.now") {
+      return Date.now();
+    }
 
     if (
       (expr.startsWith("'") && expr.endsWith("'")) ||
@@ -242,5 +297,70 @@ export class VariableResolutionStep extends WorkflowStep {
     }
 
     return value;
+  }
+
+  private splitExpression(expression: string, operator: string): string[] {
+    const result: string[] = [];
+    let depth = 0;
+    let lastIndex = 0;
+
+    for (let i = 0; i < expression.length; i += 1) {
+      const char = expression[i];
+      if (char === "(") {
+        depth += 1;
+        continue;
+      }
+      if (char === ")") {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+
+      if (
+        depth === 0 &&
+        expression.slice(i, i + operator.length) === operator
+      ) {
+        const segment = expression.slice(lastIndex, i).trim();
+        if (segment.length) {
+          result.push(segment);
+        }
+        lastIndex = i + operator.length;
+        i += operator.length - 1;
+      }
+    }
+
+    if (result.length === 0) {
+      return [expression.trim()];
+    }
+
+    const tail = expression.slice(lastIndex).trim();
+    if (tail.length) {
+      result.push(tail);
+    }
+
+    return result;
+  }
+
+  private isWrappedInParens(expression: string): boolean {
+    if (!expression.startsWith("(") || !expression.endsWith(")")) {
+      return false;
+    }
+
+    let depth = 0;
+    for (let i = 0; i < expression.length; i += 1) {
+      const char = expression[i];
+      if (char === "(") {
+        depth += 1;
+      } else if (char === ")") {
+        depth -= 1;
+        if (depth === 0 && i < expression.length - 1) {
+          return false;
+        }
+        if (depth < 0) {
+          return false;
+        }
+      }
+    }
+
+    return depth === 0;
   }
 }

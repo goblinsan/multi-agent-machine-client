@@ -15,39 +15,62 @@ variables:
   tdd_stage: ${tdd_stage || 'implementation'}
 
 steps:
+  - name: dependency_status
+    type: DependencyStatusStep
+    config:
+      dependency_variable: "blocked_dependencies"
+      fallback_task_field: "task.blocked_dependencies"
+
+  - name: dependency_waiting_update
+    type: TaskUpdateStep
+    depends_on: ["dependency_status"]
+    condition: "dependency_status.allResolved == false"
+    config:
+      updateType: "status"
+      status: "blocked"
+      message: "Waiting on ${dependency_status.pendingCount} follow-up task(s)"
+      retryCount: 0
+
+  - name: normalize_attempt_counts
+    type: VariableResolutionStep
+    depends_on: ["dependency_status"]
+    config:
+      variables:
+        blocked_attempt_count: "${blocked_attempt_count || task.blocked_attempt_count || 0}"
+        max_attempts: "${max_attempts || 10}"
+
   - name: check_max_attempts
     type: ConditionalStep
+    depends_on: ["normalize_attempt_counts"]
     config:
-      condition: "(task.blocked_attempt_count || 0) >= (max_attempts)"
-      on_true:
+      condition: "blocked_attempt_count >= max_attempts"
+      thenSteps:
         - name: mark_permanently_blocked
           type: SimpleTaskStatusStep
           config:
             status: "blocked"
             comment: "Maximum unblock attempts (${max_attempts}) exceeded. Manual intervention required."
-      on_false:
-        - name: continue_unblock_attempt
-          type: VariableSetStep
-          config:
-            set: {}
 
   - name: increment_attempt_counter
-    type: VariableSetStep
+    type: VariableResolutionStep
     depends_on: ["check_max_attempts"]
+    condition: "dependency_status.allResolved == true"
     config:
-      set:
-        blocked_attempt_count: ${(task.blocked_attempt_count || 0) + 1}
-        last_unblock_attempt: ${Date.now()}
+      variables:
+        blocked_attempt_count: "${blocked_attempt_count + 1}"
+        last_unblock_attempt: "${Date.now()}"
 
   - name: mark_in_progress
     type: SimpleTaskStatusStep
     depends_on: ["increment_attempt_counter"]
+    condition: "dependency_status.allResolved == true"
     config:
       status: "in_progress"
 
   - name: analyze_blockage
     type: BlockedTaskAnalysisStep
     depends_on: ["mark_in_progress"]
+    condition: "dependency_status.allResolved == true"
     config:
       task_id: ${taskId}
       project_id: ${projectId}
@@ -57,6 +80,7 @@ steps:
   - template: context_analysis
     name: context_request
     depends_on: ["analyze_blockage"]
+    condition: "dependency_status.allResolved == true"
     overrides:
       config:
         step: "unblock-context"
@@ -69,6 +93,7 @@ steps:
   - name: lead_analysis
     type: PersonaRequestStep
     depends_on: ["context_request"]
+    condition: "dependency_status.allResolved == true"
     config:
       step: "unblock-analysis"
       persona: "lead-engineer"
@@ -105,6 +130,7 @@ steps:
   - name: unblock_attempt
     type: UnblockAttemptStep
     depends_on: ["lead_analysis"]
+    condition: "dependency_status.allResolved == true"
     config:
       task_id: ${taskId}
       project_id: ${projectId}
@@ -116,6 +142,7 @@ steps:
   - name: validate_unblock
     type: PersonaRequestStep
     depends_on: ["unblock_attempt"]
+    condition: "dependency_status.allResolved == true"
     config:
       step: "unblock-validation"
       persona: "tester-qa"
@@ -132,23 +159,30 @@ steps:
         project_name: ${projectName}
       timeout: 300000
 
-  - name: mark_task_status
-    type: ConditionalStep
+  - name: mark_unblocked
+    type: SimpleTaskStatusStep
     depends_on: ["validate_unblock"]
+    condition: "validate_unblock_status == 'pass' || validate_unblock.status == 'pass'"
     config:
-      condition: "validate_unblock.status == 'pass'"
-      on_true:
-        - name: mark_unblocked
-          type: SimpleTaskStatusStep
-          config:
-            status: "open"
-            comment: "Successfully unblocked after ${blocked_attempt_count} attempt(s)"
-      on_false:
-        - name: mark_still_blocked
-          type: SimpleTaskStatusStep
-          config:
-            status: "blocked"
-            comment: "Unblock attempt ${blocked_attempt_count} failed. Will retry."
+      status: "open"
+      comment: "Successfully unblocked after ${blocked_attempt_count} attempt(s)"
+
+  - name: clear_blocked_dependencies
+    type: RegisterBlockedDependenciesStep
+    depends_on: ["mark_unblocked"]
+    condition: "validate_unblock_status == 'pass' || validate_unblock.status == 'pass'"
+    config:
+      parent_task_id: "${task.id}"
+      dependency_task_ids: []
+      allow_clear: true
+
+  - name: mark_still_blocked
+    type: SimpleTaskStatusStep
+    depends_on: ["validate_unblock"]
+    condition: "validate_unblock_status != 'pass' && validate_unblock.status != 'pass'"
+    config:
+      status: "blocked"
+      comment: "Unblock attempt ${blocked_attempt_count} failed. Will retry."
 
 failure_handling:
   on_workflow_failure:

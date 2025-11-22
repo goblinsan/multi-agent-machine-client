@@ -1,13 +1,17 @@
+import { createHash } from "crypto";
 import {
   normalizeTitle as normalizeTitleUtil,
   extractKeyPhrases,
 } from "../../../util/textNormalization.js";
+
+const CONTENT_TOKEN_MIN_LENGTH = 4;
 
 export interface TaskForDuplication {
   title: string;
   description?: string;
   external_id?: string;
   milestone_slug?: string;
+  content_hash?: string;
 }
 
 export interface ExistingTask {
@@ -17,12 +21,14 @@ export interface ExistingTask {
   external_id?: string;
   milestone_slug?: string;
   status?: string;
+  content_hash?: string;
 }
 
 export type DuplicateMatchStrategy =
   | "external_id"
   | "title"
-  | "title_and_milestone";
+  | "title_and_milestone"
+  | "content_hash";
 
 export interface DuplicateMatchResult {
   duplicate: ExistingTask;
@@ -87,6 +93,14 @@ export class TaskDuplicateDetector {
               matchScore,
               titleOverlap,
             };
+          }
+          break;
+        }
+
+        case "content_hash": {
+          const contentMatch = this.compareByContentHash(task, existing);
+          if (contentMatch) {
+            return contentMatch;
           }
           break;
         }
@@ -165,5 +179,120 @@ export class TaskDuplicateDetector {
 
   private extractWords(text: string): Set<string> {
     return extractKeyPhrases(text || "", 3);
+  }
+
+  getContentHash(task: TaskForDuplication): string | null {
+    return this.computeContentHash(task);
+  }
+
+  private compareByContentHash(
+    task: TaskForDuplication,
+    existing: ExistingTask,
+  ): DuplicateMatchResult | null {
+    if (
+      task.milestone_slug &&
+      existing.milestone_slug &&
+      task.milestone_slug !== existing.milestone_slug
+    ) {
+      return null;
+    }
+
+    const taskHash = this.computeContentHash(task);
+    const existingHash = this.computeContentHash(existing);
+
+    if (taskHash && existingHash && taskHash === existingHash) {
+      return {
+        duplicate: existing,
+        strategy: "content_hash",
+        matchScore: 100,
+      };
+    }
+
+    const overlapScore = this.calculateContentOverlap(task, existing);
+    if (overlapScore >= 70) {
+      return {
+        duplicate: existing,
+        strategy: "content_hash",
+        matchScore: overlapScore,
+      };
+    }
+
+    return null;
+  }
+
+  private calculateContentOverlap(
+    task: TaskForDuplication,
+    existing: ExistingTask,
+  ): number {
+    const taskTokens = this.extractContentTokens(task);
+    const existingTokens = this.extractContentTokens(existing);
+
+    if (taskTokens.size === 0 || existingTokens.size === 0) {
+      return 0;
+    }
+
+    let intersection = 0;
+    taskTokens.forEach((token) => {
+      if (existingTokens.has(token)) {
+        intersection++;
+      }
+    });
+
+    const denominator = Math.min(taskTokens.size, existingTokens.size);
+    if (denominator === 0) {
+      return 0;
+    }
+
+    return (intersection / denominator) * 100;
+  }
+
+  private extractContentTokens(
+    task: TaskForDuplication | ExistingTask,
+  ): Set<string> {
+    const combined = `${task.title || ""} ${task.description || ""}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+    if (!combined) {
+      return new Set();
+    }
+
+    const tokens = combined
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= CONTENT_TOKEN_MIN_LENGTH);
+
+    return new Set(tokens);
+  }
+
+  private computeContentHash(
+    task: TaskForDuplication | ExistingTask,
+  ): string | null {
+    if (task.content_hash && typeof task.content_hash === "string") {
+      return task.content_hash;
+    }
+
+    const fingerprint = this.buildContentFingerprint(task);
+    if (!fingerprint) {
+      return null;
+    }
+
+    return createHash("sha256").update(fingerprint).digest("hex");
+  }
+
+  private buildContentFingerprint(
+    task: TaskForDuplication | ExistingTask,
+  ): string | null {
+    const tokens = Array.from(this.extractContentTokens(task)).sort();
+    if (tokens.length === 0) {
+      return null;
+    }
+
+    const milestoneComponent = task.milestone_slug
+      ? `|milestone:${task.milestone_slug}`
+      : "";
+
+    return `${tokens.join("|")}${milestoneComponent}`;
   }
 }

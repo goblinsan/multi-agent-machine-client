@@ -19,6 +19,14 @@ steps:
     config:
       status: "in_progress"
 
+  - name: load_existing_tasks
+    type: FetchProjectTasksStep
+    depends_on: ["mark_task_in_progress"]
+    config:
+      project_id: "${projectId}"
+      include_completed: false
+      store_variable: review_existing_tasks
+
   - name: planning_loop
     type: PlanningLoopStep
     depends_on: ["mark_task_in_progress"]
@@ -52,9 +60,21 @@ steps:
           hotfix_mode: true
         timeout: 600000
 
+  - name: collect_review_diff
+    type: GitDiffExportStep
+    depends_on: ["implementation_request"]
+    config:
+      repoPath: ${repo_root}
+      branch: ${featureBranchName}
+      baseBranch: ${baseBranch || 'main'}
+      output_prefix: review_diff
+      max_bytes: 200000
+      fail_on_empty_diff: false
+      compare_remote: false
+
   - template: qa_review
     name: qa_request
-    depends_on: ["implementation_request"]
+    depends_on: ["collect_review_diff"]
     overrides:
       config:
         payload:
@@ -64,7 +84,7 @@ steps:
 
   - name: handle_qa_failure
     type: SubWorkflowStep
-    depends_on: ["qa_request"]
+    depends_on: ["qa_request", "load_existing_tasks"]
     condition: ${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'
     config:
       workflow: "review-failure-handling"
@@ -87,7 +107,9 @@ steps:
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
         tdd_stage: ${tdd_stage || 'implementation'}
-        existing_tasks: []
+        existing_tasks: "${review_existing_tasks || []}"
+        diff_summary: "${review_diff_summary || ''}"
+        diff_changed_files: "${review_diff_files || []}"
 
   - name: mark_task_in_review
     type: SimpleTaskStatusStep
@@ -108,7 +130,7 @@ steps:
 
   - name: handle_code_review_failure
     type: SubWorkflowStep
-    depends_on: ["code_review_request"]
+    depends_on: ["code_review_request", "load_existing_tasks"]
     condition: ${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'
     config:
       workflow: "review-failure-handling"
@@ -131,7 +153,9 @@ steps:
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
         tdd_stage: ${tdd_stage || 'implementation'}
-        existing_tasks: []
+        existing_tasks: "${review_existing_tasks || []}"
+        diff_summary: "${review_diff_summary || ''}"
+        diff_changed_files: "${review_diff_files || []}"
 
   - template: security_review
     name: security_request
@@ -146,7 +170,7 @@ steps:
 
   - name: handle_security_failure
     type: SubWorkflowStep
-    depends_on: ["security_request"]
+    depends_on: ["security_request", "load_existing_tasks"]
     condition: ${security_request_status} == 'fail' || ${security_request_status} == 'unknown'
     config:
       workflow: "review-failure-handling"
@@ -169,7 +193,9 @@ steps:
         repo: ${repo_remote}
         tdd_aware: ${tdd_aware || false}
         tdd_stage: ${tdd_stage || 'implementation'}
-        existing_tasks: []
+        existing_tasks: "${review_existing_tasks || []}"
+        diff_summary: "${review_diff_summary || ''}"
+        diff_changed_files: "${review_diff_files || []}"
 
   - name: mark_task_done
     type: SimpleTaskStatusStep

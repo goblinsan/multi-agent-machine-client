@@ -288,6 +288,35 @@ describe("GitArtifactStep", () => {
   });
 
   describe("Branch Guard", () => {
+    it("should attempt checkout and continue when expected branch exists", async () => {
+      context.setVariable("plan", "Test plan");
+      context.setVariable("branch", "feature/mismatch-branch");
+      context.setVariable("featureBranchName", "feature/mismatch-branch");
+
+      await runGit(["checkout", "-b", "feature/mismatch-branch"], {
+        cwd: repoDir,
+      });
+      await runGit(["checkout", "main"], { cwd: repoDir });
+
+      const step = new GitArtifactStep({
+        name: "commit_plan",
+        type: "GitArtifactStep",
+        config: {
+          source_output: "plan",
+          artifact_path: ".ma/tasks/1/plan.md",
+          commit_message: "docs(ma): plan",
+        },
+      });
+
+      const result = assertSuccess(await step.execute(context));
+      expect(result.status).toBe("success");
+
+      const branch = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], {
+        cwd: repoDir,
+      });
+      expect(branch.stdout.trim()).toBe("feature/mismatch-branch");
+    });
+
     it("should fail when active branch does not match expected branch", async () => {
       context.setVariable("plan", "Test plan");
       context.setVariable("branch", "feature/mismatch-branch");

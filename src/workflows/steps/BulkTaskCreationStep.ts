@@ -32,6 +32,7 @@ interface TaskToCreate {
   description?: string;
   priority?: TaskPriority;
   milestone_slug?: string;
+  milestone_id?: number | string;
   parent_task_id?: string;
   external_id?: string;
   assignee_persona?: string;
@@ -406,7 +407,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
       description: task.description,
       status: "open",
       priority_score: task.priority_score,
-      milestone_id: task.milestone_slug ? undefined : undefined,
+      milestone_id: this.normalizeMilestoneId(task.milestone_id),
       parent_task_id: task.parent_task_id
         ? parseInt(task.parent_task_id)
         : undefined,
@@ -497,5 +498,23 @@ export class BulkTaskCreationStep extends WorkflowStep {
     }
 
     return result;
+  }
+
+  private normalizeMilestoneId(
+    value: number | string | undefined,
+  ): number | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return undefined;
   }
 }

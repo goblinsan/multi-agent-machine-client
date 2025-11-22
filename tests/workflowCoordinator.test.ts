@@ -49,6 +49,9 @@ describe("WorkflowCoordinator Integration", () => {
     };
     const projectInfo = { repo: { url: "https://gitlab.com/test/repo.git" } };
     const payload = { repo: "https://bitbucket.org/test/repo.git" };
+    const detailsWithRepositories = {
+      repositories: [{ url: "https://projects.example.com/org/repo.git" }],
+    };
 
     expect(
       coordinator["extractRepoRemote"](details, projectInfo, payload),
@@ -61,6 +64,10 @@ describe("WorkflowCoordinator Integration", () => {
     expect(coordinator["extractRepoRemote"]({}, {}, payload)).toBe(
       "https://bitbucket.org/test/repo.git",
     );
+
+    expect(
+      coordinator["extractRepoRemote"](detailsWithRepositories, {}, {}),
+    ).toBe("https://projects.example.com/org/repo.git");
 
     expect(coordinator["extractRepoRemote"]({}, {}, {})).toBe("");
   });

@@ -251,6 +251,53 @@ export class ConditionalStep extends WorkflowStep {
       }
     }
 
+    const variableComparisonMatch = clean.match(
+      /^([\w.]+)\s*(==|!=|===|!==|>=|<=|>|<)\s*([\w.]+)$/,
+    );
+    if (variableComparisonMatch) {
+      const [, rawLeft, operator, rawRight] = variableComparisonMatch;
+      const leftPath = this.normalizePath(rawLeft);
+      const rightPath = this.normalizePath(rawRight);
+      const leftValue = resolveVariablePath(leftPath, context);
+      const rightValue = resolveVariablePath(rightPath, context);
+
+      switch (operator) {
+        case "==":
+        case "===":
+          return leftValue === rightValue;
+        case "!=":
+        case "!==":
+          return leftValue !== rightValue;
+        case ">":
+        case ">=":
+        case "<":
+        case "<=": {
+          const leftNumber = Number(leftValue);
+          const rightNumber = Number(rightValue);
+
+          if (Number.isNaN(leftNumber) || Number.isNaN(rightNumber)) {
+            logger.warn(`Variable comparison failed to parse as numbers`, {
+              condition: clean,
+              leftValue,
+              rightValue,
+            });
+            return false;
+          }
+
+          switch (operator) {
+            case ">":
+              return leftNumber > rightNumber;
+            case ">=":
+              return leftNumber >= rightNumber;
+            case "<":
+              return leftNumber < rightNumber;
+            case "<=":
+              return leftNumber <= rightNumber;
+          }
+        }
+      }
+    }
+
     const pathMatch = clean.match(/^([\w.]+)$/);
     if (pathMatch) {
       const [, rawPath] = pathMatch;

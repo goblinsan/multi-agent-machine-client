@@ -86,6 +86,9 @@ templates:
         allowed_languages: ${context_allowed_languages}
         allowed_languages_normalized: ${context_allowed_languages_normalized}
         applied_files: ${last_applied_files}
+        repo_diff_patch: ${review_diff_patch}
+        repo_diff_summary: ${review_diff_summary}
+        repo_changed_files: ${review_diff_files}
 
   security_review:
     type: PersonaRequestStep
@@ -110,6 +113,9 @@ templates:
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
+        repo_diff_patch: ${review_diff_patch}
+        repo_diff_summary: ${review_diff_summary}
+        repo_changed_files: ${review_diff_files}
 
   devops_review:
     type: PersonaRequestStep
@@ -135,3 +141,6 @@ templates:
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
+        repo_diff_patch: ${review_diff_patch}
+        repo_diff_summary: ${review_diff_summary}
+        repo_changed_files: ${review_diff_files}

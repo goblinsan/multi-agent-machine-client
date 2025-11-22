@@ -1,13 +1,30 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { makeTempRepo } from "./makeTempRepo";
+import { workflowEngine } from "../src/workflows/WorkflowEngine.js";
 
-vi.mock("../src/dashboard.js", () => ({
-  fetchProjectStatus: vi.fn().mockResolvedValue({
+const {
+  fetchTaskMock,
+  updateTaskStatusMock,
+  updateBlockedDependenciesMock,
+  projectStatusMock,
+  projectStatusDetailsMock,
+} =
+  vi.hoisted(() => {
+  const fetchTaskMock = vi.fn();
+  const updateTaskStatusMock = vi
+    .fn()
+    .mockResolvedValue({ ok: true, status: 200, body: null });
+    const updateBlockedDependenciesMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, body: null });
+
+  const projectStatusMock = vi.fn().mockResolvedValue({
     id: "proj-blocked",
     name: "Blocked Task Project",
     status: "active",
-  }),
-  fetchProjectStatusDetails: vi.fn().mockResolvedValue({
+  });
+
+  const projectStatusDetailsMock = vi.fn().mockResolvedValue({
     tasks: [
       {
         id: "blocked-task-1",
@@ -19,11 +36,42 @@ vi.mock("../src/dashboard.js", () => ({
       },
     ],
     repositories: [{ url: "https://example/repo.git" }],
-  }),
-  updateTaskStatus: vi.fn().mockResolvedValue({ ok: true, status: 200 }),
+  });
+
+    return {
+      fetchTaskMock,
+      updateTaskStatusMock,
+      updateBlockedDependenciesMock,
+      projectStatusMock,
+      projectStatusDetailsMock,
+    };
+});
+
+vi.mock("../src/dashboard/TaskAPI.js", () => ({
+  TaskAPI: vi.fn().mockImplementation(() => ({
+    fetchTask: fetchTaskMock,
+    updateTaskStatus: updateTaskStatusMock,
+    updateBlockedDependencies: updateBlockedDependenciesMock,
+  })),
+}));
+
+vi.mock("../src/dashboard.js", () => ({
+  fetchProjectStatus: projectStatusMock,
+  fetchProjectStatusDetails: projectStatusDetailsMock,
+  updateTaskStatus: updateTaskStatusMock,
   createDashboardTask: vi
     .fn()
     .mockResolvedValue({ id: "new-task-123", ok: true }),
+}));
+
+vi.mock("../src/dashboard/ProjectAPI.js", () => ({
+  ProjectAPI: vi.fn().mockImplementation(() => ({
+    fetchProjectStatus: projectStatusMock,
+    fetchProjectStatusDetails: projectStatusDetailsMock,
+    fetchProjectStatusSummary: vi.fn(),
+    fetchProjectMilestones: vi.fn(),
+    fetchProjectTasks: vi.fn().mockResolvedValue([]),
+  })),
 }));
 
 vi.mock("../src/gitUtils.js");
@@ -107,6 +155,39 @@ import { createFastCoordinator } from "./helpers/coordinatorTestHelper.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fetchTaskMock.mockReset();
+  updateTaskStatusMock.mockReset();
+  updateTaskStatusMock.mockResolvedValue({
+    ok: true,
+    status: 200,
+    body: null,
+  });
+  updateBlockedDependenciesMock.mockReset();
+  updateBlockedDependenciesMock.mockResolvedValue({
+    ok: true,
+    status: 200,
+    body: null,
+  });
+  projectStatusMock.mockReset();
+  projectStatusMock.mockResolvedValue({
+    id: "proj-blocked",
+    name: "Blocked Task Project",
+    status: "active",
+  });
+  projectStatusDetailsMock.mockReset();
+  projectStatusDetailsMock.mockResolvedValue({
+    tasks: [
+      {
+        id: "blocked-task-1",
+        name: "Blocked Task",
+        status: "blocked",
+        blocked_attempt_count: 2,
+        blocked_reason: "Context scan failed",
+        failed_step: "context_request",
+      },
+    ],
+    repositories: [{ url: "https://example/repo.git" }],
+  });
 });
 
 describe("Blocked Task Resolution Workflow", () => {
@@ -294,5 +375,79 @@ describe("Blocked Task Resolution Workflow", () => {
         throw new Error("Success test workflow hung");
       }
     }
+  });
+
+  it("pauses unblock workflow while dependency tasks remain pending", async () => {
+    fetchTaskMock.mockImplementation(async (id: string) => ({
+      id,
+      status: "blocked",
+    }));
+
+    const repoRoot = await makeTempRepo();
+
+    const result = await workflowEngine.executeWorkflow(
+      "blocked-task-resolution",
+      {
+        project_id: "proj-blocked",
+        repo: repoRoot,
+        repo_root: repoRoot,
+        branch: "main",
+        task: {
+          id: "blocked-task-deps",
+          name: "Blocked Task With Dependencies",
+          status: "blocked",
+          blocked_attempt_count: 1,
+          blocked_dependencies: ["dep-501"],
+        },
+        blocked_dependencies: ["dep-501"],
+      },
+    );
+
+    expect(result.success).toBe(true);
+    const dependencyStatus =
+      result.finalContext.getVariable("dependency_status");
+    expect(dependencyStatus?.allResolved).toBe(false);
+    expect(fetchTaskMock).toHaveBeenCalledWith("dep-501", "proj-blocked");
+    expect(updateTaskStatusMock).not.toHaveBeenCalled();
+    expect(updateBlockedDependenciesMock).not.toHaveBeenCalled();
+  });
+
+  it("continues unblock workflow when dependency tasks are resolved", async () => {
+    fetchTaskMock.mockImplementation(async (id: string) => ({
+      id,
+      status: "done",
+    }));
+
+    const repoRoot = await makeTempRepo();
+
+    const result = await workflowEngine.executeWorkflow(
+      "blocked-task-resolution",
+      {
+        project_id: "proj-blocked",
+        repo: repoRoot,
+        repo_root: repoRoot,
+        branch: "main",
+        task: {
+          id: "blocked-task-resolved",
+          name: "Blocked Task With Resolved Dependencies",
+          status: "blocked",
+          blocked_attempt_count: 2,
+          blocked_dependencies: ["dep-601"],
+        },
+        blocked_dependencies: ["dep-601"],
+      },
+    );
+
+    expect(result.success).toBe(true);
+    const dependencyStatus =
+      result.finalContext.getVariable("dependency_status");
+    expect(dependencyStatus?.allResolved).toBe(true);
+    expect(fetchTaskMock).toHaveBeenCalledWith("dep-601", "proj-blocked");
+    expect(updateTaskStatusMock).toHaveBeenCalled();
+    expect(updateBlockedDependenciesMock).toHaveBeenCalledWith(
+      "blocked-task-resolved",
+      "proj-blocked",
+      [],
+    );
   });
 });

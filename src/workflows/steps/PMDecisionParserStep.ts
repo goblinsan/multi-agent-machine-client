@@ -71,6 +71,26 @@ export class PMDecisionParserStep extends WorkflowStep {
       });
 
       const input = stepConfig?.input ?? (context as any).pm_response;
+      const inputSummary =
+        typeof input === "string"
+          ? {
+              type: "string",
+              length: input.length,
+              preview: input.slice(0, 200),
+            }
+          : input && typeof input === "object"
+            ? {
+                type: "object",
+                keys: Object.keys(input).slice(0, 10),
+                followUpArray:
+                  Array.isArray((input as any).follow_up_tasks) &&
+                  (input as any).follow_up_tasks.length,
+              }
+            : { type: typeof input };
+      context.logger.info("PM decision input summary", {
+        stepName: this.config.name,
+        summary: inputSummary,
+      });
 
       let decision: PMDecision;
       const warnings: string[] = [];

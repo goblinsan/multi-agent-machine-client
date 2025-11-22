@@ -13,7 +13,22 @@ const taskCreateSchema = z.object({
   priority_score: z.number().int().min(0).max(10000).optional().default(0),
   external_id: z.string().optional(),
   labels: z.array(z.string()).optional(),
+  blocked_dependencies: z.array(z.string()).optional(),
 });
+
+function parseJsonArray(value: any): string[] | null {
+  if (!value) return null;
+  if (Array.isArray(value)) return value.map((item) => String(item));
+
+  try {
+    const parsed = JSON.parse(String(value));
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item));
+    }
+  } catch {}
+
+  return null;
+}
 
 export function registerTaskRoutes(fastify: FastifyInstance) {
   fastify.get(
@@ -25,7 +40,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
       const result = db.exec(
         `
       SELECT 
-        t.id, t.title, t.description, t.status, t.priority_score, t.milestone_id, t.labels,
+        t.id, t.title, t.description, t.status, t.priority_score, t.milestone_id, t.labels, t.blocked_dependencies,
         m.name as milestone_name, m.slug as milestone_slug, m.status as milestone_status
       FROM tasks t
       LEFT JOIN milestones m ON t.milestone_id = m.id
@@ -45,6 +60,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
               priority_score,
               milestone_id,
               labels,
+              blocked_dependencies,
               milestone_name,
               milestone_slug,
               milestone_status,
@@ -57,6 +73,8 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
               priority_score,
               milestone_id,
               labels: labels ? JSON.parse(labels) : null,
+              blocked_dependencies:
+                parseJsonArray(blocked_dependencies) ?? [],
 
               milestone: milestone_id
                 ? {
@@ -102,6 +120,8 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         task[col] = row[idx];
       });
       if (task.labels) task.labels = JSON.parse(task.labels);
+      task.blocked_dependencies =
+        parseJsonArray(task.blocked_dependencies) ?? [];
 
       return task;
     },
@@ -146,7 +166,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
       }
 
       db.run(
-        `INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, blocked_dependencies, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           data.title,
@@ -156,6 +176,9 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
           data.status,
           data.priority_score || 0,
           data.external_id || null,
+          data.blocked_dependencies
+            ? JSON.stringify(data.blocked_dependencies)
+            : null,
           data.labels ? JSON.stringify(data.labels) : null,
         ],
       );
@@ -172,6 +195,8 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         created[col] = row[idx];
       });
       if (created.labels) created.labels = JSON.parse(created.labels);
+      created.blocked_dependencies =
+        parseJsonArray(created.blocked_dependencies) ?? [];
 
       return reply.status(201).send(created);
     },
@@ -237,7 +262,7 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
           }
 
           db.run(
-            "INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tasks (project_id, title, description, milestone_id, parent_task_id, status, priority_score, external_id, blocked_dependencies, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
               projectId,
               parsed.title,
@@ -247,6 +272,9 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
               parsed.status,
               parsed.priority_score || 0,
               parsed.external_id || null,
+              parsed.blocked_dependencies
+                ? JSON.stringify(parsed.blocked_dependencies)
+                : null,
               parsed.labels ? JSON.stringify(parsed.labels) : null,
             ],
           );
@@ -261,6 +289,8 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
             task[col] = row[idx];
           });
           if (task.labels) task.labels = JSON.parse(task.labels);
+          task.blocked_dependencies =
+            parseJsonArray(task.blocked_dependencies) ?? [];
           created.push(task);
         }
 
@@ -333,6 +363,14 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         updates.push("labels = ?");
         params.push(JSON.stringify(payload.labels));
       }
+      if (payload.blocked_dependencies !== undefined) {
+        updates.push("blocked_dependencies = ?");
+        params.push(
+          payload.blocked_dependencies
+            ? JSON.stringify(payload.blocked_dependencies)
+            : null,
+        );
+      }
 
       if (updates.length === 0)
         return reply
@@ -361,6 +399,8 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         updated[col] = row[idx];
       });
       if (updated.labels) updated.labels = JSON.parse(updated.labels);
+      updated.blocked_dependencies =
+        parseJsonArray(updated.blocked_dependencies) ?? [];
 
       return updated;
     },

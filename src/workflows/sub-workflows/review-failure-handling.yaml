@@ -33,6 +33,8 @@ context:
 #   tdd_aware: boolean (optional) - Whether task is implementing a failing test (TDD workflow)
 #   tdd_stage: string (optional) - Current TDD stage (write_failing_test | failing_test | implementation | passing_test)
 #   existing_tasks: array (optional) - List of existing tasks on dashboard for duplicate detection
+#   diff_changed_files: array (optional) - Files modified in the current review branch
+#   diff_summary: string (optional) - Git diff summary between feature branch and base
 
 # Steps
 steps:
@@ -71,6 +73,8 @@ steps:
         tdd_aware: "${tdd_aware || false}"
         tdd_stage: "${tdd_stage || 'implementation'}"
         existing_tasks: "${existing_tasks || []}"
+        diff_summary: "${diff_summary || ''}"
+        diff_changed_files: "${diff_changed_files || []}"
     outputs:
       - pm_decision
 
@@ -90,15 +94,31 @@ steps:
       - deferred_issues
       - follow_up_tasks
 
+  - name: filter_follow_up_tasks
+    type: ReviewFollowUpFilterStep
+    description: "Filter PM follow-ups using milestone context, diff data, and existing backlog"
+    depends_on: ["parse_pm_decision"]
+    condition: "parse_pm_decision.follow_up_tasks.length > 0"
+    config:
+      tasks: "${parse_pm_decision.follow_up_tasks}"
+      existing_tasks: "${existing_tasks || []}"
+      milestone_context: "${milestone_context}"
+      task: "${task}"
+      review_type: "${review_type}"
+      diff_changed_files: "${diff_changed_files || []}"
+    outputs:
+      - filtered_tasks
+      - dropped_tasks
+
   # Step 4: Create tasks in bulk (with duplicate detection)
   - name: create_tasks_bulk
     type: BulkTaskCreationStep
     description: "Create all follow-up tasks in single bulk operation with duplicate detection"
-    depends_on: ["parse_pm_decision"]
-    condition: "parse_pm_decision.follow_up_tasks.length > 0"
+    depends_on: ["filter_follow_up_tasks"]
+    condition: "filter_follow_up_tasks.filtered_tasks.length > 0"
     config:
       project_id: "${project_id}"
-      tasks: "${parse_pm_decision.follow_up_tasks}"
+      tasks: "${filter_follow_up_tasks.filtered_tasks}"
       priority_mapping:
         critical: "${priority_scores.urgent}"
         high: "${priority_scores.urgent}"
@@ -110,14 +130,13 @@ steps:
       parent_task_mapping:
         urgent: "${parent_task_id}"
         deferred: null
-      title_prefix: "${review_type.toUpperCase()}"
       options:
         create_milestone_if_missing: true
         upsert_by_external_id: true
         external_id_template: "${review_type}-${task.id}-${task.title_slug}"
         check_duplicates: true
         existing_tasks: "${existing_tasks || []}"
-        duplicate_match_strategy: "title_and_milestone"
+        duplicate_match_strategy: "content_hash"
     outputs:
       - tasks_created
       - urgent_tasks_created
@@ -126,11 +145,24 @@ steps:
       - skipped_duplicates
       - duplicate_task_ids
 
+  - name: register_follow_up_dependencies
+    type: RegisterBlockedDependenciesStep
+    description: "Attach newly created task ids to the blocked parent"
+    depends_on: ["create_tasks_bulk"]
+    condition: "parent_task_id && create_tasks_bulk.task_ids.length > 0"
+    config:
+      project_id: "${project_id}"
+      parent_task_id: "${parent_task_id}"
+      dependency_task_ids: "${create_tasks_bulk.task_ids}"
+    outputs:
+      - dependencyCount
+      - addedDependencies
+
   # Step 5: Mark original task as blocked (if configured)
   - name: mark_original_blocked
     type: SimpleTaskStatusStep
     description: "Mark original task as blocked to prevent loop"
-    depends_on: ["create_tasks_bulk"]
+    depends_on: ["register_follow_up_dependencies"]
     condition: "config.block_original_task == true && urgent_tasks_created > 0"
     config:
       status: "blocked"

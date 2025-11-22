@@ -85,5 +85,11 @@ describe("TDD Context in Review Payloads", () => {
     expect(pmEvalStep.config.payload.tdd_stage).toBe(
       "${tdd_stage || 'implementation'}",
     );
+    expect(pmEvalStep.config.payload.diff_summary).toBe(
+      "${diff_summary || ''}",
+    );
+    expect(pmEvalStep.config.payload.diff_changed_files).toBe(
+      "${diff_changed_files || []}",
+    );
   });
 });

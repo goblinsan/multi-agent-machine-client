@@ -396,4 +396,37 @@ export class TaskAPI extends DashboardClient {
     }
     return null;
   }
+
+  async updateBlockedDependencies(
+    taskId: string,
+    projectId: string,
+    dependencyIds: string[],
+  ): Promise<void> {
+    if (!this.baseUrl) {
+      throw new Error("dashboard update skipped: base URL not configured");
+    }
+
+    const path = `/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;
+    const payload = { blocked_dependencies: dependencyIds };
+
+    const response = await this.patch(path, payload);
+
+    if (!response.ok) {
+      logger.warn("blocked dependency update failed", {
+        taskId,
+        projectId,
+        status: response.status,
+        response: response.data,
+      });
+      throw new Error(
+        `Failed to update blocked task dependencies: HTTP ${response.status}`,
+      );
+    }
+
+    logger.info("blocked dependencies updated", {
+      taskId,
+      projectId,
+      dependencyCount: dependencyIds.length,
+    });
+  }
 }

@@ -124,12 +124,25 @@ export class GitArtifactStep extends WorkflowStep {
         ["rev-parse", "--abbrev-ref", "HEAD"],
         { cwd: repoRoot },
       );
-      const activeBranch = branchResult.stdout.trim();
+      let activeBranch = branchResult.stdout.trim();
 
       if (!activeBranch) {
         throw new Error(
           "GitArtifactStep: Unable to determine current git branch for guard check",
         );
+      }
+
+      if (activeBranch !== expectedBranch) {
+        const correctedBranch = await this.tryAlignBranch(
+          repoRoot,
+          expectedBranch,
+          activeBranch,
+          context,
+        );
+
+        if (correctedBranch) {
+          activeBranch = correctedBranch;
+        }
       }
 
       if (activeBranch !== expectedBranch) {
@@ -351,5 +364,55 @@ export class GitArtifactStep extends WorkflowStep {
     }
 
     return null;
+  }
+
+  private async tryAlignBranch(
+    repoRoot: string,
+    expectedBranch: string,
+    activeBranch: string,
+    context: WorkflowContext,
+  ): Promise<string | null> {
+    context.logger.warn("Branch guard mismatch detected, attempting checkout", {
+      stepName: this.config.name,
+      expectedBranch,
+      activeBranch,
+    });
+
+    try {
+      await runGit(["checkout", expectedBranch], { cwd: repoRoot });
+      const verifyResult = await runGit(
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        { cwd: repoRoot },
+      );
+      const verifiedBranch = verifyResult.stdout.trim();
+
+      if (verifiedBranch === expectedBranch) {
+        context.logger.info("Auto-checkout succeeded for branch guard mismatch", {
+          stepName: this.config.name,
+          branch: expectedBranch,
+        });
+        context.setVariable("branch", expectedBranch);
+        context.setVariable("currentBranch", expectedBranch);
+        return expectedBranch;
+      }
+
+      context.logger.error(
+        "Auto-checkout left repository on unexpected branch",
+        {
+          stepName: this.config.name,
+          verifiedBranch,
+          expectedBranch,
+        },
+      );
+      return verifiedBranch || null;
+    } catch (error) {
+      context.logger.error("Failed to auto-checkout expected branch", {
+        stepName: this.config.name,
+        expectedBranch,
+        repoRoot,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 }

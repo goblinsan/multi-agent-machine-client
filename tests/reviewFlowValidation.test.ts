@@ -31,6 +31,14 @@ describe("Review Flow Validation", () => {
     expect(markInReview?.condition).toBe("${qa_request_status} == 'pass'");
     expect(markInReview?.config?.status).toBe("in_review");
 
+    const collectDiff = steps["collect_review_diff"];
+    expect(collectDiff).toBeDefined();
+    expect(collectDiff?.depends_on).toEqual(["ensure_branch_published"]);
+
+    const qaRequest = steps["qa_request"];
+    expect(qaRequest).toBeDefined();
+    expect(qaRequest?.depends_on).toEqual(["collect_review_diff"]);
+
     const codeReview = steps["code_review_request"];
     expect(codeReview).toBeDefined();
     expect(codeReview?.depends_on).toEqual(["mark_task_in_review"]);
@@ -41,6 +49,7 @@ describe("Review Flow Validation", () => {
     expect(handleCodeReviewFailure).toBeDefined();
     expect(handleCodeReviewFailure?.depends_on).toEqual([
       "code_review_request",
+      "load_existing_tasks",
     ]);
     expect(handleCodeReviewFailure?.condition).toBe(
       "${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'",
@@ -57,7 +66,10 @@ describe("Review Flow Validation", () => {
 
     const handleSecurityFailure = steps["handle_security_failure"];
     expect(handleSecurityFailure).toBeDefined();
-    expect(handleSecurityFailure?.depends_on).toEqual(["security_request"]);
+    expect(handleSecurityFailure?.depends_on).toEqual([
+      "security_request",
+      "load_existing_tasks",
+    ]);
     expect(handleSecurityFailure?.condition).toBe(
       "${security_request_status} == 'fail' || ${security_request_status} == 'unknown'",
     );

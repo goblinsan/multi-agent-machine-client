@@ -53,10 +53,95 @@ function evaluateSingleCondition(
     return contextValue !== value;
   }
 
+  const lengthComparisonMatch = cleanCondition.match(
+    /^([\w.]+)\.length\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (lengthComparisonMatch) {
+    const [, varPath, operator, valueStr] = lengthComparisonMatch;
+    const target = resolveVariablePath(varPath, context);
+    if (Array.isArray(target) || typeof target === "string") {
+      return compareNumbers(target.length, Number(valueStr), operator);
+    }
+    if (target && typeof target === "object") {
+      return compareNumbers(Object.keys(target).length, Number(valueStr), operator);
+    }
+    return compareNumbers(0, Number(valueStr), operator);
+  }
+
+  const numericComparisonMatch = cleanCondition.match(
+    /^([\w.]+)\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/,
+  );
+  if (numericComparisonMatch) {
+    const [, varPath, operator, valueStr] = numericComparisonMatch;
+    const actualValue = resolveVariablePath(varPath, context);
+    if (typeof actualValue === "number") {
+      return compareNumbers(actualValue, Number(valueStr), operator);
+    }
+    const parsedActual = Number(actualValue);
+    if (!Number.isNaN(parsedActual)) {
+      return compareNumbers(parsedActual, Number(valueStr), operator);
+    }
+    return false;
+  }
+
+  const variableComparisonMatch = cleanCondition.match(
+    /^([\w.]+)\s*(==|!=|>=|<=|>|<)\s*([\w.]+)$/,
+  );
+  if (variableComparisonMatch) {
+    const [, leftPath, operator, rightPath] = variableComparisonMatch;
+    const leftValue = resolveVariablePath(leftPath, context);
+    const rightValue = resolveVariablePath(rightPath, context);
+
+    if (operator === "==") {
+      return leftValue === rightValue;
+    }
+
+    if (operator === "!=") {
+      return leftValue !== rightValue;
+    }
+
+    const leftNumber = Number(leftValue);
+    const rightNumber = Number(rightValue);
+
+    if (Number.isNaN(leftNumber) || Number.isNaN(rightNumber)) {
+      context.logger.warn("Variable comparison failed to parse as numbers", {
+        condition: cleanCondition,
+        leftValue,
+        rightValue,
+      });
+      return false;
+    }
+
+    return compareNumbers(leftNumber, rightNumber, operator);
+  }
+
   context.logger.warn("Unsupported condition pattern, defaulting to false", {
     condition: cleanCondition,
   });
   return false;
+}
+
+function compareNumbers(
+  actual: number,
+  expected: number,
+  operator: string,
+): boolean {
+  switch (operator) {
+    case "==":
+      return actual === expected;
+    case "!=":
+      return actual !== expected;
+    case ">":
+      return actual > expected;
+    case ">=":
+      return actual >= expected;
+    case "<":
+      return actual < expected;
+    case "<=":
+      return actual <= expected;
+    default:
+      return false;
+  }
 }
 
 export function resolveVariablePath(

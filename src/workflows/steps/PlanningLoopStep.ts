@@ -14,6 +14,8 @@ import { logger } from "../../logger.js";
 import { runGit } from "../../gitUtils.js";
 import fs from "fs/promises";
 import path from "path";
+import { cfg } from "../../config.js";
+import { personaTimeoutMs } from "../../util.js";
 import {
   loadContextDirectory,
   summarizePlanResult,
@@ -48,9 +50,18 @@ export class PlanningLoopStep extends WorkflowStep {
       planStep,
       evaluateStep,
       payload,
-      timeout = 30000,
+      timeout,
       deadlineSeconds = 600,
     } = config;
+
+    const resolveTimeout = (persona: string) => {
+      if (typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0)
+        return timeout;
+      return personaTimeoutMs(persona, cfg);
+    };
+
+    const plannerTimeoutMs = resolveTimeout(plannerPersona);
+    const evaluatorTimeoutMs = resolveTimeout(evaluatorPersona);
 
     let currentIteration = 0;
     let planResult: any = null;
@@ -68,6 +79,9 @@ export class PlanningLoopStep extends WorkflowStep {
 
     while (currentIteration < maxIterations) {
       currentIteration++;
+
+      const taskId = this.resolveTaskId(context);
+      const planIterationArtifactPath = `.ma/tasks/${taskId}/02-plan-iteration-${currentIteration}.md`;
 
       logger.info(
         `Planning loop iteration ${currentIteration}/${maxIterations}`,
@@ -139,7 +153,7 @@ export class PlanningLoopStep extends WorkflowStep {
           plannerPersona,
           context.workflowId,
           planCorrId,
-          timeout,
+          plannerTimeoutMs,
         );
 
         const parsedPlanResult = summarizePlanResult(planResult);
@@ -163,12 +177,11 @@ export class PlanningLoopStep extends WorkflowStep {
           });
         }
 
-        const taskId = context.getVariable("task")?.id || "unknown";
         const planContent = formatPlanArtifact(planResult, currentIteration);
         await this.commitArtifact(
           context,
           planContent,
-          `.ma/tasks/${taskId}/02-plan-iteration-${currentIteration}.md`,
+          planIterationArtifactPath,
           `docs(ma): plan iteration ${currentIteration} for task ${taskId}`,
         );
 
@@ -247,11 +260,15 @@ export class PlanningLoopStep extends WorkflowStep {
         const evalPayload = {
           ...payload,
           plan: planResult,
+          plan_artifact: planIterationArtifactPath,
+          plan_iteration_artifact: planIterationArtifactPath,
+          plan_iteration: currentIteration,
           iteration: currentIteration,
           task: context.getVariable("task"),
           repo: repoRemote,
           branch: currentBranch,
           project_id: context.projectId,
+          repo_root: context.repoRoot,
           context_summary: contextSummaryMd,
           context_overview: contextOverview,
           context_insights: contextInsights,
@@ -279,7 +296,7 @@ export class PlanningLoopStep extends WorkflowStep {
           evaluatorPersona,
           context.workflowId,
           evalCorrId,
-          timeout,
+          evaluatorTimeoutMs,
         );
 
         const parsedEvaluation = summarizeEvaluationResult(evaluationResult);
@@ -514,5 +531,17 @@ export class PlanningLoopStep extends WorkflowStep {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private resolveTaskId(context: WorkflowContext): string {
+    const task = context.getVariable("task");
+    if (!task) return "unknown";
+    if (task.id !== undefined && task.id !== null) {
+      return String(task.id);
+    }
+    if (task.data?.id !== undefined && task.data.id !== null) {
+      return String(task.data.id);
+    }
+    return "unknown";
   }
 }

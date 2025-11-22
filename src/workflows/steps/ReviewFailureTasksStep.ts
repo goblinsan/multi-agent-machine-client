@@ -10,7 +10,11 @@ import {
   CreateTaskInput as _CreateTaskInput,
 } from "../../dashboard/TaskAPI.js";
 import { ProjectAPI } from "../../dashboard/ProjectAPI.js";
-import { TaskDuplicateDetector } from "./helpers/TaskDuplicateDetector.js";
+import {
+  TaskDuplicateDetector,
+  type TaskForDuplication,
+  type ExistingTask,
+} from "./helpers/TaskDuplicateDetector.js";
 
 const taskAPI = new TaskAPI();
 const projectAPI = new ProjectAPI();
@@ -111,11 +115,21 @@ export class ReviewFailureTasksStep extends WorkflowStep {
         followUpTasksCount: pmDecision.follow_up_tasks.length,
       });
 
-      const existingTasks = await projectAPI.fetchProjectTasks(projectId);
+      const existingTasks = (await projectAPI.fetchProjectTasks(
+        projectId,
+      )) as ExistingTask[];
       logger.debug("Fetched existing tasks for duplicate detection", {
         stepName: this.config.name,
         existingTasksCount: existingTasks.length,
       });
+
+      const duplicateDetector = new TaskDuplicateDetector();
+      const seenContentHashes = new Map<string, string>();
+      const currentMilestoneSlug =
+        context.getVariable("milestone_slug") ||
+        task?.milestone_slug ||
+        task?.milestone?.slug ||
+        null;
 
       let urgentTasksCreated = 0;
       let deferredTasksCreated = 0;
@@ -146,7 +160,36 @@ export class ReviewFailureTasksStep extends WorkflowStep {
               parentTaskId,
             );
 
-            if (this.isDuplicateTask(followUpTask, existingTasks, taskTitle)) {
+            const candidateTask: TaskForDuplication = {
+              title: taskTitle,
+              description: taskDescription,
+              external_id: followUpTask.external_id,
+              milestone_slug: isUrgent
+                ? followUpTask.milestone_slug || currentMilestoneSlug || undefined
+                : config.backlogMilestoneSlug || "future-enhancements",
+            };
+
+            const candidateHash = duplicateDetector.getContentHash(
+              candidateTask,
+            );
+
+            if (candidateHash && seenContentHashes.has(candidateHash)) {
+              skippedDuplicates++;
+              logger.info("Skipping duplicate follow-up (batch)", {
+                stepName: this.config.name,
+                title: taskTitle,
+                matches: seenContentHashes.get(candidateHash),
+              });
+              continue;
+            }
+
+            if (
+              this.isDuplicateTask(
+                duplicateDetector,
+                candidateTask,
+                existingTasks,
+              )
+            ) {
               skippedDuplicates++;
               logger.info("Skipping duplicate task", {
                 stepName: this.config.name,
@@ -189,6 +232,10 @@ export class ReviewFailureTasksStep extends WorkflowStep {
                 urgentTasksCreated++;
               } else {
                 deferredTasksCreated++;
+              }
+
+              if (candidateHash) {
+                seenContentHashes.set(candidateHash, taskTitle);
               }
 
               logger.info("Follow-up task created successfully", {
@@ -259,37 +306,26 @@ export class ReviewFailureTasksStep extends WorkflowStep {
   }
 
   private isDuplicateTask(
-    followUpTask: any,
-    existingTasks: any[],
-    formattedTitle: string,
+    detector: TaskDuplicateDetector,
+    candidateTask: TaskForDuplication,
+    existingTasks: ExistingTask[],
   ): boolean {
-    if (!followUpTask || !existingTasks || existingTasks.length === 0) {
+    if (!existingTasks || existingTasks.length === 0) {
       return false;
     }
 
-    const detector = new TaskDuplicateDetector();
-
-    const taskForDetection = {
-      title: formattedTitle,
-      description: followUpTask.description || "",
-      external_id: followUpTask.external_id,
-      milestone_id: followUpTask.milestone_id,
-    };
-
     const result = detector.findDuplicateWithDetails(
-      taskForDetection,
+      candidateTask,
       existingTasks,
-      "title_and_milestone",
+      "content_hash",
     );
 
     if (result && result.matchScore >= 50) {
       logger.debug("Duplicate task detected", {
-        newTitle: followUpTask.title,
-        formattedTitle: formattedTitle,
+        newTitle: candidateTask.title,
         existingTitle: result.duplicate.title,
         matchScore: result.matchScore,
-        titleOverlap: result.titleOverlap,
-        descriptionOverlap: result.descriptionOverlap,
+        strategy: result.strategy,
         existingTaskId: result.duplicate.id,
       });
       return true;

@@ -155,6 +155,49 @@ describe("Conditional Step Execution", () => {
     });
   });
 
+  describe("Numeric comparisons", () => {
+    it("should evaluate length based comparisons", async () => {
+      context.setStepOutput("parse_pm_decision", {
+        follow_up_tasks: [
+          { title: "a" },
+          { title: "b" },
+        ],
+      });
+
+      const step = new PersonaRequestStep({
+        name: "create_tasks",
+        type: "PersonaRequestStep",
+        condition: "parse_pm_decision.follow_up_tasks.length > 0",
+        config: {
+          persona: "project-manager",
+          payload: {},
+        },
+      });
+
+      const shouldExecute = await step.shouldExecute(context);
+      expect(shouldExecute).toBe(true);
+    });
+
+    it("should evaluate direct numeric comparisons", async () => {
+      context.setStepOutput("parse_pm_decision", {
+        task_count: 2,
+      });
+
+      const step = new PersonaRequestStep({
+        name: "create_tasks",
+        type: "PersonaRequestStep",
+        condition: "parse_pm_decision.task_count >= 2",
+        config: {
+          persona: "project-manager",
+          payload: {},
+        },
+      });
+
+      const shouldExecute = await step.shouldExecute(context);
+      expect(shouldExecute).toBe(true);
+    });
+  });
+
   describe("Template syntax handling", () => {
     it("should handle conditions with ${} template syntax", async () => {
       context.setStepOutput("context_scan", {

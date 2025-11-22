@@ -10,11 +10,19 @@ export interface PMDecision {
     title: string;
     description: string;
     priority: "critical" | "high" | "medium" | "low";
+    milestone_id?: number | string;
+    milestone_slug?: string;
+    milestone_name?: string;
+    metadata?: Record<string, any>;
   }>;
   backlog?: Array<{
     title: string;
     description: string;
     priority: "critical" | "high" | "medium" | "low";
+    milestone_id?: number | string;
+    milestone_slug?: string;
+    milestone_name?: string;
+    metadata?: Record<string, any>;
   }>;
 }
 
@@ -23,11 +31,17 @@ export class DecisionParser {
     input: string,
     reviewType?: string,
     warnings?: string[],
+    allowRawFallback = true,
   ): PMDecision {
     try {
       const parsed = JSON.parse(input);
       if (typeof parsed === "object" && parsed !== null) {
-        return this.parseFromObject(parsed, reviewType, warnings);
+        return this.parseFromObject(
+          parsed,
+          reviewType,
+          warnings,
+          allowRawFallback,
+        );
       }
     } catch (e) {
       logger.debug("Failed to parse PM decision as JSON", { error: String(e) });
@@ -39,7 +53,12 @@ export class DecisionParser {
         const jsonText = codeBlockMatch[1].trim();
         const parsed = JSON.parse(jsonText);
         if (typeof parsed === "object" && parsed !== null) {
-          return this.parseFromObject(parsed, reviewType, warnings);
+          return this.parseFromObject(
+            parsed,
+            reviewType,
+            warnings,
+            allowRawFallback,
+          );
         }
       }
     } catch (e) {
@@ -87,21 +106,194 @@ export class DecisionParser {
     input: any,
     reviewType?: string,
     warnings?: string[],
+    allowRawFallback = true,
   ): PMDecision {
+    if (input && typeof input === "object") {
+      const fallbackFields = ["raw", "text", "content", "message"];
+      for (const field of fallbackFields) {
+        const candidate = input[field];
+        if (typeof candidate === "string" && candidate.trim().length > 0) {
+          const parsed = this.parseFromString(
+            candidate,
+            reviewType,
+            warnings,
+            false,
+          );
+          if (this.hasMeaningfulData(parsed)) {
+            return parsed;
+          }
+        }
+      }
+    }
+
     let decisionObj = input;
     if (input.pm_decision) {
       decisionObj = input.pm_decision;
     } else if (input.decision_object) {
       decisionObj = input.decision_object;
-    } else if (input.output && typeof input.output === "object") {
-      decisionObj = input.output;
     } else if (input.json && typeof input.json === "object") {
       decisionObj = input.json;
     }
 
-    let followUpTasks = [];
-    if (Array.isArray(decisionObj.follow_up_tasks)) {
-      followUpTasks = decisionObj.follow_up_tasks;
+    const unwrapKeys = ["output", "data", "result", "response"];
+    let unwrapDepth = 0;
+
+    const tryParseStringPayload = (payload: string, origin: string) => {
+      const parsedDecision = this.parseFromString(
+        payload,
+        reviewType,
+        warnings,
+        false,
+      );
+      if (this.hasMeaningfulData(parsedDecision)) {
+        logger.info("Parsed PM decision from string payload", {
+          reviewType,
+          origin,
+        });
+        return parsedDecision;
+      }
+
+      try {
+        const parsedJson = JSON.parse(payload);
+        if (parsedJson && typeof parsedJson === "object") {
+          return parsedJson;
+        }
+      } catch (error) {
+        logger.debug("Failed to parse decision JSON string", {
+          reviewType,
+          error: String(error),
+          origin,
+        });
+      }
+
+      return null;
+    };
+
+    while (
+      decisionObj &&
+      typeof decisionObj === "object" &&
+      unwrapDepth < 4
+    ) {
+      let unwrapped = false;
+      for (const key of unwrapKeys) {
+        if (!(key in decisionObj)) {
+          continue;
+        }
+
+        const candidate = decisionObj[key];
+        if (typeof candidate === "string") {
+          const parsed = tryParseStringPayload(candidate, key);
+          if (parsed) {
+            if (this.isPMDecision(parsed)) {
+              return parsed;
+            }
+            decisionObj = parsed;
+            unwrapped = true;
+            break;
+          }
+        }
+
+        if (candidate && typeof candidate === "object") {
+          decisionObj = candidate;
+          unwrapped = true;
+          break;
+        }
+      }
+
+      if (!unwrapped) {
+        break;
+      }
+
+      unwrapDepth += 1;
+    }
+
+    if (typeof decisionObj === "string") {
+      const parsed = tryParseStringPayload(decisionObj, "root");
+      if (parsed) {
+        if (this.isPMDecision(parsed)) {
+          return parsed;
+        }
+        decisionObj = parsed;
+      }
+    }
+
+    let followUpTasks: any[] = [];
+    let followUpSource: string | null = null;
+    const followUpCandidates: Array<{ value: any; source: string }> = [
+      { value: decisionObj.follow_up_tasks, source: "follow_up_tasks" },
+      { value: decisionObj.followUpTasks, source: "followUpTasks" },
+      { value: decisionObj.followupTasks, source: "followupTasks" },
+      { value: decisionObj.followUp, source: "followUp" },
+      { value: decisionObj.follow_up, source: "follow_up" },
+      { value: decisionObj.tasks, source: "tasks" },
+    ];
+
+    for (const { value, source } of followUpCandidates) {
+      if (Array.isArray(value) && value.length > 0) {
+        followUpTasks = value;
+        followUpSource = source;
+        logger.info("Using follow-up tasks from candidate", {
+          reviewType,
+          source,
+          count: followUpTasks.length,
+        });
+        break;
+      }
+
+      if (typeof value === "string" && value.trim().length > 0) {
+        try {
+          const parsedCandidate = JSON.parse(value);
+          if (Array.isArray(parsedCandidate) && parsedCandidate.length > 0) {
+            followUpTasks = parsedCandidate;
+            followUpSource = `${source}:json_string`;
+            logger.info("Parsed follow-up tasks from string candidate", {
+              reviewType,
+              source,
+              count: followUpTasks.length,
+            });
+            break;
+          }
+        } catch (error) {
+          logger.debug("Failed to parse string follow_up_tasks payload", {
+            reviewType,
+            error: String(error),
+            source,
+          });
+        }
+      }
+    }
+
+    if (
+      followUpTasks.length === 0 &&
+      Array.isArray(decisionObj.milestone_updates)
+    ) {
+      const promoted = decisionObj.milestone_updates
+        .filter((update: any) => update && typeof update === "object")
+        .map((update: any) => ({
+          title: update.title || update.name || "",
+          description:
+            update.description || update.details || update.summary || "",
+          priority: this.normalizePriority(update.priority ?? "medium"),
+        }))
+        .filter((task: any) =>
+          [task.title, task.description].some((value) =>
+            typeof value === "string" && value.trim().length > 0,
+          ),
+        );
+
+      if (promoted.length > 0) {
+        followUpTasks = promoted;
+        followUpSource = "milestone_updates";
+        if (warnings) {
+          warnings.push(
+            "PM response missing follow_up_tasks - promoted milestone_updates",
+          );
+        }
+        logger.info("Promoted milestone_updates to follow-up tasks", {
+          reviewType,
+          count: followUpTasks.length,
+        });
+      }
     }
 
     if (Array.isArray(decisionObj.backlog)) {
@@ -150,7 +342,107 @@ export class DecisionParser {
       decision.detected_stage = decisionObj.detected_stage;
     }
 
+    if (
+      allowRawFallback &&
+      Array.isArray(decision.follow_up_tasks) &&
+      decision.follow_up_tasks.length === 0 &&
+      input &&
+      typeof input === "object"
+    ) {
+      const fallbackFields = ["raw", "text", "content", "message"];
+      for (const field of fallbackFields) {
+        const candidate = input[field];
+        if (typeof candidate !== "string" || candidate.trim().length === 0) {
+          continue;
+        }
+
+        const parsedFromRaw = this.parseFromString(
+          candidate,
+          reviewType,
+          warnings,
+          false,
+        );
+
+        if (parsedFromRaw.follow_up_tasks.length > 0) {
+          decision.follow_up_tasks = parsedFromRaw.follow_up_tasks;
+          followUpSource = `fallback:${field}`;
+          logger.info("Recovered follow-up tasks from fallback field", {
+            reviewType,
+            field,
+            count: decision.follow_up_tasks.length,
+          });
+        }
+
+        if (
+          (!decision.reasoning || decision.reasoning.trim().length === 0) &&
+          parsedFromRaw.reasoning
+        ) {
+          decision.reasoning = parsedFromRaw.reasoning;
+        }
+
+        if (
+          decision.immediate_issues.length === 0 &&
+          parsedFromRaw.immediate_issues.length > 0
+        ) {
+          decision.immediate_issues = parsedFromRaw.immediate_issues;
+        }
+
+        if (
+          decision.deferred_issues.length === 0 &&
+          parsedFromRaw.deferred_issues.length > 0
+        ) {
+          decision.deferred_issues = parsedFromRaw.deferred_issues;
+        }
+
+        if (decision.follow_up_tasks.length > 0) {
+          break;
+        }
+      }
+    }
+
+    if (followUpSource) {
+      logger.info("Final follow-up task source", {
+        reviewType,
+        source: followUpSource,
+        count: decision.follow_up_tasks.length,
+      });
+    } else {
+      const fallbackFieldPresence =
+        input && typeof input === "object"
+          ? ["raw", "text", "content", "message"].filter((key) => {
+              const candidate = input[key];
+              return typeof candidate === "string" && candidate.length > 0;
+            })
+          : null;
+      logger.info("No follow-up tasks extracted", {
+        reviewType,
+        hasMilestoneUpdates: Array.isArray(decisionObj.milestone_updates)
+          ? decisionObj.milestone_updates.length
+          : null,
+        hasRawFallback: fallbackFieldPresence,
+      });
+    }
+
     return decision;
+  }
+
+  private hasMeaningfulData(decision: PMDecision): boolean {
+    return (
+      decision.follow_up_tasks.length > 0 ||
+      decision.immediate_issues.length > 0 ||
+      decision.deferred_issues.length > 0 ||
+      (decision.reasoning && decision.reasoning.trim().length > 0) ||
+      decision.decision === "defer"
+    );
+  }
+
+  private isPMDecision(value: any): value is PMDecision {
+    return (
+      value &&
+      typeof value === "object" &&
+      Array.isArray((value as any).follow_up_tasks) &&
+      typeof (value as any).decision === "string"
+    );
   }
 
   private parseArrayString(str: string): string[] {
