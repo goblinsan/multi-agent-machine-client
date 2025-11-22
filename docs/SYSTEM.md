@@ -41,6 +41,7 @@ Transports are interchangeable; workflows and persona behaviors do not depend on
 - The `WorkflowCoordinator` evaluates trigger conditions to select a workflow per task (status, priority, labels, repository hints).
 - Steps include persona requests, git operations, conditional branches, and evaluation loops.
 - Template expansion, variable resolution, and edit safety checks happen in shared helpers such as `ConfigResolver` and `VariableResolver`.
+- Plan evaluation is isolated to the planning loop personas (`implementation-planner` + `plan-evaluator`) who read `.ma/tasks/{taskId}/03-plan-final.md`; QA, code review, security, and DevOps personas now consume the applied diff outputs (`review_diff_patch`, `review_diff_summary`, `review_diff_files`) plus the implementation response so they judge the actual code rather than the plan.
 
 ### Example Step
 

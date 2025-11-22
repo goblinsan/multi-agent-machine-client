@@ -44,7 +44,6 @@ templates:
       abortOnFailure: false
       payload:
         task: ${task}
-        plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
         implementation: ${implementation_request_result}
         qa_result: ${qa_request_result}
         repo: ${repo_remote}
@@ -54,6 +53,10 @@ templates:
         project_name: ${projectName}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
+        applied_files: ${last_applied_files}
+        repo_diff_patch: ${review_diff_patch}
+        repo_diff_summary: ${review_diff_summary}
+        repo_changed_files: ${review_diff_files}
 
   code_review:
     type: PersonaRequestStep
@@ -65,7 +68,6 @@ templates:
       abortOnFailure: false
       payload:
         task: ${task}
-        plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
         implementation: ${implementation_request_result}
         qa_result: ${qa_request_result}
         repo: ${repo_remote}
@@ -100,7 +102,6 @@ templates:
       abortOnFailure: false
       payload:
         task: ${task}
-        plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
         implementation: ${implementation_request_result}
         qa_result: ${qa_request_result}
         code_review_result: ${code_review_request_result}
@@ -127,7 +128,6 @@ templates:
       abortOnFailure: false
       payload:
         task: ${task}
-        plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
         implementation: ${implementation_request_result}
         qa_result: ${qa_request_result}
         code_review_result: ${code_review_request_result}

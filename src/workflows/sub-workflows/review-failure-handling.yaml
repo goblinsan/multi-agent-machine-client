@@ -52,11 +52,27 @@ steps:
     outputs:
       - should_skip
 
-  # Step 2: PM evaluates failures and decides priority
+  # Step 2: Normalize reviewer payload to enforce severity guardrails
+  - name: normalize_review_failure
+    type: ReviewFailureNormalizationStep
+    description: "Normalize reviewer outputs and compute blocking severity info"
+    depends_on: ["check_tdd_gate"]
+    config:
+      review_type: "${review_type}"
+      review_result: "${review_result}"
+      review_status: "${review_status}"
+      task: "${task}"
+      feature_branch: "${feature_branch || ''}"
+    outputs:
+      - normalized_review
+      - blocking_issue_count
+      - has_blocking_issues
+
+  # Step 3: PM evaluates failures and decides priority
   - name: pm_evaluation
     type: PersonaRequestStep
     description: "PM evaluates review failures and prioritizes follow-up work"
-    depends_on: ["check_tdd_gate"]
+    depends_on: ["normalize_review_failure"]
     config:
       step: "pm-review-prioritization"
       persona: "project-manager"
@@ -66,6 +82,8 @@ steps:
         review_type: "${review_type}"
         review_result: "${review_result}"
         review_status: "${review_status}"
+        normalized_review: "${normalize_review_failure.normalized_review}"
+        blocking_issue_count: "${normalize_review_failure.blocking_issue_count}"
         task: "${task}"
         milestone: "${milestone_context}"
         project_id: "${project_id}"
@@ -98,7 +116,6 @@ steps:
     type: ReviewFollowUpFilterStep
     description: "Filter PM follow-ups using milestone context, diff data, and existing backlog"
     depends_on: ["parse_pm_decision"]
-    condition: "parse_pm_decision.follow_up_tasks.length > 0"
     config:
       tasks: "${parse_pm_decision.follow_up_tasks}"
       existing_tasks: "${existing_tasks || []}"
@@ -110,15 +127,31 @@ steps:
       - filtered_tasks
       - dropped_tasks
 
+  - name: enforce_follow_up_coverage
+    type: ReviewFollowUpCoverageStep
+    description: "Guarantee every QA root cause has an actionable follow-up"
+    depends_on: ["filter_follow_up_tasks"]
+    config:
+      follow_up_tasks: "${filter_follow_up_tasks.filtered_tasks || []}"
+      review_result: "${review_result}"
+      review_type: "${review_type}"
+      task: "${task}"
+      existing_tasks: "${existing_tasks || []}"
+      external_id_base: "${review_type}-${task.id}"
+      normalized_review: "${normalize_review_failure.normalized_review}"
+    outputs:
+      - follow_up_tasks
+      - synthesized_follow_ups
+
   # Step 4: Create tasks in bulk (with duplicate detection)
   - name: create_tasks_bulk
     type: BulkTaskCreationStep
     description: "Create all follow-up tasks in single bulk operation with duplicate detection"
-    depends_on: ["filter_follow_up_tasks"]
-    condition: "filter_follow_up_tasks.filtered_tasks.length > 0"
+    depends_on: ["enforce_follow_up_coverage"]
+    condition: "enforce_follow_up_coverage.follow_up_tasks.length > 0"
     config:
       project_id: "${project_id}"
-      tasks: "${filter_follow_up_tasks.filtered_tasks}"
+      tasks: "${enforce_follow_up_coverage.follow_up_tasks}"
       priority_mapping:
         critical: "${priority_scores.urgent}"
         high: "${priority_scores.urgent}"
@@ -133,7 +166,7 @@ steps:
       options:
         create_milestone_if_missing: true
         upsert_by_external_id: true
-        external_id_template: "${review_type}-${task.id}-${task.title_slug}"
+        external_id_template: "${review_type}-${task.id}"
         check_duplicates: true
         existing_tasks: "${existing_tasks || []}"
         duplicate_match_strategy: "content_hash"
@@ -183,3 +216,6 @@ outputs:
   pm_decision: "${parse_pm_decision.pm_decision}"
   original_task_blocked: "${mark_original_blocked.original_task_blocked || false}"
   skipped_duplicates: "${create_tasks_bulk.skipped_duplicates || 0}"
+  normalized_review: "${normalize_review_failure.normalized_review}"
+  blocking_issue_count: "${normalize_review_failure.blocking_issue_count || 0}"
+  has_blocking_issues: "${normalize_review_failure.has_blocking_issues || false}"

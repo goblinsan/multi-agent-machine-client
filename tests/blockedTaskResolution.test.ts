@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { parse } from "yaml";
 import { makeTempRepo } from "./makeTempRepo";
 import { workflowEngine } from "../src/workflows/WorkflowEngine.js";
 
@@ -153,6 +156,24 @@ vi.mock("../src/process.js", () => ({
 
 import { createFastCoordinator } from "./helpers/coordinatorTestHelper.js";
 
+async function loadBlockedWorkflowSteps() {
+  const workflowPath = path.resolve(
+    process.cwd(),
+    "src/workflows/definitions/blocked-task-resolution.yaml",
+  );
+  const fileContent = await readFile(workflowPath, "utf-8");
+  const workflow = parse(fileContent) as {
+    steps: Array<{
+      name: string;
+      type: string;
+      depends_on?: string[];
+      condition?: string;
+      config?: any;
+    }>;
+  };
+  return Object.fromEntries(workflow.steps.map((step) => [step.name, step]));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fetchTaskMock.mockReset();
@@ -191,6 +212,39 @@ beforeEach(() => {
 });
 
 describe("Blocked Task Resolution Workflow", () => {
+  it("clears blocked dependencies after a successful unblock", async () => {
+    const steps = await loadBlockedWorkflowSteps();
+    const clearStep = steps["clear_blocked_dependencies"];
+
+    expect(clearStep).toBeDefined();
+    expect(clearStep?.type).toBe("RegisterBlockedDependenciesStep");
+    expect(clearStep?.depends_on).toEqual(["mark_unblocked"]);
+    expect(clearStep?.condition).toBe(
+      "validate_unblock_status == 'pass' || validate_unblock.status == 'pass'",
+    );
+    expect(clearStep?.config?.allow_clear).toBe(true);
+    expect(clearStep?.config?.parent_task_id).toBe("${task.id}");
+    expect(clearStep?.config?.dependency_task_ids).toEqual([]);
+  });
+
+  it("gates unblock attempts on dependency status", async () => {
+    const steps = await loadBlockedWorkflowSteps();
+    const dependencyStatus = steps["dependency_status"];
+    const waitingUpdate = steps["dependency_waiting_update"];
+    const markInProgress = steps["mark_in_progress"];
+
+    expect(dependencyStatus).toBeDefined();
+    expect(dependencyStatus?.type).toBe("DependencyStatusStep");
+    expect(waitingUpdate?.depends_on).toEqual(["dependency_status"]);
+    expect(waitingUpdate?.condition).toBe(
+      "dependency_status.allResolved == false",
+    );
+    expect(markInProgress?.depends_on).toEqual(["increment_attempt_counter"]);
+    expect(markInProgress?.condition).toBe(
+      "dependency_status.allResolved == true",
+    );
+  });
+
   it("routes blocked tasks to blocked-task-resolution workflow", async () => {
     const tempRepo = await makeTempRepo();
 

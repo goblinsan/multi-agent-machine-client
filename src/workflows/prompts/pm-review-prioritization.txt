@@ -42,6 +42,18 @@ You are the Project Manager for this software development project. A review has 
 **Review Verdict:** {{review_result.status}}
 {{/if}}
 
+{{#if review_result.pass_count}}
+**Tests Passed:** {{review_result.pass_count}}
+{{/if}}
+
+{{#if review_result.fail_count}}
+**Tests Failed:** {{review_result.fail_count}}
+{{/if}}
+
+{{#if review_result.skip_count}}
+**Tests Skipped:** {{review_result.skip_count}}
+{{/if}}
+
 {{#if review_result.test_framework}}
 **Detected Test Framework:** {{review_result.test_framework}}
 {{/if}}
@@ -67,6 +79,15 @@ You are the Project Manager for this software development project. A review has 
 {{/each}}
 {{/if}}
 
+{{#if review_result.critical_validation}}
+### Critical Validation
+- Status: {{review_result.critical_validation.status}}
+- Message: {{review_result.critical_validation.message}}
+  {{#if review_result.critical_validation.details}}
+  Details: {{review_result.critical_validation.details}}
+  {{/if}}
+{{/if}}
+
 {{#if review_result.failed_tests}}
 ### Failed Tests
 {{#each review_result.failed_tests}}
@@ -86,7 +107,7 @@ You are the Project Manager for this software development project. A review has 
 {{#if review_result.root_causes}}
 ### Root Causes
 {{#each review_result.root_causes}}
-- **{{this.type}}:** {{this.description}}
+- {{#if this.type}}**{{this.type}}:** {{this.description}}{{else}}{{this}}{{/if}}
   {{#if this.suggestion}}Suggested fix: {{this.suggestion}}{{/if}}
 {{/each}}
 {{/if}}
@@ -160,6 +181,12 @@ The following tasks already exist on the dashboard. **DO NOT create duplicate ta
 ⚠️ **IMPORTANT:** Before creating a new task, check if it would duplicate an existing task above. If a task already covers the issue, reference it instead of creating a duplicate.
 {{/if}}
 
+### Mandatory Coverage Checklist
+
+- For **every** entry in `Root Causes` and every `critical_validation` failure, explicitly state how it is addressed in `immediate_issues`, `deferred_issues`, or `follow_up_tasks`.
+- When the reviewer reports missing or unusable **test infrastructure** (e.g., "no test framework", "unable to run tests"), you **must** create a `follow_up_task` titled after that gap (e.g., "Add Vitest harness for config loader") with `priority` set to `high`, `category` set to `urgent`, and the description quoting the reviewer wording verbatim.
+- If an existing dashboard task already solves the gap, mark the corresponding `follow_up_task` as a duplicate and set `duplicate_of_task_id` to that task ID—never leave a root cause unmapped.
+
 ## Your Task
 
 Analyze these review failures and decide:
@@ -168,11 +195,15 @@ Analyze these review failures and decide:
 2. **Task Breakdown:** Create specific, actionable follow-up tasks that describe the remediation work to perform
 3. **Reasoning:** Explain your prioritization decisions
 
+If `review_status` is `fail`, you **must** reference at least one concrete data point from `review_result` (failed checks, root causes, recommendations, etc.) in your `reasoning`.
+
 ### Task Authoring Rules (Critical)
 
 - Titles must describe the fix itself (e.g., "Create deterministic QA test config"), **never** meta tasks like "perform code review" or "investigate" with no concrete deliverable.
 - Descriptions should include the files, configs, or components to edit plus any reviewer quotes or failing checks that justify the work.
 - If the reviewer already pointed to an exact change, echo it so the implementation team knows what to build.
+- **Mirror every root cause**: cite the reviewer text in either `immediate_issues` or the `follow_up_tasks` description so downstream automation can trace coverage.
+- If QA cannot execute tests due to missing tooling/frameworks, explicitly call that out in `reasoning`, mark it as an immediate issue, and create at least one urgent follow-up dedicated to restoring automated testing.
 - Reference existing tasks when applicable—if a duplicate exists in `existing_tasks`, mark it rather than creating a new task.
 - Capture urgency explicitly via the `priority` field; do not invent new priority labels.
 - When a task must unblock QA/code review immediately, highlight the failing test name or reproduction steps inside the description.

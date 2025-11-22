@@ -10,6 +10,8 @@ export interface StepResult {
     duration_ms: number;
     memory_mb?: number;
     operations_count?: number;
+    severity_gap_count?: number;
+    blocking_followup_gap_count?: number;
   };
 }
 

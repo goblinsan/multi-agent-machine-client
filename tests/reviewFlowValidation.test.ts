@@ -22,6 +22,50 @@ describe("Review Flow Validation", () => {
     return Object.fromEntries(workflow.steps.map((step) => [step.name, step]));
   }
 
+  async function loadReviewFailureWorkflowSteps() {
+    const workflowPath = path.resolve(
+      process.cwd(),
+      "src/workflows/sub-workflows/review-failure-handling.yaml",
+    );
+    const fileContent = await readFile(workflowPath, "utf-8");
+    const workflow = parse(fileContent) as {
+      steps: Array<{
+        name: string;
+        type: string;
+        depends_on?: string[];
+        condition?: string;
+        config?: any;
+      }>;
+    };
+    return Object.fromEntries(workflow.steps.map((step) => [step.name, step]));
+  }
+
+  async function loadReviewFailureWorkflow() {
+    const workflowPath = path.resolve(
+      process.cwd(),
+      "src/workflows/sub-workflows/review-failure-handling.yaml",
+    );
+    const fileContent = await readFile(workflowPath, "utf-8");
+    return parse(fileContent) as Record<string, any>;
+  }
+
+  async function loadStepTemplates() {
+    const templatePath = path.resolve(
+      process.cwd(),
+      "src/workflows/templates/step-templates.yaml",
+    );
+    const fileContent = await readFile(templatePath, "utf-8");
+    const templates = parse(fileContent) as {
+      templates: Record<
+        string,
+        {
+          config?: { payload?: Record<string, any> };
+        }
+      >;
+    };
+    return templates.templates;
+  }
+
   it("validates workflow structure: QA pass → mark in_review → code review → security → done", async () => {
     const steps = await loadWorkflowSteps();
 
@@ -194,5 +238,137 @@ describe("Review Flow Validation", () => {
     for (const stepName of Object.keys(steps)) {
       expect(hasCycle(stepName)).toBe(false);
     }
+  });
+
+  describe("review-failure-handling sub-workflow", () => {
+    it("normalizes review payloads and filters follow-ups before task creation", async () => {
+      const steps = await loadReviewFailureWorkflowSteps();
+      const normalizeStep = steps["normalize_review_failure"];
+      const filterStep = steps["filter_follow_up_tasks"];
+      const coverageStep = steps["enforce_follow_up_coverage"];
+      const createStep = steps["create_tasks_bulk"];
+
+      expect(normalizeStep).toBeDefined();
+      expect(normalizeStep?.type).toBe("ReviewFailureNormalizationStep");
+      expect(normalizeStep?.depends_on).toEqual(["check_tdd_gate"]);
+      expect(normalizeStep?.config?.review_type).toBe("${review_type}");
+      expect(normalizeStep?.config?.review_result).toBe("${review_result}");
+
+      expect(filterStep).toBeDefined();
+      expect(filterStep?.type).toBe("ReviewFollowUpFilterStep");
+      expect(filterStep?.depends_on).toEqual(["parse_pm_decision"]);
+      expect(filterStep?.condition).toBeUndefined();
+
+      expect(coverageStep).toBeDefined();
+      expect(coverageStep?.type).toBe("ReviewFollowUpCoverageStep");
+      expect(coverageStep?.depends_on).toEqual(["filter_follow_up_tasks"]);
+      expect(coverageStep?.config?.follow_up_tasks).toBe(
+        "${filter_follow_up_tasks.filtered_tasks || []}",
+      );
+      expect(coverageStep?.config?.normalized_review).toBe(
+        "${normalize_review_failure.normalized_review}",
+      );
+
+      expect(createStep?.depends_on).toEqual(["enforce_follow_up_coverage"]);
+      expect(createStep?.condition).toBe(
+        "enforce_follow_up_coverage.follow_up_tasks.length > 0",
+      );
+    });
+
+    it("registers new blocked dependencies after task creation", async () => {
+      const steps = await loadReviewFailureWorkflowSteps();
+      const registerStep = steps["register_follow_up_dependencies"];
+
+      expect(registerStep).toBeDefined();
+      expect(registerStep?.type).toBe("RegisterBlockedDependenciesStep");
+      expect(registerStep?.depends_on).toEqual(["create_tasks_bulk"]);
+      expect(registerStep?.condition).toBe(
+        "parent_task_id && create_tasks_bulk.task_ids.length > 0",
+      );
+      expect(registerStep?.config?.project_id).toBe("${project_id}");
+      expect(registerStep?.config?.parent_task_id).toBe("${parent_task_id}");
+      expect(registerStep?.config?.dependency_task_ids).toBe(
+        "${create_tasks_bulk.task_ids}",
+      );
+    });
+
+    it("passes rich review context into the PM evaluation payload", async () => {
+      const steps = await loadReviewFailureWorkflowSteps();
+      const pmEvaluation = steps["pm_evaluation"];
+
+      expect(pmEvaluation).toBeDefined();
+      expect(pmEvaluation?.depends_on).toEqual(["normalize_review_failure"]);
+      expect(pmEvaluation?.config?.payload?.review_result).toBe("${review_result}");
+      expect(pmEvaluation?.config?.payload?.review_status).toBe("${review_status}");
+      expect(pmEvaluation?.config?.payload?.diff_summary).toBe("${diff_summary || ''}");
+      expect(pmEvaluation?.config?.payload?.diff_changed_files).toBe(
+        "${diff_changed_files || []}",
+      );
+      expect(pmEvaluation?.config?.payload?.normalized_review).toBe(
+        "${normalize_review_failure.normalized_review}",
+      );
+    });
+
+    it("uses deterministic external ids for review follow-up tasks", async () => {
+      const steps = await loadReviewFailureWorkflowSteps();
+      const createStep = steps["create_tasks_bulk"];
+
+      expect(createStep?.config?.options?.external_id_template).toBe(
+        "${review_type}-${task.id}",
+      );
+    });
+
+    it("exposes normalized review outputs to parent workflows", async () => {
+      const workflow = await loadReviewFailureWorkflow();
+      const outputs = workflow.outputs ?? {};
+
+      expect(outputs.normalized_review).toBe(
+        "${normalize_review_failure.normalized_review}",
+      );
+      expect(outputs.blocking_issue_count).toBe(
+        "${normalize_review_failure.blocking_issue_count || 0}",
+      );
+      expect(outputs.has_blocking_issues).toBe(
+        "${normalize_review_failure.has_blocking_issues || false}",
+      );
+    });
+  });
+
+  describe("review templates", () => {
+    it("only the planning personas reference the plan artifact", async () => {
+      const templates = await loadStepTemplates();
+
+      expect(
+        templates?.implementation?.config?.payload?.plan_artifact,
+      ).toBe(".ma/tasks/${task.id}/03-plan-final.md");
+
+      expect(
+        templates?.qa_review?.config?.payload?.plan_artifact,
+      ).toBeUndefined();
+      expect(
+        templates?.code_review?.config?.payload?.plan_artifact,
+      ).toBeUndefined();
+      expect(
+        templates?.security_review?.config?.payload?.plan_artifact,
+      ).toBeUndefined();
+      expect(
+        templates?.devops_review?.config?.payload?.plan_artifact,
+      ).toBeUndefined();
+    });
+
+    it("QA/Code/Security/DevOps receive diff payloads for implementation review", async () => {
+      const templates = await loadStepTemplates();
+
+      const qaPayload = templates?.qa_review?.config?.payload ?? {};
+      const codePayload = templates?.code_review?.config?.payload ?? {};
+      const securityPayload = templates?.security_review?.config?.payload ?? {};
+      const devopsPayload = templates?.devops_review?.config?.payload ?? {};
+
+      for (const payload of [qaPayload, codePayload, securityPayload, devopsPayload]) {
+        expect(payload.repo_diff_patch).toBe("${review_diff_patch}");
+        expect(payload.repo_diff_summary).toBe("${review_diff_summary}");
+        expect(payload.repo_changed_files).toBe("${review_diff_files}");
+      }
+    });
   });
 });

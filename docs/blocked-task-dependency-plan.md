@@ -19,7 +19,7 @@ completion of the follow-up tasks before retrying automation.
       task so DependencyStatusStep sees newly created IDs immediately.
 - [x] Persist `blocked_dependencies` directly on dashboard tasks and surface the
       field through the API so workflows/tests can validate the linkage end-to-end.
-- [ ] Clear dependencies after success by emptying the metadata once the task is
+- [x] Clear dependencies after success by emptying the metadata once the task is
       marked `open`, ensuring future iterations treat it as unblocked.
 - [x] Add rich logging so dependency counts/IDs are visible when debugging runs.
 
@@ -30,6 +30,9 @@ completion of the follow-up tasks before retrying automation.
 - [x] Create `tests/steps/dependencyStatusStep.test.ts` to exercise the new step's
       API interactions and aggregation logic.
 - [x] Update dashboard mocks to allow configuring dependency statuses in tests.
+- [x] Add structure tests for `review-failure-handling` and
+      `blocked-task-resolution` workflows to guarantee the dependency filter and
+      clearing steps stay wired into the YAML definitions.
 
 ## Notes
 

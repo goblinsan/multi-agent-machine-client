@@ -31,6 +31,8 @@ import { VariableResolutionStep } from "./steps/VariableResolutionStep";
 import { DependencyStatusStep } from "./steps/DependencyStatusStep";
 import { RegisterBlockedDependenciesStep } from "./steps/RegisterBlockedDependenciesStep";
 import { ReviewFollowUpFilterStep } from "./steps/ReviewFollowUpFilterStep";
+import { ReviewFollowUpCoverageStep } from "./steps/ReviewFollowUpCoverageStep";
+import { ReviewFailureNormalizationStep } from "./steps/ReviewFailureNormalizationStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -132,6 +134,14 @@ export class WorkflowEngine {
     this.stepRegistry.set(
       "ReviewFollowUpFilterStep",
       ReviewFollowUpFilterStep,
+    );
+    this.stepRegistry.set(
+      "ReviewFollowUpCoverageStep",
+      ReviewFollowUpCoverageStep,
+    );
+    this.stepRegistry.set(
+      "ReviewFailureNormalizationStep",
+      ReviewFailureNormalizationStep,
     );
   }
 
