@@ -23,6 +23,7 @@ import {
   normalizePlanPayload,
   findPlanLanguageViolations,
   collectAllowedLanguages,
+  collectPlanKeyFiles,
   buildSyntheticEvaluationFailure,
   formatPlanArtifact,
   formatEvaluationArtifact,
@@ -67,6 +68,7 @@ export class PlanningLoopStep extends WorkflowStep {
     let planResult: any = null;
     let evaluationResult: any = null;
     let lastEvaluationPassed = false;
+    let latestPlanKeyFiles: string[] = [];
 
     logger.info("Starting planning evaluation loop", {
       workflowId: context.workflowId,
@@ -158,6 +160,8 @@ export class PlanningLoopStep extends WorkflowStep {
 
         const parsedPlanResult = summarizePlanResult(planResult);
         const { planData } = normalizePlanPayload(planResult);
+        latestPlanKeyFiles = collectPlanKeyFiles(planData);
+        context.setVariable("planning_loop_plan_files", latestPlanKeyFiles);
 
         logger.info("Planning request completed", {
           workflowId: context.workflowId,
@@ -388,6 +392,9 @@ export class PlanningLoopStep extends WorkflowStep {
       }
     }
 
+    context.setVariable("planning_loop_plan_files", latestPlanKeyFiles);
+    context.setVariable("plan_required_files", latestPlanKeyFiles);
+
     const finalResult = {
       plan: planResult,
       evaluation: evaluationResult,
@@ -412,6 +419,7 @@ export class PlanningLoopStep extends WorkflowStep {
         evaluation_result: evaluationResult,
         iterations: currentIteration,
         evaluation_passed: lastEvaluationPassed,
+        plan_key_files: latestPlanKeyFiles,
       },
     };
   }

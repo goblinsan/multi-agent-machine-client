@@ -28,6 +28,14 @@ templates:
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
+        plan_required_files: "${plan_required_files || []}"
+        missing_plan_files_pre_implementation: "${record_plan_key_files.missing_files || []}"
+        guard_reported_missing_files: "${implementation_guard_missing_files || []}"
+        guard_missing_summary: "${implementation_guard_missing_summary || ''}"
+        implementation_retry_attempt: "${implementation_retry_attempt || 1}"
+        implementation_retry_max_attempts: "${implementation_retry_max_attempts || 1}"
+        context_primary_language: ${context_primary_language}
+        context_allowed_languages: ${context_allowed_languages}
         repo: ${repo_remote}
         repo_root: ${repo_root}
         project_id: ${projectId}
@@ -46,6 +54,8 @@ templates:
         task: ${task}
         implementation: ${implementation_request_result}
         qa_result: ${qa_request_result}
+        plan_required_files: "${plan_required_files || []}"
+        detected_test_command: ${detected_test_command}
         repo: ${repo_remote}
         repo_root: ${repo_root}
         project_id: ${projectId}

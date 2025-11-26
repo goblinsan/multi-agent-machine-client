@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import {
   parseEventResult,
   interpretPersonaStatus,
+  extractJsonPayloadFromText,
 } from "../../../agents/persona.js";
 import { logger } from "../../../logger.js";
 import fs from "fs/promises";
@@ -115,16 +116,23 @@ export function normalizePlanPayload(planResult: any) {
   const parsed = parseEventResult(resultText);
   let planData = parsed;
   if (parsed?.output && typeof parsed.output === "string") {
-    const jsonMatch = parsed.output.match(/```json\s*\n([\s\S]*?)\n```/);
-    if (jsonMatch) {
-      try {
-        planData = JSON.parse(jsonMatch[1]);
-      } catch {
-        planData = parsed;
-      }
+    const structuredOutput =
+      extractJsonPayloadFromText(parsed.output) || tryParseJson(parsed.output);
+    if (structuredOutput && typeof structuredOutput === "object") {
+      planData = structuredOutput;
     }
   }
   return { planData, parsed, rawText: resultText };
+}
+
+function tryParseJson(value: string): any | null {
+  try {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
 }
 
 export function collectPlanKeyFiles(planData: any): string[] {

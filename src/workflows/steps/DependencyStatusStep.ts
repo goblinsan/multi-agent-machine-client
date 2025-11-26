@@ -52,11 +52,27 @@ export class DependencyStatusStep extends WorkflowStep {
       };
     }
 
-    const dependencyIds = this.collectDependencyIds(
+    let dependencyIds = this.collectDependencyIds(
       context,
       dependencyVariable,
       fallbackField,
     );
+
+    if (dependencyIds.length === 0) {
+      const refreshed = await this.refreshDependenciesFromTask(
+        context,
+        projectId,
+      );
+      if (refreshed.length > 0) {
+        dependencyIds = refreshed;
+        context.setVariable("blocked_dependencies", refreshed);
+
+        logger.info("DependencyStatusStep: refreshed dependencies from task", {
+          workflowId: context.workflowId,
+          dependencyCount: refreshed.length,
+        });
+      }
+    }
 
     if (!dependencyIds.length) {
       const summary = {
@@ -252,5 +268,87 @@ export class DependencyStatusStep extends WorkflowStep {
     if (typeof source === "number") {
       target.push(String(source));
     }
+  }
+
+  private async refreshDependenciesFromTask(
+    context: WorkflowContext,
+    projectId: string,
+  ): Promise<string[]> {
+    const taskId = this.resolveTaskId(context);
+    if (!taskId) {
+      return [];
+    }
+
+    try {
+      const latestTask = await taskAPI.fetchTask(taskId, projectId);
+      if (!latestTask) {
+        return [];
+      }
+
+      const existingTask = context.getVariable("task") || {};
+      context.setVariable("task", { ...existingTask, ...latestTask });
+
+      const dependencies = this.extractDependenciesFromTask(latestTask);
+      return dependencies;
+    } catch (error: any) {
+      logger.warn("DependencyStatusStep: failed to refresh dependencies", {
+        workflowId: context.workflowId,
+        taskId,
+        error: error?.message || String(error),
+      });
+      return [];
+    }
+  }
+
+  private resolveTaskId(context: WorkflowContext): string | null {
+    const task = context.getVariable("task");
+    const value =
+      context.getVariable("taskId") ||
+      context.getVariable("task_id") ||
+      task?.id;
+    return value ? String(value) : null;
+  }
+
+  private extractDependenciesFromTask(task: any): string[] {
+    if (!task) {
+      return [];
+    }
+
+    const direct = task.blocked_dependencies;
+    if (direct && direct.length) {
+      return this.normalizeIds(direct);
+    }
+
+    if (task.metadata?.blocked_dependencies) {
+      return this.normalizeIds(task.metadata.blocked_dependencies);
+    }
+
+    return [];
+  }
+
+  private normalizeIds(value: unknown): string[] {
+    if (!value) {
+      return [];
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .filter((entry) => entry !== null && entry !== undefined)
+        .map((entry) => String(entry).trim())
+        .filter((entry) => entry.length > 0);
+    }
+
+    if (typeof value === "string") {
+      return value
+        .split(/[\s,]+/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+    }
+
+    if (typeof value === "number") {
+      return [String(value)];
+    }
+
+    return [];
   }
 }

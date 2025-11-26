@@ -11,7 +11,7 @@ import {
 } from "../../agents/parsers/DiffParser.js";
 import { applyEditOps } from "../../fileops.js";
 
-interface DiffApplyStepConfig {
+export interface DiffApplyStepConfig {
   source_output?: string;
   source_variable?: string;
   validation?: "none" | "syntax_check" | "full";

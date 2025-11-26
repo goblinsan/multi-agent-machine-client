@@ -64,30 +64,51 @@ steps:
       evaluateStep: "2.5-evaluate-plan"
       payload:
         task: ${task}
-        context: "${context_request_result}"
         repo: "${repo_remote}"
         repo_root: "${repo_root}"
         project_id: "${projectId}"
         repo_slug: "${repoSlug}"
         project_name: "${projectName}"
 
-  - template: implementation
-    name: implementation_request
+  - name: record_plan_key_files
+    type: PlanKeyFileGuardStep
+    description: "Record plan-required files for implementation prompts"
     depends_on: ["planning_loop"]
-
-  - name: apply_implementation_edits
-    type: DiffApplyStep
-    description: "Parse, apply, commit, and push implementation edits from lead engineer"
-    depends_on: ["implementation_request"]
     config:
-      source_output: "implementation_request"
-      validation: "syntax_check"
-      commit_message: "feat: implement ${taskName}"
+      plan_step: "planning_loop"
+      plan_files_variable: "planning_loop_plan_files"
+      auto_create_missing: false
+      fail_on_missing: false
+      record_variable: "plan_required_files"
+
+  - name: implementation_loop
+    type: ImplementationLoopStep
+    description: "Retry implementation edits until plan-required files exist"
+    depends_on: ["record_plan_key_files"]
+    config:
+      maxAttempts: 3
+      implementationTemplate: "implementation"
+      diffConfig:
+        commit_message: "feat: implement ${taskName}"
+      planGuard:
+        plan_step: "planning_loop"
+        plan_files_variable: "planning_loop_plan_files"
+        additional_files: "${record_plan_key_files.key_files || []}"
+
+  - name: determine_test_entrypoint
+    type: TestCommandDiscoveryStep
+    description: "Detect or enforce presence of a runnable test command before QA"
+    depends_on: ["implementation_loop"]
+    config:
+      variable: "detected_test_command"
+      require_command: true
+      package_script_priority: ["test:regression", "test:ci", "test"]
+      allow_makefile: true
 
   - name: verify_diff
     type: GitOperationStep
     description: "Verify remote branch has diff from base"
-    depends_on: ["apply_implementation_edits"]
+    depends_on: ["determine_test_entrypoint"]
     config:
       operation: "verifyRemoteBranchHasDiff"
 

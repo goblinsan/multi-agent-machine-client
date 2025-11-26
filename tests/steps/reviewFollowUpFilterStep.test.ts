@@ -132,4 +132,39 @@ describe("ReviewFollowUpFilterStep", () => {
       },
     ]);
   });
+
+  it("keeps auto-generated tasks even if milestone keywords do not match", async () => {
+    const step = new ReviewFollowUpFilterStep({
+      name: "filter_followups",
+      type: "ReviewFollowUpFilterStep",
+      config: {
+        milestone_context: { name: "Telemetry hardening" },
+        tasks: [
+          {
+            title: "Restore vitest harness",
+            description: "QA reviewer cannot run tests",
+            metadata: { auto_generated: true },
+          },
+          {
+            title: "Rework auth pipeline",
+            description: "auth module needs love",
+          },
+        ],
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.filtered_tasks).toHaveLength(1);
+    expect(result.outputs?.filtered_tasks?.[0].title).toBe(
+      "Restore vitest harness",
+    );
+    expect(result.outputs?.dropped_tasks).toEqual([
+      {
+        title: "Rework auth pipeline",
+        reason: "unaligned_with_milestone",
+      },
+    ]);
+  });
 });

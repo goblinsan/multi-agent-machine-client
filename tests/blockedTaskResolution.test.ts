@@ -245,6 +245,19 @@ describe("Blocked Task Resolution Workflow", () => {
     );
   });
 
+  it("only invokes tester-qa when an unblock attempt is ready for validation", async () => {
+    const steps = await loadBlockedWorkflowSteps();
+    const validateStep = steps["validate_unblock"];
+
+    expect(validateStep).toBeDefined();
+    expect(validateStep?.condition).toBe(
+      "dependency_status.allResolved == true && unblock_attempt.validation_ready == true",
+    );
+    expect(validateStep?.config?.prompt_template).toBe(
+      "prompts/unblock-validation.txt",
+    );
+  });
+
   it("routes blocked tasks to blocked-task-resolution workflow", async () => {
     const tempRepo = await makeTempRepo();
 

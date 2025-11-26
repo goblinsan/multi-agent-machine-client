@@ -142,11 +142,12 @@ steps:
   - name: validate_unblock
     type: PersonaRequestStep
     depends_on: ["unblock_attempt"]
-    condition: "dependency_status.allResolved == true"
+    condition: "dependency_status.allResolved == true && unblock_attempt.validation_ready == true"
     config:
       step: "unblock-validation"
       persona: "tester-qa"
       intent: "validate_unblock"
+      prompt_template: "prompts/unblock-validation.txt"
       payload:
         task: ${task}
         unblock_result: ${unblock_attempt.result}
@@ -157,6 +158,14 @@ steps:
         project_id: ${projectId}
         repo_slug: ${repoSlug}
         project_name: ${projectName}
+        blocked_reason: ${blockage_analysis.reason}
+        blocked_dependencies: ${blocked_dependencies}
+        dependency_status: ${dependency_status}
+        lead_analysis_strategy: ${lead_analysis.strategy}
+        lead_analysis_resolution_plan: ${lead_analysis.resolution_plan}
+        blocked_attempt_count: ${blocked_attempt_count}
+        max_attempts: ${max_attempts}
+        context_snapshot: ${context_request.snapshot}
       timeout: 300000
 
   - name: mark_unblocked

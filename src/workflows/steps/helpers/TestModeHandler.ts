@@ -12,6 +12,8 @@ interface TestModeResult {
   responseValue?: any;
 }
 
+type DefaultResponseFactory = () => Record<string, any>;
+
 export class TestModeHandler {
   private static readonly STEP_MAPPINGS: Record<string, TestModeMapping> = {
     qa_request: { statusKey: "qa_status", responseKey: "qa_response" },
@@ -31,6 +33,28 @@ export class TestModeHandler {
       statusKey: "context_status",
       responseKey: "context_result",
     },
+  };
+
+  private static readonly DEFAULT_RESPONSES: Record<string, DefaultResponseFactory> = {
+    lead_analysis: () => ({
+      status: "success",
+      strategy: "automated_fix",
+      resolution_plan: {
+        description: "Apply a minimal automated fix to unblock the task",
+        fix_type: "config_fix",
+        ready_for_validation: true,
+        steps: [
+          "Re-run context scan to verify repository state",
+          "Apply configuration fix for failing step",
+          "Trigger QA validation to confirm unblock",
+        ],
+      },
+    }),
+    validate_unblock: () => ({
+      status: "pass",
+      normalizedStatus: "pass",
+      message: "Validation bypassed in test mode",
+    }),
   };
 
   public shouldSkipPersonaOperation(context: WorkflowContext): boolean {
@@ -81,28 +105,29 @@ export class TestModeHandler {
       ? context.getVariable(mapping.responseKey)
       : undefined;
 
+    const defaultResponse = TestModeHandler.getDefaultResponse(stepName);
+
+    const responseValue =
+      preseededResult !== undefined
+        ? preseededResult
+        : fallbackResponse !== undefined
+          ? fallbackResponse
+          : defaultResponse ?? { status: "pass" };
+
     let derivedStatus = mapping
-      ? context.getVariable(mapping.statusKey)
+      ? (context.getVariable(mapping.statusKey) as string | undefined)
       : undefined;
 
     if (!derivedStatus) {
-      const candidate =
-        preseededResult && typeof preseededResult === "object"
-          ? preseededResult
-          : fallbackResponse;
-      if (candidate && typeof candidate === "object" && candidate.status) {
-        derivedStatus = candidate.status;
-      }
+      derivedStatus = TestModeHandler.extractStatus(responseValue);
     }
 
-    const seededStatus = (derivedStatus as string) || "pass";
-    const seededResponse =
-      preseededResult !== undefined ? preseededResult : fallbackResponse || {};
+    const seededStatus = derivedStatus || "pass";
 
     return {
       shouldSkip: true,
       statusValue: seededStatus,
-      responseValue: seededResponse,
+      responseValue,
     };
   }
 
@@ -130,5 +155,32 @@ export class TestModeHandler {
         }
       }
     }
+  }
+
+  private static getDefaultResponse(stepName: string): Record<string, any> | undefined {
+    const factory = TestModeHandler.DEFAULT_RESPONSES[stepName];
+    return factory ? factory() : undefined;
+  }
+
+  private static extractStatus(value: any): string | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      return value;
+    }
+
+    if (typeof value === "object") {
+      if (typeof value.status === "string") {
+        return value.status;
+      }
+
+      if (typeof value.normalizedStatus === "string") {
+        return value.normalizedStatus;
+      }
+    }
+
+    return undefined;
   }
 }

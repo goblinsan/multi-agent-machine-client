@@ -72,6 +72,12 @@ export class ReviewFollowUpFilterStep extends WorkflowStep {
         continue;
       }
 
+      const forceInclude = Boolean(
+        candidate &&
+          typeof candidate === "object" &&
+          (candidate as any).metadata?.auto_generated,
+      );
+
       if (
         this.isDuplicateOfExisting(normalized, existingTasks, milestoneSlug)
       ) {
@@ -82,7 +88,10 @@ export class ReviewFollowUpFilterStep extends WorkflowStep {
         continue;
       }
 
-      if (!this.matchesAllowedKeywords(normalized, allowedKeywords)) {
+      if (
+        !forceInclude &&
+        !this.matchesAllowedKeywords(normalized, allowedKeywords)
+      ) {
         dropped.push({
           title: normalized.title,
           reason: "unaligned_with_milestone",
@@ -91,6 +100,7 @@ export class ReviewFollowUpFilterStep extends WorkflowStep {
       }
 
       if (
+        !forceInclude &&
         this.referencesUnknownFiles(normalized, changedFiles) &&
         changedFiles.length > 0
       ) {

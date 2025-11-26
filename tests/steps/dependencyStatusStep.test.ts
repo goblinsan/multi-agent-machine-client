@@ -124,4 +124,67 @@ describe("DependencyStatusStep", () => {
     expect(result.data?.resolvedCount).toBe(1);
     expect(result.data?.pendingCount).toBe(1);
   });
+
+  it("refreshes dependencies from TaskAPI when local snapshot is stale", async () => {
+    context.setVariable("task", { id: "task-401", blocked_dependencies: [] });
+    context.setVariable("taskId", "task-401");
+
+    fetchTaskMock.mockImplementation(async (id: string) => {
+      if (id === "task-401") {
+        return { id, blocked_dependencies: ["401"] };
+      }
+      if (id === "401") {
+        return { id: "401", status: "in_progress" };
+      }
+      return null;
+    });
+
+    const step = new DependencyStatusStep({
+      name: "dependency_status",
+      type: "DependencyStatusStep",
+      config: {},
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.data?.dependencyCount).toBe(1);
+    expect(result.data?.allResolved).toBe(false);
+    expect(fetchTaskMock).toHaveBeenCalledTimes(2);
+    expect(context.getVariable("blocked_dependencies")).toEqual(["401"]);
+  });
+
+  it("normalizes metadata blocked dependency strings when refreshing", async () => {
+    context.setVariable("task", { id: "task-501" });
+    context.setVariable("taskId", "task-501");
+
+    fetchTaskMock.mockImplementation(async (id: string) => {
+      if (id === "task-501") {
+        return {
+          id,
+          metadata: {
+            blocked_dependencies: "501, 502",
+          },
+        };
+      }
+      return { id, status: id === "501" ? "done" : "blocked" };
+    });
+
+    const step = new DependencyStatusStep({
+      name: "dependency_status",
+      type: "DependencyStatusStep",
+      config: {},
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.data?.dependencyCount).toBe(2);
+    expect(result.data?.pendingCount).toBe(1);
+    expect(context.getVariable("blocked_dependencies")).toEqual([
+      "501",
+      "502",
+    ]);
+    expect(fetchTaskMock).toHaveBeenCalledTimes(3);
+  });
 });

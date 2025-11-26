@@ -2,8 +2,15 @@ import { WorkflowEngine } from "../WorkflowEngine.js";
 
 export class WorkflowSelector {
   determineTaskType(task: any): string {
+    if (this.isReviewFollowUpTask(task)) {
+      return "analysis";
+    }
+
     const taskType = task?.type || task?.task_type;
-    if (taskType) return String(taskType).toLowerCase();
+    if (taskType) {
+      const normalized = String(taskType).toLowerCase();
+      return normalized === "analysis" ? "analysis" : normalized;
+    }
 
     const title = String(
       task?.title || task?.name || task?.summary || "",
@@ -45,6 +52,121 @@ export class WorkflowSelector {
     }
 
     return "feature";
+  }
+
+  private isReviewFollowUpTask(task: any): boolean {
+    if (!task || typeof task !== "object") {
+      return false;
+    }
+
+    const title = this.extractLower(
+      task?.title || task?.name || task?.summary || "",
+    );
+    const description = this.extractLower(task?.description || "");
+    const labels = new Set([
+      ...this.normalizeList(task?.labels),
+      ...this.normalizeList(task?.metadata?.labels),
+    ]);
+
+    const implementationLabels = new Set([
+      "analysis-derived",
+      "ready-for-implementation",
+      "implementation_ready",
+    ]);
+
+    for (const label of implementationLabels) {
+      if (labels.has(label)) {
+        return false;
+      }
+    }
+
+    if (this.hasLabelSignal(labels)) {
+      return true;
+    }
+
+    if (this.hasTitleSignal(title)) {
+      return true;
+    }
+
+    if (this.hasDescriptionSignal(description)) {
+      return true;
+    }
+
+    const metadataSource = this.extractLower(task?.metadata?.coverage_source);
+    if (metadataSource.includes("review") || metadataSource.includes("qa")) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private normalizeList(value: any): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((entry) => (typeof entry === "string" ? entry.toLowerCase() : ""))
+      .filter(Boolean);
+  }
+
+  private extractLower(value: any): string {
+    return typeof value === "string" ? value.toLowerCase() : "";
+  }
+
+  private hasLabelSignal(labels: Set<string>): boolean {
+    if (labels.size === 0) {
+      return false;
+    }
+    const labelSignals = [
+      "qa_follow_up",
+      "review_follow_up",
+      "follow-up",
+      "follow_up",
+      "qa gap",
+      "review gap",
+      "coordination",
+    ];
+    for (const label of labels) {
+      if (labelSignals.some((signal) => label.includes(signal))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private hasTitleSignal(title: string): boolean {
+    if (!title) {
+      return false;
+    }
+    const titleSignals = [
+      "qa follow_up",
+      "qa follow up",
+      "review gap",
+      "qa gap",
+      "follow up",
+      "follow-up",
+    ];
+    return titleSignals.some((signal) => title.includes(signal));
+  }
+
+  private hasDescriptionSignal(description: string): boolean {
+    if (!description) {
+      return false;
+    }
+    const descriptionSignals = [
+      "category: follow_up",
+      "review reported the following issue",
+      "qa gap:",
+      "review gap",
+      "source: normalized_",
+      "source: qa",
+      "source: code_review",
+      "source: security_review",
+      "source: devops_review",
+    ];
+    return descriptionSignals.some((signal) =>
+      description.includes(signal.toLowerCase()),
+    );
   }
 
   determineTaskScope(task: any): string {

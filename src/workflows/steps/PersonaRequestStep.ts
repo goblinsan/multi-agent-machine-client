@@ -11,13 +11,8 @@ import { VariableResolver } from "./helpers/VariableResolver.js";
 import { TestModeHandler } from "./helpers/TestModeHandler.js";
 import { PersonaRetryCoordinator } from "./helpers/PersonaRetryCoordinator.js";
 import { PersonaResponseInterpreter } from "./helpers/PersonaResponseInterpreter.js";
-import {
-  collectAllowedLanguages as collectAllowedLanguagesFromInsights,
-  mergeAllowedLanguages,
-  findLanguageViolationsForFiles,
-  detectLanguagesInText,
-  type LanguageViolation,
-} from "./helpers/languagePolicy.js";
+import { PromptTemplateRenderer } from "./helpers/PromptTemplateRenderer.js";
+import { evaluateCodeReviewLanguagePolicy } from "./helpers/PersonaLanguagePolicy.js";
 
 interface PersonaRequestConfig {
   step: string;
@@ -28,6 +23,7 @@ interface PersonaRequestConfig {
   deadlineSeconds?: number;
   maxRetries?: number;
   abortOnFailure?: boolean;
+  prompt_template?: string;
 }
 
 export class PersonaRequestStep extends WorkflowStep {
@@ -115,8 +111,14 @@ export class PersonaRequestStep extends WorkflowStep {
     }
 
     const resolvedPayload = this.resolvePayloadVariables(payload, context);
+    await this.applyPromptTemplateIfNeeded(
+      resolvedPayload,
+      context,
+      config.prompt_template,
+      persona,
+    );
 
-    const guardResult = this.maybeFailForCodeReviewLanguagePolicy(
+    const guardResult = evaluateCodeReviewLanguagePolicy(
       context,
       persona,
       resolvedPayload,
@@ -241,7 +243,7 @@ export class PersonaRequestStep extends WorkflowStep {
             finalTimeoutMs: retryResult.finalTimeoutMs,
             workflowAborted: true,
           },
-        };
+        } satisfies StepResult;
       }
 
       const rawResponse = retryResult.completion.fields?.result || "";
@@ -348,12 +350,11 @@ export class PersonaRequestStep extends WorkflowStep {
         error: error.message,
         stack: error.stack,
       });
-
       return {
         status: "failure",
         error: error instanceof Error ? error : new Error(error.message),
         data: { step, persona },
-      };
+      } satisfies StepResult;
     }
   }
 
@@ -364,160 +365,42 @@ export class PersonaRequestStep extends WorkflowStep {
     return this.variableResolver.resolvePayload(payload, context);
   }
 
-  private maybeFailForCodeReviewLanguagePolicy(
+  private async applyPromptTemplateIfNeeded(
+    resolvedPayload: Record<string, any>,
     context: WorkflowContext,
-    persona: string,
-    payload: Record<string, any>,
-  ): {
-    result: any;
-    errorMessage: string;
-    violations: LanguageViolation[];
-  } | null {
-    if (persona !== "code-reviewer") {
-      return null;
+    templatePath?: string,
+    persona?: string,
+  ): Promise<void> {
+    if (!templatePath) return;
+    if (resolvedPayload.user_text) return;
+
+    try {
+      const templateData = {
+        workflow_id: context.workflowId,
+        project_id: context.projectId,
+        ...resolvedPayload,
+      };
+      const rendered = await PromptTemplateRenderer.render(
+        templatePath,
+        templateData,
+      );
+      resolvedPayload.user_text = rendered;
+      logger.info("PersonaRequestStep: Applied prompt template", {
+        step: this.config.name,
+        persona,
+        templatePath,
+        renderedLength: rendered.length,
+      });
+    } catch (error) {
+      logger.error("PersonaRequestStep: Failed to render prompt template", {
+        step: this.config.name,
+        templatePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-
-    const changedFiles = this.collectChangedFilesForReview(context, payload);
-    if (changedFiles.length === 0) {
-      return null;
-    }
-
-    const insights = context.getVariable("context_insights") || null;
-    let allowedInfo = collectAllowedLanguagesFromInsights(insights);
-
-    const contextAllowed = context.getVariable("context_allowed_languages");
-    if (Array.isArray(contextAllowed)) {
-      allowedInfo = mergeAllowedLanguages(allowedInfo, contextAllowed);
-    }
-
-    const contextAllowedNormalized = context.getVariable(
-      "context_allowed_languages_normalized",
-    );
-    if (Array.isArray(contextAllowedNormalized)) {
-      allowedInfo = mergeAllowedLanguages(allowedInfo, contextAllowedNormalized);
-    }
-
-    const payloadAllowed = this.toStringArray(payload.allowed_languages);
-    if (payloadAllowed.length > 0) {
-      allowedInfo = mergeAllowedLanguages(allowedInfo, payloadAllowed);
-    }
-
-    const taskValue = payload.task || context.getVariable("task");
-    const taskDescription =
-      taskValue && typeof taskValue.description === "string"
-        ? taskValue.description
-        : undefined;
-    const taskRequestedLanguages = detectLanguagesInText(taskDescription);
-    if (taskRequestedLanguages.length > 0) {
-      allowedInfo = mergeAllowedLanguages(allowedInfo, taskRequestedLanguages);
-    }
-
-    if (allowedInfo.normalized.size === 0) {
-      return null;
-    }
-
-    const violations = findLanguageViolationsForFiles(
-      changedFiles,
-      allowedInfo.normalized,
-    );
-
-    if (violations.length === 0) {
-      return null;
-    }
-
-    const allowedLabel =
-      allowedInfo.display.length > 0
-        ? allowedInfo.display.join(", ")
-        : "none detected";
-    const violationSummary = violations
-      .map((violation) => `${violation.file} (${violation.language})`)
-      .join(", ");
-
-    const summary =
-      "Language policy violation: Implementation touches " +
-      `${violationSummary} outside allowed set (${allowedLabel}). ` +
-      "Task description did not request these languages.";
-
-    const severeFindings = violations.map((violation) => ({
-      file: violation.file,
-      line: null,
-      issue: `Unapproved language detected: ${violation.language}`,
-      recommendation:
-        allowedInfo.display.length > 0
-          ? `Restrict changes to allowed languages (${allowedLabel}) or explicitly update the task description to justify ${violation.language}.`
-          : `Align changes with the repository's established language stack or update the task description to justify ${violation.language}.`,
-    }));
-
-    const result = {
-      status: "fail",
-      summary,
-      findings: {
-        severe: severeFindings,
-        high: [] as any[],
-        medium: [] as any[],
-        low: [] as any[],
-      },
-      guard: "language_policy",
-      violations,
-      allowed_languages: allowedInfo.display,
-      allowed_languages_normalized: Array.from(allowedInfo.normalized),
-      task_description_languages: taskRequestedLanguages,
-    };
-
-    return {
-      result,
-      errorMessage: summary,
-      violations,
-    };
   }
 
-  private collectChangedFilesForReview(
-    context: WorkflowContext,
-    payload: Record<string, any>,
-  ): string[] {
-    const files = new Set<string>();
-
-    const append = (source: unknown) => {
-      if (!source) return;
-      if (Array.isArray(source)) {
-        source.forEach((item) => {
-          if (typeof item === "string" && item.trim().length > 0) {
-            files.add(item.trim());
-          }
-        });
-      }
-    };
-
-    append(context.getVariable("last_applied_files"));
-
-    const diffOutput = context.getStepOutput("apply_implementation_edits");
-    if (diffOutput && typeof diffOutput === "object") {
-      append((diffOutput as any).applied_files);
-    }
-
-    if (payload && typeof payload === "object") {
-      const implementation = (payload as any).implementation;
-      if (implementation && typeof implementation === "object") {
-        append((implementation as any).applied_files);
-        append((implementation as any).changed_files);
-      }
-    }
-
-    return Array.from(files);
-  }
-
-  private toStringArray(value: unknown): string[] {
-    if (!value) return [];
-    if (Array.isArray(value)) {
-      return value
-        .map((item) => (typeof item === "string" ? item : String(item)))
-        .filter((text) => text.trim().length > 0);
-    }
-    if (typeof value === "string") {
-      return value.trim().length > 0 ? [value] : [];
-    }
-    return [];
-  }
 
   private setOutputVariables(context: WorkflowContext, result: any): void {
     if (this.config.outputs) {

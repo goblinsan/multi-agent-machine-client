@@ -167,6 +167,102 @@ describe("PlanningLoopStep logging", () => {
     });
   });
 
+  it("exposes plan_key_files output and stores plan files in context", async () => {
+    const mockWorkflowConfig = {
+      name: "test-workflow",
+      version: "1.0.0",
+      steps: [],
+    };
+
+    const context = new WorkflowContext(
+      "wf-plan-files",
+      "proj-plan-files",
+      "/tmp/repo",
+      "main",
+      mockWorkflowConfig as any,
+      {} as any,
+    );
+    context.setVariable("task", {
+      id: "task-plan-files",
+      type: "feature",
+      data: { description: "Test plan files" },
+    });
+
+    const structuredPlan = {
+      plan: [
+        {
+          goal: "Create regression test",
+          key_files: [
+            "tests/regression/gap.test.ts",
+            "package.json",
+          ],
+        },
+      ],
+    };
+
+    const planPayload = {
+      output: JSON.stringify(structuredPlan),
+    };
+
+    const evaluationPayload = {
+      status: "pass",
+    };
+
+    personaMocks.sendPersonaRequestMock
+      .mockResolvedValueOnce("corr-plan-files")
+      .mockResolvedValueOnce("corr-eval-files");
+
+    personaMocks.waitForPersonaCompletionMock
+      .mockResolvedValueOnce({
+        id: "plan-event-files",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-plan-files",
+          result: JSON.stringify(planPayload),
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "eval-event-files",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-eval-files",
+          result: JSON.stringify(evaluationPayload),
+        },
+      });
+
+    const stepConfig = {
+      name: "planning_loop",
+      type: "PlanningLoopStep",
+      config: {
+        maxIterations: 1,
+        plannerPersona: "implementation-planner",
+        evaluatorPersona: "plan-evaluator",
+        planStep: "2-plan",
+        evaluateStep: "2.5-evaluate-plan",
+        payload: {},
+      },
+    } as any;
+
+    const step = new PlanningLoopStep(stepConfig);
+
+    const result = await step.execute(context);
+
+    expect(result.outputs?.plan_key_files).toEqual([
+      "tests/regression/gap.test.ts",
+      "package.json",
+    ]);
+    expect(context.getVariable("planning_loop_plan_files")).toEqual([
+      "tests/regression/gap.test.ts",
+      "package.json",
+    ]);
+    expect(context.getVariable("plan_required_files")).toEqual([
+      "tests/regression/gap.test.ts",
+      "package.json",
+    ]);
+  });
+
   it("uses persona-configured timeouts when step timeout is not provided", async () => {
     const mockWorkflowConfig = {
       name: "test-workflow",

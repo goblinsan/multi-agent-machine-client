@@ -17,6 +17,7 @@ interface UnblockResult {
   actions_taken: string[];
   subtasks_created?: any[];
   error?: string;
+  validation_ready?: boolean;
 }
 
 export class UnblockAttemptStep extends WorkflowStep {
@@ -136,6 +137,7 @@ export class UnblockAttemptStep extends WorkflowStep {
       success: true,
       resolution: "Task prepared for retry with fresh context",
       actions_taken: actions,
+      validation_ready: false,
     };
   }
 
@@ -174,6 +176,7 @@ export class UnblockAttemptStep extends WorkflowStep {
       resolution: `Breaking task into ${subtasks.length} smaller subtasks`,
       actions_taken: actions,
       subtasks_created: subtasks,
+      validation_ready: false,
     };
   }
 
@@ -204,6 +207,7 @@ export class UnblockAttemptStep extends WorkflowStep {
       success: true,
       resolution: "Clarification requested from task owner",
       actions_taken: actions,
+      validation_ready: false,
     };
   }
 
@@ -219,6 +223,7 @@ export class UnblockAttemptStep extends WorkflowStep {
     const actions: string[] = [];
 
     const fixType = resolutionPlan?.fix_type || "unknown";
+    const readyForValidation = Boolean(resolutionPlan?.ready_for_validation);
 
     actions.push(`Identified fix type: ${fixType}`);
 
@@ -249,6 +254,7 @@ export class UnblockAttemptStep extends WorkflowStep {
       success: true,
       resolution: `Prepared automated fix: ${fixType}`,
       actions_taken: actions,
+      validation_ready: readyForValidation,
     };
   }
 
@@ -283,6 +289,7 @@ export class UnblockAttemptStep extends WorkflowStep {
       success: true,
       resolution: "Task escalated for manual intervention",
       actions_taken: actions,
+      validation_ready: false,
     };
   }
 }

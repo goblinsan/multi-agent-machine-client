@@ -256,7 +256,7 @@ describe("Review Flow Validation", () => {
 
       expect(filterStep).toBeDefined();
       expect(filterStep?.type).toBe("ReviewFollowUpFilterStep");
-      expect(filterStep?.depends_on).toEqual(["parse_pm_decision"]);
+      expect(filterStep?.depends_on).toEqual(["merge_follow_up_tasks"]);
       expect(filterStep?.condition).toBeUndefined();
 
       expect(coverageStep).toBeDefined();
@@ -281,14 +281,14 @@ describe("Review Flow Validation", () => {
 
       expect(registerStep).toBeDefined();
       expect(registerStep?.type).toBe("RegisterBlockedDependenciesStep");
-      expect(registerStep?.depends_on).toEqual(["create_tasks_bulk"]);
+      expect(registerStep?.depends_on).toEqual(["collect_dependency_ids"]);
       expect(registerStep?.condition).toBe(
-        "parent_task_id && create_tasks_bulk.task_ids.length > 0",
+        "parent_task_id && collect_dependency_ids.dependency_task_ids.length > 0",
       );
       expect(registerStep?.config?.project_id).toBe("${project_id}");
       expect(registerStep?.config?.parent_task_id).toBe("${parent_task_id}");
       expect(registerStep?.config?.dependency_task_ids).toBe(
-        "${create_tasks_bulk.task_ids}",
+        "${collect_dependency_ids.dependency_task_ids}",
       );
     });
 
@@ -297,7 +297,10 @@ describe("Review Flow Validation", () => {
       const pmEvaluation = steps["pm_evaluation"];
 
       expect(pmEvaluation).toBeDefined();
-      expect(pmEvaluation?.depends_on).toEqual(["normalize_review_failure"]);
+      expect(pmEvaluation?.depends_on).toEqual([
+        "normalize_review_failure",
+        "auto_follow_up_synthesis",
+      ]);
       expect(pmEvaluation?.config?.payload?.review_result).toBe("${review_result}");
       expect(pmEvaluation?.config?.payload?.review_status).toBe("${review_status}");
       expect(pmEvaluation?.config?.payload?.diff_summary).toBe("${diff_summary || ''}");
@@ -306,6 +309,12 @@ describe("Review Flow Validation", () => {
       );
       expect(pmEvaluation?.config?.payload?.normalized_review).toBe(
         "${normalize_review_failure.normalized_review}",
+      );
+      expect(pmEvaluation?.config?.payload?.auto_follow_up_summary).toBe(
+        "${auto_follow_up_synthesis.auto_follow_up_summary}",
+      );
+      expect(pmEvaluation?.config?.payload?.auto_follow_up_tasks).toBe(
+        "${auto_follow_up_synthesis.auto_follow_up_tasks || []}",
       );
     });
 

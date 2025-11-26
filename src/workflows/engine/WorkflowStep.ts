@@ -1,18 +1,23 @@
 import type { WorkflowContext } from "./WorkflowContext";
 import { evaluateCondition as evaluateConditionUtil } from "./conditionUtils";
 
+export interface StepMetrics {
+  duration_ms: number;
+  memory_mb?: number;
+  operations_count?: number;
+  severity_gap_count?: number;
+  blocking_followup_gap_count?: number;
+  synthesized_task_count?: number;
+  merged_count?: number;
+  [metric: string]: number | undefined;
+}
+
 export interface StepResult {
   status: "success" | "failure" | "skipped";
   data?: Record<string, any>;
   error?: Error;
   outputs?: Record<string, any>;
-  metrics?: {
-    duration_ms: number;
-    memory_mb?: number;
-    operations_count?: number;
-    severity_gap_count?: number;
-    blocking_followup_gap_count?: number;
-  };
+  metrics?: StepMetrics;
 }
 
 export interface ValidationResult {

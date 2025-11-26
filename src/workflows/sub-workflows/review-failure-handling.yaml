@@ -63,16 +63,25 @@ steps:
       review_status: "${review_status}"
       task: "${task}"
       feature_branch: "${feature_branch || ''}"
-    outputs:
-      - normalized_review
-      - blocking_issue_count
-      - has_blocking_issues
 
-  # Step 3: PM evaluates failures and decides priority
+  - name: auto_follow_up_synthesis
+    type: ReviewFollowUpAutoSynthesisStep
+    description: "Deterministically synthesize follow-ups for every blocking issue"
+    depends_on: ["normalize_review_failure"]
+    config:
+      normalized_review: "${normalize_review_failure.normalized_review}"
+      review_result: "${review_result}"
+      review_type: "${review_type}"
+      task: "${task}"
+      external_id_base: "${review_type}-${task.id}"
+    outputs:
+      - auto_follow_up_tasks
+      - auto_follow_up_summary
+
   - name: pm_evaluation
     type: PersonaRequestStep
     description: "PM evaluates review failures and prioritizes follow-up work"
-    depends_on: ["normalize_review_failure"]
+    depends_on: ["normalize_review_failure", "auto_follow_up_synthesis"]
     config:
       step: "pm-review-prioritization"
       persona: "project-manager"
@@ -93,6 +102,8 @@ steps:
         existing_tasks: "${existing_tasks || []}"
         diff_summary: "${diff_summary || ''}"
         diff_changed_files: "${diff_changed_files || []}"
+        auto_follow_up_summary: "${auto_follow_up_synthesis.auto_follow_up_summary}"
+        auto_follow_up_tasks: "${auto_follow_up_synthesis.auto_follow_up_tasks || []}"
     outputs:
       - pm_decision
 
@@ -101,6 +112,7 @@ steps:
     type: PMDecisionParserStep
     description: "Parse and normalize PM decision (handles multiple formats)"
     depends_on: ["pm_evaluation"]
+    condition: "${pm_evaluation_status == 'pass'}"
     config:
       input: "${pm_decision}"
       normalize: true
@@ -112,12 +124,24 @@ steps:
       - deferred_issues
       - follow_up_tasks
 
+  - name: merge_follow_up_tasks
+    type: ReviewFollowUpMergeStep
+    description: "Combine deterministic and persona-suggested follow-ups"
+    depends_on: ["auto_follow_up_synthesis", "parse_pm_decision"]
+    config:
+      auto_follow_up_tasks: "${auto_follow_up_synthesis.auto_follow_up_tasks || []}"
+      pm_follow_up_tasks: "${parse_pm_decision.follow_up_tasks || []}"
+    outputs:
+      - merged_tasks
+      - auto_task_count
+      - pm_task_count
+
   - name: filter_follow_up_tasks
     type: ReviewFollowUpFilterStep
     description: "Filter PM follow-ups using milestone context, diff data, and existing backlog"
-    depends_on: ["parse_pm_decision"]
+    depends_on: ["merge_follow_up_tasks"]
     config:
-      tasks: "${parse_pm_decision.follow_up_tasks}"
+      tasks: "${merge_follow_up_tasks.merged_tasks}"
       existing_tasks: "${existing_tasks || []}"
       milestone_context: "${milestone_context}"
       task: "${task}"
@@ -178,15 +202,24 @@ steps:
       - skipped_duplicates
       - duplicate_task_ids
 
+  - name: collect_dependency_ids
+    type: DependencyTaskCollectorStep
+    description: "Merge new and duplicate follow-up task ids before dependency registration"
+    depends_on: ["create_tasks_bulk"]
+    config:
+      primary_ids: "${create_tasks_bulk.task_ids || []}"
+      duplicate_ids: "${create_tasks_bulk.duplicate_task_ids || []}"
+      output_variable: "dependency_task_ids"
+
   - name: register_follow_up_dependencies
     type: RegisterBlockedDependenciesStep
     description: "Attach newly created task ids to the blocked parent"
-    depends_on: ["create_tasks_bulk"]
-    condition: "parent_task_id && create_tasks_bulk.task_ids.length > 0"
+    depends_on: ["collect_dependency_ids"]
+    condition: "parent_task_id && collect_dependency_ids.dependency_task_ids.length > 0"
     config:
       project_id: "${project_id}"
       parent_task_id: "${parent_task_id}"
-      dependency_task_ids: "${create_tasks_bulk.task_ids}"
+      dependency_task_ids: "${collect_dependency_ids.dependency_task_ids}"
     outputs:
       - dependencyCount
       - addedDependencies
@@ -212,6 +245,7 @@ outputs:
   urgent_tasks_created: "${create_tasks_bulk.urgent_tasks_created || 0}"
   deferred_tasks_created: "${create_tasks_bulk.deferred_tasks_created || 0}"
   task_ids: "${create_tasks_bulk.task_ids || []}"
+  dependency_task_ids: "${collect_dependency_ids.dependency_task_ids || []}"
   duplicate_task_ids: "${create_tasks_bulk.duplicate_task_ids || []}"
   pm_decision: "${parse_pm_decision.pm_decision}"
   original_task_blocked: "${mark_original_blocked.original_task_blocked || false}"

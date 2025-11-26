@@ -32,7 +32,16 @@ import { DependencyStatusStep } from "./steps/DependencyStatusStep";
 import { RegisterBlockedDependenciesStep } from "./steps/RegisterBlockedDependenciesStep";
 import { ReviewFollowUpFilterStep } from "./steps/ReviewFollowUpFilterStep";
 import { ReviewFollowUpCoverageStep } from "./steps/ReviewFollowUpCoverageStep";
+import { ReviewFollowUpAutoSynthesisStep } from "./steps/ReviewFollowUpAutoSynthesisStep";
+import { ReviewFollowUpMergeStep } from "./steps/ReviewFollowUpMergeStep";
 import { ReviewFailureNormalizationStep } from "./steps/ReviewFailureNormalizationStep";
+import { AnalysisTaskBuilderStep } from "./steps/AnalysisTaskBuilderStep";
+import { AnalysisReviewLoopStep } from "./steps/AnalysisReviewLoopStep";
+import { PrioritizeExistingTasksStep } from "./steps/PrioritizeExistingTasksStep";
+import { PlanKeyFileGuardStep } from "./steps/PlanKeyFileGuardStep";
+import { TestCommandDiscoveryStep } from "./steps/TestCommandDiscoveryStep";
+import { DependencyTaskCollectorStep } from "./steps/DependencyTaskCollectorStep";
+import { ImplementationLoopStep } from "./steps/ImplementationLoopStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -140,8 +149,44 @@ export class WorkflowEngine {
       ReviewFollowUpCoverageStep,
     );
     this.stepRegistry.set(
+      "ReviewFollowUpAutoSynthesisStep",
+      ReviewFollowUpAutoSynthesisStep,
+    );
+    this.stepRegistry.set(
+      "ReviewFollowUpMergeStep",
+      ReviewFollowUpMergeStep,
+    );
+    this.stepRegistry.set(
       "ReviewFailureNormalizationStep",
       ReviewFailureNormalizationStep,
+    );
+    this.stepRegistry.set(
+      "AnalysisTaskBuilderStep",
+      AnalysisTaskBuilderStep,
+    );
+    this.stepRegistry.set(
+      "AnalysisReviewLoopStep",
+      AnalysisReviewLoopStep,
+    );
+    this.stepRegistry.set(
+      "PrioritizeExistingTasksStep",
+      PrioritizeExistingTasksStep,
+    );
+    this.stepRegistry.set(
+      "PlanKeyFileGuardStep",
+      PlanKeyFileGuardStep,
+    );
+    this.stepRegistry.set(
+      "ImplementationLoopStep",
+      ImplementationLoopStep,
+    );
+    this.stepRegistry.set(
+      "TestCommandDiscoveryStep",
+      TestCommandDiscoveryStep,
+    );
+    this.stepRegistry.set(
+      "DependencyTaskCollectorStep",
+      DependencyTaskCollectorStep,
     );
   }
 

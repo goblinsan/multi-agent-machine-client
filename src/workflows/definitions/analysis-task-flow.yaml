@@ -1,0 +1,190 @@
+name: "analysis-task-flow"
+description: "Transforms analysis-only review follow-ups into concrete implementation tasks"
+version: "1.0.0"
+trigger:
+  condition: "task_type == 'analysis'"
+context:
+  repo_required: true
+  branch_strategy: "feature-branch"
+
+steps:
+  - name: checkout_branch
+    type: GitOperationStep
+    description: "Ensure feature branch is present even for analysis-only work"
+    config:
+      operation: "checkoutBranchFromBase"
+      baseBranch: "main"
+      newBranch: "${featureBranchName}"
+
+  - name: mark_task_in_progress
+    type: SimpleTaskStatusStep
+    description: "Mark analysis task as in progress"
+    depends_on: ["checkout_branch"]
+    config:
+      status: "in_progress"
+
+  - name: context_scan
+    type: ContextStep
+    description: "Scan repository to provide analysts with current layout"
+    depends_on: ["mark_task_in_progress"]
+    config:
+      repoPath: "${repo_root}"
+      includePatterns: ["**/*"]
+      excludePatterns: ["node_modules/**", ".git/**", "dist/**", "build/**", ".ma/**"]
+      maxFiles: 1000
+      maxBytes: 10485760
+      maxDepth: 10
+      trackLines: true
+      trackHash: false
+      forceRescan: ${force_rescan || false}
+
+  - template: context_analysis
+    name: context_request
+    depends_on: ["context_scan"]
+    condition: ${context_scan.reused_existing} == false
+
+  - name: load_existing_tasks
+    type: FetchProjectTasksStep
+    description: "Fetch tasks for duplicate detection and dependency wiring"
+    depends_on: ["context_scan"]
+    config:
+      project_id: "${projectId}"
+      include_completed: false
+      store_variable: review_existing_tasks
+
+  - name: analysis_loop
+    type: AnalysisReviewLoopStep
+    description: "Iterate analyst and reviewer with feedback-driven retries"
+    depends_on: ["context_scan", "load_existing_tasks"]
+    config:
+      maxIterations: 5
+      analystPersona: "analyst"
+      reviewerPersona: "analysis-reviewer"
+      analysisStep: "analysis-root-cause"
+      reviewStep: "analysis-review"
+      analysisIntent: "root_cause_analysis"
+      reviewIntent: "analysis_evaluation"
+      analysisPromptTemplate: "prompts/analyst-root-cause.txt"
+      reviewPromptTemplate: "prompts/analysis-reviewer.txt"
+      payload:
+        task: ${task}
+        context_summary: "${context_request_result || context_summary_md}"
+        repo: "${repo_remote}"
+        repo_root: "${repo_root}"
+        project_id: "${projectId}"
+        existing_tasks: "${review_existing_tasks || []}"
+      reviewPayload:
+        task: ${task}
+
+  - name: record_analysis_hypotheses
+    type: GitArtifactStep
+    description: "Persist analyst output for later auditing"
+    depends_on: ["analysis_loop"]
+    config:
+      source_output: "analysis_request_result"
+      artifact_path: ".ma/tasks/${task.id}/analysis/hypotheses.json"
+      commit_message: "docs(ma): analysis hypotheses for task ${task.id}"
+      format: "json"
+
+  - name: record_analysis_review
+    type: GitArtifactStep
+    description: "Persist reviewer feedback"
+    depends_on: ["analysis_loop"]
+    config:
+      source_output: "analysis_review_result"
+      artifact_path: ".ma/tasks/${task.id}/analysis/review.json"
+      commit_message: "docs(ma): analysis review for task ${task.id}"
+      format: "json"
+
+  - name: synthesize_tasks
+    type: AnalysisTaskBuilderStep
+    description: "Convert approved analysis into actionable follow-up tasks"
+    depends_on: ["analysis_loop"]
+    config:
+      analysis_output: "${analysis_request_result}"
+      review_output: "${analysis_review_result}"
+      task: ${task}
+      default_priority: "high"
+      default_labels: ["qa_follow_up"]
+    outputs:
+      - actionable_tasks
+      - analysis_summary
+      - selected_hypothesis
+
+  - name: create_tasks_bulk
+    type: BulkTaskCreationStep
+    description: "Create remediation tasks derived from analysis"
+    depends_on: ["synthesize_tasks"]
+    condition: "synthesize_tasks.actionable_tasks.length > 0"
+    config:
+      project_id: "${projectId}"
+      tasks: "${synthesize_tasks.actionable_tasks}"
+      priority_mapping:
+        critical: 1400
+        high: 1000
+        medium: 200
+        low: 50
+      milestone_strategy:
+        urgent: "analysis-follow-ups"
+        deferred: "future-enhancements"
+      parent_task_mapping:
+        urgent: "${taskId}"
+        deferred: "${taskId}"
+      options:
+        create_milestone_if_missing: true
+        upsert_by_external_id: true
+        external_id_template: "analysis-${task.id}-${task_index}"
+        check_duplicates: true
+        existing_tasks: "${review_existing_tasks || []}"
+        duplicate_match_strategy: "content_hash"
+    outputs:
+      - tasks_created
+      - task_ids
+      - skipped_duplicates
+      - duplicate_task_ids
+
+  - name: prioritize_existing_followups
+    type: PrioritizeExistingTasksStep
+    description: "Elevate duplicate follow-ups instead of creating new tasks"
+    depends_on: ["create_tasks_bulk"]
+    condition: "create_tasks_bulk.tasks_created == 0 && create_tasks_bulk.skipped_duplicates > 0"
+    config:
+      project_id: "${projectId}"
+      task_ids: "${create_tasks_bulk.duplicate_task_ids || []}"
+      priority_score: 1000
+      status: "open"
+      ensure_labels: ["qa_follow_up", "analysis", "analysis-derived"]
+
+  - name: mark_analysis_complete_no_new_tasks
+    type: SimpleTaskStatusStep
+    description: "Complete analysis when remediation already exists"
+    depends_on: ["prioritize_existing_followups"]
+    condition: "create_tasks_bulk.tasks_created == 0 && create_tasks_bulk.skipped_duplicates > 0"
+    config:
+      status: "done"
+
+  - name: register_follow_up_dependencies
+    type: RegisterBlockedDependenciesStep
+    description: "Attach analysis-derived tasks to the original"
+    depends_on: ["create_tasks_bulk"]
+    condition: "create_tasks_bulk.task_ids.length > 0"
+    config:
+      project_id: "${projectId}"
+      parent_task_id: "${taskId}"
+      dependency_task_ids: "${create_tasks_bulk.task_ids}"
+
+  - name: mark_analysis_blocked
+    type: SimpleTaskStatusStep
+    description: "Keep analysis task blocked until remediation completes"
+    depends_on: ["register_follow_up_dependencies"]
+    condition: "create_tasks_bulk.task_ids.length > 0"
+    config:
+      status: "blocked"
+
+outputs:
+  synthesized_tasks: "${synthesize_tasks.actionable_tasks || []}"
+  analysis_summary: "${synthesize_tasks.analysis_summary || ''}"
+  task_ids: "${create_tasks_bulk.task_ids || []}"
+  tasks_created: "${create_tasks_bulk.tasks_created || 0}"
+  skipped_duplicates: "${create_tasks_bulk.skipped_duplicates || 0}"
+  duplicate_task_ids: "${create_tasks_bulk.duplicate_task_ids || []}"
