@@ -6,34 +6,26 @@ import {
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
 import { cfg } from "../../config.js";
-import { personaTimeoutMs, personaMaxRetries } from "../../util.js";
-import { VariableResolver } from "./helpers/VariableResolver.js";
 import { TestModeHandler } from "./helpers/TestModeHandler.js";
 import { PersonaRetryCoordinator } from "./helpers/PersonaRetryCoordinator.js";
 import { PersonaResponseInterpreter } from "./helpers/PersonaResponseInterpreter.js";
-import { PromptTemplateRenderer } from "./helpers/PromptTemplateRenderer.js";
 import { evaluateCodeReviewLanguagePolicy } from "./helpers/PersonaLanguagePolicy.js";
-
-interface PersonaRequestConfig {
-  step: string;
-  persona: string;
-  intent: string;
-  payload: Record<string, any>;
-  timeout?: number;
-  deadlineSeconds?: number;
-  maxRetries?: number;
-  abortOnFailure?: boolean;
-  prompt_template?: string;
-}
+import { PersonaPayloadBuilder } from "./helpers/personaRequest/payloadUtils.js";
+import {
+  computeRetryParameters,
+  createRetryCoordinator,
+  resolveRepoForPersona,
+} from "./helpers/personaRequest/transportUtils.js";
+import type { PersonaRequestConfig } from "./helpers/personaRequest/types.js";
 
 export class PersonaRequestStep extends WorkflowStep {
-  private variableResolver: VariableResolver;
+  private payloadBuilder: PersonaPayloadBuilder;
   private testModeHandler: TestModeHandler;
   private responseInterpreter: PersonaResponseInterpreter;
 
   constructor(config: any) {
     super(config);
-    this.variableResolver = new VariableResolver();
+    this.payloadBuilder = new PersonaPayloadBuilder();
     this.testModeHandler = new TestModeHandler();
     this.responseInterpreter = new PersonaResponseInterpreter();
   }
@@ -111,12 +103,22 @@ export class PersonaRequestStep extends WorkflowStep {
     }
 
     const resolvedPayload = this.resolvePayloadVariables(payload, context);
-    await this.applyPromptTemplateIfNeeded(
-      resolvedPayload,
-      context,
-      config.prompt_template,
-      persona,
-    );
+    try {
+      await this.payloadBuilder.maybeApplyPromptTemplate(
+        resolvedPayload,
+        context,
+        config.prompt_template,
+        persona,
+        this.config.name,
+      );
+    } catch (error) {
+      logger.error("PersonaRequestStep: Failed to render prompt template", {
+        step: this.config.name,
+        templatePath: config.prompt_template,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
 
     const guardResult = evaluateCodeReviewLanguagePolicy(
       context,
@@ -149,43 +151,28 @@ export class PersonaRequestStep extends WorkflowStep {
       };
     }
 
-    const repoForPersona =
-      context.getVariable("repo_remote") ||
-      context.getVariable("repo") ||
-      context.getVariable("effective_repo_path");
-
-    if (!repoForPersona) {
+    let repoForPersona: string;
+    try {
+      repoForPersona = resolveRepoForPersona(context);
+    } catch (error) {
       logger.error("No repository remote URL available for persona request", {
         workflowId: context.workflowId,
         persona,
         step,
         availableVars: Object.keys(context.getAllVariables()),
       });
-      throw new Error(
-        `Cannot send persona request: no repository remote URL available. Local paths cannot be shared across distributed agents.`,
-      );
+      throw error;
     }
 
     const currentBranch = context.getCurrentBranch();
 
-    const baseTimeoutMs = config.timeout ?? personaTimeoutMs(persona, cfg);
-    const configuredMaxRetries =
-      config.maxRetries !== undefined
-        ? config.maxRetries
-        : personaMaxRetries(persona, cfg);
-
-    const effectiveMaxRetries =
-      configuredMaxRetries === null
-        ? Number.MAX_SAFE_INTEGER
-        : configuredMaxRetries;
-    const isUnlimitedRetries = configuredMaxRetries === null;
-
-    const retryCoordinator = new PersonaRetryCoordinator({
+    const retryParams = computeRetryParameters(persona, config);
+    const {
+      coordinator: retryCoordinator,
       baseTimeoutMs,
-      maxRetries: effectiveMaxRetries,
+      effectiveMaxRetries,
       isUnlimitedRetries,
-      backoffIncrementMs: cfg.personaRetryBackoffIncrementMs,
-    });
+    } = createRetryCoordinator(persona, retryParams);
 
     const taskId =
       resolvedPayload.task_id ||
@@ -362,43 +349,7 @@ export class PersonaRequestStep extends WorkflowStep {
     payload: Record<string, any>,
     context: WorkflowContext,
   ): Record<string, any> {
-    return this.variableResolver.resolvePayload(payload, context);
-  }
-
-  private async applyPromptTemplateIfNeeded(
-    resolvedPayload: Record<string, any>,
-    context: WorkflowContext,
-    templatePath?: string,
-    persona?: string,
-  ): Promise<void> {
-    if (!templatePath) return;
-    if (resolvedPayload.user_text) return;
-
-    try {
-      const templateData = {
-        workflow_id: context.workflowId,
-        project_id: context.projectId,
-        ...resolvedPayload,
-      };
-      const rendered = await PromptTemplateRenderer.render(
-        templatePath,
-        templateData,
-      );
-      resolvedPayload.user_text = rendered;
-      logger.info("PersonaRequestStep: Applied prompt template", {
-        step: this.config.name,
-        persona,
-        templatePath,
-        renderedLength: rendered.length,
-      });
-    } catch (error) {
-      logger.error("PersonaRequestStep: Failed to render prompt template", {
-        step: this.config.name,
-        templatePath,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    }
+    return this.payloadBuilder.resolvePayload(payload, context);
   }
 
 
