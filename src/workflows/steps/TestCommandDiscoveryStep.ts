@@ -8,6 +8,10 @@ import {
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
+import {
+  TestCommandManifest,
+  TestCommandCandidate,
+} from "./helpers/TestCommandManifest.js";
 
 interface TestCommandDiscoveryConfig {
   variable?: string;
@@ -32,7 +36,16 @@ export class TestCommandDiscoveryStep extends WorkflowStep {
       : ["test:ci", "test:regression", "test"];
     const repoRoot = context.repoRoot;
 
+    const manifest = this.extractManifest(context);
+    if (manifest) {
+      context.setVariable("test_command_manifest", manifest);
+      if (Array.isArray(manifest.candidates)) {
+        context.setVariable("test_command_candidates", manifest.candidates);
+      }
+    }
+
     const detection =
+      this.detectFromManifest(manifest) ??
       (await this.detectFromPackageJson(repoRoot, scriptPriority)) ??
       (await this.detectFromPython(repoRoot)) ??
       (await this.detectFromCargo(repoRoot)) ??
@@ -41,6 +54,9 @@ export class TestCommandDiscoveryStep extends WorkflowStep {
 
     if (detection) {
       context.setVariable(variableName, detection.command);
+      context.setVariable(`${variableName}_source`, detection.source);
+      context.setVariable(`${variableName}_details`, detection.details || null);
+
       logger.info("TestCommandDiscoveryStep: detected test command", {
         workflowId: context.workflowId,
         command: detection.command,
@@ -57,8 +73,11 @@ export class TestCommandDiscoveryStep extends WorkflowStep {
       } satisfies StepResult;
     }
 
+    context.setVariable(variableName, null);
+    context.setVariable(`${variableName}_source`, null);
+    context.setVariable(`${variableName}_details`, null);
+
     if (!requireCommand) {
-      context.setVariable(variableName, null);
       logger.warn("TestCommandDiscoveryStep: no command detected, continuing", {
         workflowId: context.workflowId,
       });
@@ -222,5 +241,105 @@ export class TestCommandDiscoveryStep extends WorkflowStep {
 
     const content = await fs.readFile(file, "utf-8");
     return content.toLowerCase().includes(needle.toLowerCase());
+  }
+
+  private extractManifest(context: WorkflowContext): TestCommandManifest | null {
+    const direct = context.getVariable("test_command_manifest");
+    if (direct && typeof direct === "object") {
+      return direct as TestCommandManifest;
+    }
+
+    const contextResult = context.getVariable("context_request_result");
+    if (contextResult && typeof contextResult === "object") {
+      const manifest =
+        (contextResult as any).test_command_manifest ||
+        (contextResult as any).test_surface;
+      if (manifest && typeof manifest === "object") {
+        return manifest as TestCommandManifest;
+      }
+    }
+    return null;
+  }
+
+  private detectFromManifest(
+    manifest: TestCommandManifest | null,
+  ): DetectionResult | null {
+    if (!manifest?.candidates || manifest.candidates.length === 0) {
+      return null;
+    }
+
+    const preferred = manifest.preferred_command?.trim().toLowerCase();
+    const runnable = manifest.candidates
+      .filter((candidate) => this.isRunnableCandidate(candidate))
+      .map((candidate) => ({
+        candidate,
+        score: this.scoreCandidate(candidate, preferred),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    if (runnable.length === 0) {
+      return null;
+    }
+
+    const best = runnable[0].candidate;
+    const command = (best.command || "").trim();
+    if (!command) {
+      return null;
+    }
+
+    const source =
+      best.source ||
+      (Array.isArray(best.source_paths) && best.source_paths.length > 0
+        ? best.source_paths[0]
+        : "context_manifest");
+
+    const details: Record<string, unknown> = {
+      framework: best.framework || null,
+      language: best.language || null,
+      confidence: typeof best.confidence === "number" ? best.confidence : null,
+      type: best.type || null,
+      status: best.status || null,
+      reason: best.reason || null,
+      working_directory: best.working_directory || null,
+      prerequisites: best.prerequisites || null,
+      source,
+    };
+
+    return {
+      command,
+      source,
+      details,
+    } satisfies DetectionResult;
+  }
+
+  private isRunnableCandidate(candidate: TestCommandCandidate | null): boolean {
+    if (!candidate || typeof candidate.command !== "string") {
+      return false;
+    }
+
+    const status = (candidate.status || "").toLowerCase();
+    if (status && ["blocked", "missing", "todo"].includes(status)) {
+      return false;
+    }
+
+    const type = (candidate.type || "").toLowerCase();
+    if (type && ["harness", "missing", "blocked"].includes(type)) {
+      return false;
+    }
+
+    return candidate.command.trim().length > 0;
+  }
+
+  private scoreCandidate(
+    candidate: TestCommandCandidate,
+    preferred?: string,
+  ): number {
+    const command = candidate.command?.trim().toLowerCase();
+    const confidence =
+      typeof candidate.confidence === "number" ? candidate.confidence : 0.5;
+    const preferredBonus = preferred && command === preferred ? 0.5 : 0;
+    const readinessBonus =
+      (candidate.status || "").toLowerCase() === "ready" ? 0.25 : 0;
+    return confidence + preferredBonus + readinessBonus;
   }
 }

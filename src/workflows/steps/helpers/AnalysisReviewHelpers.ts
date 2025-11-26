@@ -1,4 +1,4 @@
-export {
+export type {
   AnalysisReviewLoopConfig,
   NormalizedReviewFeedback,
   PersonaInvocationConfig,

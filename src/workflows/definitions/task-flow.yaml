@@ -101,14 +101,79 @@ steps:
     depends_on: ["implementation_loop"]
     config:
       variable: "detected_test_command"
-      require_command: true
+      require_command: false
       package_script_priority: ["test:regression", "test:ci", "test"]
       allow_makefile: true
+
+  - name: test_harness_synthesis
+    type: TestHarnessSynthesisStep
+    description: "Synthesize deterministic test harness tasks when no entrypoint exists"
+    depends_on: ["determine_test_entrypoint"]
+    condition: "detected_test_command.length == 0"
+    config:
+      detection_variable: "detected_test_command"
+      repo_root: "${repo_root}"
+      labels:
+        - "qa-gap"
+        - "needs-tests"
+        - "auto"
+
+  - name: create_test_harness_tasks
+    type: BulkTaskCreationStep
+    description: "Create follow-up tasks so QA gains a runnable harness"
+    depends_on: ["test_harness_synthesis", "load_existing_tasks"]
+    condition: "test_harness_required == true"
+    config:
+      project_id: "${projectId}"
+      tasks: "${test_harness_synthesis.harness_tasks || []}"
+      priority_mapping:
+        critical: 1500
+        high: 1200
+        medium: 800
+        low: 50
+      options:
+        upsert_by_external_id: true
+        external_id_template: "test-harness-${task.id}"
+        check_duplicates: true
+        existing_tasks: "${review_existing_tasks || []}"
+        duplicate_match_strategy: "content_hash"
+
+  - name: collect_test_harness_dependencies
+    type: DependencyTaskCollectorStep
+    description: "Collect harness follow-up ids for dependency wiring"
+    depends_on: ["create_test_harness_tasks"]
+    condition: "test_harness_required == true"
+    config:
+      primary_ids: "${create_test_harness_tasks.task_ids || []}"
+      duplicate_ids: "${create_test_harness_tasks.duplicate_task_ids || []}"
+      output_variable: "test_harness_dependency_ids"
+
+  - name: register_test_harness_dependencies
+    type: RegisterBlockedDependenciesStep
+    description: "Link harness follow-ups as blocking dependencies"
+    depends_on: ["collect_test_harness_dependencies"]
+    condition: "test_harness_required == true && collect_test_harness_dependencies.dependency_task_ids.length > 0"
+    config:
+      project_id: "${projectId}"
+      parent_task_id: "${task.id}"
+      dependency_task_ids: "${collect_test_harness_dependencies.dependency_task_ids}"
+
+  - name: mark_task_blocked_pending_harness
+    type: SimpleTaskStatusStep
+    description: "Block original task until a runnable test harness exists"
+    depends_on: ["register_test_harness_dependencies"]
+    condition: "test_harness_required == true"
+    config:
+      status: "blocked"
+      comment: "Missing runnable test command - follow-up harness task created"
+      task_id: "${taskId}"
+      project_id: "${projectId}"
 
   - name: verify_diff
     type: GitOperationStep
     description: "Verify remote branch has diff from base"
     depends_on: ["determine_test_entrypoint"]
+    condition: "test_harness_required != true"
     config:
       operation: "verifyRemoteBranchHasDiff"
 

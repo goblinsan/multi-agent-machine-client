@@ -40,6 +40,7 @@ import { AnalysisReviewLoopStep } from "./steps/AnalysisReviewLoopStep";
 import { PrioritizeExistingTasksStep } from "./steps/PrioritizeExistingTasksStep";
 import { PlanKeyFileGuardStep } from "./steps/PlanKeyFileGuardStep";
 import { TestCommandDiscoveryStep } from "./steps/TestCommandDiscoveryStep";
+import { TestHarnessSynthesisStep } from "./steps/TestHarnessSynthesisStep";
 import { DependencyTaskCollectorStep } from "./steps/DependencyTaskCollectorStep";
 import { ImplementationLoopStep } from "./steps/ImplementationLoopStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
@@ -183,6 +184,10 @@ export class WorkflowEngine {
     this.stepRegistry.set(
       "TestCommandDiscoveryStep",
       TestCommandDiscoveryStep,
+    );
+    this.stepRegistry.set(
+      "TestHarnessSynthesisStep",
+      TestHarnessSynthesisStep,
     );
     this.stepRegistry.set(
       "DependencyTaskCollectorStep",

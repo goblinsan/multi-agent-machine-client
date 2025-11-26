@@ -8,9 +8,8 @@ describe("Context Persona Language Detection", () => {
     expect(contextPrompt).toBeDefined();
     expect(contextPrompt).toContain("Primary Language");
     expect(contextPrompt).toContain("programming language");
+    expect(contextPrompt).toContain("NON-EXHAUSTIVE");
     expect(contextPrompt).toContain("file extensions");
-    expect(contextPrompt).toContain("TypeScript");
-    expect(contextPrompt).toContain("Python");
   });
 
   it("instructs context persona to check PROJECT_PLAN.md for technology stack", () => {
@@ -30,10 +29,10 @@ describe("Context Persona Language Detection", () => {
   it("provides examples of language detection heuristics", () => {
     const contextPrompt = SYSTEM_PROMPTS.context;
 
-    expect(contextPrompt).toContain(".ts/.tsx");
-    expect(contextPrompt).toContain(".py");
-    expect(contextPrompt).toContain("package.json");
-    expect(contextPrompt).toContain("requirements.txt");
+    expect(contextPrompt).toContain("build.gradle");
+    expect(contextPrompt).toContain("Package.swift");
+    expect(contextPrompt).toContain("Cargo.toml");
+    expect(contextPrompt).toContain("pom.xml");
   });
 
   it("instructs to state language at beginning of output", () => {
@@ -41,5 +40,12 @@ describe("Context Persona Language Detection", () => {
 
     expect(contextPrompt).toContain("begin your output with");
     expect(contextPrompt).toContain("Primary Language:");
+  });
+
+  it("requires emitting a test command manifest", () => {
+    const contextPrompt = SYSTEM_PROMPTS.context;
+
+    expect(contextPrompt).toContain("test_command_manifest");
+    expect(contextPrompt).toContain("candidates array");
   });
 });
