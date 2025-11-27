@@ -30,7 +30,13 @@ steps:
     config:
       repoPath: "${repo_root}"
       includePatterns: ["**/*"]
-      excludePatterns: ["node_modules/**", ".git/**", "dist/**", "build/**", ".ma/**"]
+      excludePatterns:
+        - "node_modules/**"
+        - ".git/**"
+        - "dist/**"
+        - "build/**"
+        - ".ma/context/**"
+        - ".ma/planning/**"
       maxFiles: 1000
       maxBytes: 10485760
       maxDepth: 10

@@ -24,6 +24,7 @@ import {
   findPlanLanguageViolations,
   collectAllowedLanguages,
   collectPlanKeyFiles,
+  findAmbiguousPlanKeyFiles,
   buildSyntheticEvaluationFailure,
   formatPlanArtifact,
   formatEvaluationArtifact,
@@ -84,6 +85,7 @@ export class PlanningLoopStep extends WorkflowStep {
 
       const taskId = this.resolveTaskId(context);
       const planIterationArtifactPath = `.ma/tasks/${taskId}/02-plan-iteration-${currentIteration}.md`;
+      const planEvalArtifactPath = `.ma/tasks/${taskId}/02-plan-eval-iteration-${currentIteration}.md`;
 
       logger.info(
         `Planning loop iteration ${currentIteration}/${maxIterations}`,
@@ -163,6 +165,43 @@ export class PlanningLoopStep extends WorkflowStep {
         latestPlanKeyFiles = collectPlanKeyFiles(planData);
         context.setVariable("planning_loop_plan_files", latestPlanKeyFiles);
 
+        const ambiguousKeyFiles = findAmbiguousPlanKeyFiles(planData);
+        if (ambiguousKeyFiles.length > 0) {
+          const summaryPreview = ambiguousKeyFiles
+            .slice(0, 3)
+            .map((entry) => `${entry.stepGoal}: ${entry.variants.join(" vs ")}`)
+            .join("; ");
+          const reason =
+            "Plan lists multiple alternative file paths for the same deliverable. Choose exactly one concrete path per step." +
+            (summaryPreview ? ` Conflicts: ${summaryPreview}` : "");
+          evaluationResult = buildSyntheticEvaluationFailure(
+            reason,
+            {
+              ambiguous_key_files: ambiguousKeyFiles,
+            },
+            "ambiguous_key_files",
+          );
+
+          const syntheticEvalContent = formatEvaluationArtifact(
+            evaluationResult,
+            currentIteration,
+          );
+          await this.commitArtifact(
+            context,
+            syntheticEvalContent,
+            planEvalArtifactPath,
+            `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+          );
+
+          lastEvaluationPassed = false;
+          logger.warn("Plan rejected due to ambiguous key files", {
+            workflowId: context.workflowId,
+            iteration: currentIteration,
+            ambiguous_key_files: ambiguousKeyFiles,
+          });
+          continue;
+        }
+
         logger.info("Planning request completed", {
           workflowId: context.workflowId,
           step: planStep,
@@ -216,7 +255,7 @@ export class PlanningLoopStep extends WorkflowStep {
           await this.commitArtifact(
             context,
             syntheticEvalContent,
-            `.ma/tasks/${taskId}/02-plan-eval-iteration-${currentIteration}.md`,
+            planEvalArtifactPath,
             `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
           );
           lastEvaluationPassed = false;
@@ -333,7 +372,6 @@ export class PlanningLoopStep extends WorkflowStep {
           });
         }
 
-        const taskId = context.getVariable("task")?.id || "unknown";
         const evalContent = formatEvaluationArtifact(
           evaluationResult,
           currentIteration,
@@ -341,7 +379,7 @@ export class PlanningLoopStep extends WorkflowStep {
         await this.commitArtifact(
           context,
           evalContent,
-          `.ma/tasks/${taskId}/02-plan-eval-iteration-${currentIteration}.md`,
+          planEvalArtifactPath,
           `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
         );
 

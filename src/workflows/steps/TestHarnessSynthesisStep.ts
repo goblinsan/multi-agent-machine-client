@@ -36,6 +36,7 @@ interface SynthesizedTask {
   priority: TaskPriority;
   metadata?: Record<string, unknown>;
   milestone_slug?: string;
+  milestone_id?: number | string;
   external_id?: string;
 }
 
@@ -79,7 +80,7 @@ export class TestHarnessSynthesisStep extends WorkflowStep {
     ];
     const labelsWithPlan = this.mergeLabels(baseLabels, plan.labels);
     const labels = this.mergeLabels(labelsWithPlan, config.labels);
-    const milestoneSlug = this.resolveMilestoneSlug(context);
+    const milestoneContext = this.resolveMilestoneContext(context);
     const description = this.buildDescription(plan);
 
     const tasks: SynthesizedTask[] = [
@@ -95,7 +96,8 @@ export class TestHarnessSynthesisStep extends WorkflowStep {
           dependencies: plan.dependencies,
           plan_source: plan.source || "detector",
         },
-        milestone_slug: milestoneSlug,
+        milestone_slug: milestoneContext.slug,
+        milestone_id: milestoneContext.id,
         external_id: `${context.workflowId}:test-harness`,
       },
     ];
@@ -356,18 +358,31 @@ export class TestHarnessSynthesisStep extends WorkflowStep {
     return Array.from(merged);
   }
 
-  private resolveMilestoneSlug(context: WorkflowContext): string | undefined {
-    const milestone = context.getVariable("milestone");
-    if (milestone?.slug) {
-      return milestone.slug;
-    }
+  private resolveMilestoneContext(
+    context: WorkflowContext,
+  ): { id?: number | string; slug?: string } {
+    const milestoneVar = context.getVariable("milestone");
+    const directSlug = context.getVariable("milestone_slug");
+    const directId = context.getVariable("milestoneId");
+    const taskVar = context.getVariable("task");
+    const taskData = taskVar?.data || taskVar;
 
-    const task = context.getVariable("task");
-    if (task?.milestone?.slug) {
-      return task.milestone.slug;
-    }
+    const slugCandidate =
+      directSlug ||
+      milestoneVar?.slug ||
+      taskData?.milestone?.slug ||
+      taskData?.milestone_slug;
 
-    return undefined;
+    const idCandidate =
+      directId ||
+      milestoneVar?.id ||
+      taskData?.milestone?.id ||
+      taskData?.milestone_id;
+
+    return {
+      slug: slugCandidate || undefined,
+      id: idCandidate || undefined,
+    };
   }
 
   private async pathExists(target: string): Promise<boolean> {

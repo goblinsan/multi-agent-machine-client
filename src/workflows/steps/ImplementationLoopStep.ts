@@ -14,6 +14,11 @@ import {
   PlanKeyFileGuardStep,
   PlanKeyFileGuardConfig,
 } from "./PlanKeyFileGuardStep.js";
+import {
+  ConfigValidationError,
+  identifyConfigFiles,
+  validateConfigFiles,
+} from "../utils/configValidators.js";
 
 interface ImplementationLoopConfig {
   maxAttempts?: number;
@@ -45,9 +50,12 @@ export class ImplementationLoopStep extends WorkflowStep {
 
     const recordedPlan = this.getRecordedPlanMetadata(context);
     let missingFiles = recordedPlan.missingFiles;
+    let lastValidationErrors: ConfigValidationError[] = [];
 
     context.setVariable("implementation_retry_max_attempts", maxAttempts);
     context.setVariable(missingVariable, missingFiles);
+    context.setVariable("implementation_config_validation_errors", []);
+    context.setVariable("implementation_config_validation_summary", "");
 
     let attempt = 0;
 
@@ -88,6 +96,7 @@ export class ImplementationLoopStep extends WorkflowStep {
         return diffResult;
       }
       this.syncStepOutput(context, "apply_implementation_edits", diffResult);
+      const appliedFiles = this.extractAppliedFiles(diffResult);
 
       const guardResult = await guardStep.execute(context);
       if (guardResult.status !== "success") {
@@ -96,7 +105,14 @@ export class ImplementationLoopStep extends WorkflowStep {
       this.syncStepOutput(context, "verify_plan_key_files", guardResult);
 
       missingFiles = this.extractMissingFiles(guardResult);
-      if (missingFiles.length === 0) {
+      const validationErrors = this.evaluateConfigValidation(
+        context,
+        appliedFiles,
+        recordedPlan.planFiles,
+      );
+      lastValidationErrors = validationErrors;
+
+      if (missingFiles.length === 0 && validationErrors.length === 0) {
         context.logger.info("Implementation loop completed", {
           workflowId: context.workflowId,
           attempts: attempt,
@@ -104,6 +120,8 @@ export class ImplementationLoopStep extends WorkflowStep {
         context.setVariable("implementation_attempts", attempt);
         context.setVariable(missingVariable, []);
         context.setVariable("implementation_guard_missing_summary", "");
+        context.setVariable("implementation_config_validation_errors", []);
+        context.setVariable("implementation_config_validation_summary", "");
         return {
           status: "success",
           outputs: {
@@ -112,6 +130,18 @@ export class ImplementationLoopStep extends WorkflowStep {
             plan_key_files: recordedPlan.planFiles,
           },
         } satisfies StepResult;
+      }
+
+      if (validationErrors.length > 0) {
+        context.logger.warn("Config validation detected errors", {
+          workflowId: context.workflowId,
+          attempt,
+          files: validationErrors.map((entry) => entry.file),
+        });
+        if (attempt >= maxAttempts) {
+          break;
+        }
+        continue;
       }
 
       if (attempt >= maxAttempts) {
@@ -131,11 +161,31 @@ export class ImplementationLoopStep extends WorkflowStep {
       "implementation_guard_missing_summary",
       missingFiles.join(", "),
     );
+    context.setVariable(
+      "implementation_config_validation_errors",
+      lastValidationErrors,
+    );
+    context.setVariable(
+      "implementation_config_validation_summary",
+      this.formatValidationSummary(lastValidationErrors),
+    );
 
-    const errorMessage =
-      missingFiles.length > 0
-        ? `Implementation loop exhausted ${maxAttempts} attempt(s) but missing plan files remain: ${missingFiles.join(", ")}`
-        : `Implementation loop exhausted ${maxAttempts} attempt(s) without satisfying plan guard.`;
+    const failureReasons: string[] = [];
+    if (missingFiles.length > 0) {
+      failureReasons.push(
+        `missing plan files: ${missingFiles.join(", ")}`,
+      );
+    }
+    if (lastValidationErrors.length > 0) {
+      failureReasons.push(
+        `config validation errors: ${this.formatValidationSummary(lastValidationErrors)}`,
+      );
+    }
+    const reasonSummary =
+      failureReasons.length > 0
+        ? failureReasons.join(" | ")
+        : "unresolved guard conditions";
+    const errorMessage = `Implementation loop exhausted ${maxAttempts} attempt(s) (${reasonSummary}).`;
 
     return {
       status: "failure",
@@ -260,6 +310,47 @@ export class ImplementationLoopStep extends WorkflowStep {
       }
     }
     return [];
+  }
+
+  private extractAppliedFiles(result: StepResult): string[] {
+    const outputs = result.outputs ?? result.data;
+    if (outputs && typeof outputs === "object") {
+      const files = (outputs as any).applied_files || (outputs as any).applyResult?.changed || [];
+      if (Array.isArray(files)) {
+        return this.normalizeStringArray(files);
+      }
+    }
+    return [];
+  }
+
+  private evaluateConfigValidation(
+    context: WorkflowContext,
+    appliedFiles: string[],
+    watchFiles: string[] = [],
+  ): ConfigValidationError[] {
+    const candidates = identifyConfigFiles(
+      Array.from(new Set([...(appliedFiles || []), ...(watchFiles || [])])),
+    );
+    if (candidates.length === 0) {
+      context.setVariable("implementation_config_validation_errors", []);
+      context.setVariable("implementation_config_validation_summary", "");
+      return [];
+    }
+
+    const errors = validateConfigFiles(context.repoRoot, candidates);
+    const summary = this.formatValidationSummary(errors);
+    context.setVariable("implementation_config_validation_errors", errors);
+    context.setVariable("implementation_config_validation_summary", summary);
+    return errors;
+  }
+
+  private formatValidationSummary(errors: ConfigValidationError[]): string {
+    if (errors.length === 0) {
+      return "";
+    }
+    return errors
+      .map((entry) => `${entry.file}: ${entry.reason}`)
+      .join("; ");
   }
 
   private syncStepOutput(

@@ -218,7 +218,7 @@ describe("ImplementationLoopStep", () => {
 
     const result = await step.execute(context);
     expect(result.status).toBe("failure");
-    expect(result.error?.message).toContain("missing plan files remain");
+    expect(result.error?.message).toContain("missing plan files:");
     expect(context.getVariable("implementation_attempts")).toBe(3);
     expect(
       context.getVariable("implementation_guard_missing_files"),
@@ -226,5 +226,78 @@ describe("ImplementationLoopStep", () => {
     await expect(
       fs.access(path.join(repoRoot, "src/config/validator.js")),
     ).rejects.toThrow();
+  });
+
+  it("reports config validation errors for untouched plan files", async () => {
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      '{ "name": "demo", }',
+      "utf-8",
+    );
+
+    context.setVariable("planning_loop_plan_files", ["package.json"]);
+    context.setVariable("plan_required_files", ["package.json"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["package.json"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Fix package script",
+                key_files: ["package.json"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const personaDiffs = [
+      buildDiff(
+        "README.md",
+        ["# temp", "Additional notes"].join("\n"),
+      ),
+    ];
+
+    vi.mocked(persona.waitForPersonaCompletion).mockImplementation(
+      async () => ({
+        id: `event-${personaDiffs.length}`,
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: personaDiffs.shift() ?? "",
+          }),
+        },
+      }),
+    );
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 1,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["package.json"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+    expect(result.status).toBe("failure");
+    expect(result.error?.message).toContain("config validation errors");
+    const summary = context.getVariable(
+      "implementation_config_validation_summary",
+    ) as string;
+    expect(summary).toContain("package.json");
+    const errors = context.getVariable(
+      "implementation_config_validation_errors",
+    ) as Array<{ file: string }>;
+    expect(errors[0]?.file).toBe("package.json");
   });
 });

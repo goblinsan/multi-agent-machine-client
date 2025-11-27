@@ -30,7 +30,13 @@ steps:
     config:
       repoPath: "${repo_root}"
       includePatterns: ["**/*"]
-      excludePatterns: ["node_modules/**", ".git/**", "dist/**", "build/**", ".ma/**"]
+      excludePatterns:
+        - "node_modules/**"
+        - ".git/**"
+        - "dist/**"
+        - "build/**"
+        - ".ma/context/**"
+        - ".ma/planning/**"
       maxFiles: 1000
       maxBytes: 10485760
       maxDepth: 10
@@ -162,7 +168,7 @@ steps:
     type: SimpleTaskStatusStep
     description: "Block original task until a runnable test harness exists"
     depends_on: ["register_test_harness_dependencies"]
-    condition: "test_harness_required == true"
+    condition: "test_harness_required == true && register_test_harness_dependencies.dependencyCount > 0"
     config:
       status: "blocked"
       comment: "Missing runnable test command - follow-up harness task created"

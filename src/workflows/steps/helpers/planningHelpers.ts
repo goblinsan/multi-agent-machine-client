@@ -135,6 +135,22 @@ function tryParseJson(value: string): any | null {
   }
 }
 
+function normalizePlanFilePath(file: string): string {
+  return file
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/g, "")
+    .replace(/\/{2,}/g, "/");
+}
+
+function buildAmbiguityKey(normalizedPath: string): string {
+  if (!normalizedPath) return normalizedPath;
+  const parsed = path.posix.parse(normalizedPath);
+  const dir = parsed.dir === "." ? "" : parsed.dir;
+  const dirPrefix = dir ? `${dir}/` : "";
+  return `${dirPrefix}${parsed.name}`.replace(/\/$/, "");
+}
+
 export function collectPlanKeyFiles(planData: any): string[] {
   if (!planData?.plan || !Array.isArray(planData.plan)) return [];
   const files = new Set<string>();
@@ -153,6 +169,56 @@ export function collectPlanKeyFiles(planData: any): string[] {
   return Array.from(files);
 }
 
+export interface AmbiguousPlanKeyFiles {
+  stepGoal: string;
+  basePath: string;
+  variants: string[];
+}
+
+export function findAmbiguousPlanKeyFiles(
+  planData: any,
+): AmbiguousPlanKeyFiles[] {
+  if (!planData?.plan || !Array.isArray(planData.plan)) {
+    return [];
+  }
+
+  const conflicts: AmbiguousPlanKeyFiles[] = [];
+
+  planData.plan.forEach((step: any) => {
+    if (!step || !Array.isArray(step.key_files) || step.key_files.length === 0)
+      return;
+
+    const perStepMap = new Map<string, Set<string>>();
+
+    step.key_files.forEach((file: any) => {
+      if (typeof file !== "string") return;
+      const normalized = normalizePlanFilePath(file);
+      if (!normalized) return;
+      const key = buildAmbiguityKey(normalized);
+      if (!key) return;
+
+      if (!perStepMap.has(key)) {
+        perStepMap.set(key, new Set());
+      }
+      perStepMap.get(key)!.add(normalized);
+    });
+
+    perStepMap.forEach((variants, key) => {
+      if (variants.size > 1) {
+        conflicts.push({
+          stepGoal: typeof step.goal === "string" && step.goal.length > 0
+            ? step.goal
+            : "Unnamed step",
+          basePath: key,
+          variants: Array.from(variants).sort(),
+        });
+      }
+    });
+  });
+
+  return conflicts;
+}
+
 export type PlanLanguageViolation = LanguageViolation;
 
 export function findPlanLanguageViolations(
@@ -164,15 +230,19 @@ export function findPlanLanguageViolations(
   return findLanguageViolationsForFiles(files, allowedLanguages);
 }
 
-export function buildSyntheticEvaluationFailure(reason: string, details: any) {
+export function buildSyntheticEvaluationFailure(
+  reason: string,
+  details: any,
+  guard: string = "language_policy",
+) {
   return {
     fields: {
       status: "done",
-      corr_id: `guard-language-${randomUUID()}`,
+      corr_id: `guard-${guard}-${randomUUID()}`,
       result: JSON.stringify({
         status: "fail",
         reason,
-        guard: "language_policy",
+        guard,
         details,
       }),
     },

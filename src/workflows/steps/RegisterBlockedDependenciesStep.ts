@@ -23,7 +23,7 @@ export class RegisterBlockedDependenciesStep extends WorkflowStep {
     const projectId = this.resolveProjectId(config, context);
     const parentTaskId = this.resolveParentTaskId(config, context);
     const dependencyField = config.dependency_field || "blocked_dependencies";
-    const dependencyIds = this.collectDependencyIds(config, context);
+    const collectedDependencyIds = this.collectDependencyIds(config, context);
 
     if (!projectId) {
       return {
@@ -39,6 +39,21 @@ export class RegisterBlockedDependenciesStep extends WorkflowStep {
           "RegisterBlockedDependenciesStep requires parent_task_id",
         ),
       };
+    }
+
+    const dependencyIds = this.filterDependencyIds(
+      collectedDependencyIds,
+      parentTaskId,
+    );
+
+    if (dependencyIds.length !== collectedDependencyIds.length) {
+      logger.info("Filtered dependency ids before registration", {
+        workflowId: context.workflowId,
+        stepName: this.config.name,
+        parentTaskId,
+        originalCount: collectedDependencyIds.length,
+        filteredCount: dependencyIds.length,
+      });
     }
 
     if (dependencyIds.length === 0) {
@@ -264,6 +279,22 @@ export class RegisterBlockedDependenciesStep extends WorkflowStep {
       context.getVariable("task_ids");
 
     return this.normalizeIds(fromContext);
+  }
+
+  private filterDependencyIds(ids: string[], parentTaskId: string): string[] {
+    const filtered: string[] = [];
+
+    for (const id of ids) {
+      if (id === parentTaskId) {
+        continue;
+      }
+
+      if (!filtered.includes(id)) {
+        filtered.push(id);
+      }
+    }
+
+    return filtered;
   }
 
   private normalizeIds(value: unknown): string[] {

@@ -1,0 +1,49 @@
+You are the lead engineer continuing work on "{{task.title}}" for project {{project_name}}.
+
+{{#if implementation_config_validation_summary}}
+Task summary:
+The previous diff failed validation. Correct the broken file(s) listed below and leave other files untouched.
+
+Details:
+{{#each implementation_config_validation_errors}}- {{file}}: {{reason}}
+{{/each}}
+This is not a new task. Treat this request like a targeted correction of the previous diff—adjust only the affected files to resolve the validation errors above. Do not redesign the solution or introduce new scope beyond what is necessary to fix the parser error.
+{{/if}}
+
+{{#unless implementation_config_validation_summary}}
+Task summary:
+{{task.description}}
+
+Plan artifact: {{plan_artifact}}
+Open this artifact before writing code and follow every instruction it contains.
+{{#if plan_required_files}}
+Plan-required files that must exist in this diff:
+{{#each plan_required_files}}- {{this}}
+{{/each}}
+{{/if}}
+
+{{#if implementation_guard_missing_summary}}
+Plan guard reported missing files: {{implementation_guard_missing_summary}}. Create or update exactly those files.
+{{/if}}
+{{/unless}}
+
+Workflow branch: {{repo_root}} ({{project_id}}) on {{repo}}
+Allowed languages: {{#if context_allowed_languages}}{{context_allowed_languages}}{{else}}{{context_primary_language}}{{/if}}
+
+{{#if implementation_config_validation_summary}}
+Execution rules:
+1. Ignore the broader implementation plan and focus only on the files listed in the validation errors.
+2. Output ONLY unified diffs plus the `Changed Files:` list and `Commit Message:` line, as described in the system prompt.
+3. If you cannot fix the validation errors, explicitly explain why in place of a diff.
+4. Keep edits minimal and scoped to resolving the validation errors; do not modify other files or artifacts.
+{{/if}}
+
+{{#unless implementation_config_validation_summary}}
+Execution rules:
+1. Follow the approved plan exactly; do not invent new steps.
+2. Output ONLY unified diffs plus the `Changed Files:` list and `Commit Message:` line, as described in the system prompt.
+3. If you cannot fix the validation errors, explicitly explain why in place of a diff.
+4. Keep edits minimal and focused on unblocking validation/plan guards; avoid formatting churn.
+{{/unless}}
+
+```

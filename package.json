@@ -18,13 +18,15 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
     "dotenv": "^16.4.5",
+    "fast-xml-parser": "^5.3.2",
+    "handlebars": "^4.7.8",
     "minimatch": "^9.0.5",
     "redis": "^4.7.0",
     "undici": "^6.19.8",
     "vi": "^1.0.0",
     "vitest": "^3.2.4",
-    "handlebars": "^4.7.8",
     "yaml": "^2.3.4",
     "zod": "^3.23.8"
   },
