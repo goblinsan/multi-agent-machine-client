@@ -268,3 +268,11 @@ function decodeGithubSegments(pathname: string): string[] {
 function stripGitSuffix(value: string): string {
   return value.endsWith(".git") ? value.slice(0, -4) : value;
 }
+
+export function isContextArtifactRequest(path: string): boolean {
+  if (!path) {
+    return false;
+  }
+  const normalized = path.replace(/\\/g, "/").toLowerCase();
+  return normalized.startsWith(".ma/context") || normalized.startsWith(".ma\\context");
+}

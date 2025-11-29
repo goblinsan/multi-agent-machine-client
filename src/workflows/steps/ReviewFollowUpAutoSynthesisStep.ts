@@ -120,6 +120,7 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
       outputs: {
         auto_follow_up_tasks: merged,
         auto_follow_up_summary: summary,
+        auto_follow_up_count: merged.length,
       },
       data: { tasks: merged, summary },
       metrics: {

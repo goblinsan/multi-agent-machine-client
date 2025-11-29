@@ -9,6 +9,7 @@ export interface PersonaRequestConfig {
   abortOnFailure?: boolean;
   prompt_template?: string;
   maxInformationIterations?: number;
+  maxInformationSources?: number;
 }
 
 export interface PersonaRequestContextPayload {

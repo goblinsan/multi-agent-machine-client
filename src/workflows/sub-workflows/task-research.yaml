@@ -57,6 +57,7 @@ steps:
       intent: "information_acquisition"
       abortOnFailure: false
       prompt_template: "prompts/researcher-information-acquisition.txt"
+      maxInformationSources: 10
       payload:
         task: "${task}"
         milestone: "${milestone || {}}"

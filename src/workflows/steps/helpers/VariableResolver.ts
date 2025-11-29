@@ -45,58 +45,103 @@ export class VariableResolver {
     template: string,
     context: WorkflowContext,
   ): any {
-    const variablePattern =
-      /\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}/g;
-    const transformPattern =
-      /\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\.(toUpperCase|toLowerCase)\(\)\}/g;
+    const expressionPattern = /\$\{([^}]+)\}/g;
 
-    const transformExactMatch = template.match(
-      /^\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\.(toUpperCase|toLowerCase)\(\)\}$/,
-    );
-    if (transformExactMatch) {
-      const [, path, transform] = transformExactMatch;
-      const value = this.resolvePath(path, context);
-      if (value === undefined || value === null) {
-        return template;
-      }
-      return this.applyTransform(value, transform as TransformName);
-    }
-
-    const exactMatch = template.match(
-      /^\$\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}$/,
-    );
+    const exactMatch = template.match(/^\$\{([^}]+)\}$/);
     if (exactMatch) {
-      const value = this.resolvePath(exactMatch[1], context);
-      return value !== undefined && value !== null ? value : template;
+      const { value, resolved, hadFallback } = this.evaluateExpression(
+        exactMatch[1].trim(),
+        context,
+      );
+      if (resolved) {
+        return value;
+      }
+      return hadFallback ? "" : template;
     }
 
-    let workingTemplate = template.replace(
-      transformPattern,
-      (match, path, transform) => {
-        const value = this.resolvePath(path, context);
-        if (value === undefined || value === null) {
-          return match;
-        }
-        return this.applyTransform(value, transform as TransformName);
-      },
-    );
-
-    return workingTemplate.replace(variablePattern, (match, path) => {
-      try {
-        const value = this.resolvePath(path, context, match);
-        if (value === null || value === undefined) {
-          return match;
-        }
-        return String(value);
-      } catch (error) {
-        logger.warn(`Failed to resolve variable, preserving template`, {
-          template: match,
-          path,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-        return match;
+    return template.replace(expressionPattern, (match, expression) => {
+      const { value, resolved, hadFallback } = this.evaluateExpression(
+        expression.trim(),
+        context,
+        match,
+      );
+      if (resolved) {
+        return typeof value === "string" ? value : String(value);
       }
+      return hadFallback ? "" : match;
     });
+  }
+
+  private evaluateExpression(
+    expression: string,
+    context: WorkflowContext,
+    templateForWarnings?: string,
+  ): { value: any; resolved: boolean; hadFallback: boolean } {
+    const segments = expression
+      .split("||")
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+    const hadFallback = segments.length > 1;
+
+    for (const segment of segments) {
+      const value = this.evaluateSingleSegment(
+        segment,
+        context,
+        templateForWarnings,
+      );
+      if (value !== undefined && value !== null) {
+        return { value, resolved: true, hadFallback };
+      }
+    }
+
+    return { value: undefined, resolved: false, hadFallback };
+  }
+
+  private evaluateSingleSegment(
+    segment: string,
+    context: WorkflowContext,
+    templateForWarnings?: string,
+  ): any {
+    if (!segment.length) {
+      return undefined;
+    }
+
+    const transformMatch = segment.match(
+      /^([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\.(toUpperCase|toLowerCase)\(\)$/,
+    );
+    if (transformMatch) {
+      const [, path, transform] = transformMatch;
+      const value = this.resolvePath(path, context, templateForWarnings);
+      return value === undefined || value === null
+        ? undefined
+        : this.applyTransform(value, transform as TransformName);
+    }
+
+    if ((segment.startsWith("\"") && segment.endsWith("\"")) || (segment.startsWith("'") && segment.endsWith("'"))) {
+      return segment.slice(1, -1);
+    }
+
+    if (segment === "[]") {
+      return [];
+    }
+
+    if (segment === "{}") {
+      return {};
+    }
+
+    if (/^[-+]?\d+(?:\.\d+)?$/.test(segment)) {
+      return Number(segment);
+    }
+
+    if (segment === "true") {
+      return true;
+    }
+
+    if (segment === "false") {
+      return false;
+    }
+
+    return this.resolvePath(segment, context, templateForWarnings);
   }
 
   private applyTransform(value: any, transform: TransformName): string {

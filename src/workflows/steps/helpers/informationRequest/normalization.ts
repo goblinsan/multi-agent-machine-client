@@ -3,6 +3,9 @@ import type {
   InformationRequest,
   RepoFileInformationRequest,
 } from "./types.js";
+import { isContextArtifactRequest } from "./utils.js";
+
+const HTTP_SOURCE_REGEX = /^https?:\/\//i;
 
 export function isInformationRequestResult(result: any): boolean {
   if (!result || typeof result !== "object") {
@@ -51,14 +54,7 @@ export function normalizeInformationRequests(raw: any): InformationRequest[] {
     if (!typeValue) continue;
 
     if (typeValue === "repo_file") {
-      const pathValue = String(
-        entry.path ||
-          entry.file ||
-          entry.file_path ||
-          entry.repo_file ||
-          entry.repoPath ||
-          "",
-      ).trim();
+      const pathValue = resolveRepoPathField(entry);
       if (!pathValue) continue;
       const request: RepoFileInformationRequest = {
         id: sanitizeId(entry.id || entry.request_id),
@@ -74,13 +70,7 @@ export function normalizeInformationRequests(raw: any): InformationRequest[] {
     }
 
     if (typeValue === "http" || typeValue === "http_get" || typeValue === "url") {
-      const urlValue = String(
-        entry.url ||
-          entry.uri ||
-          entry.http_get ||
-          entry.link ||
-          "",
-      ).trim();
+      const urlValue = resolveHttpUrlField(entry);
       if (!urlValue) continue;
       const headers = normalizeHeaders(entry.headers);
       const request: HttpInformationRequest = {
@@ -111,6 +101,45 @@ function inferRequestType(entry: Record<string, any>): string | "" {
   }
   if (typeof entry.file === "string" || typeof entry.file_path === "string") {
     return "repo_file";
+  }
+  return "";
+}
+
+function resolveRepoPathField(entry: Record<string, any>): string {
+  const candidates = [
+    entry.path,
+    entry.file,
+    entry.file_path,
+    entry.repo_file,
+    entry.repoPath,
+    entry.source && !HTTP_SOURCE_REGEX.test(String(entry.source))
+      ? entry.source
+      : undefined,
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const value = String(candidate).trim();
+    if (value.length) {
+      if (isContextArtifactRequest(value)) {
+        return "";
+      }
+      return value;
+    }
+  }
+  return "";
+}
+
+function resolveHttpUrlField(entry: Record<string, any>): string {
+  const candidates = [entry.url, entry.uri, entry.http_get, entry.link];
+  if (entry.source && HTTP_SOURCE_REGEX.test(String(entry.source))) {
+    candidates.push(entry.source);
+  }
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const value = String(candidate).trim();
+    if (value.length) {
+      return value;
+    }
   }
   return "";
 }

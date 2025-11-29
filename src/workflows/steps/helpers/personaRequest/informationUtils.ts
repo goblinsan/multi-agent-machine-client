@@ -166,6 +166,14 @@ function parseJsonFromString(raw: string): any | null {
     return direct;
   }
 
+  const cleaned = stripDanglingFences(raw);
+  if (cleaned !== raw) {
+    const cleanedResult = tryParseJson(cleaned);
+    if (cleanedResult !== null) {
+      return cleanedResult;
+    }
+  }
+
   const fencedMatch = raw.match(/```(?:json)?\s*([\s\S]+?)```/i);
   if (fencedMatch && fencedMatch[1]) {
     return tryParseJson(fencedMatch[1]);
@@ -184,4 +192,11 @@ function tryParseJson(candidate: string): any | null {
   } catch {
     return null;
   }
+}
+
+function stripDanglingFences(value: string): string {
+  return value
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
 }

@@ -82,6 +82,7 @@ steps:
     type: PersonaRequestStep
     description: "PM evaluates review failures and prioritizes follow-up work"
     depends_on: ["normalize_review_failure", "auto_follow_up_synthesis"]
+    condition: "auto_follow_up_synthesis.auto_follow_up_count == 0"
     config:
       step: "pm-review-prioritization"
       persona: "project-manager"

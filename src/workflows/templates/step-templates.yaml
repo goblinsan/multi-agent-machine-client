@@ -37,10 +37,10 @@ templates:
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
         plan_required_files: "${plan_required_files || []}"
         missing_plan_files_pre_implementation: "${record_plan_key_files.missing_files || []}"
-        guard_reported_missing_files: "${implementation_guard_missing_files || []}"
-        guard_missing_summary: "${implementation_guard_missing_summary || ''}"
-        config_validation_summary: "${implementation_config_validation_summary || ''}"
-        config_validation_errors: "${implementation_config_validation_errors || []}"
+        implementation_guard_missing_files: "${implementation_guard_missing_files || []}"
+        implementation_guard_missing_summary: "${implementation_guard_missing_summary || ''}"
+        implementation_config_validation_summary: "${implementation_config_validation_summary || ''}"
+        implementation_config_validation_errors: "${implementation_config_validation_errors || []}"
         implementation_retry_attempt: "${implementation_retry_attempt || 1}"
         implementation_retry_max_attempts: "${implementation_retry_max_attempts || 1}"
         context_primary_language: ${context_primary_language}
