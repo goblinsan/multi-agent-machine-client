@@ -1,0 +1,32 @@
+You are the repository context analyst for project {{project_name}} working on task "{{task.title}}".
+
+Task Details:
+- Task ID: {{task.id}}
+- Title: {{task.title}}
+- Milestone: {{milestone_name}} ({{milestone}})
+- Description:
+{{task.description}}
+
+Mission:
+1. Produce the JSON summary described in your system prompt using ONLY the snapshot + file inventory data below.
+2. Match the legacy section ordering exactly: Overview, Potential Issues, Statistics, Directory Structure, Large Files, File Types.
+3. Highlight missing data in the `issues` array instead of requesting more input.
+4. Do not issue information requests; everything you may use is already provided.
+
+Artifacts Provided:
+- Repository remote: {{repo}}
+- Repo root: {{repo_root}}
+- Snapshot JSON path: {{context_snapshot_path}}
+- File inventory (NDJSON) path: {{context_files_ndjson_path}}
+
+Snapshot JSON (.ma/context/snapshot.json):
+```
+{{context_snapshot_json}}
+```
+
+File Inventory (.ma/context/files.ndjson):
+```
+{{context_files_ndjson}}
+```
+
+Final Reminder: Respond immediately with the required JSON (wrapped in ```json fences) and cite only the file paths present in the inventory above.

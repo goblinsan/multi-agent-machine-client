@@ -6,6 +6,7 @@ templates:
       step: "1-context"
       persona: context
       intent: context_analysis
+      prompt_template: "prompts/context-analysis.txt"
       payload:
         task: ${task}
         repo: ${repo_remote}
@@ -15,8 +16,13 @@ templates:
         project_name: ${projectName}
         milestone: ${milestone}
         milestone_name: ${milestone_name}
-        repoScan: ${repoScan}
         context_metadata: ${context.metadata}
+        context_snapshot_json: ${context_snapshot_json}
+        context_files_ndjson: ${context_files_ndjson}
+        context_summary_md: "${context_summary_md || ''}"
+        context_snapshot_path: "${context_snapshot_path || ''}"
+        context_summary_path: "${context_summary_path || ''}"
+        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
 
   implementation:
     type: PersonaRequestStep
@@ -39,6 +45,11 @@ templates:
         implementation_retry_max_attempts: "${implementation_retry_max_attempts || 1}"
         context_primary_language: ${context_primary_language}
         context_allowed_languages: ${context_allowed_languages}
+        context_snapshot_json: "${context_snapshot_json || ''}"
+        context_files_ndjson: "${context_files_ndjson || ''}"
+        context_summary_md: "${context_summary_md || ''}"
+        context_snapshot_path: "${context_snapshot_path || ''}"
+        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
         repo: ${repo_remote}
         repo_root: ${repo_root}
         project_id: ${projectId}
@@ -70,6 +81,11 @@ templates:
         repo_diff_patch: ${review_diff_patch}
         repo_diff_summary: ${review_diff_summary}
         repo_changed_files: ${review_diff_files}
+        context_snapshot_json: "${context_snapshot_json || ''}"
+        context_files_ndjson: "${context_files_ndjson || ''}"
+        context_summary_md: "${context_summary_md || ''}"
+        context_snapshot_path: "${context_snapshot_path || ''}"
+        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
 
   code_review:
     type: PersonaRequestStep
@@ -104,6 +120,11 @@ templates:
         repo_diff_patch: ${review_diff_patch}
         repo_diff_summary: ${review_diff_summary}
         repo_changed_files: ${review_diff_files}
+        context_snapshot_json: "${context_snapshot_json || ''}"
+        context_files_ndjson: "${context_files_ndjson || ''}"
+        context_summary_md: "${context_summary_md || ''}"
+        context_snapshot_path: "${context_snapshot_path || ''}"
+        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
 
   security_review:
     type: PersonaRequestStep
@@ -130,6 +151,11 @@ templates:
         repo_diff_patch: ${review_diff_patch}
         repo_diff_summary: ${review_diff_summary}
         repo_changed_files: ${review_diff_files}
+        context_snapshot_json: "${context_snapshot_json || ''}"
+        context_files_ndjson: "${context_files_ndjson || ''}"
+        context_summary_md: "${context_summary_md || ''}"
+        context_snapshot_path: "${context_snapshot_path || ''}"
+        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
 
   devops_review:
     type: PersonaRequestStep
@@ -157,3 +183,8 @@ templates:
         repo_diff_patch: ${review_diff_patch}
         repo_diff_summary: ${review_diff_summary}
         repo_changed_files: ${review_diff_files}
+        context_snapshot_json: "${context_snapshot_json || ''}"
+        context_files_ndjson: "${context_files_ndjson || ''}"
+        context_summary_md: "${context_summary_md || ''}"
+        context_snapshot_path: "${context_snapshot_path || ''}"
+        context_files_ndjson_path: "${context_files_ndjson_path || ''}"

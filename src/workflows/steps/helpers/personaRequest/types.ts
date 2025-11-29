@@ -8,6 +8,7 @@ export interface PersonaRequestConfig {
   maxRetries?: number | null;
   abortOnFailure?: boolean;
   prompt_template?: string;
+  maxInformationIterations?: number;
 }
 
 export interface PersonaRequestContextPayload {

@@ -58,10 +58,34 @@ steps:
       include_completed: false
       store_variable: review_existing_tasks
 
+  - name: research_enrichment
+    type: SubWorkflowStep
+    description: "Researcher persona gathers blocking information before planning"
+    depends_on: ["context_scan"]
+    config:
+      workflow: "task-research"
+      inputs:
+        task: ${task}
+        project_id: "${projectId}"
+        project_name: "${projectName}"
+        repo: "${repo_remote}"
+        repo_root: "${repo_root}"
+        milestone: "${milestone}"
+        context_summary_md: "${context_summary_md || ''}"
+        context_insights: "${context_insights || {}}"
+        context_allowed_languages: "${context_allowed_languages || []}"
+        context_snapshot_json: "${context_snapshot_json || ''}"
+        context_files_ndjson: "${context_files_ndjson || ''}"
+        context_snapshot_path: "${context_snapshot_path || ''}"
+        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
+        repoScan: "${repoScan || []}"
+        research_objectives: "${task.research_objectives || []}"
+        existing_findings: "${task.research_notes || []}"
+
   - name: planning_loop
     type: PlanningLoopStep
     description: "Plan creation and evaluation loop with max 5 iterations"
-    depends_on: ["context_scan"]
+    depends_on: ["context_scan", "research_enrichment"]
     config:
       maxIterations: 5
       plannerPersona: "implementation-planner"
@@ -75,6 +99,11 @@ steps:
         project_id: "${projectId}"
         repo_slug: "${repoSlug}"
         project_name: "${projectName}"
+        research_status: "${research_enrichment.research_status || 'skipped'}"
+        research_summary: "${research_enrichment.research_summary || ''}"
+        research_next_actions: "${research_enrichment.research_next_actions || []}"
+        research_findings: "${research_enrichment.research_findings || []}"
+        research_information_blocks: "${research_enrichment.research_information_blocks || []}"
 
   - name: record_plan_key_files
     type: PlanKeyFileGuardStep

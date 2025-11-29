@@ -501,7 +501,7 @@ describe("Distributed Git Architecture - CRITICAL REQUIREMENTS", () => {
       expect(workflowContent).toContain("name: commit_devops_result");
     });
 
-    it("context persona should receive repoScan in payload", async () => {
+    it("context persona payload should include snapshot references", async () => {
       const templatePath = path.join(
         process.cwd(),
         "src",
@@ -515,7 +515,8 @@ describe("Distributed Git Architecture - CRITICAL REQUIREMENTS", () => {
         /context_analysis:[\s\S]*?payload:([\s\S]*?)(?=\n {2}\w)/,
       );
       expect(contextTemplateSection).toBeDefined();
-      expect(contextTemplateSection?.[0]).toContain("repoScan");
+      expect(contextTemplateSection?.[0]).toContain("context_snapshot_json");
+      expect(contextTemplateSection?.[0]).toContain("context_files_ndjson");
       expect(contextTemplateSection?.[0]).toContain("context_metadata");
     });
   });

@@ -17,6 +17,16 @@ import {
   resolveRepoForPersona,
 } from "./helpers/personaRequest/transportUtils.js";
 import type { PersonaRequestConfig } from "./helpers/personaRequest/types.js";
+import {
+  InformationRequestHandler,
+  normalizeInformationRequests,
+} from "./helpers/InformationRequestHandler.js";
+import {
+  appendInformationContract,
+  buildIterationPayload,
+  buildSystemInformationBlock,
+  extractInformationRequestPayload,
+} from "./helpers/personaRequest/informationUtils.js";
 
 export class PersonaRequestStep extends WorkflowStep {
   private payloadBuilder: PersonaPayloadBuilder;
@@ -32,7 +42,13 @@ export class PersonaRequestStep extends WorkflowStep {
 
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PersonaRequestConfig;
-    const { step, persona, intent, payload, deadlineSeconds = 600 } = config;
+    const {
+      step,
+      persona,
+      intent,
+      payload,
+      deadlineSeconds = 600,
+    } = config;
 
     if (this.testModeHandler.shouldSkipPersonaOperation(context)) {
       return this.executeTestMode(context, step, persona);
@@ -101,6 +117,8 @@ export class PersonaRequestStep extends WorkflowStep {
     if (!transport) {
       throw new Error("Transport not available in context");
     }
+
+    const { maxInformationIterations } = config;
 
     const resolvedPayload = this.resolvePayloadVariables(payload, context);
     try {
@@ -181,154 +199,182 @@ export class PersonaRequestStep extends WorkflowStep {
       context.getVariable("taskId");
 
     try {
-      const retryResult = await retryCoordinator.executeWithRetry(
-        transport,
-        {
-          workflowId: context.workflowId,
-          toPersona: persona,
-          step,
-          intent,
-          payload: resolvedPayload,
-          repo: repoForPersona,
-          branch: currentBranch,
-          projectId: context.projectId,
-          taskId,
-          deadlineSeconds,
-        },
-        context,
+      const infoHandler = new InformationRequestHandler(context);
+      const baseUserText = appendInformationContract(
+        resolvedPayload.user_text || "",
+      );
+      resolvedPayload.user_text = baseUserText;
+
+      const infoBlocks: string[] = [];
+      const requestSignatureVar = `${this.config.name}_information_request_signatures`;
+      const storedSignatures = context.getVariable(requestSignatureVar);
+      const fulfilledRequestSignatures = new Set<string>(
+        Array.isArray(storedSignatures)
+          ? (storedSignatures as string[])
+          : [],
+      );
+      const maxInfoIterations = Math.max(
+        1,
+        maxInformationIterations ?? cfg.informationRequests?.maxIterations ?? 5,
       );
 
-      if (!retryResult.success) {
-        const errorDetails =
-          PersonaRetryCoordinator.createExhaustedRetriesError(
-            persona,
-            step,
-            retryResult.totalAttempts,
-            baseTimeoutMs,
-            retryResult.finalTimeoutMs,
-            effectiveMaxRetries,
-            isUnlimitedRetries,
-            cfg.personaRetryBackoffIncrementMs,
-            retryResult.lastCorrId,
-            context.workflowId,
-          );
-
-        logger.error(
-          `Persona request failed after exhausting all retries - WORKFLOW WILL ABORT`,
-          errorDetails.logContext,
+      for (let iteration = 1; iteration <= maxInfoIterations; iteration++) {
+        const iterationPayload = buildIterationPayload(
+          resolvedPayload,
+          baseUserText,
+          infoBlocks,
+          iteration,
+          maxInfoIterations,
         );
 
-        return {
-          status: "failure",
-          error: new Error(errorDetails.message),
-          data: {
+        const retryResult = await retryCoordinator.executeWithRetry(
+          transport,
+          {
+            workflowId: context.workflowId,
+            toPersona: persona,
             step,
-            persona,
-            corrId: retryResult.lastCorrId,
-            totalAttempts: retryResult.totalAttempts,
-            baseTimeoutMs,
-            finalTimeoutMs: retryResult.finalTimeoutMs,
-            workflowAborted: true,
+            intent,
+            payload: iterationPayload,
+            repo: repoForPersona,
+            branch: currentBranch,
+            projectId: context.projectId,
+            taskId,
+            deadlineSeconds,
           },
-        } satisfies StepResult;
-      }
+          context,
+        );
 
-      const rawResponse = retryResult.completion.fields?.result || "";
-      const { result, statusInfo } = this.responseInterpreter.interpret(
-        rawResponse,
-        persona,
-        context.workflowId,
-        step,
-        retryResult.lastCorrId,
-        retryResult.completion,
-      );
+        if (!retryResult.success) {
+          const errorDetails =
+            PersonaRetryCoordinator.createExhaustedRetriesError(
+              persona,
+              step,
+              retryResult.totalAttempts,
+              baseTimeoutMs,
+              retryResult.finalTimeoutMs,
+              effectiveMaxRetries,
+              isUnlimitedRetries,
+              cfg.personaRetryBackoffIncrementMs,
+              retryResult.lastCorrId,
+              context.workflowId,
+            );
 
-      logger.info(`Persona request completed`, {
-        workflowId: context.workflowId,
-        step,
-        persona,
-        corrId: retryResult.lastCorrId,
-        attempt: retryResult.totalAttempts,
-        status: statusInfo.status,
-        rawStatus: result.status || "unknown",
-      });
+          logger.error(
+            `Persona request failed after exhausting all retries - WORKFLOW WILL ABORT`,
+            errorDetails.logContext,
+          );
 
-      this.setOutputVariables(context, result);
-      context.setVariable(`${this.config.name}_status`, statusInfo.status);
+          return {
+            status: "failure",
+            error: new Error(errorDetails.message),
+            data: {
+              step,
+              persona,
+              corrId: retryResult.lastCorrId,
+              totalAttempts: retryResult.totalAttempts,
+              baseTimeoutMs,
+              finalTimeoutMs: retryResult.finalTimeoutMs,
+              workflowAborted: true,
+            },
+          } satisfies StepResult;
+        }
 
-      const abortOnFailure =
-        config.abortOnFailure === undefined
-          ? true
-          : Boolean(config.abortOnFailure);
-      const isFailureStatus =
-        statusInfo.status === "fail" || statusInfo.status === "unknown";
-
-      if (isFailureStatus && abortOnFailure) {
-        logger.error(`Persona request failed - workflow will abort`, {
-          workflowId: context.workflowId,
-          step,
+        const rawResponse = retryResult.completion.fields?.result || "";
+        const { result, statusInfo } = this.responseInterpreter.interpret(
+          rawResponse,
           persona,
-          corrId: retryResult.lastCorrId,
-          statusDetails: statusInfo.details,
-          errorFromPersona: result.error || "Unknown error",
-        });
-
-        return {
-          status: "failure",
-          error: new Error(
-            statusInfo.details || result.error || "Persona request failed",
-          ),
-          data: {
-            step,
-            persona,
-            corrId: retryResult.lastCorrId,
-            totalAttempts: retryResult.totalAttempts,
-            result,
-            completion: retryResult.completion,
-            personaFailureReason: statusInfo.details,
-          },
-          outputs: result,
-        };
-      }
-
-      if (isFailureStatus && !abortOnFailure) {
-        logger.warn(`Persona request returned ${statusInfo.status} status`, {
-          workflowId: context.workflowId,
+          context.workflowId,
           step,
-          persona,
-          corrId: retryResult.lastCorrId,
-          statusDetails: statusInfo.details,
-          handledByAbortOverride: true,
-        });
+          retryResult.lastCorrId,
+          retryResult.completion,
+        );
 
-        return {
-          status: "success",
-          data: {
-            step,
-            persona,
-            corrId: retryResult.lastCorrId,
-            totalAttempts: retryResult.totalAttempts,
-            result,
-            completion: retryResult.completion,
-            personaFailureReason: statusInfo.details,
-            abortOverrideApplied: true,
-          },
-          outputs: result,
-        };
-      }
-
-      return {
-        status: "success",
-        data: {
-          step,
-          persona,
-          corrId: retryResult.lastCorrId,
-          totalAttempts: retryResult.totalAttempts,
+        const infoRequestPayload = extractInformationRequestPayload(
           result,
-          completion: retryResult.completion,
-        },
-        outputs: result,
-      };
+          retryResult.completion,
+        );
+
+        if (infoRequestPayload) {
+          if (iteration >= maxInfoIterations) {
+            return this.buildInformationLimitFailure(
+              context.workflowId,
+              persona,
+              step,
+              infoBlocks,
+              maxInfoIterations,
+            );
+          }
+
+          const normalizedRequests = normalizeInformationRequests(
+            infoRequestPayload,
+          );
+          if (!normalizedRequests.length) {
+            infoBlocks.push(
+              buildSystemInformationBlock(
+                "Persona asked for additional information but supplied no valid requests.",
+              ),
+            );
+            continue;
+          }
+
+          logger.info("Persona requested supplemental information", {
+            workflowId: context.workflowId,
+            step,
+            persona,
+            iteration,
+            requestCount: normalizedRequests.length,
+          });
+
+          const acquisitions = await infoHandler.fulfillRequests(
+            normalizedRequests,
+            { persona, step, iteration, taskId },
+            fulfilledRequestSignatures,
+          );
+
+          if (!acquisitions.length) {
+            infoBlocks.push(
+              buildSystemInformationBlock(
+                "Information acquisition produced no records.",
+              ),
+            );
+          } else {
+            infoBlocks.push(
+              ...acquisitions.map((record) => record.summaryBlock),
+            );
+            context.setVariable(
+              `${this.config.name}_information_iteration_${iteration}`,
+              acquisitions,
+            );
+            context.setVariable(
+              `${this.config.name}_information_blocks`,
+              infoBlocks.slice(),
+            );
+          }
+          context.setVariable(
+            requestSignatureVar,
+            Array.from(fulfilledRequestSignatures),
+          );
+          continue;
+        }
+
+        return this.handlePersonaCompletion(
+          context,
+          config,
+          persona,
+          step,
+          retryResult,
+          result,
+          statusInfo,
+        );
+      }
+
+      return this.buildInformationLimitFailure(
+        context.workflowId,
+        persona,
+        step,
+        infoBlocks,
+        maxInfoIterations,
+      );
     } catch (error: any) {
       logger.error(`Persona request failed`, {
         workflowId: context.workflowId,
@@ -350,6 +396,129 @@ export class PersonaRequestStep extends WorkflowStep {
     context: WorkflowContext,
   ): Record<string, any> {
     return this.payloadBuilder.resolvePayload(payload, context);
+  }
+
+  private handlePersonaCompletion(
+    context: WorkflowContext,
+    config: PersonaRequestConfig,
+    persona: string,
+    step: string,
+    retryResult: any,
+    result: any,
+    statusInfo: { status: "pass" | "fail" | "unknown"; details: string },
+  ): StepResult {
+    logger.info(`Persona request completed`, {
+      workflowId: context.workflowId,
+      step,
+      persona,
+      corrId: retryResult.lastCorrId,
+      attempt: retryResult.totalAttempts,
+      status: statusInfo.status,
+      rawStatus: result.status || "unknown",
+    });
+
+    this.setOutputVariables(context, result);
+    context.setVariable(`${this.config.name}_status`, statusInfo.status);
+
+    const abortOnFailure =
+      config.abortOnFailure === undefined ? true : Boolean(config.abortOnFailure);
+    const isFailureStatus =
+      statusInfo.status === "fail" || statusInfo.status === "unknown";
+
+    if (isFailureStatus && abortOnFailure) {
+      logger.error(`Persona request failed - workflow will abort`, {
+        workflowId: context.workflowId,
+        step,
+        persona,
+        corrId: retryResult.lastCorrId,
+        statusDetails: statusInfo.details,
+        errorFromPersona: result.error || "Unknown error",
+      });
+
+      return {
+        status: "failure",
+        error: new Error(
+          statusInfo.details || result.error || "Persona request failed",
+        ),
+        data: {
+          step,
+          persona,
+          corrId: retryResult.lastCorrId,
+          totalAttempts: retryResult.totalAttempts,
+          result,
+          completion: retryResult.completion,
+          personaFailureReason: statusInfo.details,
+        },
+        outputs: result,
+      } satisfies StepResult;
+    }
+
+    if (isFailureStatus && !abortOnFailure) {
+      logger.warn(`Persona request returned ${statusInfo.status} status`, {
+        workflowId: context.workflowId,
+        step,
+        persona,
+        corrId: retryResult.lastCorrId,
+        statusDetails: statusInfo.details,
+        handledByAbortOverride: true,
+      });
+
+      return {
+        status: "success",
+        data: {
+          step,
+          persona,
+          corrId: retryResult.lastCorrId,
+          totalAttempts: retryResult.totalAttempts,
+          result,
+          completion: retryResult.completion,
+          personaFailureReason: statusInfo.details,
+          abortOverrideApplied: true,
+        },
+        outputs: result,
+      } satisfies StepResult;
+    }
+
+    return {
+      status: "success",
+      data: {
+        step,
+        persona,
+        corrId: retryResult.lastCorrId,
+        totalAttempts: retryResult.totalAttempts,
+        result,
+        completion: retryResult.completion,
+      },
+      outputs: result,
+    } satisfies StepResult;
+  }
+
+  private buildInformationLimitFailure(
+    workflowId: string,
+    persona: string,
+    step: string,
+    infoBlocks: string[],
+    maxIterations: number,
+  ): StepResult {
+    const message =
+      `Persona '${persona}' exhausted the information request allowance (` +
+      `${maxIterations}) without providing a final response.`;
+    logger.error("Information request limit reached before completion", {
+      workflowId,
+      persona,
+      step,
+      maxIterations,
+    });
+    return {
+      status: "failure",
+      error: new Error(message),
+      data: {
+        step,
+        persona,
+        maxIterations,
+        infoBlocks,
+      },
+    } satisfies StepResult;
   }
 
 

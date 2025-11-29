@@ -91,16 +91,42 @@ describe("ContextStep Change Detection", () => {
     expect(result.status).toBe("success");
     expect(result.outputs?.reused_existing).toBe(false);
     expect(logger.info).toHaveBeenCalledWith(
-      "Context files not found, rescan needed",
+      "Context artifacts missing, rescan needed",
       expect.objectContaining({
         snapshotExists: false,
         summaryExists: false,
+        filesNdjsonExists: false,
       }),
     );
     expect(fs.writeFile).toHaveBeenCalledWith(
       _path.join("/test/repo", ".ma", "context", "files.ndjson"),
       expect.any(String),
       "utf-8",
+    );
+  });
+
+  it("should rescan when files.ndjson is missing", async () => {
+    (fs.access as any)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Missing files.ndjson"));
+
+    const { scanRepo } = await import("../src/scanRepo.js");
+    (scanRepo as any).mockResolvedValue([
+      { path: "src/test.ts", bytes: 1000, lines: 50, mtime: Date.now() },
+    ]);
+
+    const result = await contextStep.execute(mockContext);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.reused_existing).toBe(false);
+    expect(logger.info).toHaveBeenCalledWith(
+      "Context artifacts missing, rescan needed",
+      expect.objectContaining({
+        snapshotExists: true,
+        summaryExists: true,
+        filesNdjsonExists: false,
+      }),
     );
   });
 

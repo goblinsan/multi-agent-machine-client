@@ -105,7 +105,7 @@ steps:
   - name: synthesize_tasks
     type: AnalysisTaskBuilderStep
     description: "Convert approved analysis into actionable follow-up tasks"
-    depends_on: ["analysis_loop"]
+    depends_on: ["record_analysis_hypotheses", "record_analysis_review"]
     config:
       analysis_output: "${analysis_request_result}"
       review_output: "${analysis_review_result}"

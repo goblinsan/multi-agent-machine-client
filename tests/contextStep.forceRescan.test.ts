@@ -21,6 +21,7 @@ describe("ContextStep forceRescan behavior", () => {
     };
     await fs.writeFile(path.join(ctxDir, "snapshot.json"), JSON.stringify(snapshot, null, 2), "utf8");
     await fs.writeFile(path.join(ctxDir, "summary.md"), "# summary", "utf8");
+    await fs.writeFile(path.join(ctxDir, "files.ndjson"), "", "utf8");
 
     const scanSpy = vi.spyOn(scanModule, "scanRepo").mockResolvedValue([
       { path: "file.txt", bytes: 10, mtime: Date.now() },
@@ -68,6 +69,7 @@ describe("ContextStep forceRescan behavior", () => {
     };
     await fs.writeFile(path.join(ctxDir, "snapshot.json"), JSON.stringify(snapshot, null, 2), "utf8");
     await fs.writeFile(path.join(ctxDir, "summary.md"), "# summary", "utf8");
+    await fs.writeFile(path.join(ctxDir, "files.ndjson"), "", "utf8");
 
     const scanSpy = vi.spyOn(scanModule, "scanRepo").mockResolvedValue([
       { path: "file.txt", bytes: 10, mtime: timestamp },

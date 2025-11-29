@@ -1,0 +1,90 @@
+name: "task-research"
+version: "1.0.0"
+description: "Researcher persona loop that gathers targeted evidence before planning"
+
+trigger:
+  condition: "true"
+
+context:
+  repo_required: false
+  branch_strategy: "inherit"
+
+# Input reference (validated by SubWorkflowStep when invoked)
+# inputs:
+#   task: object (required)
+#   project_id: string (required)
+#   project_name: string (optional)
+#   repo: string (required)
+#   repo_root: string (required for repo_file acquisitions)
+#   milestone: object (optional)
+#   context_summary_md: string (optional)
+#   context_insights: object (optional)
+#   context_allowed_languages: array (optional)
+#   context_snapshot_json: string (optional)
+#   context_snapshot_path: string (optional)
+#   context_files_ndjson: string (optional)
+#   context_files_ndjson_path: string (optional)
+#   repoScan: array (optional)
+#   research_objectives: array (optional)
+#   existing_findings: array (optional)
+#   previous_information_blocks: array (optional)
+
+steps:
+  - name: resolve_research_inputs
+    type: VariableResolutionStep
+    description: "Normalize research objectives and context summary"
+    config:
+      variables:
+        research_context_summary: "${context_summary_md || context_summary || ''}"
+        research_objectives_normalized: "${research_objectives || task.research_objectives || []}"
+        research_existing_findings: "${existing_findings || task.research_notes || []}"
+        research_allowed_languages: "${context_allowed_languages || []}"
+        research_context_insights: "${context_insights || {}}"
+        research_prior_information_blocks: "${previous_information_blocks || []}"
+        research_context_snapshot_json: "${context_snapshot_json || ''}"
+        research_context_files_ndjson: "${context_files_ndjson || ''}"
+        research_context_snapshot_path: "${context_snapshot_path || ''}"
+        research_context_files_path: "${context_files_ndjson_path || ''}"
+        research_context_summary_path: "${context_summary_path || ''}"
+
+  - name: research_request
+    type: PersonaRequestStep
+    description: "Researcher collects additional evidence using info-request protocol"
+    depends_on: ["resolve_research_inputs"]
+    config:
+      step: "1.5-research"
+      persona: "researcher"
+      intent: "information_acquisition"
+      abortOnFailure: false
+      prompt_template: "prompts/researcher-information-acquisition.txt"
+      payload:
+        task: "${task}"
+        milestone: "${milestone || {}}"
+        project_id: "${project_id}"
+        project_name: "${project_name || project_id}"
+        repo: "${repo}"
+        repo_root: "${repo_root}"
+        context_summary: "${research_context_summary}"
+        context_insights: "${research_context_insights}"
+        context_snapshot_json: "${research_context_snapshot_json}"
+        context_snapshot_path: "${research_context_snapshot_path}"
+        context_files_ndjson: "${research_context_files_ndjson}"
+        context_files_ndjson_path: "${research_context_files_path}"
+        context_summary_path: "${research_context_summary_path}"
+        research_objectives: "${research_objectives_normalized || []}"
+        existing_findings: "${research_existing_findings || []}"
+        allowed_languages: "${research_allowed_languages || []}"
+        repo_scan: "${repoScan || []}"
+        previous_information_blocks: "${research_prior_information_blocks || []}"
+    outputs:
+      - research_request_result
+      - research_request_status
+
+outputs:
+  research_status: "${research_request_status || 'unknown'}"
+  research_summary: "${research_request_result.summary || ''}"
+  research_next_actions: "${research_request_result.next_actions || []}"
+  research_findings: "${research_request_result.findings || []}"
+  research_remaining_gaps: "${research_request_result.remaining_gaps || []}"
+  research_information_blocks: "${research_request_information_blocks || []}"
+  research_payload: "${research_request_result || {}}"

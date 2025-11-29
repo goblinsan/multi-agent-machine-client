@@ -11,6 +11,7 @@ import { QAAnalysisStep } from "../src/workflows/steps/QAAnalysisStep.js";
 import { TaskCreationStep } from "../src/workflows/steps/TaskCreationStep.js";
 import { GitOperationStep } from "../src/workflows/steps/GitOperationStep.js";
 import { PersonaRequestStep } from "../src/workflows/steps/PersonaRequestStep.js";
+import { cfg } from "../src/config.js";
 import * as gitUtils from "../src/gitUtils.js";
 import {
   abortWorkflowDueToPushFailure,
@@ -125,6 +126,29 @@ vi.mock("../src/lmstudio.js", () => ({
   }),
 }));
 
+const {
+  infoFulfillMock,
+  isInfoRequestResultMock,
+  normalizeInfoRequestsMock,
+} = vi.hoisted(() => ({
+  infoFulfillMock: vi.fn(),
+  isInfoRequestResultMock: vi.fn().mockReturnValue(false),
+  normalizeInfoRequestsMock: vi.fn().mockReturnValue([]),
+}));
+
+vi.mock(
+  "../src/workflows/steps/helpers/InformationRequestHandler.js",
+  () => ({
+    InformationRequestHandler: vi
+      .fn()
+      .mockImplementation(() => ({
+        fulfillRequests: infoFulfillMock,
+      })),
+    isInformationRequestResult: isInfoRequestResultMock,
+    normalizeInformationRequests: normalizeInfoRequestsMock,
+  }),
+);
+
 vi.mock("../src/logger.js", () => ({
   logger: {
     info: vi.fn(),
@@ -187,6 +211,12 @@ describe("Workflow Steps", () => {
         result: JSON.stringify({ status: "success", normalizedStatus: "pass" }),
       },
     } as any);
+
+    infoFulfillMock.mockReset();
+    isInfoRequestResultMock.mockReset();
+    isInfoRequestResultMock.mockReturnValue(false);
+    normalizeInfoRequestsMock.mockReset();
+    normalizeInfoRequestsMock.mockReturnValue([]);
   });
 
   describe("PullTaskStep", () => {
@@ -441,6 +471,121 @@ describe("Workflow Steps", () => {
 
       expect(result.status).toBe("failure");
       expect(result.data?.personaFailureReason).toBe("critical security issue");
+    });
+
+    it("retries persona after fulfilling information requests", async () => {
+      context.setVariable("repo_remote", "https://example.com/repo.git");
+
+      isInfoRequestResultMock
+        .mockReturnValueOnce(true)
+        .mockReturnValue(false);
+      normalizeInfoRequestsMock
+        .mockReturnValueOnce([
+          { type: "repo_file", path: "README.md" } as any,
+        ])
+        .mockReturnValue([]);
+      infoFulfillMock.mockResolvedValueOnce([
+        {
+          request: { type: "repo_file", path: "README.md" },
+          status: "success",
+          summaryBlock: "Information Request #1\nSnippet:\n```info```",
+        },
+      ]);
+
+      vi.mocked(waitForPersonaCompletion)
+        .mockResolvedValueOnce({
+          id: "event-info",
+          fields: {
+            result: JSON.stringify({
+              status: "info_request",
+              requests: [{ type: "repo_file", path: "README.md" }],
+            }),
+          },
+        } as any)
+        .mockResolvedValueOnce({
+          id: "event-final",
+          fields: {
+            result: JSON.stringify({ status: "pass", summary: "ok" }),
+          },
+        } as any);
+
+      vi.mocked(interpretPersonaStatus)
+        .mockReturnValueOnce({ status: "pass", details: "", raw: "" })
+        .mockReturnValueOnce({ status: "pass", details: "", raw: "" });
+
+      const config = {
+        name: "context-request",
+        type: "PersonaRequestStep",
+        config: {
+          step: "context",
+          persona: "contextualizer",
+          intent: "context_gathering",
+          payload: {},
+        },
+      } as any;
+
+      const step = new PersonaRequestStep(config);
+      const result = await step.execute(context);
+
+      expect(result.status).toBe("success");
+      expect(sendPersonaRequest).toHaveBeenCalledTimes(2);
+      expect(infoFulfillMock).toHaveBeenCalledWith(
+        [{ type: "repo_file", path: "README.md" }],
+        expect.objectContaining({ iteration: 1, persona: "contextualizer" }),
+        expect.any(Set),
+      );
+      expect(
+        context.getVariable("context-request_information_blocks"),
+      ).toBeDefined();
+    });
+
+    it("fails when personas exceed information request allowances", async () => {
+      context.setVariable("repo_remote", "https://example.com/repo.git");
+      const originalMax = cfg.informationRequests?.maxIterations;
+      if (cfg.informationRequests) {
+        cfg.informationRequests.maxIterations = 1;
+      }
+
+      isInfoRequestResultMock.mockReturnValue(true);
+      vi.mocked(interpretPersonaStatus).mockReturnValue({
+        status: "pass",
+        details: "",
+        raw: "",
+      });
+      vi.mocked(waitForPersonaCompletion).mockResolvedValueOnce({
+        id: "event-info",
+        fields: {
+          result: JSON.stringify({
+            status: "info_request",
+            requests: [{ type: "repo_file", path: "README.md" }],
+          }),
+        },
+      } as any);
+
+      const config = {
+        name: "context-request",
+        type: "PersonaRequestStep",
+        config: {
+          step: "context",
+          persona: "contextualizer",
+          intent: "context_gathering",
+          payload: {},
+        },
+      } as any;
+
+      try {
+        const step = new PersonaRequestStep(config);
+        const result = await step.execute(context);
+
+        expect(result.status).toBe("failure");
+        expect(infoFulfillMock).not.toHaveBeenCalled();
+        expect(sendPersonaRequest).toHaveBeenCalledTimes(1);
+        expect(normalizeInfoRequestsMock).not.toHaveBeenCalled();
+      } finally {
+        if (cfg.informationRequests) {
+          cfg.informationRequests.maxIterations = originalMax;
+        }
+      }
     });
   });
 

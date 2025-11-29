@@ -131,10 +131,15 @@ export class AnalysisTaskBuilderStep extends WorkflowStep {
       } satisfies StepResult;
     }
 
-    const taskTitle = plan.title.trim();
-    const description = this.composeDescription(plan, analysis, cfg.task);
+    const finalizedPlan = {
+      ...plan,
+      keyFiles: this.remapMetaKeyFiles(plan.keyFiles, cfg.task?.id),
+    } satisfies NormalizedPlan;
+
+    const taskTitle = finalizedPlan.title.trim();
+    const description = this.composeDescription(finalizedPlan, analysis, cfg.task);
     const labels = this.sanitizeLabels([
-      ...(plan.labels || []),
+      ...(finalizedPlan.labels || []),
       ...(cfg.default_labels || []),
       "analysis-derived",
       "ready-for-implementation",
@@ -144,10 +149,10 @@ export class AnalysisTaskBuilderStep extends WorkflowStep {
       {
         title: taskTitle,
         description,
-        priority: plan.priority,
+        priority: finalizedPlan.priority,
         metadata: {
           labels,
-          analysis_hypothesis_id: plan.hypothesis?.id || null,
+          analysis_hypothesis_id: finalizedPlan.hypothesis?.id || null,
         },
       },
     ];
@@ -160,8 +165,8 @@ export class AnalysisTaskBuilderStep extends WorkflowStep {
       },
       outputs: {
         actionable_tasks: actionableTasks,
-        analysis_summary: plan.summary || analysis.summary || analysis.root_cause,
-        selected_hypothesis: plan.hypothesis || null,
+        analysis_summary: finalizedPlan.summary || analysis.summary || analysis.root_cause,
+        selected_hypothesis: finalizedPlan.hypothesis || null,
       },
     } satisfies StepResult;
   }
@@ -444,5 +449,33 @@ export class AnalysisTaskBuilderStep extends WorkflowStep {
     }
 
     return sanitized;
+  }
+
+  private remapMetaKeyFiles(
+    keyFiles: string[],
+    taskId: string | number | undefined,
+  ): string[] {
+    if (!keyFiles.length) {
+      return keyFiles;
+    }
+
+    const resolvedTaskId =
+      typeof taskId === "string" || typeof taskId === "number"
+        ? String(taskId)
+        : "unknown";
+
+    return keyFiles.map((filePath) => {
+      const normalized = filePath.trim();
+      if (!normalized) {
+        return filePath;
+      }
+
+      const lower = normalized.toLowerCase();
+      if (/(^|\/)qa[-_\s]?notes(?:\.md)?$/i.test(lower)) {
+        return `.ma/tasks/${resolvedTaskId}/qa-notes.md`;
+      }
+
+      return filePath;
+    });
   }
 }

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import fs from "node:fs";
 import path from "path";
 
 function expandHome(p: string | undefined): string | undefined {
@@ -68,6 +69,36 @@ function parseDurationMs(value: string | undefined, fallbackMs: number) {
   if (!Number.isFinite(num) || num <= 0) return fallbackMs;
   if (num > 1000) return Math.floor(num);
   return Math.floor(num * 1000);
+}
+
+function readHostPatternFile(filePath: string | undefined): string[] {
+  if (!filePath || !filePath.trim()) return [];
+  const expanded = expandHome(filePath.trim());
+  if (!expanded) return [];
+  const resolved = path.resolve(expanded);
+  try {
+    if (!fs.existsSync(resolved)) {
+      console.warn(
+        `[config] INFO_REQUEST_DENY_HOSTS_FILE not found at ${resolved}`,
+      );
+      return [];
+    }
+    const contents = fs.readFileSync(resolved, "utf8");
+    return contents
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line.length > 0 &&
+          !line.startsWith("#") &&
+          !line.startsWith("//"),
+      );
+  } catch (error) {
+    console.warn(
+      `[config] Failed reading INFO_REQUEST_DENY_HOSTS_FILE (${resolved}): ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return [];
+  }
 }
 
 function parsePersonaTimeouts(raw: Record<string, unknown>) {
@@ -199,6 +230,32 @@ const personaRetryBackoffIncrementMs = parseDurationMs(
   30000,
 );
 
+const infoRequestMaxIterations = Number(
+  process.env.INFO_REQUEST_MAX_ITERATIONS || 10,
+);
+const infoRequestMaxRequestsPerIteration = Number(
+  process.env.INFO_REQUEST_MAX_REQUESTS_PER_ITERATION || 3,
+);
+const infoRequestDenyHostsFile =
+  process.env.INFO_REQUEST_DENY_HOSTS_FILE || undefined;
+const infoRequestDenyHosts = readHostPatternFile(infoRequestDenyHostsFile);
+const infoRequestMaxHttpBytes = Number(
+  process.env.INFO_REQUEST_MAX_HTTP_BYTES || 200000,
+);
+const infoRequestMaxFileBytes = Number(
+  process.env.INFO_REQUEST_MAX_FILE_BYTES || 200000,
+);
+const infoRequestMaxSnippetChars = Number(
+  process.env.INFO_REQUEST_MAX_SNIPPET_CHARS || 8000,
+);
+const infoRequestHttpTimeoutMs = parseDurationMs(
+  process.env.INFO_REQUEST_HTTP_TIMEOUT_MS,
+  20000,
+);
+const infoRequestArtifactSubdir =
+  (process.env.INFO_REQUEST_ARTIFACT_SUBDIR || ".ma/tasks")?.trim() ||
+  ".ma/tasks";
+
 function parseJsonArray(
   value: string | undefined,
   fallback: string[],
@@ -316,6 +373,20 @@ export const cfg = {
   blockedMaxAttempts,
   personaTimeoutMaxRetries,
   personaRetryBackoffIncrementMs,
+
+  informationRequests: {
+    maxIterations: infoRequestMaxIterations,
+    maxRequestsPerIteration: infoRequestMaxRequestsPerIteration,
+    denyHosts: infoRequestDenyHosts,
+    maxHttpBytes: infoRequestMaxHttpBytes,
+    maxFileBytes: infoRequestMaxFileBytes,
+    maxSnippetChars: infoRequestMaxSnippetChars,
+    httpTimeoutMs: infoRequestHttpTimeoutMs,
+    artifactSubdir: infoRequestArtifactSubdir,
+    denyHostsFile: infoRequestDenyHostsFile
+      ? path.resolve(expandHome(infoRequestDenyHostsFile)!)
+      : undefined,
+  },
 
   planRequireCitations,
   planCitationFields,

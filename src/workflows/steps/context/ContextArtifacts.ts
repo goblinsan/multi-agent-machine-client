@@ -130,6 +130,8 @@ export async function loadExistingSnapshot(
   summaryExists: boolean;
   snapshotPath: string;
   summaryPath: string;
+  filesNdjsonExists: boolean;
+  filesNdjsonPath: string;
 }> {
   const paths = await ensureContextDir(repoPath);
 
@@ -143,11 +145,18 @@ export async function loadExistingSnapshot(
     .then(() => true)
     .catch(() => false);
 
+  const filesNdjsonExists = await fs
+    .access(paths.filesNdjsonPath)
+    .then(() => true)
+    .catch(() => false);
+
   return {
-    exists: snapshotExists && summaryExists,
+    exists: snapshotExists && summaryExists && filesNdjsonExists,
     snapshotExists,
     summaryExists,
     snapshotPath: paths.snapshotPath,
     summaryPath: paths.summaryPath,
+    filesNdjsonExists,
+    filesNdjsonPath: paths.filesNdjsonPath,
   };
 }

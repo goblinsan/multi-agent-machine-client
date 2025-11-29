@@ -13,6 +13,7 @@ export const PERSONAS = {
   TROUBLESHOOTING: "troubleshooting",
   ARCHITECT: "architect",
   PLAN_EVALUATOR: "plan-evaluator",
+  RESEARCHER: "researcher",
 } as const;
 
 export type PersonaName = (typeof PERSONAS)[keyof typeof PERSONAS];

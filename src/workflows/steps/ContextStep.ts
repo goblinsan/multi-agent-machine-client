@@ -47,6 +47,11 @@ export interface ContextData {
 }
 
 export class ContextStep extends WorkflowStep {
+  private static readonly ADDITIONAL_EXCLUDES = [
+    ".ma/tasks/**",
+    ".ma/**/acquisitions/**",
+  ];
+
   private async isRescanNeeded(
     repoPath: string,
     includePatterns: string[],
@@ -56,10 +61,11 @@ export class ContextStep extends WorkflowStep {
       const snapshotInfo = await loadExistingSnapshot(repoPath);
 
       if (!snapshotInfo.exists) {
-        logger.info("Context files not found, rescan needed", {
+        logger.info("Context artifacts missing, rescan needed", {
           repoPath,
           snapshotExists: snapshotInfo.snapshotExists,
           summaryExists: snapshotInfo.summaryExists,
+          filesNdjsonExists: snapshotInfo.filesNdjsonExists,
         });
         return true;
       }
@@ -147,7 +153,12 @@ export class ContextStep extends WorkflowStep {
     const {
       repoPath: configRepoPath,
       includePatterns = ["**/*"],
-      excludePatterns = ["node_modules/**", ".git/**", "dist/**", "build/**"],
+      excludePatterns: configExcludePatterns = [
+        "node_modules/**",
+        ".git/**",
+        "dist/**",
+        "build/**",
+      ],
       maxFiles = 1000,
       maxBytes = 10 * 1024 * 1024,
       maxDepth = 10,
@@ -156,6 +167,7 @@ export class ContextStep extends WorkflowStep {
       forceRescan: rawForceRescan = false,
     } = config;
 
+    const excludePatterns = this.mergeExcludePatterns(configExcludePatterns);
     const lookup = (varPath: string) => lookupContextValue(varPath, context);
     const repoPath = determineRepoPath(configRepoPath, context, lookup);
     const forceRescan = coalesceRescanFlags(context, rawForceRescan, lookup);
@@ -314,6 +326,21 @@ export class ContextStep extends WorkflowStep {
         summaryBundle = buildContextSummary(contextData);
       }
 
+      const snapshotPayload = {
+        timestamp: contextData.metadata.scannedAt,
+        repoPath,
+        files: contextData.repoScan,
+        totals: {
+          files: contextData.metadata.fileCount,
+          bytes: contextData.metadata.totalBytes,
+          depth: contextData.metadata.maxDepth,
+        },
+      };
+      const snapshotJson = JSON.stringify(snapshotPayload, null, 2);
+      const filesNdjson = contextData.repoScan
+        .map((file) => JSON.stringify(file))
+        .join("\n");
+
       context.setVariable("context_summary_md", summaryBundle.summary);
       context.setVariable("context_insights", summaryBundle.insights);
       context.setVariable(
@@ -349,6 +376,8 @@ export class ContextStep extends WorkflowStep {
         "context_files_ndjson_path",
         contextPaths.filesNdjsonPath,
       );
+      context.setVariable("context_snapshot_json", snapshotJson);
+      context.setVariable("context_files_ndjson", filesNdjson);
 
       return {
         status: "success",
@@ -380,6 +409,14 @@ export class ContextStep extends WorkflowStep {
         error: new Error(`Failed to gather context: ${error.message}`),
       };
     }
+  }
+
+  private mergeExcludePatterns(patterns: string[]): string[] {
+    const merged = new Set(patterns);
+    for (const pattern of ContextStep.ADDITIONAL_EXCLUDES) {
+      merged.add(pattern);
+    }
+    return Array.from(merged);
   }
 
   protected async validateConfig(

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { makeTempRepo } from "./makeTempRepo.js";
 import { createFastCoordinator } from "./helpers/coordinatorTestHelper.js";
+import { ProjectAPI } from "../src/dashboard/ProjectAPI.js";
+import { WorkflowCoordinator } from "../src/workflows/WorkflowCoordinator.js";
 
 vi.mock("../src/redisClient.js");
 
@@ -95,5 +97,65 @@ describe("Coordinator QA failure handling", () => {
     }
 
     expect(diffVerificationCompleted).toBe(true);
+  });
+});
+
+describe("Coordinator dependency queue", () => {
+  beforeEach(() => {
+    vi.spyOn(ProjectAPI.prototype, "fetchProjectStatus").mockResolvedValue({
+      id: "proj-deps",
+      name: "Dependency Project",
+    });
+
+    vi.spyOn(ProjectAPI.prototype, "fetchProjectStatusDetails").mockResolvedValue({
+      repositories: [{ url: "https://example.com/deps.git" }],
+    });
+  });
+
+  it("prioritizes open dependency tasks ahead of their blocked parent", async () => {
+    const tempRepo = await makeTempRepo();
+    const coordinator = new WorkflowCoordinator();
+
+    vi.spyOn(coordinator, "loadWorkflows").mockResolvedValue(undefined);
+
+    const fetchCalls: Array<any[]> = [
+      [
+        {
+          id: "80",
+          title: "Follow-up dependency",
+          status: "open",
+          priority_score: 500,
+        },
+        {
+          id: "78",
+          title: "Blocked parent",
+          status: "blocked",
+          blocked_dependencies: ["80"],
+          priority_score: 1200,
+        },
+      ],
+      [],
+    ];
+
+    vi.spyOn(coordinator as any, "fetchProjectTasks").mockImplementation(
+      async () => {
+        return fetchCalls.shift() ?? [];
+      },
+    );
+
+    const processSpy = vi
+      .spyOn(coordinator as any, "processTask")
+      .mockResolvedValue({ success: true });
+
+    await coordinator.handleCoordinator(
+      {} as any,
+      {},
+      { workflow_id: "wf-deps", project_id: "proj-deps" },
+      { repo: tempRepo },
+    );
+
+    expect(processSpy).toHaveBeenCalled();
+    const firstCallTask = processSpy.mock.calls[0][1];
+    expect(firstCallTask?.id).toBe("80");
   });
 });

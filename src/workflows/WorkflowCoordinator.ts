@@ -11,19 +11,25 @@ import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import type { MessageTransport } from "../transport/index.js";
 import { join as _join, basename } from "path";
 import { extractRepoRemote } from "./helpers/repoRemoteResolver.js";
-import { createTaskInjectedWorkflow } from "./helpers/taskWorkflowAdapter.js";
-
 const projectAPI = new ProjectAPI();
-import { abortWorkflowWithReason } from "./helpers/workflowAbort.js";
 import { TaskFetcher } from "./coordinator/TaskFetcher.js";
 import { WorkflowSelector } from "./coordinator/WorkflowSelector.js";
+import { DependencyQueueManager } from "./coordinator/DependencyQueueManager.js";
+import {
+  TaskWorkflowRunner,
+  type TaskWorkflowContext,
+} from "./coordinator/TaskWorkflowRunner.js";
 
 export class WorkflowCoordinator {
   private engine: WorkflowEngine;
   private workflowsLoaded: boolean = false;
   private taskFetcher: TaskFetcher;
   private workflowSelector: WorkflowSelector;
+  private dependencyQueueManager: DependencyQueueManager;
+  private taskWorkflowRunner: TaskWorkflowRunner;
   private static activeTaskWorkflows: Map<string, string> = new Map();
+
+  private static readonly dependencyQueueLogLimit = 5;
 
   private isTestEnv(): boolean {
     try {
@@ -40,6 +46,14 @@ export class WorkflowCoordinator {
     this.engine = engine || workflowEngine;
     this.taskFetcher = new TaskFetcher();
     this.workflowSelector = new WorkflowSelector();
+    this.dependencyQueueManager = new DependencyQueueManager(
+      this.taskFetcher,
+      WorkflowCoordinator.dependencyQueueLogLimit,
+    );
+    this.taskWorkflowRunner = new TaskWorkflowRunner(
+      this.engine,
+      this.workflowSelector,
+    );
   }
 
   public async fetchProjectTasks(projectId: string): Promise<any[]> {
@@ -206,6 +220,11 @@ export class WorkflowCoordinator {
           )
           .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));
 
+        const dependencySelection =
+          this.dependencyQueueManager.selectNextDependencyTask(
+            currentPendingTasks,
+          );
+
         logger.info("Fetched tasks debug", {
           workflowId,
           projectId,
@@ -216,6 +235,7 @@ export class WorkflowCoordinator {
             id: t?.id,
             status: t?.status,
           })),
+          dependencyQueueSnapshot: dependencySelection?.queueSnapshot,
         });
 
         if (currentPendingTasks.length === 0) {
@@ -233,9 +253,23 @@ export class WorkflowCoordinator {
           projectId,
           pendingTaskCount: currentPendingTasks.length,
           pendingTaskIds: currentPendingTasks.map((t) => t?.id).filter(Boolean),
+          dependencyQueueHead: dependencySelection?.selectedTask?.id ?? null,
+          dependencyQueueParent: dependencySelection?.parentTaskId ?? null,
         });
 
-        const task = currentPendingTasks[0];
+        const task = dependencySelection?.selectedTask || currentPendingTasks[0];
+
+        if (dependencySelection?.selectedTask) {
+          logger.info("Dependency queue prioritized task", {
+            workflowId,
+            projectId,
+            taskId: dependencySelection.selectedTask?.id,
+            parentTaskId: dependencySelection.parentTaskId,
+            dependencyId: dependencySelection.dependencyId,
+            pendingDependencyCount:
+              dependencySelection.parentDependencyCount ?? null,
+          });
+        }
         let batchFailed = false;
 
         if (task) {
@@ -360,16 +394,7 @@ export class WorkflowCoordinator {
   private async processTask(
     transport: MessageTransport,
     task: any,
-    context: {
-      workflowId: string;
-      projectId: string;
-      projectName: string;
-      repoSlug: string;
-      repoRoot: string;
-      branch: string;
-      remote?: string | null;
-      force_rescan?: boolean;
-    },
+    context: TaskWorkflowContext,
   ): Promise<any> {
     if (arguments.length === 2) {
       context = task as any;
@@ -428,164 +453,14 @@ export class WorkflowCoordinator {
         selectionReason: reason,
       });
 
-      return await this.executeWorkflow(transport, workflow, task, context);
+      return await this.taskWorkflowRunner.executeWorkflow(
+        transport,
+        workflow,
+        task,
+        context,
+      );
     } finally {
       WorkflowCoordinator.activeTaskWorkflows.delete(taskKey);
     }
   }
-
-  private async executeWorkflow(
-    transport: MessageTransport,
-    workflow: any,
-    task: any,
-    context: {
-      workflowId: string;
-      projectId: string;
-      projectName: string;
-      repoSlug: string;
-      repoRoot: string;
-      branch: string;
-      remote?: string | null;
-      force_rescan?: boolean;
-    },
-  ): Promise<any> {
-    if (!task || typeof task !== "object" || Array.isArray(task)) {
-      logger.error("CRITICAL: Invalid task data received", {
-        workflowId: context.workflowId,
-        projectId: context.projectId,
-        taskType: typeof task,
-        isArray: Array.isArray(task),
-        reason:
-          "Task must be a valid object with id, title, and description fields",
-      });
-      throw new Error(
-        `CRITICAL: Invalid task data - received ${typeof task}${Array.isArray(task) ? " (array)" : ""}. Cannot proceed with workflow execution.`,
-      );
-    }
-
-    if (!task.id) {
-      logger.error("CRITICAL: Task missing required 'id' field", {
-        workflowId: context.workflowId,
-        projectId: context.projectId,
-        taskKeys: Object.keys(task),
-        reason: "Task ID is required for workflow execution",
-      });
-      throw new Error(
-        "CRITICAL: Task missing required 'id' field. Cannot proceed with workflow execution.",
-      );
-    }
-
-    logger.debug("Preparing workflow initial variables", {
-      workflowId: context.workflowId,
-      taskId: task?.id,
-      taskHasMilestone: !!task?.milestone,
-      milestoneId: task?.milestone?.id,
-      milestoneName: task?.milestone?.name,
-      taskKeys: Object.keys(task || {}),
-    });
-
-    const initialVariables = {
-      task: {
-        id: task?.id || task?.key || "unknown",
-        type: this.workflowSelector.determineTaskType(task),
-        persona: "lead_engineer",
-        data: {
-          ...task,
-          description:
-            task?.description ||
-            task?.summary ||
-            task?.name ||
-            "No description provided",
-          requirements: task?.requirements || [],
-        },
-        timestamp: Date.now(),
-      },
-      taskId: task?.id || task?.key,
-      taskName: task?.name || task?.title || task?.summary,
-      taskType: this.workflowSelector.determineTaskType(task),
-      taskScope: this.workflowSelector.determineTaskScope(task),
-      projectId: context.projectId,
-      projectName: context.projectName,
-  repoSlug: context.repoSlug,
-
-      milestone: task?.milestone || null,
-      milestone_name: task?.milestone?.name || task?.milestone_name || null,
-      milestoneId: task?.milestone?.id || task?.milestone_id || null,
-      milestone_slug: task?.milestone?.slug || task?.milestone_slug || null,
-      milestone_description: task?.milestone?.description || null,
-      milestone_status: task?.milestone?.status || null,
-
-      task_slug: task?.slug || task?.task_slug || null,
-
-      featureBranchName: this.workflowSelector.computeFeatureBranchName(
-        task,
-        context.repoSlug,
-      ),
-
-      SKIP_PULL_TASK: true,
-
-      repo_root: context.repoRoot,
-      repo_remote: context.remote,
-      effective_repo_path: context.repoRoot,
-      force_rescan: context.force_rescan || false,
-    };
-
-      if (!context.remote) {
-      logger.error(
-        "No repository remote URL available for workflow execution",
-        {
-          workflowId: context.workflowId,
-          taskId: task?.id,
-          projectId: context.projectId,
-        },
-      );
-      throw new Error(
-        "Cannot execute workflow: no repository remote URL. Configure the repository URL in the project dashboard.",
-      );
-    }
-
-    const modifiedWorkflow = createTaskInjectedWorkflow(workflow, task);
-
-    const result = await this.engine.executeWorkflowDefinition(
-      modifiedWorkflow,
-      context.projectId,
-      context.repoRoot,
-      context.branch,
-      transport,
-      initialVariables,
-    );
-
-    if (!result.success) {
-      logger.error("Workflow execution failed", {
-        workflowId: context.workflowId,
-        taskId: task?.id,
-        failedStep: result.failedStep,
-        error: result.error?.message,
-      });
-
-      if (result.finalContext) {
-        await abortWorkflowWithReason(
-          result.finalContext,
-          "workflow_step_failure",
-          {
-            taskId: task?.id,
-            failedStep: result.failedStep,
-            error: result.error?.message,
-            completedSteps: result.completedSteps,
-          },
-        );
-      }
-    }
-
-    return {
-      success: result.success,
-      workflowName: workflow.name,
-      taskId: task?.id,
-      completedSteps: result.completedSteps?.length || 0,
-      failedStep: result.failedStep,
-      duration: result.duration,
-      error: result.error?.message,
-    };
-  }
-
 }
