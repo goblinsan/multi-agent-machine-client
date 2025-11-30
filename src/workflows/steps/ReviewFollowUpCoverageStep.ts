@@ -8,6 +8,7 @@ import {
   FollowUpTask,
   ExistingTask,
   ReviewResult,
+  ReviewRootCause,
   NormalizedReviewPayload,
   ReviewFollowUpCoverageConfig,
   CoverageItem,
@@ -163,9 +164,12 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
       reviewType,
     );
     const raw = this.extractRawCoverageItems(reviewResult, reviewType);
-    return this.dedupeCoverageItems([...normalized, ...raw]);
+    const rootCauses = this.extractRootCauseCoverageItems(
+      reviewResult,
+      reviewType,
+    );
+    return this.dedupeCoverageItems([...normalized, ...raw, ...rootCauses]);
   }
-
   private extractNormalizedCoverageItems(
     normalizedReview: NormalizedReviewPayload | null,
     reviewType: string,
@@ -254,6 +258,53 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
     return items;
   }
 
+  private extractRootCauseCoverageItems(
+    reviewResult: ReviewResult | null | undefined,
+    reviewType: string,
+  ): CoverageItem[] {
+    if (!Array.isArray(reviewResult?.root_causes)) {
+      return [];
+    }
+
+    const items: CoverageItem[] = [];
+
+    reviewResult.root_causes.forEach((cause: ReviewRootCause, index) => {
+      if (!cause) {
+        return;
+      }
+
+      const description = this.buildRootCauseDescription(cause, reviewType);
+      if (!description) {
+        return;
+      }
+
+      const severity = this.normalizeRootCauseSeverity(cause.severity);
+      const labels = this.mergeLabels(cause.labels, [
+        reviewType,
+        "qa-gap",
+        "root-cause",
+      ]);
+      const fingerprint = this.buildFingerprint(
+        `${cause.type || "root"}-${index}-${description}`,
+      );
+
+      items.push({
+        key: cause.type || `root_cause_${index}`,
+        type: "qa_root_cause",
+        source: reviewType,
+        description,
+        labels,
+        priority: this.priorityFromSeverity(severity),
+        category: this.categoryFromSeverity(severity),
+        branchLocks: [{ branch: "main", policy: "block" }],
+        blocking: true,
+        fingerprint,
+        severity,
+      });
+    });
+
+    return items;
+  }
   private dedupeCoverageItems(items: CoverageItem[]): CoverageItem[] {
     const seen = new Map<string, CoverageItem>();
 
@@ -279,7 +330,6 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
 
     return Array.from(seen.values());
   }
-
   private mergeSeverity(a?: string, b?: string): string | undefined {
     const order = ["critical", "high", "medium", "low"];
     const indexA = a ? order.indexOf(a) : -1;
@@ -293,10 +343,9 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
     return tasks
       .map((task) => task.description || task.title || "")
       .filter(Boolean)
-      .map((text) => text.toLowerCase());
-  }
-
-  private isCoveredByExistingTask(
+        .map((text) => text.toLowerCase());
+      }
+      private isCoveredByExistingTask(
     item: CoverageItem,
     existingTaskTexts: string[],
   ): boolean {
@@ -335,7 +384,6 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
 
     return followUp;
   }
-
   private mergeFollowUps(
     existingFollowUps: FollowUpTask[],
     newFollowUps: FollowUpTask[],
@@ -357,7 +405,6 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
 
     return merged;
   }
-
   private isSameFollowUp(a: FollowUpTask, b: FollowUpTask): boolean {
     const descA = (a.description || "").trim().toLowerCase();
     const descB = (b.description || "").trim().toLowerCase();
@@ -377,7 +424,6 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
       metadata: { ...(a.metadata || {}), ...(b.metadata || {}) },
     };
   }
-
   private mergeLabels(
     current?: string[] | null,
     next?: string[] | null,
@@ -393,7 +439,6 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
     if (!second) return first;
     return [...first, ...second];
   }
-
   private applyStandardLabels(followUps: FollowUpTask[]): FollowUpTask[] {
     return followUps.map((followUp, index) => ({
       ...followUp,
@@ -470,8 +515,58 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
     return parts.join("\n");
   }
 
+  private buildRootCauseDescription(
+    cause: ReviewRootCause,
+    reviewType: string,
+  ): string {
+    const parts: string[] = [`Review type: ${reviewType}`];
+    if (cause.type) {
+      parts.push(`Issue type: ${cause.type}`);
+    }
+    if (cause.description) {
+      parts.push(`Description: ${cause.description}`);
+    }
+    if (cause.details) {
+      parts.push(`Details: ${cause.details}`);
+    }
+    if (cause.message) {
+      parts.push(`Message: ${cause.message}`);
+    }
+    if (cause.suggestion) {
+      parts.push(`Suggested fix: ${cause.suggestion}`);
+    }
+    const output = parts.join("\n");
+    return output.trim();
+  }
+
   private buildFingerprint(text: string): string {
     return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 48);
+  }
+
+  private normalizeRootCauseSeverity(
+    value?: string,
+  ): "critical" | "high" | "medium" | "low" {
+    if (!value) {
+      return "high";
+    }
+    const normalized = value.toLowerCase();
+    if (
+      normalized.includes("critical") ||
+      normalized.includes("blocker") ||
+      normalized.includes("severe")
+    ) {
+      return "critical";
+    }
+    if (normalized.includes("high")) {
+      return "high";
+    }
+    if (normalized.includes("medium")) {
+      return "medium";
+    }
+    if (normalized.includes("low")) {
+      return "low";
+    }
+    return "high";
   }
 
   private priorityFromSeverity(

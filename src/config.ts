@@ -239,6 +239,9 @@ const infoRequestMaxRequestsPerIteration = Number(
 const infoRequestMaxUniqueSources = Number(
   process.env.INFO_REQUEST_MAX_UNIQUE_SOURCES || 12,
 );
+const infoRequestDuplicateIterationsBeforeForce = Number(
+  process.env.INFO_REQUEST_DUPLICATE_ITERATIONS_BEFORE_FORCE || 2,
+);
 const infoRequestDenyHostsFile =
   process.env.INFO_REQUEST_DENY_HOSTS_FILE || undefined;
 const infoRequestDenyHosts = readHostPatternFile(infoRequestDenyHostsFile);
@@ -381,6 +384,7 @@ export const cfg = {
     maxIterations: infoRequestMaxIterations,
     maxRequestsPerIteration: infoRequestMaxRequestsPerIteration,
     maxUniqueSources: infoRequestMaxUniqueSources,
+    duplicateIterationsBeforeForce: infoRequestDuplicateIterationsBeforeForce,
     denyHosts: infoRequestDenyHosts,
     maxHttpBytes: infoRequestMaxHttpBytes,
     maxFileBytes: infoRequestMaxFileBytes,

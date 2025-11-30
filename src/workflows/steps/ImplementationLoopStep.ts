@@ -261,6 +261,7 @@ export class ImplementationLoopStep extends WorkflowStep {
       plan_files_variable:
         guardOverride?.plan_files_variable || "planning_loop_plan_files",
       additional_files: additionalFiles,
+      additional_files_variable: guardOverride?.additional_files_variable,
       auto_create_missing: guardOverride?.auto_create_missing ?? false,
       fail_on_missing: false,
       record_variable: guardOverride?.record_variable || "plan_required_files",

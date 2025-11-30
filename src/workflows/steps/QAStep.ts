@@ -14,6 +14,7 @@ export interface QAConfig {
   failureThreshold?: number;
   requiredCoverage?: number;
   skipOnNoTests?: boolean;
+  softFail?: boolean;
 }
 
 export interface QAResult {
@@ -54,6 +55,7 @@ export class QAStep extends WorkflowStep {
       failureThreshold = 0,
       requiredCoverage,
       skipOnNoTests = false,
+      softFail = false,
     } = config;
 
     logger.info("Starting QA execution", {
@@ -104,6 +106,35 @@ export class QAStep extends WorkflowStep {
             data: { reason: "No tests found" },
           };
         }
+        if (softFail) {
+          const errorMessage = lastError
+            ? lastError.message
+            : "QA execution failed after all retries";
+          logger.warn("QA execution failed but softFail enabled", {
+            error: errorMessage,
+            testCommand,
+          });
+          context.setVariable("qaResult", null);
+          context.setVariable("testsPassed", false);
+          context.setVariable("failures", []);
+          return {
+            status: "success",
+            data: {
+              error: errorMessage,
+              executed: false,
+              command: testCommand,
+              status: "error",
+            },
+            outputs: {
+              qaResult: null,
+              testsPassed: false,
+              failures: [],
+              error: errorMessage,
+              executed: false,
+              status: "error",
+            },
+          } satisfies StepResult;
+        }
         throw lastError || new Error("QA execution failed after all retries");
       }
 
@@ -145,20 +176,23 @@ export class QAStep extends WorkflowStep {
         issues: issues.length,
       });
 
+      const finalStatus = qaStatus === "failure" && softFail ? "success" : qaStatus;
+
       return {
-        status: qaStatus,
+        status: finalStatus,
         data: qaResult,
         outputs: {
           qaResult,
           testsPassed: qaStatus === "success",
           failures: qaResult.failures,
+          status: qaStatus,
         },
         metrics: {
           duration_ms: qaResult.testResults.duration_ms,
           operations_count: qaResult.testResults.total,
         },
         error:
-          qaStatus === "failure"
+          qaStatus === "failure" && !softFail
             ? new Error(`QA failed: ${issues.join(", ")}`)
             : undefined,
       };

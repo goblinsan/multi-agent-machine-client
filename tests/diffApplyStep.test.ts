@@ -171,6 +171,7 @@ describe("DiffApplyStep Critical Error Handling", () => {
       commit_sha: "commit-sha-123",
       operations_count: 1,
       branch: "test-branch",
+      noop_applied: false,
     });
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -179,6 +180,47 @@ describe("DiffApplyStep Critical Error Handling", () => {
         stepName: "test-diff-apply",
         filesChanged: 1,
         commitSha: "commit-sha-123",
+      }),
+    );
+  });
+
+  it("should treat noop apply results as success", async () => {
+    (mockContext.getStepOutput as any).mockReturnValue("some diff content");
+
+    const { DiffParser } = await import("../src/agents/parsers/DiffParser.js");
+    (DiffParser.parsePersonaResponse as any).mockReturnValue({
+      success: true,
+      editSpec: { ops: [{ path: "test.ts", operation: "edit" }] },
+      diffBlocks: [],
+      errors: [],
+      warnings: [],
+    });
+
+    const { applyEditOps } = await import("../src/fileops.js");
+    (applyEditOps as any).mockResolvedValue({
+      changed: ["test.ts"],
+      branch: "test-branch",
+      sha: "head-sha",
+      noop: true,
+    });
+
+    const result = await diffApplyStep.execute(mockContext);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs).toEqual({
+      applied_files: ["test.ts"],
+      commit_sha: "head-sha",
+      operations_count: 1,
+      branch: "test-branch",
+      noop_applied: true,
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "Diff application produced no new changes",
+      expect.objectContaining({
+        stepName: "test-diff-apply",
+        filesChanged: 1,
+        commitSha: "head-sha",
       }),
     );
   });

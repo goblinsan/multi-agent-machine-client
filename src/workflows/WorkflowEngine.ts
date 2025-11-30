@@ -43,6 +43,8 @@ import { TestCommandDiscoveryStep } from "./steps/TestCommandDiscoveryStep";
 import { TestHarnessSynthesisStep } from "./steps/TestHarnessSynthesisStep";
 import { DependencyTaskCollectorStep } from "./steps/DependencyTaskCollectorStep";
 import { ImplementationLoopStep } from "./steps/ImplementationLoopStep";
+import { QAArtifactLoadStep } from "./steps/QAArtifactLoadStep";
+import { TestToolingSetupStep } from "./steps/TestToolingSetupStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -193,6 +195,8 @@ export class WorkflowEngine {
       "DependencyTaskCollectorStep",
       DependencyTaskCollectorStep,
     );
+    this.stepRegistry.set("QAArtifactLoadStep", QAArtifactLoadStep);
+    this.stepRegistry.set("TestToolingSetupStep", TestToolingSetupStep);
   }
 
   public registerStep(

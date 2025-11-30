@@ -17,7 +17,17 @@ import type {
   UpsertOp,
 } from "../fileops.js";
 
-export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
+type ApplyEditOpsResult = {
+  changed: string[];
+  branch: string;
+  sha: string;
+  noop?: boolean;
+};
+
+export async function applyEditOps(
+  jsonText: string,
+  opts: ApplyOptions,
+): Promise<ApplyEditOpsResult> {
   const repoRoot = normalizeRoot(opts.repoRoot);
 
   if (repoRoot === process.cwd() && !cfg.allowWorkspaceGit) {
@@ -156,7 +166,20 @@ export async function applyEditOps(jsonText: string, opts: ApplyOptions) {
       { cwd: repoRoot },
     );
   } catch (err) {
-    await handleCommitFailure(repoRoot, changed, sanitizedCommitMsg, err);
+    if (isNoopCommitError(err)) {
+      return await buildNoopResult(repoRoot, branch, changed);
+    }
+
+    const fallbackResult = await handleCommitFailure(
+      repoRoot,
+      branch,
+      changed,
+      sanitizedCommitMsg,
+      err,
+    );
+    if (fallbackResult) {
+      return fallbackResult;
+    }
   }
 
   const sha = (
@@ -195,10 +218,15 @@ async function upsertFile(fullPath: string, content: string, maxBytes: number) {
 
 async function handleCommitFailure(
   repoRoot: string,
+  branch: string,
   changed: string[],
   commitMsg: string,
   initialError: unknown,
-) {
+): Promise<ApplyEditOpsResult | null> {
+  if (isNoopCommitError(initialError)) {
+    return await buildNoopResult(repoRoot, branch, changed);
+  }
+
   logGitFailure("git add/commit targeted", initialError, {
     repoRoot,
     changedCount: changed.length,
@@ -210,8 +238,12 @@ async function handleCommitFailure(
       ["commit", "--no-verify", "-m", commitMsg, "--", ...changed],
       { cwd: repoRoot },
     );
-    return;
+    return null;
   } catch (err2) {
+    if (isNoopCommitError(err2)) {
+      return await buildNoopResult(repoRoot, branch, changed);
+    }
+
     logGitFailure("git add/commit force", err2, {
       repoRoot,
       changedCount: changed.length,
@@ -234,8 +266,12 @@ async function handleCommitFailure(
       await runGit(["commit", "--no-verify", "-m", commitMsg], {
         cwd: repoRoot,
       });
-      return;
+      return null;
     } catch (err3) {
+      if (isNoopCommitError(err3)) {
+        return await buildNoopResult(repoRoot, branch, changed);
+      }
+
       logGitFailure("git add/commit -A", err3, {
         repoRoot,
         changedCount: changed.length,
@@ -458,4 +494,44 @@ function logGitFailure(
     ...(extra || {}),
     ...extractGitErrorDetails(error),
   });
+}
+
+function isNoopCommitError(error: unknown): boolean {
+  const signals = [
+    "nothing to commit",
+    "working tree clean",
+    "no changes added to commit",
+  ];
+  const values: string[] = [];
+  const stdout = normalizeGitBuffer((error as any)?.stdout);
+  const stderr = normalizeGitBuffer((error as any)?.stderr);
+  if (stdout) values.push(stdout);
+  if (stderr) values.push(stderr);
+  if (error instanceof Error && error.message) {
+    values.push(error.message);
+  }
+  if (typeof error === "string") {
+    values.push(error);
+  }
+  if (values.length === 0) {
+    return false;
+  }
+  const haystack = values.join("\n").toLowerCase();
+  return signals.some((signal) => haystack.includes(signal));
+}
+
+async function buildNoopResult(
+  repoRoot: string,
+  branch: string,
+  changed: string[],
+): Promise<ApplyEditOpsResult> {
+  logger.info("No new changes detected after applying edit ops", {
+    repoRoot,
+    branch,
+    attemptedFiles: changed.length,
+  });
+  const sha = (
+    await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })
+  ).stdout.trim();
+  return { changed, branch, sha, noop: true };
 }

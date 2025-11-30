@@ -16,6 +16,16 @@ export interface ExistingTask {
   labels?: string[];
 }
 
+export interface ReviewRootCause {
+  type?: string;
+  description?: string;
+  details?: string;
+  message?: string;
+  suggestion?: string;
+  severity?: string;
+  labels?: string[];
+}
+
 export interface ReviewResult {
   reviewer?: string;
   qa_root_cause_analyses?: Array<{
@@ -29,6 +39,7 @@ export interface ReviewResult {
       is_critical_blocker?: boolean;
     }>;
   }>;
+  root_causes?: ReviewRootCause[];
 }
 
 export interface NormalizedIssuePayload {

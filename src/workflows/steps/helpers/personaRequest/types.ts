@@ -10,6 +10,7 @@ export interface PersonaRequestConfig {
   prompt_template?: string;
   maxInformationIterations?: number;
   maxInformationSources?: number;
+  duplicateRequestForceIterations?: number;
 }
 
 export interface PersonaRequestContextPayload {

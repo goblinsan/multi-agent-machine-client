@@ -180,6 +180,82 @@ export function recordInformationSources(
   return added;
 }
 
+type ForcedSynthesisMeta = {
+  duplicateIterations?: number;
+  uniqueSources?: number;
+  maxUniqueSources?: number;
+};
+
+export function buildForcedSynthesisCompletion(
+  context: WorkflowContext,
+  persona: string,
+  step: string,
+  infoBlocks: string[],
+  stepName: string,
+  outputs: string[] | undefined,
+  meta?: ForcedSynthesisMeta,
+): StepResult {
+  logger.warn("Forcing persona completion after duplicate information requests", {
+    workflowId: context.workflowId,
+    persona,
+    step,
+    duplicateIterations: meta?.duplicateIterations ?? 0,
+    uniqueSources: meta?.uniqueSources ?? 0,
+    maxUniqueSources: meta?.maxUniqueSources ?? null,
+  });
+
+  const totalBlocks = infoBlocks.length;
+  const recentBlocks = infoBlocks.slice(-3);
+  const startIndex = Math.max(0, totalBlocks - recentBlocks.length);
+  const recentFindings = recentBlocks.map((block, index) => {
+    const referenceIndex = startIndex + index + 1;
+    return {
+      reference: `info_block_${referenceIndex}`,
+      insight: block,
+      confidence: "medium",
+    } as const;
+  });
+
+  const forcedResult = {
+    status: "complete",
+    summary:
+      "System forced completion after repeated duplicate information requests. Use the gathered evidence below to proceed.",
+    next_actions: [
+      "Move forward with planning using the collected snippets (see information blocks).",
+      "Create a new research task if fresh evidence is truly required.",
+    ],
+    findings: recentFindings,
+    remaining_gaps: [
+      "Researcher exhausted the duplicate allowance and did not synthesize findings. Manual follow-up may be needed.",
+    ],
+    information_blocks: infoBlocks,
+    system_note: {
+      reason: "forced_completion_due_to_duplicate_information_requests",
+      duplicateIterations: meta?.duplicateIterations ?? 0,
+      uniqueSourcesInspected: meta?.uniqueSources ?? 0,
+      maxUniqueSourcesAllowed: meta?.maxUniqueSources ?? null,
+    },
+  };
+
+  context.setVariable(`${stepName}_status`, "forced_complete");
+  context.setVariable(`${stepName}_forced_completion`, true);
+  context.setVariable(`${stepName}_information_blocks`, infoBlocks.slice());
+  applyOutputVariables(context, stepName, outputs, forcedResult);
+
+  return {
+    status: "success",
+    data: {
+      step,
+      persona,
+      forcedCompletion: true,
+      duplicateIterations: meta?.duplicateIterations ?? 0,
+      uniqueSources: meta?.uniqueSources ?? 0,
+      maxUniqueSources: meta?.maxUniqueSources ?? null,
+    },
+    outputs: forcedResult,
+  } satisfies StepResult;
+}
+
 function resolveInformationSourceKey(
   record: InformationRequestRecord,
 ): string | null {

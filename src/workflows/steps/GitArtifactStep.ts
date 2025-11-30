@@ -17,6 +17,7 @@ interface GitArtifactStepConfig {
   format?: "markdown" | "json";
   extract_field?: string;
   template?: string;
+  require_push?: boolean;
 }
 
 export class GitArtifactStep extends WorkflowStep {
@@ -208,6 +209,10 @@ export class GitArtifactStep extends WorkflowStep {
       });
 
       const branch = expectedBranch ?? activeBranch;
+      const requirePush = config.require_push === true;
+      let pushSucceeded = false;
+      let pushFailureReason: string | null = null;
+      let pushError: Error | null = null;
       try {
         const remotes = await runGit(["remote"], { cwd: repoRoot });
         const hasRemote = remotes.stdout.trim().length > 0;
@@ -219,19 +224,44 @@ export class GitArtifactStep extends WorkflowStep {
             branch,
             sha: sha.substring(0, 7),
           });
+          pushSucceeded = true;
         } else {
           context.logger.warn("No remote configured, skipping push", {
             stepName: this.config.name,
             note: "Typical in test environments",
           });
+          pushFailureReason = "no_remote";
+          if (requirePush) {
+            pushError = new Error(
+              "GitArtifactStep: require_push enabled but no git remote configured",
+            );
+          }
         }
       } catch (pushErr) {
-        context.logger.warn("Failed to push artifact (will retry later)", {
+        pushError =
+          pushErr instanceof Error
+            ? pushErr
+            : new Error(String(pushErr));
+        pushFailureReason = pushError.message;
+        context.logger.warn("Failed to push artifact", {
           stepName: this.config.name,
           branch,
           sha: sha.substring(0, 7),
-          error: pushErr instanceof Error ? pushErr.message : String(pushErr),
+          error: pushError.message,
+          requirePush,
         });
+      }
+
+      if (requirePush && !pushSucceeded) {
+        const failureDetails =
+          pushError?.message ||
+          (pushFailureReason === "no_remote"
+            ? "no git remote configured"
+            : pushFailureReason) ||
+          "unknown push failure";
+        throw new Error(
+          `GitArtifactStep: require_push enabled but push failed (${failureDetails})`,
+        );
       }
 
       const elapsed = Date.now() - startTime;
@@ -301,6 +331,13 @@ export class GitArtifactStep extends WorkflowStep {
 
     if (config.extract_field && typeof config.extract_field !== "string") {
       errors.push("GitArtifactStep: extract_field must be a string");
+    }
+
+    if (
+      config.require_push !== undefined &&
+      typeof config.require_push !== "boolean"
+    ) {
+      errors.push("GitArtifactStep: require_push must be a boolean");
     }
 
     return {

@@ -44,9 +44,26 @@ steps:
       trackHash: false
       forceRescan: ${force_rescan || false}
 
+  - name: load_previous_qa_feedback
+    type: QAArtifactLoadStep
+    description: "Load last QA review artifact for planners"
+    depends_on: ["context_scan"]
+    config:
+      artifact_name: "qa"
+      output_variable: "qa_previous_result"
+      allow_missing: true
+
+  - name: derive_qa_required_files
+    type: VariableResolutionStep
+    description: "Expose QA-required file hints for guardrails"
+    depends_on: ["load_previous_qa_feedback"]
+    config:
+      variables:
+        qa_required_files: "${qa_previous_result.required_files}"
+
   - template: context_analysis
     name: context_request
-    depends_on: ["context_scan"]
+    depends_on: ["context_scan", "load_previous_qa_feedback"]
     condition: ${context_scan.reused_existing} == false
 
   - name: load_existing_tasks
@@ -61,7 +78,7 @@ steps:
   - name: research_enrichment
     type: SubWorkflowStep
     description: "Researcher persona gathers blocking information before planning"
-    depends_on: ["context_scan"]
+    depends_on: ["context_scan", "load_previous_qa_feedback"]
     config:
       workflow: "task-research"
       inputs:
@@ -81,11 +98,13 @@ steps:
         repoScan: "${repoScan || []}"
         research_objectives: "${task.research_objectives || []}"
         existing_findings: "${task.research_notes || []}"
+        previous_qa_result: "${qa_previous_result || null}"
+        qa_required_files: "${qa_required_files || []}"
 
   - name: planning_loop
     type: PlanningLoopStep
     description: "Plan creation and evaluation loop with max 5 iterations"
-    depends_on: ["context_scan", "research_enrichment"]
+    depends_on: ["context_scan", "research_enrichment", "load_previous_qa_feedback"]
     config:
       maxIterations: 5
       plannerPersona: "implementation-planner"
@@ -104,6 +123,8 @@ steps:
         research_next_actions: "${research_enrichment.research_next_actions || []}"
         research_findings: "${research_enrichment.research_findings || []}"
         research_information_blocks: "${research_enrichment.research_information_blocks || []}"
+        previous_qa_result: "${qa_previous_result || null}"
+        qa_required_files: "${qa_required_files || []}"
 
   - name: record_plan_key_files
     type: PlanKeyFileGuardStep
@@ -115,6 +136,7 @@ steps:
       auto_create_missing: false
       fail_on_missing: false
       record_variable: "plan_required_files"
+      additional_files_variable: "qa_required_files"
 
   - name: implementation_loop
     type: ImplementationLoopStep
@@ -129,6 +151,7 @@ steps:
         plan_step: "planning_loop"
         plan_files_variable: "planning_loop_plan_files"
         additional_files: "${record_plan_key_files.key_files || []}"
+        additional_files_variable: "qa_required_files"
 
   - name: determine_test_entrypoint
     type: TestCommandDiscoveryStep
@@ -139,6 +162,39 @@ steps:
       require_command: false
       package_script_priority: ["test:regression", "test:ci", "test"]
       allow_makefile: true
+
+  - name: bootstrap_test_tooling
+    type: TestToolingSetupStep
+    description: "Install or repair node-based test tooling before running tests"
+    depends_on: ["determine_test_entrypoint"]
+    condition: "detected_test_command.length > 0"
+    config:
+      testCommandVariable: "detected_test_command"
+      ensureDevDependencies: ["vitest"]
+      skipInstallWhenNodeModulesPresent: true
+
+  - name: run_detected_tests
+    type: QAStep
+    description: "Execute detected test command so QA persona receives actionable output"
+    depends_on: ["bootstrap_test_tooling"]
+    condition: "detected_test_command.length > 0"
+    config:
+      testCommand: "${detected_test_command}"
+      retryCount: 1
+      skipOnNoTests: true
+      failureThreshold: 0
+      softFail: true
+
+  - name: persist_pre_qa_test_signal
+    type: VariableResolutionStep
+    description: "Surface detected test execution results for downstream personas"
+    depends_on: ["run_detected_tests"]
+    condition: "detected_test_command.length > 0"
+    config:
+      variables:
+        pre_qa_test_result: "${run_detected_tests.qaResult}"
+        pre_qa_test_status: "${run_detected_tests.testsPassed}"
+        pre_qa_test_error: "${run_detected_tests.error}"
 
   - name: test_harness_synthesis
     type: TestHarnessSynthesisStep
@@ -235,15 +291,26 @@ steps:
     name: qa_request
     depends_on: ["collect_review_diff"]
 
+  - name: cache_latest_qa_review
+    type: VariableResolutionStep
+    description: "Cache QA artifacts for future planning iterations"
+    depends_on: ["qa_request"]
+    config:
+      variables:
+        qa_previous_result: "${qa_request_result}"
+        qa_previous_status: "${qa_request_status}"
+        qa_required_files: "${qa_request_result.required_files || qa_required_files}"
+
   - name: commit_qa_result
     type: GitArtifactStep
     description: "Commit QA review result to .ma/tasks/{id}/reviews/qa.json"
-    depends_on: ["qa_request"]
+    depends_on: ["qa_request", "cache_latest_qa_review"]
     config:
       source_output: "qa_request_result"
       artifact_path: ".ma/tasks/${task.id}/reviews/qa.json"
       commit_message: "test(ma): QA review for task ${task.id}"
       format: "json"
+      require_push: true
 
   - name: handle_qa_failure
     type: SubWorkflowStep

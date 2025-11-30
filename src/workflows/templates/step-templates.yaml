@@ -23,6 +23,8 @@ templates:
         context_snapshot_path: "${context_snapshot_path || ''}"
         context_summary_path: "${context_summary_path || ''}"
         context_files_ndjson_path: "${context_files_ndjson_path || ''}"
+        previous_qa_result: "${qa_previous_result || null}"
+        qa_required_files: "${qa_required_files || []}"
 
   implementation:
     type: PersonaRequestStep
@@ -55,6 +57,13 @@ templates:
         project_id: ${projectId}
         repo_slug: ${repoSlug}
         project_name: ${projectName}
+        previous_qa_result: "${qa_previous_result || null}"
+        qa_required_files: "${qa_required_files || []}"
+        pre_qa_test_result: "${pre_qa_test_result || null}"
+        pre_qa_test_status: "${pre_qa_test_status}"
+        pre_qa_test_error: "${pre_qa_test_error || ''}"
+        detected_test_command: "${detected_test_command || ''}"
+        test_tooling_commands: "${test_tooling_commands || []}"
 
   qa_review:
     type: PersonaRequestStep
@@ -86,6 +95,9 @@ templates:
         context_summary_md: "${context_summary_md || ''}"
         context_snapshot_path: "${context_snapshot_path || ''}"
         context_files_ndjson_path: "${context_files_ndjson_path || ''}"
+        pre_qa_test_result: "${pre_qa_test_result || null}"
+        pre_qa_test_error: "${pre_qa_test_error || ''}"
+        test_tooling_commands: "${test_tooling_commands || []}"
 
   code_review:
     type: PersonaRequestStep

@@ -232,6 +232,44 @@ describe("ReviewFollowUpCoverageStep", () => {
 		);
 	});
 
+	it("converts root_causes entries into follow-up coverage", async () => {
+		const step = new ReviewFollowUpCoverageStep({
+			name: "enforce_follow_up_coverage",
+			type: "ReviewFollowUpCoverageStep",
+			config: {
+				follow_up_tasks: [],
+				review_type: "qa",
+				review_result: {
+					root_causes: [
+						{
+							type: "missing_dependency",
+							description: "Vitest suite cannot run because jsdom is missing",
+							suggestion: "npm install jsdom --save-dev",
+							severity: "critical",
+						},
+					],
+				},
+			},
+		});
+
+		const result = await step.execute(context);
+		const tasks = result.outputs?.follow_up_tasks ?? [];
+		const coverage = result.outputs?.metadata?.summary;
+
+		expect(result.status).toBe("success");
+		expect(tasks).toHaveLength(1);
+		expect(tasks[0].labels).toEqual(
+			expect.arrayContaining([
+				"root-cause",
+				"qa",
+				"qa-gap",
+				"coordination",
+			]),
+		);
+		expect(tasks[0].priority).toBe("critical");
+		expect(coverage?.coverageItemBreakdown?.qa_root_cause).toBe(1);
+	});
+
 	it("forces follow-ups for code review blockers", async () => {
 		const step = new ReviewFollowUpCoverageStep({
 			name: "enforce_follow_up_coverage",

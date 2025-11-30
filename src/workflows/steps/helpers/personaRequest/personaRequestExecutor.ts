@@ -28,6 +28,7 @@ import {
   handlePersonaCompletion,
   applyOutputVariables,
   recordInformationSources,
+  buildForcedSynthesisCompletion,
 } from "./personaRequestOutcomes.js";
 
 export type PersonaRequestExecutorArgs = {
@@ -197,8 +198,43 @@ export async function executePersonaRequestFlow(
       1,
       maxInformationIterations ?? cfg.informationRequests?.maxIterations ?? 5,
     );
+    const duplicateIterationVar = `${stepName}_duplicate_request_iterations`;
+    const duplicateRaw = context.getVariable(duplicateIterationVar);
+    let duplicateIterationCount = 0;
+    if (typeof duplicateRaw === "number" && Number.isFinite(duplicateRaw)) {
+      duplicateIterationCount = Math.max(0, Math.floor(duplicateRaw));
+    } else if (typeof duplicateRaw === "string") {
+      const parsed = Number(duplicateRaw);
+      if (Number.isFinite(parsed)) {
+        duplicateIterationCount = Math.max(0, Math.floor(parsed));
+      }
+    }
+    const forceSynthesisVar = `${stepName}_force_synthesis_due_to_duplicates`;
+    let forceSynthesisActive = Boolean(context.getVariable(forceSynthesisVar));
+    const duplicateForceLimit = Math.max(
+      1,
+      config.duplicateRequestForceIterations ??
+        cfg.informationRequests?.duplicateIterationsBeforeForce ??
+        2,
+    );
 
     for (let iteration = 1; iteration <= maxInfoIterations; iteration++) {
+      if (forceSynthesisActive) {
+        return buildForcedSynthesisCompletion(
+          context,
+          persona,
+          step,
+          infoBlocks,
+          stepName,
+          outputs,
+          {
+            duplicateIterations: duplicateIterationCount,
+            uniqueSources: uniqueInformationSources.size,
+            maxUniqueSources,
+          },
+        );
+      }
+
       const iterationPayload = buildIterationPayload(
         resolvedPayload,
         baseUserText,
@@ -355,6 +391,59 @@ export async function executePersonaRequestFlow(
           acquisitions,
           uniqueInformationSources,
         );
+        const producedNewEvidence = newSourcesTracked > 0;
+        const noRecords = acquisitions.length === 0;
+        const reusedSourcesOnly =
+          !producedNewEvidence && acquisitions.length > 0;
+        if (producedNewEvidence) {
+          duplicateIterationCount = 0;
+        } else if (reusedSourcesOnly || noRecords) {
+          duplicateIterationCount += 1;
+          logger.warn("Duplicate information request iteration detected", {
+            workflowId: context.workflowId,
+            persona,
+            step,
+            iteration,
+            duplicateIterationCount,
+            duplicateForceLimit,
+          });
+          if (duplicateIterationCount >= duplicateForceLimit) {
+            forceSynthesisActive = true;
+            context.setVariable(forceSynthesisVar, true);
+            infoBlocks.push(
+              buildSystemInformationBlock(
+                "Repeated duplicate requests exhausted the research budget. No further info will be gathered; summarize the existing evidence and respond with status=\"complete\".",
+              ),
+            );
+            context.setVariable(
+              `${stepName}_information_blocks`,
+              infoBlocks.slice(),
+            );
+            context.setVariable(duplicateIterationVar, duplicateIterationCount);
+            return buildForcedSynthesisCompletion(
+              context,
+              persona,
+              step,
+              infoBlocks,
+              stepName,
+              outputs,
+              {
+                duplicateIterations: duplicateIterationCount,
+                uniqueSources: uniqueInformationSources.size,
+                maxUniqueSources,
+              },
+            );
+          } else {
+            infoBlocks.push(
+              buildSystemInformationBlock(
+                `Requested sources already provided earlier (${duplicateIterationCount}/${duplicateForceLimit} duplicate iterations). Review previous snippets before asking again.`,
+              ),
+            );
+          }
+        } else {
+          duplicateIterationCount = 0;
+        }
+        context.setVariable(duplicateIterationVar, duplicateIterationCount);
         if (newSourcesTracked > 0) {
           context.setVariable(
             uniqueSourceVar,

@@ -19,6 +19,7 @@ export interface PlanKeyFileGuardConfig {
   plan_result_field?: string;
   plan_files_variable?: string;
   additional_files?: string[];
+  additional_files_variable?: string;
   auto_create_missing?: boolean;
   fail_on_missing?: boolean;
   record_variable?: string;
@@ -37,6 +38,10 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
     const additionalFiles = Array.isArray(config.additional_files)
       ? config.additional_files
       : [];
+    const variableAdditionalFiles = this.resolveAdditionalFilesFromVariable(
+      config.additional_files_variable,
+      context,
+    );
 
     const planOutput =
       context.getStepOutput(planStep) ?? context.getVariable(planStep);
@@ -67,6 +72,7 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
     const normalizedPlanFiles = this.normalizePlanFiles([
       planFiles,
       additionalFiles,
+      variableAdditionalFiles,
       fallbackVariables,
     ]);
 
@@ -185,6 +191,15 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
       typeof config.plan_files_variable !== "string"
     ) {
       errors.push("PlanKeyFileGuardStep: plan_files_variable must be a string");
+    }
+
+    if (
+      config.additional_files_variable !== undefined &&
+      typeof config.additional_files_variable !== "string"
+    ) {
+      errors.push(
+        "PlanKeyFileGuardStep: additional_files_variable must be a string",
+      );
     }
 
     return {
@@ -334,5 +349,25 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private resolveAdditionalFilesFromVariable(
+    variablePath: string | undefined,
+    context: WorkflowContext,
+  ): string[] {
+    if (!variablePath || !variablePath.trim().length) {
+      return [];
+    }
+
+    const parts = variablePath.split(".");
+    let value: any = context.getVariable(parts[0]);
+    for (let i = 1; i < parts.length; i += 1) {
+      if (value === null || value === undefined) {
+        return [];
+      }
+      value = value[parts[i]];
+    }
+
+    return this.normalizePlanFiles(value);
   }
 }

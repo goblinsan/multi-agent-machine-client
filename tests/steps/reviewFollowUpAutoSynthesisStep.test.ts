@@ -82,6 +82,36 @@ describe("ReviewFollowUpAutoSynthesisStep", () => {
     expect(task.labels).toContain("needs-pm-triage");
     expect(task.branch_locks?.[0]).toEqual({ branch: "main", policy: "block" });
   });
+
+  it("synthesizes follow-ups from legacy root_causes payloads", async () => {
+    const step = new ReviewFollowUpAutoSynthesisStep({
+      name: "auto_follow_up_synthesis",
+      type: "ReviewFollowUpAutoSynthesisStep",
+      config: {
+        review_type: "qa",
+        normalized_review: { reviewType: "qa", blockingIssues: [] },
+        review_result: {
+          root_causes: [
+            {
+              type: "missing_dependency",
+              description: "Tests cannot run because jsdom is missing",
+              suggestion: "npm install jsdom",
+              severity: "critical",
+            },
+          ],
+        },
+        external_id_base: "qa-legacy",
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.outputs?.auto_follow_up_tasks).toHaveLength(1);
+    const [task] = result.outputs?.auto_follow_up_tasks ?? [];
+    expect(task.labels).toContain("root-cause");
+    expect(task.priority).toBe("critical");
+    expect(task.external_id).toContain("qa-legacy-auto");
+  });
 });
 
 describe("ReviewFollowUpMergeStep", () => {

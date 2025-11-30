@@ -174,8 +174,9 @@ export class DiffApplyStep extends WorkflowStep {
         }
 
         applyResult = await applyEditOps(editSpecJson, applyOptions);
+        const noopApply = applyResult.noop === true;
 
-        if (!applyResult.changed || applyResult.changed.length === 0) {
+        if (!noopApply && (!applyResult.changed || applyResult.changed.length === 0)) {
           context.logger.error(
             "Critical failure: No file changes after applying diffs",
             {
@@ -190,7 +191,7 @@ export class DiffApplyStep extends WorkflowStep {
           );
         }
 
-        if (!applyResult.sha || applyResult.sha === "") {
+        if (!noopApply && (!applyResult.sha || applyResult.sha === "")) {
           context.logger.error(
             "Critical failure: No commit SHA after applying changes",
             {
@@ -204,9 +205,15 @@ export class DiffApplyStep extends WorkflowStep {
             "Coordinator-critical: Implementation changes were not committed to repository. Aborting.",
           );
         }
+
       }
 
-      context.logger.info("Diff application completed", {
+      const noopResult = applyResult.noop === true;
+      context.setVariable("last_apply_noop", noopResult);
+      const logMessage = noopResult
+        ? "Diff application produced no new changes"
+        : "Diff application completed";
+      context.logger.info(logMessage, {
         stepName: this.config.name,
         filesChanged: applyResult.changed.length,
         commitSha: applyResult.sha,
@@ -232,6 +239,7 @@ export class DiffApplyStep extends WorkflowStep {
           commit_sha: applyResult.sha,
           operations_count: parseResult.editSpec.ops.length,
           branch: applyResult.branch,
+          noop_applied: noopResult,
         },
         metrics: {
           duration_ms: Date.now() - startTime,

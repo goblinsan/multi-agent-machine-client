@@ -8,6 +8,7 @@ import {
   FollowUpTask,
   NormalizedReviewPayload,
   ReviewResult,
+  ReviewRootCause,
 } from "./reviewFollowUpTypes.js";
 
 type Severity = "critical" | "high" | "medium" | "low";
@@ -92,10 +93,16 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
       reviewType,
       config.external_id_base,
     );
+    const tasksFromLegacyRootCauses = this.buildTasksFromLegacyRootCauses(
+      config.review_result,
+      reviewType,
+      config.external_id_base,
+    );
 
     const merged = this.dedupeTasks([
       ...tasksFromBlocking,
       ...tasksFromRootCauses,
+      ...tasksFromLegacyRootCauses,
     ]);
 
     const summary: AutoFollowUpSummary = {
@@ -105,6 +112,7 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
       sourceCounts: {
         blocking: tasksFromBlocking.length,
         qa_root_cause: tasksFromRootCauses.length,
+        root_causes: tasksFromLegacyRootCauses.length,
       },
     };
 
@@ -181,6 +189,50 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
           }, reviewType, externalBase, tasks.length),
         );
       });
+    });
+
+    return tasks;
+  }
+
+  private buildTasksFromLegacyRootCauses(
+    reviewResult: ReviewResult | null | undefined,
+    reviewType: string,
+    externalBase?: string,
+  ): FollowUpTask[] {
+    if (!Array.isArray(reviewResult?.root_causes)) {
+      return [];
+    }
+
+    const tasks: FollowUpTask[] = [];
+    reviewResult.root_causes.forEach((cause, index) => {
+      if (!cause) {
+        return;
+      }
+
+      const description = this.describeRootCause(cause);
+      if (!description) {
+        return;
+      }
+
+      const severity = this.severityFromRootCause(cause.severity);
+      tasks.push(
+        this.buildTaskFromFields(
+          {
+            id: cause.type ? `${cause.type}-${index}` : `root_cause-${index}`,
+            title: cause.type
+              ? `${cause.type} remediation`
+              : "Address QA root cause",
+            description,
+            severity,
+            labels: ["root-cause", reviewType, "qa-gap"],
+            source: "root_cause",
+            blocking: true,
+          },
+          reviewType,
+          externalBase,
+          index,
+        ),
+      );
     });
 
     return tasks;
@@ -356,6 +408,48 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
     const title = (task.title || "").trim().toLowerCase();
     const description = (task.description || "").trim().toLowerCase();
     return `${title}::${description}`;
+  }
+
+  private describeRootCause(cause: ReviewRootCause): string {
+    if (!cause) {
+      return "";
+    }
+    const parts = [cause.description, cause.details, cause.message]
+      .filter((value) => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value!.trim());
+    if (cause.suggestion) {
+      parts.push(`Suggested fix: ${cause.suggestion}`);
+    }
+    if (cause.type) {
+      parts.unshift(`Type: ${cause.type}`);
+    }
+    return parts.join("\n").trim();
+  }
+
+  private severityFromRootCause(
+    severity?: string,
+  ): Severity {
+    if (!severity) {
+      return "high";
+    }
+    const normalized = severity.toLowerCase();
+    if (
+      normalized.includes("critical") ||
+      normalized.includes("severe") ||
+      normalized.includes("blocker")
+    ) {
+      return "critical";
+    }
+    if (normalized.includes("high")) {
+      return "high";
+    }
+    if (normalized.includes("medium")) {
+      return "medium";
+    }
+    if (normalized.includes("low")) {
+      return "low";
+    }
+    return "high";
   }
 
   private mergeLabels(base: string[], extra?: string[] | null): string[] {

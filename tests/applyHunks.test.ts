@@ -105,4 +105,36 @@ describe("applyEditOps hunks application", () => {
       cfg.writeDiagnostics = prev;
     }
   });
+
+  it("returns noop when edits match current content", async () => {
+    const repo = await makeTempRepo({
+      "package.json": JSON.stringify({ name: "tmp" }),
+      "src/file3.ts": "export const value = 1;\n",
+    });
+    const child = await import("child_process");
+    const initialSha = child
+      .execSync("git rev-parse HEAD", { cwd: repo })
+      .toString()
+      .trim();
+
+    const editSpec = {
+      ops: [
+        {
+          action: "upsert" as const,
+          path: "src/file3.ts",
+          content: "export const value = 1;\n",
+        },
+      ],
+    };
+
+    const res = await applyEditOps(JSON.stringify(editSpec), {
+      repoRoot: repo,
+      branchName: "feat/noop",
+      commitMessage: "noop",
+    });
+
+    expect(res.noop).toBe(true);
+    expect(res.sha).toBe(initialSha);
+    expect(res.changed).toEqual(["src/file3.ts"]);
+  });
 });

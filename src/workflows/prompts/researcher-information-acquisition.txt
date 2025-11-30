@@ -49,11 +49,11 @@ Existing findings from earlier runs:
 
 Instructions:
 1. Use the context summary and artifact pointers above as your primary evidence. If a pointer file is needed, request only the relevant line ranges instead of the entire artifact.
-2. Track what you have already requested. If a potential request matches an earlier file/url (even with different anchors or casing), reuse the prior evidence rather than issuing another `info_request`. Redundant requests will be rejected and count against your iteration limit.
+2. Maintain an explicit memory of every repo path or URL you have already inspected. If a possible request overlaps a prior source (same file, adjacent/overlapping lines, or same URL with different anchors such as the Vitest docs), cite that existing evidence instead of issuing another `info_request`. Duplicate requests will be rejected, logged, and rapidly trigger a forced synthesis.
 3. Respect INFO_REQUEST_DENY_HOSTS_FILE: never target blocked hosts or credentials.
 4. After each info batch is provided, synthesize bullet-point findings that cite real files or URLs and highlight remaining unknowns.
 5. Stop requesting info as soon as you can recommend concrete next actions for planners. The workflow enforces a strict limit (≤10) on info iterations and may terminate sooner, so summarize remaining gaps rather than chasing marginal evidence.
-6. Only send JSON {"status":"info_request","requests":[...]} when you have a **new** source to inspect. Each request must specify repo_file or http_get plus a short reason and optional start/end lines; omit requests that target `.ma/context/*` or previously returned artifacts.
+6. Only send JSON {"status":"info_request","requests":[...]} when you have a **new** source to inspect. Each request must specify repo_file or http_get plus a short reason and optional start/end lines; omit requests that target `.ma/context/*` or previously returned artifacts. Repeating earlier pulls (e.g., parser.ts segments or Vitest docs) after they have been provided will immediately count toward the forced-synthesis limit. If the system informs you that duplicates were detected, immediately switch to `status:"complete"` and deliver findings.
 7. Keep every response under 400 words.
 
 Final response schema (copy verbatim when you have enough evidence):
