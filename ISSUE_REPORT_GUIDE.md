@@ -4,7 +4,7 @@
 
 Please ensure you're filing the issue in the correct repository:
 
-### This Repository (multi-agent-machine-client)
+### This Repository (multi-agent-machine-client / redis-machine-client)
 This is a multi-agent machine client for managing distributed workflows and task coordination.
 
 **Technologies used:**
@@ -41,8 +41,9 @@ During GCF deployment, common causes include:
    - Check that `.gcloudignore` isn't excluding necessary files
 
 2. **Incorrect `.gcloudignore` configuration**
-   - Don't exclude `node_modules` if using bundled dependencies
-   - Don't exclude source files needed for build
+   - Ensure `.gcloudignore` doesn't exclude `package.json` or `package-lock.json`
+   - Don't exclude source files or build configuration needed during deployment
+   - Generally, `node_modules` should be excluded and rebuilt during GCF build process
 
 3. **TypeScript compilation issues**
    - Ensure `tsconfig.json` is properly configured
