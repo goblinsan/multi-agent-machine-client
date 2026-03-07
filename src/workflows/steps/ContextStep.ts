@@ -341,6 +341,18 @@ export class ContextStep extends WorkflowStep {
         .map((file) => JSON.stringify(file))
         .join("\n");
 
+      const slimFiles = contextData.repoScan.map(({ path, bytes, lines }) => ({
+        path,
+        bytes,
+        lines,
+      }));
+      const snapshotSlim = JSON.stringify(
+        { repoPath, files: slimFiles, totals: snapshotPayload.totals },
+        null,
+        2,
+      );
+      context.setVariable("context_snapshot_slim", snapshotSlim);
+
       context.setVariable("context_summary_md", summaryBundle.summary);
       context.setVariable("context_insights", summaryBundle.insights);
       context.setVariable(
@@ -358,6 +370,14 @@ export class ContextStep extends WorkflowStep {
       context.setVariable(
         "context_potential_issues",
         summaryBundle.insights.potentialIssues,
+      );
+      context.setVariable(
+        "context_setup_commands",
+        summaryBundle.insights.setupCommands,
+      );
+      context.setVariable(
+        "context_setup_gaps",
+        summaryBundle.insights.setupGaps,
       );
       const allowedLanguages = collectAllowedLanguages(summaryBundle.insights);
       context.setVariable(

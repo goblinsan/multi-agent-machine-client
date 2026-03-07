@@ -5,11 +5,13 @@ import {
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
+import { runTestCommandWithWorker } from "../helpers/testRunner.js";
 
 export interface QAConfig {
   testCommand?: string;
   testPath?: string;
   timeout?: number;
+  idleTimeoutMs?: number;
   retryCount?: number;
   failureThreshold?: number;
   requiredCoverage?: number;
@@ -51,6 +53,7 @@ export class QAStep extends WorkflowStep {
       testCommand = "npm test",
       testPath,
       timeout = 300000,
+      idleTimeoutMs,
       retryCount = 1,
       failureThreshold = 0,
       requiredCoverage,
@@ -81,6 +84,7 @@ export class QAStep extends WorkflowStep {
             testCommand,
             testPath,
             timeout,
+            idleTimeoutMs,
           );
           break;
         } catch (error: any) {
@@ -214,6 +218,7 @@ export class QAStep extends WorkflowStep {
     command: string,
     testPath?: string,
     timeoutMs: number = 300000,
+    idleTimeoutMs?: number,
   ): Promise<QAResult> {
     const startTime = Date.now();
 
@@ -233,6 +238,7 @@ export class QAStep extends WorkflowStep {
         fullCommand,
         workingDir,
         timeoutMs,
+        idleTimeoutMs,
       );
 
       const duration_ms = Date.now() - startTime;
@@ -270,47 +276,16 @@ export class QAStep extends WorkflowStep {
     command: string,
     workingDir: string,
     timeoutMs: number,
+    idleTimeoutMs?: number,
   ): Promise<string> {
-    const { spawn } = await import("child_process");
-
-    return new Promise((resolve, reject) => {
-      const [cmd, ...args] = command.split(" ");
-      const child = spawn(cmd, args, {
-        cwd: workingDir,
-        stdio: ["pipe", "pipe", "pipe"],
-        shell: true,
-      });
-
-      let output = "";
-      let errorOutput = "";
-
-      child.stdout?.on("data", (data) => {
-        output += data.toString();
-      });
-
-      child.stderr?.on("data", (data) => {
-        errorOutput += data.toString();
-      });
-
-      const timeout = setTimeout(() => {
-        child.kill("SIGTERM");
-        reject(new Error(`Command timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-
-      child.on("close", (code) => {
-        clearTimeout(timeout);
-        if (code === 0) {
-          resolve(output);
-        } else {
-          reject(new Error(`Command failed with code ${code}: ${errorOutput}`));
-        }
-      });
-
-      child.on("error", (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      });
+    const result = await runTestCommandWithWorker({
+      command,
+      cwd: workingDir,
+      timeoutMs,
+      idleTimeoutMs,
     });
+
+    return [result.stdout, result.stderr].filter(Boolean).join("\n");
   }
 
   private parseTestOutput(output: string): any {

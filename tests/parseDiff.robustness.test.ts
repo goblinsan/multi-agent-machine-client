@@ -24,7 +24,12 @@ Here's the implementation:
           (op: any) => op.action === "upsert",
         );
         expect(upsert).toBeDefined();
-        expect((upsert as any).content).toContain("newFunction");
+        const hasContent =
+          (upsert as any).content?.includes("newFunction") ||
+          (upsert as any).hunks?.some((h: any) =>
+            h.lines?.some((l: string) => l.includes("newFunction")),
+          );
+        expect(hasContent).toBe(true);
       }
     });
 

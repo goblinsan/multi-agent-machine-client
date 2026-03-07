@@ -212,6 +212,11 @@ const coordinatorMaxIterations = parseRevisionLimit(
   process.env.COORDINATOR_MAX_ITERATIONS,
   500,
 );
+const coordinatorFailFast = bool(process.env.COORDINATOR_FAIL_FAST, true);
+const coordinatorMaxTaskRetries = parseRevisionLimit(
+  process.env.COORDINATOR_MAX_TASK_RETRIES,
+  3,
+);
 const planMaxIterationsPerStage = parseRevisionLimit(
   process.env.PLAN_MAX_ITERATIONS_PER_STAGE,
   5,
@@ -261,6 +266,10 @@ const infoRequestHttpTimeoutMs = parseDurationMs(
 const infoRequestArtifactSubdir =
   (process.env.INFO_REQUEST_ARTIFACT_SUBDIR || ".ma/tasks")?.trim() ||
   ".ma/tasks";
+const infoRequestPersistArtifacts = bool(
+  process.env.INFO_REQUEST_PERSIST_ARTIFACTS,
+  false,
+);
 
 function parseJsonArray(
   value: string | undefined,
@@ -375,6 +384,8 @@ export const cfg = {
   coordinatorMaxRevisionAttempts,
   coordinatorMaxApprovalRetries,
   coordinatorMaxIterations,
+  coordinatorFailFast,
+  coordinatorMaxTaskRetries,
   planMaxIterationsPerStage,
   blockedMaxAttempts,
   personaTimeoutMaxRetries,
@@ -391,6 +402,7 @@ export const cfg = {
     maxSnippetChars: infoRequestMaxSnippetChars,
     httpTimeoutMs: infoRequestHttpTimeoutMs,
     artifactSubdir: infoRequestArtifactSubdir,
+    persistArtifacts: infoRequestPersistArtifacts,
     denyHostsFile: infoRequestDenyHostsFile
       ? path.resolve(expandHome(infoRequestDenyHostsFile)!)
       : undefined,

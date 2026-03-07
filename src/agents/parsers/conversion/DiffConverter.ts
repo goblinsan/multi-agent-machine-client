@@ -1,6 +1,6 @@
 import type { EditSpec, UpsertOp, DeleteOp } from "../../../fileops.js";
 import type { DiffBlock } from "../DiffParser.js";
-import { extractFileContentFromDiff } from "../extraction/ContentExtractor.js";
+import { extractFileContentFromDiff, extractHunksFromDiff } from "../extraction/ContentExtractor.js";
 
 export function convertDiffBlocksToEditSpec(
   blocks: DiffBlock[],
@@ -30,21 +30,33 @@ export function parseDiffBlock(block: DiffBlock): Array<UpsertOp | DeleteOp> {
 
   let currentFile: string | null = null;
   let isDeletedFile = false;
+  let isNewFile = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    const fileMatch =
-      line.match(/^diff --git a\/(.+) b\/(.+)/) ||
-      line.match(/^\+\+\+ b\/(.+)/) ||
-      line.match(/^--- a\/(.+)/);
+    const gitDiffMatch = line.match(/^diff --git a\/(.+) b\/(.+)/);
+    if (gitDiffMatch) {
+      currentFile = gitDiffMatch[2];
+      isDeletedFile = false;
+      isNewFile = false;
+      continue;
+    }
 
-    if (fileMatch) {
-      currentFile = fileMatch[1];
+    const bMatch = line.match(/^\+\+\+ b\/(.+)/);
+    if (bMatch) {
+      currentFile = bMatch[1];
+      continue;
+    }
+
+    const aMatch = line.match(/^--- a\/(.+)/);
+    if (aMatch && !currentFile) {
+      currentFile = aMatch[1];
       continue;
     }
 
     if (line.includes("new file mode")) {
+      isNewFile = true;
       continue;
     }
 
@@ -64,21 +76,41 @@ export function parseDiffBlock(block: DiffBlock): Array<UpsertOp | DeleteOp> {
     }
 
     if (line.startsWith("@@") && currentFile) {
-      const fileContent = extractFileContentFromDiff(lines, i + 1, currentFile);
+      const hunks = extractHunksFromDiff(lines, i);
+      const isAllNewContent = isNewFile || hunks.every(h => h.oldCount === 0);
 
-      if (fileContent !== null) {
+      if (isAllNewContent) {
+        const fileContent = extractFileContentFromDiff(lines, i + 1, currentFile);
+        if (fileContent !== null) {
+          ops.push({
+            action: "upsert",
+            path: currentFile,
+            content: fileContent,
+          });
+        }
+      } else if (hunks.length > 0) {
         ops.push({
           action: "upsert",
           path: currentFile,
-          content: fileContent,
+          hunks,
         });
+      } else {
+        const fileContent = extractFileContentFromDiff(lines, i + 1, currentFile);
+        if (fileContent !== null) {
+          ops.push({
+            action: "upsert",
+            path: currentFile,
+            content: fileContent,
+          });
+        }
       }
 
-      while (i < lines.length && !lines[i + 1]?.startsWith("diff --git")) {
+      while (i < lines.length - 1 && !lines[i + 1]?.startsWith("diff --git")) {
         i++;
       }
 
       currentFile = null;
+      isNewFile = false;
     }
   }
 

@@ -431,6 +431,9 @@ export class InformationRequestHandler {
     taskId?: string | number,
   ): Promise<string | undefined> {
     try {
+      if (!cfg.informationRequests?.persistArtifacts) {
+        return undefined;
+      }
       if (taskId === undefined || taskId === null) {
         return undefined;
       }

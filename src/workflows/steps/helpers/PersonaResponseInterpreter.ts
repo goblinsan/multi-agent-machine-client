@@ -1,4 +1,7 @@
-import { interpretPersonaStatus } from "../../../agents/persona.js";
+import {
+  interpretPersonaStatus,
+  extractJsonPayloadFromText,
+} from "../../../agents/persona.js";
 import { logger } from "../../../logger.js";
 import { requiresStatus } from "./personaStatusPolicy.js";
 
@@ -29,20 +32,23 @@ export class PersonaResponseInterpreter {
       result = completion.fields?.result
         ? JSON.parse(completion.fields.result)
         : {};
-    } catch (parseError) {
-      logger.warn(
-        `Failed to parse persona response as JSON, using raw response`,
-        {
-          workflowId,
-          step,
-          persona,
-          error:
-            parseError instanceof Error
-              ? parseError.message
-              : "Unknown error",
-        },
+    } catch {
+      const extracted = extractJsonPayloadFromText(
+        completion.fields?.result,
       );
-      result = { raw: rawResponse };
+      if (extracted) {
+        result = extracted;
+      } else {
+        logger.warn(
+          `Failed to parse persona response as JSON, using raw response`,
+          {
+            workflowId,
+            step,
+            persona,
+          },
+        );
+        result = { raw: rawResponse };
+      }
     }
 
     const statusInfo = interpretPersonaStatus(rawResponse, {

@@ -179,6 +179,13 @@ function parseJsonFromString(raw: string): any | null {
     return tryParseJson(fencedMatch[1]);
   }
 
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = raw.slice(firstBrace, lastBrace + 1);
+    return tryParseJson(candidate);
+  }
+
   return null;
 }
 

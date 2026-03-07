@@ -26,7 +26,12 @@ export class ContextExtractor {
 
     const userText = await this.extractUserText(params);
 
-    const scanSummary = await this.extractScanSummary(persona, repo, branch);
+    const scanSummary = await this.extractScanSummary(
+      persona,
+      params.payload,
+      repo,
+      branch,
+    );
 
     const dashboardContext = await this.extractDashboardContext(
       persona,
@@ -188,38 +193,80 @@ export class ContextExtractor {
 
   private async extractScanSummary(
     persona: string,
+    payload: any,
     repo?: string,
     branch?: string,
   ): Promise<string | null> {
-    if (!repo || !cfg.injectDashboardContext) {
+    if (payload?.context_summary_md) {
+      return payload.context_summary_md;
+    }
+
+    if (payload?.context_summary) {
+      return payload.context_summary;
+    }
+
+    if (!repo && !payload?.repo_root) {
       return null;
     }
 
-    try {
-      logger.debug(
-        "PersonaConsumer: Repo context requested but not yet implemented",
-        {
-          persona,
-          repo,
-          branch,
-        },
-      );
-      return null;
-    } catch (error: any) {
-      logger.warn("PersonaConsumer: Failed to get scan summary", {
-        persona,
-        repo,
-        error: error.message,
-      });
-      return null;
+    const repoRoot = payload?.repo_root || repo;
+    if (!repoRoot) return null;
+
+    const summaryPaths = [
+      ".ma/context/summary.md",
+      ".ma/context/context_summary.md",
+    ];
+
+    for (const sp of summaryPaths) {
+      try {
+        const fullPath = path.join(repoRoot, sp);
+        const content = await fs.readFile(fullPath, "utf-8");
+        if (content.trim().length > 0) {
+          logger.debug("Loaded scan summary from file", {
+            persona,
+            path: fullPath,
+            length: content.length,
+          });
+          return content;
+        }
+      } catch {
+        continue;
+      }
     }
+
+    return null;
   }
 
   private async extractDashboardContext(
     _persona: string,
-    _payload: any,
+    payload: any,
   ): Promise<string | null> {
-    return null;
+    const parts: string[] = [];
+
+    const task = payload?.task;
+    if (task) {
+      const desc =
+        task.description || task.data?.description || task.summary;
+      if (desc) {
+        parts.push(`## Current Task\n\n${desc}`);
+      }
+      if (task.requirements?.length || task.data?.requirements?.length) {
+        const reqs = task.requirements || task.data?.requirements;
+        parts.push(
+          `## Requirements\n\n${reqs.map((r: string) => `- ${r}`).join("\n")}`,
+        );
+      }
+    }
+
+    const milestone = payload?.milestone;
+    if (milestone) {
+      const milestoneDesc = milestone.description || milestone.name;
+      if (milestoneDesc) {
+        parts.push(`## Milestone\n\n${milestoneDesc}`);
+      }
+    }
+
+    return parts.length > 0 ? parts.join("\n\n") : null;
   }
 
   resolveArtifactPath(artifactPath: string, payload: any): string {

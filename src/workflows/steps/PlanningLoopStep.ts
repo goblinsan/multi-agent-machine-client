@@ -450,7 +450,7 @@ export class PlanningLoopStep extends WorkflowStep {
     });
 
     return {
-      status: "success",
+      status: lastEvaluationPassed ? "success" : "failure",
       data: finalResult,
       outputs: {
         plan_result: planResult,

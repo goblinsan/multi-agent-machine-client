@@ -72,6 +72,7 @@ describe("InformationRequestHandler HTTP deny list", () => {
     cfg.informationRequests.maxSnippetChars = 8000;
     cfg.informationRequests.maxHttpBytes = 200000;
     cfg.informationRequests.artifactSubdir = ".ma/tasks";
+    cfg.informationRequests.persistArtifacts = true;
   });
 
   afterEach(async () => {
@@ -140,6 +141,30 @@ describe("InformationRequestHandler HTTP deny list", () => {
     const artifactPath = path.join(tempRepo, result[0].artifactPath!);
     const artifactData = JSON.parse(await fs.readFile(artifactPath, "utf8"));
     expect(artifactData.metadata.path).toBe(relativePath);
+  });
+
+  it("skips artifact persistence when disabled", async () => {
+    cfg.informationRequests.persistArtifacts = false;
+
+    const relativePath = "src/runtime.txt";
+    const fullPath = path.join(tempRepo, relativePath);
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, "sample runtime data", "utf8");
+
+    const [record] = await handler.fulfillRequests(
+      [
+        {
+          type: "repo_file",
+          path: relativePath,
+        },
+      ],
+      { persona: "context", step: "context", iteration: 1, taskId: 123 },
+    );
+
+    expect(record.status).toBe("success");
+    expect(record.artifactPath).toBeUndefined();
+
+    cfg.informationRequests.persistArtifacts = true;
   });
 
   it("supports GitHub-style line anchors in repo_file paths", async () => {

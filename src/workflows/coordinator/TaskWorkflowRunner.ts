@@ -65,9 +65,16 @@ export class TaskWorkflowRunner {
 
     const initialVariables = {
       task: {
+        ...task,
         id: task?.id || task?.key || "unknown",
         type: this.workflowSelector.determineTaskType(task),
         persona: "lead_engineer",
+        description:
+          task?.description ||
+          task?.summary ||
+          task?.name ||
+          "No description provided",
+        requirements: task?.requirements || [],
         data: {
           ...task,
           description:

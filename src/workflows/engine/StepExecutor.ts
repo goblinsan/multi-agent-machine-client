@@ -9,6 +9,7 @@ import { templateLoader } from "./TemplateLoader.js";
 import { personaTimeoutMs } from "../../util.js";
 import { cfg } from "../../config.js";
 import { logger } from "../../logger.js";
+import { ensureAutoCommitAfterStep } from "../helpers/autoCommit.js";
 
 interface ExtendedStepDefinition extends WorkflowStepDefinition {
   template?: string;
@@ -63,6 +64,13 @@ export class StepExecutor {
         context.setStepOutput(stepDef.name, result.outputs);
       } else if (result.data) {
         context.setStepOutput(stepDef.name, result.data);
+      }
+
+      if (result.status === "success") {
+        await ensureAutoCommitAfterStep({
+          context,
+          step,
+        });
       }
 
       context.recordStepComplete(

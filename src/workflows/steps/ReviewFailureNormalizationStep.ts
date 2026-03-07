@@ -77,15 +77,21 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
     const config = this.config.config as NormalizationConfig;
     const reviewResult = config.review_result;
 
-    if (!reviewResult || typeof reviewResult !== "object") {
+    if (
+      reviewResult === undefined ||
+      reviewResult === null ||
+      (typeof reviewResult !== "object" && typeof reviewResult !== "string")
+    ) {
       throw new Error("review_result is required and must be an object");
     }
 
     this.assertBranchAlignment(context, config.feature_branch);
 
+    const structuredReview = this.expandReviewResult(reviewResult);
+
     const { normalized, severityGaps } = this.normalizeReview(
       config.review_type,
-      reviewResult,
+      structuredReview,
       config.review_status,
     );
 
@@ -547,5 +553,66 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
       "pytest",
     ];
     return keywords.some((keyword) => normalized.includes(keyword));
+  }
+
+  private expandReviewResult(
+    reviewResult: Record<string, any> | string,
+  ): Record<string, any> {
+    let merged = { ...this.ensureObjectReview(reviewResult) };
+    const nestedKeys = ["result", "output", "payload", "data"];
+
+    for (const key of nestedKeys) {
+      const parsed = this.parseStructuredField(merged[key]);
+      if (parsed) {
+        merged = { ...merged, ...parsed };
+      }
+    }
+
+    return merged;
+  }
+
+  private ensureObjectReview(
+    reviewResult: Record<string, any> | string,
+  ): Record<string, any> {
+    if (typeof reviewResult === "string") {
+      const parsed = this.tryParseJson(reviewResult);
+      if (!parsed) {
+        throw new Error(
+          "review_result string must contain valid JSON payload",
+        );
+      }
+      return parsed;
+    }
+
+    if (!reviewResult || typeof reviewResult !== "object") {
+      throw new Error("review_result is required and must be an object");
+    }
+
+    return reviewResult;
+  }
+
+  private parseStructuredField(value: unknown): Record<string, any> | null {
+    if (!value) {
+      return null;
+    }
+
+    if (typeof value === "object") {
+      return value as Record<string, any>;
+    }
+
+    if (typeof value === "string") {
+      return this.tryParseJson(value);
+    }
+
+    return null;
+  }
+
+  private tryParseJson(value: string): Record<string, any> | null {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
   }
 }

@@ -30,51 +30,30 @@ export function buildPersonaMessages(input: BuildMessagesInput): ChatMessage[] {
     extraSystemMessages,
   } = input;
 
-  const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
+  const systemParts: string[] = [systemPrompt];
 
   if (scanSummaryForPrompt && scanSummaryForPrompt.length) {
     const label =
       labelForScanSummary && labelForScanSummary.trim().length
         ? labelForScanSummary
         : "File scan summary";
-    messages.push({
-      role: "system",
-      content: `${label}:
-${scanSummaryForPrompt}`,
-    });
+    systemParts.push(`${label}:\n${scanSummaryForPrompt}`);
   }
 
   if (dashboardContext && dashboardContext.trim().length) {
-    messages.push({
-      role: "system",
-      content: `Dashboard context (may be stale):
-${dashboardContext}`,
-    });
+    systemParts.push(`Dashboard context (may be stale):\n${dashboardContext}`);
   }
 
   if (qaHistory && qaHistory.trim().length) {
-    messages.push({
-      role: "system",
-      content: `Latest QA Test Results:
-${qaHistory}
-
-Use this to understand what failed in previous attempts and adjust your plan accordingly.`,
-    });
+    systemParts.push(
+      `Latest QA Test Results:\n${qaHistory}\n\nUse this to understand what failed in previous attempts and adjust your plan accordingly.`,
+    );
   }
 
   if (planningHistory && planningHistory.trim().length) {
-    messages.push({
-      role: "system",
-      content: `Previous Planning Iterations:
-${planningHistory}
-
-You have created plans before for this task. Review the previous planning attempts above, consider what may have changed (new context, QA results, etc.), and either:
-1. Use the existing plan if it's still valid and complete
-2. Refine and improve the plan based on new information
-3. Create a new plan if requirements have changed significantly
-
-Be clear about whether you're reusing, refining, or replacing the previous plan.`,
-    });
+    systemParts.push(
+      `Previous Planning Iterations:\n${planningHistory}\n\nYou have created plans before for this task. Review the previous planning attempts above, consider what may have changed (new context, QA results, etc.), and either:\n1. Use the existing plan if it's still valid and complete\n2. Refine and improve the plan based on new information\n3. Create a new plan if requirements have changed significantly\n\nBe clear about whether you're reusing, refining, or replacing the previous plan.`,
+    );
   }
 
   if (Array.isArray(promptFileSnippets) && promptFileSnippets.length) {
@@ -87,21 +66,23 @@ Be clear about whether you're reusing, refining, or replacing the previous plan.
       snippetParts.push(snippet.content);
       snippetParts.push("```");
     }
-    messages.push({ role: "system", content: snippetParts.join("\n") });
+    systemParts.push(snippetParts.join("\n"));
   }
 
   if (Array.isArray(extraSystemMessages) && extraSystemMessages.length) {
     for (const msg of extraSystemMessages) {
-      if (msg && msg.trim().length)
-        messages.push({ role: "system", content: msg });
+      if (msg && msg.trim().length) systemParts.push(msg);
     }
   }
 
-  messages.push({ role: "user", content: userText });
+  const messages: ChatMessage[] = [
+    { role: "system", content: systemParts.join("\n\n") },
+    { role: "user", content: userText },
+  ];
 
   logger.debug("PersonaRequestHandler: built messages", {
     persona,
-    systemCount: messages.filter((m) => m.role === "system").length,
+    systemCount: 1,
   });
   return messages;
 }

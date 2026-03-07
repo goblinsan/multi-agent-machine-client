@@ -354,7 +354,24 @@ export class WorkflowEngine {
           throw new Error(`Step definition not found: ${stepName}`);
         }
 
-        if (!this.shouldExecuteStep(stepDef, context, completedSteps)) {
+        const executionDecision = this.shouldExecuteStep(
+          stepDef,
+          context,
+          completedSteps,
+        );
+
+        if (executionDecision === "wait") {
+          continue;
+        }
+
+        if (executionDecision === "skip") {
+          context.logger.info("Skipping step due to condition", {
+            stepName: stepDef.name,
+            condition: stepDef.condition,
+          });
+          context.recordStepStart(stepDef.name);
+          context.recordStepComplete(stepDef.name, "skipped");
+          completedSteps.push(stepName);
           continue;
         }
 
@@ -403,11 +420,11 @@ export class WorkflowEngine {
     stepDef: WorkflowStepDefinition,
     context: WorkflowContext,
     completedSteps: string[],
-  ): boolean {
+  ): "execute" | "skip" | "wait" {
     if (stepDef.depends_on) {
       for (const dependency of stepDef.depends_on) {
         if (!completedSteps.includes(dependency)) {
-          return false;
+          return "wait";
         }
       }
     }
@@ -423,10 +440,10 @@ export class WorkflowEngine {
         result,
         workflowId: context.workflowId,
       });
-      return result;
+      return result ? "execute" : "skip";
     }
 
-    return true;
+    return "execute";
   }
 
   private async handleStepFailure(

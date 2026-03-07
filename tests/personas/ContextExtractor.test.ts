@@ -338,7 +338,7 @@ describe("ContextExtractor", () => {
       expect(context.userText).toContain("Test task");
       expect(context.userText).toContain("Test description");
       expect(context.scanSummary).toBeNull();
-      expect(context.dashboardContext).toBeNull();
+      expect(context.dashboardContext).toContain("Test description");
     });
   });
 

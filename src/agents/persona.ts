@@ -154,13 +154,18 @@ const FAIL_STATUS_KEYWORDS = new Set([
   "red",
 ]);
 
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
 export function extractJsonPayloadFromText(
   text: string | undefined,
 ): any | null {
   if (!text) return null;
+  const cleaned = stripThinkTags(text);
   const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
   let match: RegExpExecArray | null;
-  while ((match = fenceRegex.exec(text))) {
+  while ((match = fenceRegex.exec(cleaned))) {
     const snippet = match[1];
     try {
       return JSON.parse(snippet);
@@ -171,10 +176,10 @@ export function extractJsonPayloadFromText(
       });
     }
   }
-  const firstBrace = text.indexOf("{");
-  const lastBrace = text.lastIndexOf("}");
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    const candidate = text.slice(firstBrace, lastBrace + 1);
+    const candidate = cleaned.slice(firstBrace, lastBrace + 1);
     try {
       return JSON.parse(candidate);
     } catch (e) {
@@ -186,6 +191,9 @@ export function extractJsonPayloadFromText(
   }
   return null;
 }
+
+const PROSE_STATUS_PATTERN =
+  /(?:evaluation\s+)?status[*_:\s]+\s*(pass|fail|passed|failed|success|error|ok|approved|rejected)/im;
 
 type PersonaStatusInfo = {
   status: "pass" | "fail" | "unknown";
@@ -253,7 +261,7 @@ export function interpretPersonaStatus(
   const firstPart = raw.substring(0, 500);
   const statusLineMatch = firstPart.match(
     /^(?:status|result):\s*(pass|fail|passed|failed|success|error|ok|approved|rejected)/im,
-  );
+  ) || firstPart.match(PROSE_STATUS_PATTERN);
   if (statusLineMatch) {
     const declaredStatus = statusLineMatch[1].toLowerCase();
     const normalized = PASS_STATUS_KEYWORDS.has(declaredStatus)

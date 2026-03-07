@@ -159,3 +159,48 @@ describe("Coordinator dependency queue", () => {
     expect(firstCallTask?.id).toBe("80");
   });
 });
+
+describe("Coordinator per-task circuit breaker", () => {
+  beforeEach(() => {
+    vi.spyOn(ProjectAPI.prototype, "fetchProjectStatus").mockResolvedValue({
+      id: "proj-cb",
+      name: "Circuit Breaker Project",
+    });
+
+    vi.spyOn(
+      ProjectAPI.prototype,
+      "fetchProjectStatusDetails",
+    ).mockResolvedValue({
+      repositories: [{ url: "https://example.com/cb.git" }],
+    });
+  });
+
+  it("skips a task after exceeding per-task retry limit", async () => {
+    const tempRepo = await makeTempRepo();
+    const coordinator = new WorkflowCoordinator();
+
+    vi.spyOn(coordinator, "loadWorkflows").mockResolvedValue(undefined);
+
+    vi.spyOn(coordinator as any, "fetchProjectTasks").mockResolvedValue([
+      {
+        id: "92",
+        title: "Stuck review task",
+        status: "in_review",
+        priority_score: 100,
+      },
+    ]);
+
+    const processSpy = vi
+      .spyOn(coordinator as any, "processTask")
+      .mockResolvedValue({ success: true });
+
+    await coordinator.handleCoordinator(
+      {} as any,
+      {},
+      { workflow_id: "wf-cb", project_id: "proj-cb" },
+      { repo: tempRepo },
+    );
+
+    expect(processSpy).toHaveBeenCalledTimes(2);
+  });
+});

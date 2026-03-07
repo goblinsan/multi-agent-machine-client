@@ -353,11 +353,13 @@ steps:
   - template: code_review
     name: code_review_request
     depends_on: ["mark_task_in_review"]
+    condition: "${qa_request_status} == 'pass'"
 
   - name: commit_code_review_result
     type: GitArtifactStep
     description: "Commit code review result to .ma/tasks/{id}/reviews/code-review.json"
     depends_on: ["code_review_request"]
+    condition: "${qa_request_status} == 'pass'"
     config:
       source_output: "code_review_request_result"
       artifact_path: ".ma/tasks/${task.id}/reviews/code-review.json"
@@ -368,7 +370,7 @@ steps:
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for code review failures"
     depends_on: ["code_review_request", "load_existing_tasks"]
-    condition: "${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'"
+    condition: "${code_review_request_status} == 'fail'"
     config:
       workflow: "review-failure-handling"
       inputs:
@@ -397,12 +399,13 @@ steps:
   - template: security_review
     name: security_request
     depends_on: ["code_review_request"]
-    condition: "${code_review_request_status} == 'pass'"
+    condition: "${code_review_request_status} != 'fail'"
 
   - name: commit_security_result
     type: GitArtifactStep
     description: "Commit security review result to .ma/tasks/{id}/reviews/security.json"
     depends_on: ["security_request"]
+    condition: "${code_review_request_status} != 'fail'"
     config:
       source_output: "security_request_result"
       artifact_path: ".ma/tasks/${task.id}/reviews/security.json"
@@ -413,7 +416,7 @@ steps:
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for security failures"
     depends_on: ["security_request", "load_existing_tasks"]
-    condition: "${security_request_status} == 'fail' || ${security_request_status} == 'unknown'"
+    condition: "${security_request_status} == 'fail'"
     config:
       workflow: "review-failure-handling"
       inputs:
@@ -442,12 +445,13 @@ steps:
   - template: devops_review
     name: devops_request
     depends_on: ["security_request"]
-    condition: "${security_request_status} == 'pass'"
+    condition: "${security_request_status} != 'fail'"
 
   - name: commit_devops_result
     type: GitArtifactStep
     description: "Commit DevOps review result to .ma/tasks/{id}/reviews/devops.json"
     depends_on: ["devops_request"]
+    condition: "${security_request_status} != 'fail'"
     config:
       source_output: "devops_request_result"
       artifact_path: ".ma/tasks/${task.id}/reviews/devops.json"
@@ -458,7 +462,7 @@ steps:
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for DevOps failures"
     depends_on: ["devops_request"]
-    condition: "${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'"
+    condition: "${devops_request_status} == 'fail'"
     config:
       workflow: "review-failure-handling"
       inputs:
@@ -488,7 +492,7 @@ steps:
     type: SimpleTaskStatusStep
     description: "Mark task as completed on dashboard when all reviews pass"
     depends_on: ["devops_request"]
-    condition: "${devops_request_status} == 'pass'"
+    condition: "${devops_request_status} != 'fail'"
     config:
       task_id: "${taskId}"
       project_id: "${projectId}"

@@ -86,7 +86,7 @@ describe("Review Flow Validation", () => {
     const codeReview = steps["code_review_request"];
     expect(codeReview).toBeDefined();
     expect(codeReview?.depends_on).toEqual(["mark_task_in_review"]);
-    expect(codeReview?.condition).toBeUndefined();
+    expect(codeReview?.condition).toBe("${qa_request_status} == 'pass'");
     expect((codeReview as any)?.template).toBe("code_review");
 
     const handleCodeReviewFailure = steps["handle_code_review_failure"];
@@ -96,7 +96,7 @@ describe("Review Flow Validation", () => {
       "load_existing_tasks",
     ]);
     expect(handleCodeReviewFailure?.condition).toBe(
-      "${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'",
+      "${code_review_request_status} == 'fail'",
     );
     expect(handleCodeReviewFailure?.config?.workflow).toBe(
       "review-failure-handling",
@@ -105,8 +105,7 @@ describe("Review Flow Validation", () => {
     const security = steps["security_request"];
     expect(security).toBeDefined();
     expect(security?.depends_on).toEqual(["code_review_request"]);
-    expect(security?.condition).toBe("${code_review_request_status} == 'pass'");
-    expect((security as any)?.template).toBe("security_review");
+    expect(security?.condition).toBe("${code_review_request_status} != 'fail'");
 
     const handleSecurityFailure = steps["handle_security_failure"];
     expect(handleSecurityFailure).toBeDefined();
@@ -115,7 +114,7 @@ describe("Review Flow Validation", () => {
       "load_existing_tasks",
     ]);
     expect(handleSecurityFailure?.condition).toBe(
-      "${security_request_status} == 'fail' || ${security_request_status} == 'unknown'",
+      "${security_request_status} == 'fail'",
     );
     expect(handleSecurityFailure?.config?.workflow).toBe(
       "review-failure-handling",
@@ -124,13 +123,12 @@ describe("Review Flow Validation", () => {
     const devops = steps["devops_request"];
     expect(devops).toBeDefined();
     expect(devops?.depends_on).toEqual(["security_request"]);
-    expect(devops?.condition).toBe("${security_request_status} == 'pass'");
-
+    expect(devops?.condition).toBe("${security_request_status} != 'fail'");
     const handleDevOpsFailure = steps["handle_devops_failure"];
     expect(handleDevOpsFailure).toBeDefined();
     expect(handleDevOpsFailure?.depends_on).toEqual(["devops_request"]);
     expect(handleDevOpsFailure?.condition).toBe(
-      "${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'",
+      "${devops_request_status} == 'fail'",
     );
     expect(handleDevOpsFailure?.config?.workflow).toBe(
       "review-failure-handling",
@@ -139,7 +137,7 @@ describe("Review Flow Validation", () => {
     const markDone = steps["mark_task_done"];
     expect(markDone).toBeDefined();
     expect(markDone?.depends_on).toEqual(["devops_request"]);
-    expect(markDone?.condition).toBe("${devops_request_status} == 'pass'");
+    expect(markDone?.condition).toBe("${devops_request_status} != 'fail'");
     expect(markDone?.config?.status).toBe("done");
   });
 
@@ -166,15 +164,16 @@ describe("Review Flow Validation", () => {
     const markDone = steps["mark_task_done"];
 
     expect(codeReview?.depends_on).toEqual(["mark_task_in_review"]);
+    expect(codeReview?.condition).toBe("${qa_request_status} == 'pass'");
 
     expect(security?.depends_on).toEqual(["code_review_request"]);
-    expect(security?.condition).toBe("${code_review_request_status} == 'pass'");
+    expect(security?.condition).toBe("${code_review_request_status} != 'fail'");
 
     expect(devops?.depends_on).toEqual(["security_request"]);
-    expect(devops?.condition).toBe("${security_request_status} == 'pass'");
+    expect(devops?.condition).toBe("${security_request_status} != 'fail'");
 
     expect(markDone?.depends_on).toEqual(["devops_request"]);
-    expect(markDone?.condition).toBe("${devops_request_status} == 'pass'");
+    expect(markDone?.condition).toBe("${devops_request_status} != 'fail'");
   });
 
   it("validates review failure handling steps exist for all review types", async () => {

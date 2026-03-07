@@ -140,7 +140,7 @@ export class TaskFetcher {
       return pendingTasks.length;
     } catch (error) {
       logger.error("Failed to get remaining task count", { projectId, error });
-      return 0;
+      return -1;
     }
   }
 }

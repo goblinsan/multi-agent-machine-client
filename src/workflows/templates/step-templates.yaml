@@ -17,12 +17,10 @@ templates:
         milestone: ${milestone}
         milestone_name: ${milestone_name}
         context_metadata: ${context.metadata}
-        context_snapshot_json: ${context_snapshot_json}
-        context_files_ndjson: ${context_files_ndjson}
+        context_snapshot_slim: "${context_snapshot_slim || ''}"
         context_summary_md: "${context_summary_md || ''}"
         context_snapshot_path: "${context_snapshot_path || ''}"
         context_summary_path: "${context_summary_path || ''}"
-        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
         previous_qa_result: "${qa_previous_result || null}"
         qa_required_files: "${qa_required_files || []}"
 

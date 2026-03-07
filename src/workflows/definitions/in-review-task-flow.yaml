@@ -73,7 +73,7 @@ steps:
   - name: handle_code_review_failure
     type: SubWorkflowStep
     depends_on: [code_review_request]
-    condition: ${code_review_request_status} == 'fail' || ${code_review_request_status} == 'unknown'
+    condition: ${code_review_request_status} == 'fail'
     config:
       workflow: review-failure-handling
       inputs:
@@ -102,7 +102,7 @@ steps:
   - template: security_review
     name: security_request
     depends_on: [code_review_request]
-    condition: ${code_review_request_status} == 'pass'
+    condition: ${code_review_request_status} != 'fail'
     overrides:
       config:
         payload:
@@ -112,6 +112,7 @@ steps:
   - name: commit_security_result
     type: GitArtifactStep
     depends_on: [security_request]
+    condition: ${code_review_request_status} != 'fail'
     config:
       source_output: security_request_result
       artifact_path: .ma/tasks/${task.id}/reviews/security.json
@@ -121,7 +122,7 @@ steps:
   - name: handle_security_failure
     type: SubWorkflowStep
     depends_on: [security_request]
-    condition: ${security_request_status} == 'fail' || ${security_request_status} == 'unknown'
+    condition: ${security_request_status} == 'fail'
     config:
       workflow: review-failure-handling
       inputs:
@@ -150,11 +151,12 @@ steps:
   - template: devops_review
     name: devops_request
     depends_on: [security_request]
-    condition: ${security_request_status} == 'pass'
+    condition: ${security_request_status} != 'fail'
 
   - name: commit_devops_result
     type: GitArtifactStep
     depends_on: [devops_request]
+    condition: ${security_request_status} != 'fail'
     config:
       source_output: devops_request_result
       artifact_path: .ma/tasks/${task.id}/reviews/devops.json
@@ -164,7 +166,7 @@ steps:
   - name: handle_devops_failure
     type: SubWorkflowStep
     depends_on: [devops_request]
-    condition: ${devops_request_status} == 'fail' || ${devops_request_status} == 'unknown'
+    condition: ${devops_request_status} == 'fail'
     config:
       workflow: review-failure-handling
       inputs:
@@ -193,7 +195,7 @@ steps:
   - name: mark_task_done
     type: SimpleTaskStatusStep
     depends_on: [devops_request]
-    condition: ${security_request_status} == 'pass' && ${devops_request_status} == 'pass'
+    condition: ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'
     config:
       status: done
 

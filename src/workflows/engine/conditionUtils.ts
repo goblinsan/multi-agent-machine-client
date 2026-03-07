@@ -115,6 +115,22 @@ function evaluateSingleCondition(
     return compareNumbers(leftNumber, rightNumber, operator);
   }
 
+  if (cleanCondition === "true") {
+    return true;
+  }
+
+  if (cleanCondition === "false") {
+    return false;
+  }
+
+  const truthyMatch = cleanCondition.match(/^(!)?([\w.]+)$/);
+  if (truthyMatch) {
+    const [, negation, varPath] = truthyMatch;
+    const value = resolveVariablePath(varPath, context);
+    const result = isTruthy(value);
+    return negation ? !result : result;
+  }
+
   context.logger.warn("Unsupported condition pattern, defaulting to false", {
     condition: cleanCondition,
   });
@@ -214,4 +230,20 @@ export function resolveVariablePath(
   }
 
   return undefined;
+}
+
+function isTruthy(value: any): boolean {
+  if (!value) {
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+
+  return Boolean(value);
 }

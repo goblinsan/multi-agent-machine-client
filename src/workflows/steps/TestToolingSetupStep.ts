@@ -8,6 +8,8 @@ import {
   WorkflowStep,
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
+import { runGit } from "../../gitUtils.js";
+import type { SetupCommandInsight } from "./context/contextSummary.js";
 
 interface TestToolingSetupConfig {
   testCommandVariable?: string;
@@ -24,6 +26,24 @@ interface ToolingSetupResult {
   missingDependencies: string[];
   skipped: boolean;
   reason?: string;
+  gitChanges?: GitStatusEntry[];
+  revertedTrackedPaths?: string[];
+}
+
+interface PlannedCommand {
+  command: string;
+  cwd: string;
+}
+
+interface AdjustedCommand {
+  command: string;
+  note?: string;
+}
+
+interface GitStatusEntry {
+  path: string;
+  status: string;
+  untracked: boolean;
 }
 
 export class TestToolingSetupStep extends WorkflowStep {
@@ -43,6 +63,11 @@ export class TestToolingSetupStep extends WorkflowStep {
       });
     }
 
+    const contextCommands = this.resolveContextSetupCommands(context);
+    if (contextCommands.length > 0) {
+      return this.executeContextDrivenSetup(contextCommands, context, config);
+    }
+
     if (!this.targetsNodeEcosystem(String(testCommand))) {
       return this.successResult({
         executedCommands: [],
@@ -52,6 +77,182 @@ export class TestToolingSetupStep extends WorkflowStep {
       });
     }
 
+    return this.executeLegacyNodeSetup(context, config, String(testCommand));
+  }
+
+  private async executeContextDrivenSetup(
+    commands: SetupCommandInsight[],
+    context: WorkflowContext,
+    config: TestToolingSetupConfig,
+  ): Promise<StepResult> {
+    const repoRoot = context.repoRoot;
+    const baselineStatus = await this.snapshotGitStatus(repoRoot);
+    const orderedCommands = this.expandContextCommandList(commands);
+    const executedCommands: string[] = [];
+
+    for (const plan of orderedCommands) {
+      const resolvedCwd = this.resolveCommandCwd(repoRoot, plan.cwd);
+      const adjusted = await this.adjustCommandForLockfile(
+        plan.command,
+        resolvedCwd,
+      );
+      await this.runCommand(adjusted.command, resolvedCwd, config.additionalEnv);
+      const recordedCommand = plan.cwd === "."
+        ? adjusted.command
+        : `${plan.cwd}: ${adjusted.command}`;
+      executedCommands.push(adjusted.note
+        ? `${recordedCommand} (${adjusted.note})`
+        : recordedCommand);
+    }
+
+    const gitChanges = await this.collectGitChanges(repoRoot, baselineStatus);
+    const revertedTracked = await this.revertTrackedChanges(
+      repoRoot,
+      gitChanges.filter((entry) => !entry.untracked),
+    );
+    const skipped = executedCommands.length === 0;
+
+    context.setVariable("test_tooling_initialized", !skipped);
+    context.setVariable("test_tooling_commands", executedCommands);
+    context.setVariable("test_tooling_missing_dependencies", []);
+    context.setVariable("test_tooling_git_changes", gitChanges);
+    context.setVariable("test_tooling_reverted_paths", revertedTracked);
+    context.setVariable("test_tooling_context_setup", true);
+
+    return this.successResult({
+      executedCommands,
+      missingDependencies: [],
+      skipped,
+      gitChanges,
+      revertedTrackedPaths: revertedTracked,
+      reason: skipped ? "context summary listed no commands" : undefined,
+    });
+  }
+
+  private expandContextCommandList(
+    commands: SetupCommandInsight[],
+  ): PlannedCommand[] {
+    const planned: PlannedCommand[] = [];
+    const seen = new Set<string>();
+
+    commands.forEach((entry) => {
+      const cwd = this.normalizeWorkingDir(entry.workingDirectory);
+      entry.commands.forEach((raw) => {
+        const command = raw.trim();
+        if (!command) {
+          return;
+        }
+        const key = `${cwd}::${command}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        planned.push({ command, cwd });
+      });
+    });
+
+    return planned;
+  }
+
+  private normalizeWorkingDir(dir?: string): string {
+    if (!dir) {
+      return ".";
+    }
+    const trimmed = dir.trim();
+    if (!trimmed || trimmed === ".") {
+      return ".";
+    }
+    return trimmed;
+  }
+
+  private resolveContextSetupCommands(
+    context: WorkflowContext,
+  ): SetupCommandInsight[] {
+    const raw = context.getVariable("context_setup_commands");
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    return raw.filter((entry): entry is SetupCommandInsight => {
+      return (
+        typeof entry === "object" &&
+        entry !== null &&
+        Array.isArray((entry as SetupCommandInsight).commands) &&
+        (entry as SetupCommandInsight).commands.length > 0
+      );
+    });
+  }
+
+  private async snapshotGitStatus(
+    repoRoot: string,
+  ): Promise<Map<string, string>> {
+    const result = await runGit(["status", "--porcelain"], { cwd: repoRoot });
+    const statuses = new Map<string, string>();
+    result.stdout
+      .split("\n")
+      .map((line) => line.replace(/\r$/, ""))
+      .filter((line) => line.trim().length > 0)
+      .forEach((line) => {
+        const status = line.slice(0, 2);
+        const file = line.slice(3).trim();
+        if (file) {
+          statuses.set(file, status);
+        }
+      });
+    return statuses;
+  }
+
+  private async collectGitChanges(
+    repoRoot: string,
+    baseline: Map<string, string>,
+  ): Promise<GitStatusEntry[]> {
+    const current = await this.snapshotGitStatus(repoRoot);
+    const changes: GitStatusEntry[] = [];
+    current.forEach((status, file) => {
+      const previous = baseline.get(file);
+      if (previous === status) {
+        return;
+      }
+      changes.push({
+        path: file,
+        status,
+        untracked: status === "??",
+      });
+    });
+    return changes;
+  }
+
+  private async revertTrackedChanges(
+    repoRoot: string,
+    changes: GitStatusEntry[],
+  ): Promise<string[]> {
+    const reverted: string[] = [];
+    for (const change of changes) {
+      try {
+        await runGit(["checkout", "--", change.path], { cwd: repoRoot });
+        reverted.push(change.path);
+      } catch {
+        // ignore failures to revert so tooling setup keeps moving
+      }
+    }
+    return reverted;
+  }
+
+  private resolveCommandCwd(repoRoot: string, dir: string): string {
+    if (!dir || dir === ".") {
+      return repoRoot;
+    }
+    if (path.isAbsolute(dir)) {
+      return dir;
+    }
+    return path.join(repoRoot, dir);
+  }
+
+  private async executeLegacyNodeSetup(
+    context: WorkflowContext,
+    config: TestToolingSetupConfig,
+    testCommand: string,
+  ): Promise<StepResult> {
+    const repoRoot = context.repoRoot;
     const packageJsonPath = path.join(repoRoot, "package.json");
     if (!(await this.pathExists(packageJsonPath))) {
       return this.successResult({
@@ -89,19 +290,24 @@ export class TestToolingSetupStep extends WorkflowStep {
         repoRoot,
         config,
       );
-      const installCommand = config.installCommand?.trim() || lockfileAwareCommand;
-      await this.runCommand(installCommand, repoRoot, config.additionalEnv);
-      executedCommands.push(installCommand);
+      const adjusted = await this.adjustCommandForLockfile(
+        config.installCommand?.trim() || lockfileAwareCommand,
+        repoRoot,
+      );
+      await this.runCommand(adjusted.command, repoRoot, config.additionalEnv);
+      executedCommands.push(adjusted.note
+        ? `${adjusted.command} (${adjusted.note})`
+        : adjusted.command);
     }
 
     const skipped = executedCommands.length === 0;
 
     context.setVariable("test_tooling_initialized", !skipped);
     context.setVariable("test_tooling_commands", executedCommands);
-    context.setVariable(
-      "test_tooling_missing_dependencies",
-      missingDeps,
-    );
+    context.setVariable("test_tooling_missing_dependencies", missingDeps);
+    context.setVariable("test_tooling_git_changes", []);
+    context.setVariable("test_tooling_reverted_paths", []);
+    context.setVariable("test_tooling_context_setup", false);
 
     return this.successResult({
       executedCommands,
@@ -228,9 +434,9 @@ export class TestToolingSetupStep extends WorkflowStep {
   ): Promise<string> {
     const lockfilePath = await this.findLockfile(repoRoot);
     if (lockfilePath) {
-      return config.ciCommand?.trim() || "npm ci";
+      return config.ciCommand?.trim() || "npm install --no-package-lock";
     }
-    return "npm install";
+    return "npm install --no-package-lock";
   }
 
   private async findLockfile(repoRoot: string): Promise<string | null> {
@@ -276,5 +482,106 @@ export class TestToolingSetupStep extends WorkflowStep {
     } catch {
       return false;
     }
+  }
+
+  private async adjustCommandForLockfile(
+    command: string,
+    cwd: string,
+  ): Promise<AdjustedCommand> {
+    if (!this.isNpmCiCommand(command)) {
+      return { command };
+    }
+
+    const lockfileSynced = await this.isLockfileSynced(cwd);
+    if (lockfileSynced) {
+      return { command };
+    }
+
+    const fallback = this.swapNpmCiWithInstall(command);
+    return {
+      command: fallback,
+      note: "lockfile out of sync, swapped npm ci with npm install --no-package-lock",
+    };
+  }
+
+  private isNpmCiCommand(command: string): boolean {
+    return /^\s*npm\s+ci\b/i.test(command);
+  }
+
+  private swapNpmCiWithInstall(command: string): string {
+    return command.replace(/npm\s+ci\b/i, "npm install --no-package-lock");
+  }
+
+  private async isLockfileSynced(cwd: string): Promise<boolean> {
+    const packageJsonPath = path.join(cwd, "package.json");
+    const lockfilePath = await this.findLockfile(cwd);
+
+    if (!(await this.pathExists(packageJsonPath)) || !lockfilePath) {
+      return true;
+    }
+
+    try {
+      const [packageJson, lockfile] = await Promise.all([
+        this.readPackageJson<Record<string, any>>(packageJsonPath),
+        this.readPackageJson<Record<string, any>>(lockfilePath),
+      ]);
+      const lockRoot = this.getLockfileRoot(lockfile);
+      if (!lockRoot) {
+        return true;
+      }
+
+      return (
+        this.dependencyMapsMatch(
+          packageJson.dependencies || {},
+          lockRoot.dependencies || {},
+        ) &&
+        this.dependencyMapsMatch(
+          packageJson.devDependencies || {},
+          lockRoot.devDependencies || {},
+        )
+      );
+    } catch {
+      return true;
+    }
+  }
+
+  private getLockfileRoot(lockfile: Record<string, any>): Record<string, any> | null {
+    if (
+      lockfile &&
+      typeof lockfile === "object" &&
+      lockfile.packages &&
+      typeof lockfile.packages === "object"
+    ) {
+      const root = lockfile.packages[""];
+      if (root && typeof root === "object") {
+        return root;
+      }
+    }
+
+    if (lockfile && typeof lockfile === "object") {
+      return lockfile;
+    }
+
+    return null;
+  }
+
+  private dependencyMapsMatch(
+    expected: Record<string, string>,
+    actual: Record<string, string>,
+  ): boolean {
+    const keys = new Set([
+      ...Object.keys(expected || {}),
+      ...Object.keys(actual || {}),
+    ]);
+
+    for (const key of keys) {
+      const expectedValue = (expected?.[key] ?? "").trim();
+      const actualValue = (actual?.[key] ?? "").trim();
+      if (expectedValue !== actualValue) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

@@ -82,6 +82,14 @@ vi.mock("../src/scanRepo.js", () => ({
   ]),
 }));
 
+vi.mock("../src/workflows/helpers/testRunner.js", () => ({
+  runTestCommandWithWorker: vi.fn().mockResolvedValue({
+    stdout: "✓ 5 passed\nTests: 5 passed, 5 total\n",
+    stderr: "",
+    durationMs: 100,
+  }),
+}));
+
 vi.mock("fs/promises", () => ({
   default: {
     access: vi.fn().mockRejectedValue(new Error("File not found")),
@@ -96,6 +104,7 @@ vi.mock("fs/promises", () => ({
 }));
 
 vi.mock("fs", () => ({
+  existsSync: vi.fn().mockReturnValue(false),
   promises: {
     stat: vi.fn().mockResolvedValue({
       isDirectory: () => true,

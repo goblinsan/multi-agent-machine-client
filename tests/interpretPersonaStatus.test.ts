@@ -99,7 +99,7 @@ describe("interpretPersonaStatus - robust status parsing", () => {
       const response = "{ status: pass }";
       const result = interpretPersonaStatus(response);
 
-      expect(result.status).toBe("unknown");
+      expect(result.status).toBe("pass");
     });
 
     it("should handle text with no status indicators", () => {
@@ -196,6 +196,74 @@ describe("interpretPersonaStatus - robust status parsing", () => {
         { persona: "coordination", statusRequired: false },
       );
       expect(result.status).toBe("fail");
+    });
+  });
+
+  describe("<think> tag handling (Qwen3.5 models)", () => {
+    it("should strip <think> tags and extract JSON status", () => {
+      const response =
+        '<think>Let me evaluate this plan carefully...</think>{ "status": "pass" }';
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should handle <think> tags with braces inside thinking", () => {
+      const response =
+        '<think>The user wants { "type": "review" } but I need to check</think>{ "status": "fail", "details": "Missing tests" }';
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should handle <think> tags with multiline content", () => {
+      const response = [
+        "<think>",
+        "Let me analyze this code carefully.",
+        "The implementation looks solid.",
+        "</think>",
+        '{ "status": "pass", "details": "Code looks good" }',
+      ].join("\n");
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should handle <think> tags wrapping JSON in code fence", () => {
+      const response = [
+        "<think>Thinking about this...</think>",
+        "```json",
+        '{ "status": "pass" }',
+        "```",
+      ].join("\n");
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+  });
+
+  describe("prose status patterns (non-JSON responses)", () => {
+    it("should detect **Evaluation Status:** pass in markdown", () => {
+      const response =
+        "**Evaluation Status:** pass\n\nThe plan is well-structured.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should detect Evaluation Status: fail", () => {
+      const response =
+        "Evaluation Status: fail\n\nThe plan has critical gaps.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should detect **Status:** pass with markdown bold", () => {
+      const response = "**Status:** pass\n\nAll checks satisfied.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should detect Evaluation status: approved (case-insensitive)", () => {
+      const response =
+        "Evaluation status: approved\n\nThe implementation meets requirements.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
     });
   });
 });

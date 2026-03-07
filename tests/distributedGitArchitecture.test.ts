@@ -515,8 +515,8 @@ describe("Distributed Git Architecture - CRITICAL REQUIREMENTS", () => {
         /context_analysis:[\s\S]*?payload:([\s\S]*?)(?=\n {2}\w)/,
       );
       expect(contextTemplateSection).toBeDefined();
-      expect(contextTemplateSection?.[0]).toContain("context_snapshot_json");
-      expect(contextTemplateSection?.[0]).toContain("context_files_ndjson");
+      expect(contextTemplateSection?.[0]).toContain("context_snapshot_slim");
+      expect(contextTemplateSection?.[0]).toContain("context_summary_md");
       expect(contextTemplateSection?.[0]).toContain("context_metadata");
     });
   });

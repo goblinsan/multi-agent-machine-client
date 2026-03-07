@@ -185,6 +185,10 @@ export class WorkflowCoordinator {
 
       const results = [];
       let iterationCount = 0;
+      const taskAttemptCounts = new Map<string, number>();
+      const maxTaskRetries = this.isTestEnv()
+        ? 2
+        : (cfg.coordinatorMaxTaskRetries ?? 3);
 
       const maxIterations = this.isTestEnv()
         ? 2
@@ -273,6 +277,41 @@ export class WorkflowCoordinator {
         let batchFailed = false;
 
         if (task) {
+          const taskId = String(task?.id ?? "unknown");
+          const priorAttempts = taskAttemptCounts.get(taskId) ?? 0;
+
+          if (priorAttempts >= maxTaskRetries) {
+            logger.warn(
+              "Skipping task - exceeded per-task retry limit",
+              {
+                workflowId,
+                projectId,
+                taskId,
+                attempts: priorAttempts,
+                maxTaskRetries,
+              },
+            );
+            const allExhausted = currentPendingTasks.every((t) => {
+              const id = String(t?.id ?? "unknown");
+              return (taskAttemptCounts.get(id) ?? 0) >= maxTaskRetries;
+            });
+            if (allExhausted) {
+              logger.warn(
+                "All pending tasks exhausted retry limits",
+                {
+                  workflowId,
+                  projectId,
+                  pendingTaskCount: currentPendingTasks.length,
+                  maxTaskRetries,
+                },
+              );
+              break;
+            }
+            continue;
+          }
+
+          taskAttemptCounts.set(taskId, priorAttempts + 1);
+
           try {
             const result = await this.processTask(transport, task, {
               workflowId,
@@ -288,23 +327,26 @@ export class WorkflowCoordinator {
 
             if (!result.success) {
               batchFailed = true;
-              abortedDueToFailure = true;
-              abortMetadata = {
-                taskId: task?.id,
-                error: result.error,
-                failedStep: result.failedStep,
-              };
               logger.error(
-                "Aborting coordinator loop due to workflow failure",
+                "Workflow failure for task",
                 {
                   workflowId,
                   projectId,
                   taskId: task?.id,
                   failedStep: result.failedStep,
                   error: result.error,
+                  failFast: cfg.coordinatorFailFast,
                 },
               );
-              break;
+              if (cfg.coordinatorFailFast) {
+                abortedDueToFailure = true;
+                abortMetadata = {
+                  taskId: task?.id,
+                  error: result.error,
+                  failedStep: result.failedStep,
+                };
+                break;
+              }
             }
           } catch (error: any) {
             logger.error(`Failed to process task ${task?.id}`, {
@@ -318,12 +360,14 @@ export class WorkflowCoordinator {
               error: error.message,
             });
             batchFailed = true;
-            abortedDueToFailure = true;
-            abortMetadata = {
-              taskId: task?.id,
-              error: error.message,
-            };
-            break;
+            if (cfg.coordinatorFailFast) {
+              abortedDueToFailure = true;
+              abortMetadata = {
+                taskId: task?.id,
+                error: error.message,
+              };
+              break;
+            }
           }
         }
 
