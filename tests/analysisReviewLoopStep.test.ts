@@ -208,6 +208,43 @@ describe("AnalysisReviewLoopStep", () => {
     });
   });
 
+  it("auto-passes early when reviewer gives identical feedback 3 times", async () => {
+    const context = buildContext();
+    const step = new AnalysisReviewLoopStep({
+      name: "analysis_loop",
+      type: "AnalysisReviewLoopStep",
+      config: {
+        analystPersona: "analyst",
+        reviewerPersona: "analysis-reviewer",
+        payload: {},
+        reviewPayload: {},
+        maxIterations: 5,
+      },
+    } as WorkflowStepConfig);
+
+    const responses: Array<{ persona: string; output: any }> = [];
+    for (let i = 0; i < 5; i++) {
+      responses.push({ persona: "analyst", output: { summary: `rev-${i}` } });
+      responses.push({
+        persona: "analysis-reviewer",
+        output: { status: "fail", reason: "still says investigate" },
+      });
+    }
+
+    personaExecuteMock.mockImplementation((_: WorkflowStepConfig) => {
+      const next = responses.shift();
+      if (!next) throw new Error("No mock response available");
+      return { status: "success", outputs: next.output };
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.analysis_iterations).toBe(3);
+    expect(result.outputs?.analysis_auto_pass).toBe(true);
+    expect(result.outputs?.analysis_review_status).toBe("pass");
+  });
+
   it("fails fast when analyst request fails", async () => {
     const context = buildContext();
     const step = new AnalysisReviewLoopStep({

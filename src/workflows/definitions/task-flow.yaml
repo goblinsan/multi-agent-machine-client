@@ -538,5 +538,6 @@ failure_handling:
 
 timeouts:
   context_request_timeout: 600000
+  planning_loop_timeout: 600000
   implementation_loop_timeout: 900000
   default_step: 300000

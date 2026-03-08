@@ -143,6 +143,8 @@ const PASS_STATUS_KEYWORDS = new Set([
   "ok",
   "green",
   "lgtm",
+  "complete",
+  "completed",
 ]);
 const FAIL_STATUS_KEYWORDS = new Set([
   "fail",

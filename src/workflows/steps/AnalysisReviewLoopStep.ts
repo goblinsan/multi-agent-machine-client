@@ -274,11 +274,34 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
         break;
       }
 
+      const currentFeedback = normalizeReviewFeedback(lastReview);
       reviewHistory.push({
         iteration,
         raw: lastReview,
-        normalized: normalizeReviewFeedback(lastReview),
+        normalized: currentFeedback,
       });
+
+      const staleFeedbackThreshold = Math.min(3, maxIterations);
+      if (reviewHistory.length >= staleFeedbackThreshold) {
+        const recent = reviewHistory.slice(-staleFeedbackThreshold);
+        const reasons = recent.map((r) => r.normalized?.reason ?? r.normalized?.text ?? "");
+        const allIdentical = reasons.every((r) => r === reasons[0] && r.length > 0);
+        if (allIdentical) {
+          autoPass = true;
+          finalStatus = "pass";
+          lastReview = wrapAutoPass(
+            lastReview,
+            iteration,
+            `Reviewer gave identical feedback ${staleFeedbackThreshold} times — auto-passing`,
+          );
+          context.logger.warn("Analysis auto-pass: repeated identical feedback", {
+            step: this.config.name,
+            iteration,
+            repeatedReason: reasons[0],
+          });
+          break;
+        }
+      }
 
       if (iteration >= maxIterations) {
         autoPass = true;
