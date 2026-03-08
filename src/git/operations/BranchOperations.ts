@@ -148,3 +148,93 @@ export async function checkoutBranchFromBase(
     await handleCheckoutError(repoRoot, newBranch, error);
   }
 }
+
+export async function mergeBranchToMain(
+  repoRoot: string,
+  sourceBranch: string,
+  targetBranch: string = "main",
+): Promise<{ merged: boolean; alreadyUpToDate: boolean }> {
+  guardWorkspaceMutation(
+    repoRoot,
+    `mergeBranchToMain ${sourceBranch} into ${targetBranch}`,
+  );
+
+  try {
+    await runGit(["fetch", "origin", targetBranch], { cwd: repoRoot });
+  } catch {
+    logger.debug("Could not fetch target branch from origin", {
+      repoRoot,
+      targetBranch,
+    });
+  }
+
+  try {
+    await runGit(["fetch", "origin", sourceBranch], { cwd: repoRoot });
+  } catch {
+    logger.debug("Could not fetch source branch from origin", {
+      repoRoot,
+      sourceBranch,
+    });
+  }
+
+  if (await branchExists(repoRoot, targetBranch)) {
+    await runGit(["checkout", targetBranch], { cwd: repoRoot });
+  } else if (await remoteBranchExists(repoRoot, targetBranch)) {
+    await runGit(["checkout", "-B", targetBranch, `origin/${targetBranch}`], {
+      cwd: repoRoot,
+    });
+  } else {
+    throw new Error(
+      `Target branch ${targetBranch} not found in repository ${repoRoot}`,
+    );
+  }
+
+  if (await remoteBranchExists(repoRoot, targetBranch)) {
+    try {
+      await runGit(["pull", "--ff-only", "origin", targetBranch], {
+        cwd: repoRoot,
+      });
+    } catch (pullErr) {
+      logger.warn("Pull failed on target branch, proceeding", {
+        repoRoot,
+        targetBranch,
+        error: pullErr,
+      });
+    }
+  }
+
+  try {
+    const mergeResult = await runGit(
+      ["merge", "--no-ff", sourceBranch, "-m", `Merge ${sourceBranch} into ${targetBranch}`],
+      { cwd: repoRoot },
+    );
+    const alreadyUpToDate = mergeResult.stdout?.includes("Already up to date");
+    logger.info("Branch merged successfully", {
+      repoRoot,
+      sourceBranch,
+      targetBranch,
+      alreadyUpToDate,
+    });
+
+    if (await remoteBranchExists(repoRoot, targetBranch)) {
+      await runGit(["push", "origin", targetBranch], { cwd: repoRoot });
+    }
+
+    return { merged: true, alreadyUpToDate: !!alreadyUpToDate };
+  } catch (mergeErr: any) {
+    logger.error("Merge failed, aborting", {
+      repoRoot,
+      sourceBranch,
+      targetBranch,
+      error: mergeErr.message,
+    });
+    try {
+      await runGit(["merge", "--abort"], { cwd: repoRoot });
+    } catch {
+      void 0;
+    }
+    throw new Error(
+      `Failed to merge ${sourceBranch} into ${targetBranch}: ${mergeErr.message}`,
+    );
+  }
+}

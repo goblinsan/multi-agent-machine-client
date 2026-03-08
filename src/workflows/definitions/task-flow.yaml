@@ -499,10 +499,19 @@ steps:
       project_id: "${projectId}"
       status: "done"
 
+  - name: merge_branch_to_main
+    type: GitOperationStep
+    description: "Merge feature branch back to main so subsequent tasks see completed work"
+    depends_on: ["mark_task_done"]
+    config:
+      operation: "mergeBranchToMain"
+      sourceBranch: "${branch}"
+      targetBranch: "main"
+
   - name: check_milestone_completion
     type: MilestoneStatusCheckStep
     description: "Check if milestone has remaining incomplete tasks"
-    depends_on: ["mark_task_done"]
+    depends_on: ["merge_branch_to_main"]
     config:
       check_type: "incomplete_tasks"
       include_cancelled: false

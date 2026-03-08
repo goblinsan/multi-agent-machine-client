@@ -9,6 +9,7 @@ export {
 export {
   resolveRepoFromPayload,
   checkoutBranchFromBase,
+  mergeBranchToMain,
 } from "./git/repository.js";
 export type { RepoResolution } from "./git/repository.js";
 

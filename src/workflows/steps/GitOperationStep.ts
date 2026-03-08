@@ -16,11 +16,14 @@ interface GitOperationConfig {
     | "commitAndPushPaths"
     | "verifyRemoteBranchHasDiff"
     | "ensureBranchPublished"
-    | "checkContextFreshness";
+    | "checkContextFreshness"
+    | "mergeBranchToMain";
   repoRoot?: string;
   baseBranch?: string;
   newBranch?: string;
   branch?: string;
+  sourceBranch?: string;
+  targetBranch?: string;
   message?: string;
   paths?: string[];
   taskId?: string | number;
@@ -344,6 +347,33 @@ export class GitOperationStep extends WorkflowStep {
           break;
         }
 
+        case "mergeBranchToMain": {
+          const sourceBranch =
+            this.resolveVariable(config.sourceBranch, context) ||
+            context.getVariable("branch") ||
+            newBranch;
+          const targetBranch =
+            this.resolveVariable(config.targetBranch, context) ||
+            baseBranch;
+
+          logger.info("Merging branch to main", {
+            repoRoot,
+            sourceBranch,
+            targetBranch,
+            workflowId: context.workflowId,
+          });
+
+          result = await gitUtils.mergeBranchToMain(
+            repoRoot,
+            sourceBranch,
+            targetBranch,
+          );
+
+          context.setVariable("merge_completed", true);
+          context.setVariable("merge_result", result);
+          break;
+        }
+
         default:
           throw new Error(`Unsupported git operation: ${operation}`);
       }
@@ -413,6 +443,7 @@ export class GitOperationStep extends WorkflowStep {
       "verifyRemoteBranchHasDiff",
       "ensureBranchPublished",
       "checkContextFreshness",
+      "mergeBranchToMain",
     ];
     if (config.operation && !validOperations.includes(config.operation)) {
       errors.push(

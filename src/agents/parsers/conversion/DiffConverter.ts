@@ -87,6 +87,12 @@ export function parseDiffBlock(block: DiffBlock): Array<UpsertOp | DeleteOp> {
             path: currentFile,
             content: fileContent,
           });
+        } else if (hunks.length > 0) {
+          ops.push({
+            action: "upsert",
+            path: currentFile,
+            hunks,
+          });
         }
       } else if (hunks.length > 0) {
         ops.push({
