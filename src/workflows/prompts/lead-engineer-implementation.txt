@@ -36,6 +36,9 @@ Execution rules:
 2. Output ONLY unified diffs plus the `Changed Files:` list and `Commit Message:` line, as described in the system prompt.
 3. If you cannot fix the validation errors, explicitly explain why in place of a diff.
 4. Keep edits minimal and scoped to resolving the validation errors; do not modify other files or artifacts.
+{{#if implementation_prefer_full_file}}
+5. IMPORTANT: Previous diff patches have been corrupting this file. For any config/JSON file in the validation errors, output the COMPLETE file content as a diff from /dev/null (delete all old lines and add all new lines) rather than a partial patch. This ensures the file is written correctly from scratch.
+{{/if}}
 {{/if}}
 
 {{#unless implementation_config_validation_summary}}

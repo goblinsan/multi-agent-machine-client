@@ -236,7 +236,7 @@ const personaRetryBackoffIncrementMs = parseDurationMs(
 );
 
 const infoRequestMaxIterations = Number(
-  process.env.INFO_REQUEST_MAX_ITERATIONS || 10,
+  process.env.INFO_REQUEST_MAX_ITERATIONS || 5,
 );
 const infoRequestMaxRequestsPerIteration = Number(
   process.env.INFO_REQUEST_MAX_REQUESTS_PER_ITERATION || 3,
@@ -246,6 +246,9 @@ const infoRequestMaxUniqueSources = Number(
 );
 const infoRequestDuplicateIterationsBeforeForce = Number(
   process.env.INFO_REQUEST_DUPLICATE_ITERATIONS_BEFORE_FORCE || 2,
+);
+const infoRequestForceSynthesisAfter = Number(
+  process.env.INFO_REQUEST_FORCE_SYNTHESIS_AFTER || 3,
 );
 const infoRequestDenyHostsFile =
   process.env.INFO_REQUEST_DENY_HOSTS_FILE || undefined;
@@ -396,6 +399,7 @@ export const cfg = {
     maxRequestsPerIteration: infoRequestMaxRequestsPerIteration,
     maxUniqueSources: infoRequestMaxUniqueSources,
     duplicateIterationsBeforeForce: infoRequestDuplicateIterationsBeforeForce,
+    forceSynthesisAfterIterations: infoRequestForceSynthesisAfter,
     denyHosts: infoRequestDenyHosts,
     maxHttpBytes: infoRequestMaxHttpBytes,
     maxFileBytes: infoRequestMaxFileBytes,

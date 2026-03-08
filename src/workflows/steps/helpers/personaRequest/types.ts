@@ -11,6 +11,7 @@ export interface PersonaRequestConfig {
   maxInformationIterations?: number;
   maxInformationSources?: number;
   duplicateRequestForceIterations?: number;
+  forceSynthesisAfterIterations?: number;
 }
 
 export interface PersonaRequestContextPayload {

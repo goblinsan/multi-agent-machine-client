@@ -316,13 +316,14 @@ steps:
     type: SubWorkflowStep
     description: "PM prioritization and bulk task creation for QA failures (unified pattern)"
     depends_on: ["qa_request", "load_existing_tasks"]
-    condition: "${qa_request_status} == 'fail' || ${qa_request_status} == 'unknown'"
+    condition: "${qa_request_status} == 'fail'"
     config:
       workflow: "review-failure-handling"
       inputs:
         review_type: "qa"
         review_result: "${qa_request_result}"
         review_status: "${qa_request_status}"
+        pre_qa_test_error: "${pre_qa_test_error || ''}"
         milestone_context: "${milestone}"
         task: ${task}
         parent_task_id: "${taskId}"
@@ -399,13 +400,13 @@ steps:
   - template: security_review
     name: security_request
     depends_on: ["code_review_request"]
-    condition: "${code_review_request_status} != 'fail'"
+    condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail'"
 
   - name: commit_security_result
     type: GitArtifactStep
     description: "Commit security review result to .ma/tasks/{id}/reviews/security.json"
     depends_on: ["security_request"]
-    condition: "${code_review_request_status} != 'fail'"
+    condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail'"
     config:
       source_output: "security_request_result"
       artifact_path: ".ma/tasks/${task.id}/reviews/security.json"
@@ -445,13 +446,13 @@ steps:
   - template: devops_review
     name: devops_request
     depends_on: ["security_request"]
-    condition: "${security_request_status} != 'fail'"
+    condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail'"
 
   - name: commit_devops_result
     type: GitArtifactStep
     description: "Commit DevOps review result to .ma/tasks/{id}/reviews/devops.json"
     depends_on: ["devops_request"]
-    condition: "${security_request_status} != 'fail'"
+    condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail'"
     config:
       source_output: "devops_request_result"
       artifact_path: ".ma/tasks/${task.id}/reviews/devops.json"
@@ -492,7 +493,7 @@ steps:
     type: SimpleTaskStatusStep
     description: "Mark task as completed on dashboard when all reviews pass"
     depends_on: ["devops_request"]
-    condition: "${devops_request_status} != 'fail'"
+    condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'"
     config:
       task_id: "${taskId}"
       project_id: "${projectId}"
@@ -537,4 +538,5 @@ failure_handling:
 
 timeouts:
   context_request_timeout: 600000
+  implementation_loop_timeout: 900000
   default_step: 300000

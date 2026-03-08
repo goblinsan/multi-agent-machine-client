@@ -188,7 +188,7 @@ steps:
   - name: mark_still_blocked
     type: SimpleTaskStatusStep
     depends_on: ["validate_unblock"]
-    condition: "validate_unblock_status != 'pass' && validate_unblock.status != 'pass'"
+    condition: "dependency_status.allResolved == true && validate_unblock_status != 'pass' && validate_unblock.status != 'pass'"
     config:
       status: "blocked"
       comment: "Unblock attempt ${blocked_attempt_count} failed. Will retry."

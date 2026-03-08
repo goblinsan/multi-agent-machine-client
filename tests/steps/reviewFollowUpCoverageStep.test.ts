@@ -95,6 +95,38 @@ describe("ReviewFollowUpCoverageStep", () => {
 		expect(result.status).toBe("success");
 	});
 
+	it("allows QA flow when duplicate-dropped tasks cover test remediation", async () => {
+		const step = new ReviewFollowUpCoverageStep({
+			name: "enforce_follow_up_coverage",
+			type: "ReviewFollowUpCoverageStep",
+			config: {
+				follow_up_tasks: [],
+				dropped_tasks: [
+					{
+						title: "Qa Follow_up: qa failure (HIGH)",
+						reason: "duplicate_existing_task",
+					},
+				],
+				review_type: "qa",
+				normalized_review: {
+					reviewType: "qa",
+					hasBlockingIssues: true,
+					blockingIssues: [
+						{
+							title: "Tests missing",
+							description: "QA cannot run tests because Vitest is not installed",
+							severity: "high",
+							blocking: true,
+						},
+					],
+				},
+			},
+		});
+
+		const result = await step.execute(context);
+		expect(result.status).toBe("success");
+	});
+
 	it("synthesizes normalized blocking follow-ups with severity-aware metadata", async () => {
 		const step = new ReviewFollowUpCoverageStep({
 			name: "enforce_follow_up_coverage",

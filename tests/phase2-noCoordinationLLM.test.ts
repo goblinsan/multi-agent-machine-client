@@ -137,6 +137,7 @@ describe("Phase 2: Remove Coordination Persona LLM Call", () => {
 
       vi.spyOn(coordinator, "fetchProjectTasks")
         .mockResolvedValueOnce(mockTasks)
+        .mockResolvedValueOnce(mockTasks)
         .mockResolvedValueOnce([]);
 
       const msg = { workflow_id: "wf-test", project_id: "1" };
@@ -182,6 +183,7 @@ describe("Phase 2: Remove Coordination Persona LLM Call", () => {
       coordinator = new WorkflowCoordinator(mockEngine as any);
 
       vi.spyOn(coordinator, "fetchProjectTasks")
+        .mockResolvedValueOnce(mockTasks)
         .mockResolvedValueOnce(mockTasks)
         .mockResolvedValueOnce([]);
 
@@ -241,6 +243,7 @@ describe("Phase 2: Remove Coordination Persona LLM Call", () => {
       coordinator = new WorkflowCoordinator(mockEngine as any);
 
       vi.spyOn(coordinator, "fetchProjectTasks")
+        .mockResolvedValueOnce(mockTasks)
         .mockResolvedValueOnce(mockTasks)
         .mockResolvedValueOnce([]);
 

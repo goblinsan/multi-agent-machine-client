@@ -19,7 +19,7 @@ export interface TestRunnerOptions {
   cwd: string;
   timeoutMs: number;
   idleTimeoutMs?: number;
-  env?: NodeJS.ProcessEnv;
+  env?: Record<string, string | undefined>;
 }
 
 export interface TestRunnerResult {

@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   WorkflowEngine,
   type WorkflowDefinition,
 } from "../src/workflows/WorkflowEngine.js";
 import type { MessageTransport } from "../src/transport/MessageTransport.js";
+
+vi.mock("../src/gitUtils.js");
 
 const mockTransport = {
   connect: async () => {},

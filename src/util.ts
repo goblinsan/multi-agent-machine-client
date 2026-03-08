@@ -92,10 +92,20 @@ export function shouldUploadDashboardFlag(value: any): boolean {
   return Boolean(value);
 }
 
+const HEAVY_PERSONA_TIMEOUT_DEFAULTS: Record<string, number> = {
+  context: 180_000,
+  "lead-engineer": 300_000,
+  architect: 240_000,
+  "implementation-planner": 240_000,
+  "tester-qa": 180_000,
+};
+
 export function personaTimeoutMs(persona: string, cfg: any) {
   const key = (persona || "").toLowerCase();
   if (key && cfg.personaTimeouts[key] !== undefined)
     return cfg.personaTimeouts[key];
+  if (key && HEAVY_PERSONA_TIMEOUT_DEFAULTS[key] !== undefined)
+    return HEAVY_PERSONA_TIMEOUT_DEFAULTS[key];
   return cfg.personaDefaultTimeoutMs;
 }
 

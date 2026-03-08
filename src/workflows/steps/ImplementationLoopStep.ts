@@ -14,6 +14,7 @@ import {
   PlanKeyFileGuardStep,
   PlanKeyFileGuardConfig,
 } from "./PlanKeyFileGuardStep.js";
+import { runGit } from "../../gitUtils.js";
 import {
   ConfigValidationError,
   identifyConfigFiles,
@@ -74,6 +75,10 @@ export class ImplementationLoopStep extends WorkflowStep {
         "implementation_guard_missing_summary",
         missingFiles.join(", "),
       );
+
+      if (attempt === maxAttempts) {
+        context.setVariable("implementation_prefer_full_file", true);
+      }
 
       const personaResult = await personaStep.execute(context);
       if (personaResult.status !== "success") {
@@ -141,6 +146,7 @@ export class ImplementationLoopStep extends WorkflowStep {
         if (attempt >= maxAttempts) {
           break;
         }
+        await this.resetCorruptedFiles(context, validationErrors);
         continue;
       }
 
@@ -352,6 +358,26 @@ export class ImplementationLoopStep extends WorkflowStep {
     return errors
       .map((entry) => `${entry.file}: ${entry.reason}`)
       .join("; ");
+  }
+
+  private async resetCorruptedFiles(
+    context: WorkflowContext,
+    errors: ConfigValidationError[],
+  ): Promise<void> {
+    const files = errors.map((e) => e.file);
+    try {
+      await runGit(["checkout", "HEAD~1", "--", ...files], { cwd: context.repoRoot });
+      context.logger.info("Reset corrupted config files to pre-edit state", {
+        workflowId: context.workflowId,
+        files,
+      });
+    } catch (err) {
+      context.logger.warn("Failed to reset corrupted config files", {
+        workflowId: context.workflowId,
+        files,
+        error: String(err),
+      });
+    }
   }
 
   private syncStepOutput(

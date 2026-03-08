@@ -186,6 +186,7 @@ export class WorkflowCoordinator {
       const results = [];
       let iterationCount = 0;
       const taskAttemptCounts = new Map<string, number>();
+      const exhaustedTaskIds = new Set<string>();
       const maxTaskRetries = this.isTestEnv()
         ? 2
         : (cfg.coordinatorMaxTaskRetries ?? 3);
@@ -224,9 +225,13 @@ export class WorkflowCoordinator {
           )
           .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));
 
+        const actionableTasks = currentPendingTasks.filter(
+          (task) => !exhaustedTaskIds.has(String(task?.id ?? "unknown")),
+        );
+
         const dependencySelection =
           this.dependencyQueueManager.selectNextDependencyTask(
-            currentPendingTasks,
+            actionableTasks,
           );
 
         logger.info("Fetched tasks debug", {
@@ -234,6 +239,8 @@ export class WorkflowCoordinator {
           projectId,
           totalFetchedTasks: currentTasks.length,
           pendingTasksCount: currentPendingTasks.length,
+          actionableTasksCount: actionableTasks.length,
+          exhaustedTaskIds: Array.from(exhaustedTaskIds),
           pendingTaskIds: currentPendingTasks.map((t) => t?.id).filter(Boolean),
           pendingTaskStatuses: currentPendingTasks.map((t) => ({
             id: t?.id,
@@ -242,13 +249,25 @@ export class WorkflowCoordinator {
           dependencyQueueSnapshot: dependencySelection?.queueSnapshot,
         });
 
-        if (currentPendingTasks.length === 0) {
-          logger.info("All tasks completed", {
-            workflowId,
-            projectId,
-            iterationCount,
-            totalTasksProcessed: results.length,
-          });
+        if (actionableTasks.length === 0) {
+          if (exhaustedTaskIds.size > 0 && currentPendingTasks.length > 0) {
+            logger.warn("All remaining pending tasks exhausted retry limits", {
+              workflowId,
+              projectId,
+              iterationCount,
+              exhaustedTaskCount: exhaustedTaskIds.size,
+              exhaustedTaskIds: Array.from(exhaustedTaskIds),
+              pendingTaskCount: currentPendingTasks.length,
+              maxTaskRetries,
+            });
+          } else {
+            logger.info("All tasks completed", {
+              workflowId,
+              projectId,
+              iterationCount,
+              totalTasksProcessed: results.length,
+            });
+          }
           break;
         }
 
@@ -256,12 +275,13 @@ export class WorkflowCoordinator {
           workflowId,
           projectId,
           pendingTaskCount: currentPendingTasks.length,
+          actionableTaskCount: actionableTasks.length,
           pendingTaskIds: currentPendingTasks.map((t) => t?.id).filter(Boolean),
           dependencyQueueHead: dependencySelection?.selectedTask?.id ?? null,
           dependencyQueueParent: dependencySelection?.parentTaskId ?? null,
         });
 
-        const task = dependencySelection?.selectedTask || currentPendingTasks[0];
+        const task = dependencySelection?.selectedTask || actionableTasks[0];
 
         if (dependencySelection?.selectedTask) {
           logger.info("Dependency queue prioritized task", {
@@ -282,7 +302,7 @@ export class WorkflowCoordinator {
 
           if (priorAttempts >= maxTaskRetries) {
             logger.warn(
-              "Skipping task - exceeded per-task retry limit",
+              "Task exceeded per-task retry limit - marking exhausted",
               {
                 workflowId,
                 projectId,
@@ -291,26 +311,13 @@ export class WorkflowCoordinator {
                 maxTaskRetries,
               },
             );
-            const allExhausted = currentPendingTasks.every((t) => {
-              const id = String(t?.id ?? "unknown");
-              return (taskAttemptCounts.get(id) ?? 0) >= maxTaskRetries;
-            });
-            if (allExhausted) {
-              logger.warn(
-                "All pending tasks exhausted retry limits",
-                {
-                  workflowId,
-                  projectId,
-                  pendingTaskCount: currentPendingTasks.length,
-                  maxTaskRetries,
-                },
-              );
-              break;
-            }
+            exhaustedTaskIds.add(taskId);
             continue;
           }
 
           taskAttemptCounts.set(taskId, priorAttempts + 1);
+
+          const preStatus = this.taskFetcher.normalizeTaskStatus(task?.status);
 
           try {
             const result = await this.processTask(transport, task, {
@@ -324,6 +331,38 @@ export class WorkflowCoordinator {
               force_rescan: payload?.force_rescan || false,
             });
             results.push(result);
+
+            if (result.success) {
+              try {
+                const refreshedTasks =
+                  await this.fetchProjectTasks(projectId);
+                const refreshedTask = refreshedTasks.find(
+                  (t: any) => String(t?.id) === taskId,
+                );
+                const postStatus = refreshedTask
+                  ? this.taskFetcher.normalizeTaskStatus(refreshedTask.status)
+                  : preStatus;
+
+                if (postStatus === preStatus) {
+                  logger.warn(
+                    "Task status unchanged after successful workflow - marking exhausted",
+                    {
+                      workflowId,
+                      projectId,
+                      taskId,
+                      status: preStatus,
+                      attempt: priorAttempts + 1,
+                    },
+                  );
+                  exhaustedTaskIds.add(taskId);
+                }
+              } catch {
+                logger.warn(
+                  "Failed to re-fetch task after workflow, skipping status-change check",
+                  { taskId },
+                );
+              }
+            }
 
             if (!result.success) {
               batchFailed = true;

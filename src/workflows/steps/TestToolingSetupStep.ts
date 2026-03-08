@@ -52,7 +52,7 @@ export class TestToolingSetupStep extends WorkflowStep {
     const commandVariable =
       config.testCommandVariable?.trim() || "detected_test_command";
     const testCommand = context.getVariable(commandVariable);
-    const repoRoot = context.repoRoot;
+    const _repoRoot = context.repoRoot;
 
     if (!this.isRunnableCommand(testCommand)) {
       return this.successResult({
@@ -231,7 +231,7 @@ export class TestToolingSetupStep extends WorkflowStep {
         await runGit(["checkout", "--", change.path], { cwd: repoRoot });
         reverted.push(change.path);
       } catch {
-        // ignore failures to revert so tooling setup keeps moving
+        void 0;
       }
     }
     return reverted;

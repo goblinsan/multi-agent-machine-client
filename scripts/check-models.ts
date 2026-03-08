@@ -62,7 +62,7 @@ async function fetchAvailableModels(baseUrl: string): Promise<string[]> {
 }
 
 async function loadModel(baseUrl: string, identifier: string, contextLength: number): Promise<void> {
-  await execFileAsync("lms", ["load", identifier, "--gpu", "max", "-c", String(contextLength)], { timeout: 30000 });
+  await execFileAsync("lms", ["load", identifier, "--gpu", "max", "-c", String(contextLength)], { timeout: LOAD_TIMEOUT_MS });
 }
 
 async function unloadModel(_baseUrl: string, identifier: string): Promise<void> {
@@ -97,7 +97,6 @@ async function ensureServerRunning(baseUrl: string): Promise<void> {
 
   console.log("LM Studio server is not running. Attempting to start it...\n");
 
-  // Try the lms CLI first (starts server without opening the full GUI)
   let usedCli = false;
   try {
     await execFileAsync("lms", ["server", "start"], { timeout: 15000 });
@@ -108,7 +107,6 @@ async function ensureServerRunning(baseUrl: string): Promise<void> {
       console.log("  \u26A0\uFE0F  lms CLI not found — launching LM Studio app instead...");
       spawn("open", ["-a", "LM Studio"], { detached: true, stdio: "ignore" }).unref();
     } else {
-      // lms exists but returned an error (e.g. already starting) — still poll
       console.log(`  \u26A0\uFE0F  lms server start: ${cliErr.message?.trim() ?? cliErr.code}`);
       usedCli = true;
     }
@@ -152,11 +150,35 @@ async function waitUntilLoaded(
         return true;
       }
     } catch {
-      // server briefly unavailable during model swap — keep polling
+      void 0;
     }
   }
   process.stdout.write(" \u274C timed out\n");
   return false;
+}
+
+async function verifyContextLength(
+  baseUrl: string,
+  identifier: string,
+  expected: number,
+): Promise<boolean> {
+  try {
+    const all = await fetchModels(baseUrl);
+    const match = all.find(
+      (m) => m.id.toLowerCase().includes(identifier.toLowerCase()) || identifier.toLowerCase().includes(m.id.toLowerCase()),
+    ) as any;
+    if (!match) return false;
+    const actual = match.loaded_context_length;
+    if (typeof actual !== "number") return true;
+    if (actual < expected) {
+      console.log(`  \u26A0\uFE0F  Context length mismatch for "${identifier}": requested ${expected}, got ${actual}`);
+      return false;
+    }
+    console.log(`  \u2705  Context length verified: ${actual}`);
+    return true;
+  } catch {
+    return true;
+  }
 }
 
 async function main() {
@@ -199,7 +221,6 @@ async function main() {
   for (const m of loaded) console.log(`  \u2022 ${m}`);
   console.log();
 
-  // --unload <id>: unload a specific model by (partial) name
   if (unloadTarget) {
     const match = modelMatch(unloadTarget, loaded);
     if (!match) {
@@ -217,7 +238,6 @@ async function main() {
     process.exit(0);
   }
 
-  // --unload-unused: unload everything not needed by PERSONA_MODELS_JSON
   if (unloadUnused) {
     const extras = loaded.filter((l) => ![...needed].some((req) => l.toLowerCase().includes(req.toLowerCase())));
     if (extras.length === 0) {
@@ -267,18 +287,24 @@ async function main() {
         try {
           await unloadModel(baseUrl, currentlyLoaded);
           process.stdout.write(" \u2705\n");
+          await sleep(2000);
         } catch (err: any) {
           process.stdout.write(` \u274C  ${err.message}\n`);
         }
       }
       const identifier = modelMatch(req, available) ?? req;
-      process.stdout.write(`  \u25B6\uFE0F  Loading "${req}" (${identifier}) with context length ${contextLength}...`);
+      console.log(`  \u25B6\uFE0F  Loading "${req}" (${identifier}) with context length ${contextLength}...`);
       try {
         await loadModel(baseUrl, identifier, contextLength);
-        process.stdout.write(` \u2705\n`);
-      } catch (err: any) {
-        process.stdout.write(` \u274C  ${err.message}\n`);
+      } catch {
+        void 0;
       }
+      const ok = await waitUntilLoaded(baseUrl, identifier, req);
+      if (!ok) {
+        console.error(`  \u274C  "${req}" failed to load within timeout\n`);
+        process.exit(1);
+      }
+      await verifyContextLength(baseUrl, identifier, contextLength);
     }
     console.log("\nReload complete.\n");
     process.exit(0);
@@ -315,11 +341,16 @@ async function main() {
     console.log(`  \u25B6\uFE0F  Loading "${req}" (${identifier}) with context length ${contextLength}...`);
     try {
       await loadModel(baseUrl, identifier, contextLength);
-      console.log(`  \u2705  "${req}" loaded (context: ${contextLength})`);
-    } catch (err: any) {
-      console.log(`  \u274C  Load failed: ${err.message}`);
-      stillMissing.push(req);
+    } catch {
+      void 0;
     }
+    const ok = await waitUntilLoaded(baseUrl, identifier, req);
+    if (!ok) {
+      console.log(`  \u274C  "${req}" failed to load within timeout`);
+      stillMissing.push(req);
+      continue;
+    }
+    await verifyContextLength(baseUrl, identifier, contextLength);
   }
 
   console.log();

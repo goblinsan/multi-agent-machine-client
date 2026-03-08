@@ -16,6 +16,11 @@ import type {
   Hunk,
   UpsertOp,
 } from "../fileops.js";
+import {
+  reconstructContentFromHunks,
+  validateStructuredContent,
+  buildNewFileFromHunks,
+} from "./hunkHelpers.js";
 
 type ApplyEditOpsResult = {
   changed: string[];
@@ -111,6 +116,24 @@ export async function applyEditOps(
                 });
               }
               contentToWrite = u.content || reconstructContentFromHunks(baseLines, u.hunks);
+              const structuredError = validateStructuredContent(u.path, contentToWrite);
+              if (structuredError) {
+                logger.warn("Reconstructed content failed validation, preserving base file", {
+                  path: u.path,
+                  validationError: structuredError,
+                });
+                try {
+                  await writeDiagnostic(repoRoot, u.path, {
+                    reason: "reconstruction_validation_failure",
+                    path: u.path,
+                    validationError: structuredError,
+                    reconstructedSnippet: contentToWrite.slice(0, 500),
+                  });
+                } catch (diagErr) {
+                  logger.warn("Failed to write reconstruction diagnostic", { error: String(diagErr) });
+                }
+                contentToWrite = baseText;
+              }
             }
           } else {
             contentToWrite = buildNewFileFromHunks(u.hunks);
@@ -541,44 +564,4 @@ async function buildNoopResult(
     await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })
   ).stdout.trim();
   return { changed, branch, sha, noop: true };
-}
-
-function reconstructContentFromHunks(
-  baseLines: string[],
-  hunks: Hunk[],
-): string {
-  const lines = baseLines.slice();
-  let offset = 0;
-
-  for (const h of hunks) {
-    const oldStartIdx = h.oldStart - 1 + offset;
-    const oldCount = h.oldCount;
-
-    const newLines: string[] = [];
-    for (const l of h.lines) {
-      if (l.startsWith("+")) newLines.push(l.slice(1));
-      else if (l.startsWith(" ")) newLines.push(l.slice(1));
-      else if (!l.startsWith("-")) newLines.push(l);
-    }
-
-    const safeStart = Math.max(0, Math.min(oldStartIdx, lines.length));
-    const safeCount = Math.min(oldCount, lines.length - safeStart);
-    lines.splice(safeStart, safeCount, ...newLines);
-    offset += newLines.length - safeCount;
-  }
-
-  const content = lines.join("\n") + (lines.length ? "\n" : "");
-  return content;
-}
-
-function buildNewFileFromHunks(hunks: Hunk[]): string {
-  const newLines: string[] = [];
-  for (const h of hunks) {
-    for (const l of h.lines) {
-      if (l.startsWith("+")) newLines.push(l.slice(1));
-      else if (l.startsWith(" ")) newLines.push(l.slice(1));
-      else if (!l.startsWith("-")) newLines.push(l);
-    }
-  }
-  return newLines.join("\n") + (newLines.length ? "\n" : "");
 }

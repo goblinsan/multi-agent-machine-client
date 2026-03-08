@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { Minimatch } from "minimatch";
 
 import {
   StepResult,
@@ -108,6 +109,13 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
     const createdFiles: string[] = [];
 
     for (const relativePath of normalizedPlanFiles) {
+      if (this.isGlobPattern(relativePath)) {
+        const matches = await this.expandGlob(repoRoot, relativePath);
+        if (matches.length === 0) {
+          missingFiles.push(relativePath);
+        }
+        continue;
+      }
       const exists = await this.pathExists(path.join(repoRoot, relativePath));
       if (!exists) {
         if (autoCreate) {
@@ -239,6 +247,28 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
       .replace(/^\.\/+/, "")
       .replace(/\\/g, "/")
       .replace(/^\//, "");
+  }
+
+  private isGlobPattern(filePath: string): boolean {
+    return /[*?[{]/.test(filePath);
+  }
+
+  private async expandGlob(repoRoot: string, pattern: string): Promise<string[]> {
+    try {
+      const mm = new Minimatch(pattern, { dot: true });
+      const dirPrefix = pattern.split("/").reduce((acc, seg) => {
+        if (acc.done) return acc;
+        if (/[*?[{]/.test(seg)) return { ...acc, done: true };
+        return { parts: [...acc.parts, seg], done: false };
+      }, { parts: [] as string[], done: false }).parts.join("/");
+      const searchDir = path.join(repoRoot, dirPrefix);
+      const entries = await fs.readdir(searchDir, { recursive: true }).catch(() => [] as string[]);
+      return entries
+        .map((e) => path.posix.join(dirPrefix, String(e)))
+        .filter((f) => mm.match(f));
+    } catch {
+      return [];
+    }
   }
 
   private async pathExists(targetPath: string): Promise<boolean> {

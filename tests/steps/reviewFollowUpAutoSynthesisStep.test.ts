@@ -112,6 +112,45 @@ describe("ReviewFollowUpAutoSynthesisStep", () => {
     expect(task.priority).toBe("critical");
     expect(task.external_id).toContain("qa-legacy-auto");
   });
+
+  it("produces file-specific title and external_id from pre-QA test error issue", async () => {
+    const step = new ReviewFollowUpAutoSynthesisStep({
+      name: "auto_follow_up_synthesis",
+      type: "ReviewFollowUpAutoSynthesisStep",
+      config: {
+        review_type: "qa",
+        normalized_review: {
+          reviewType: "qa",
+          blockingIssues: [
+            {
+              id: "pre-qa-test-error-vitest.config.ts-L5",
+              title: "vitest.config.ts syntax error at line 5",
+              description: 'File vitest.config.ts has an error at line 5: Expected ":" but found "default"',
+              severity: "critical",
+              blocking: true,
+              labels: ["qa", "review-gap", "qa-gap", "pre-qa-test-error", "config-corruption"],
+              source: "qa",
+              file: "vitest.config.ts",
+              line: 5,
+            },
+          ],
+          hasBlockingIssues: true,
+        },
+        review_result: null,
+        external_id_base: "qa-91",
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.outputs?.auto_follow_up_tasks).toHaveLength(1);
+    const [task] = result.outputs?.auto_follow_up_tasks ?? [];
+    expect(task.title).toContain("vitest.config.ts");
+    expect(task.title).toContain("CRITICAL");
+    expect(task.priority).toBe("critical");
+    expect(task.external_id).toContain("pre-qa-test-error-vitest.config.ts-l5");
+    expect(task.labels).toContain("pre-qa-test-error");
+  });
 });
 
 describe("ReviewFollowUpMergeStep", () => {

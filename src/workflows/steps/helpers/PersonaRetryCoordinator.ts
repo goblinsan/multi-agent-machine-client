@@ -51,6 +51,7 @@ export class PersonaRetryCoordinator {
     let lastCorrId = "";
     let attempt = 0;
     let completion = null;
+    const allCorrIds: string[] = [];
 
     logger.info(`Making persona request`, {
       workflowId: params.workflowId,
@@ -88,6 +89,7 @@ export class PersonaRetryCoordinator {
 
       const corrId = await sendPersonaRequest(transport, params);
       lastCorrId = corrId;
+      allCorrIds.push(corrId);
 
       logger.info(`Persona request sent`, {
         workflowId: params.workflowId,
@@ -103,7 +105,7 @@ export class PersonaRetryCoordinator {
           transport,
           params.toPersona,
           params.workflowId,
-          corrId,
+          allCorrIds,
           currentTimeoutMs,
         );
       } catch (error: any) {

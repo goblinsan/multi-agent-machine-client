@@ -62,6 +62,7 @@ export interface NormalizedReviewPayload {
 export interface ReviewFollowUpCoverageConfig {
   review_result?: ReviewResult | null;
   follow_up_tasks?: FollowUpTask[];
+  dropped_tasks?: { title: string; reason: string }[];
   existing_tasks?: ExistingTask[];
   review_type?: string;
   normalized_review?: NormalizedReviewPayload | null;

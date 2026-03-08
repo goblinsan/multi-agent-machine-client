@@ -195,7 +195,7 @@ export class ContextExtractor {
     persona: string,
     payload: any,
     repo?: string,
-    branch?: string,
+    _branch?: string,
   ): Promise<string | null> {
     if (payload?.context_summary_md) {
       return payload.context_summary_md;

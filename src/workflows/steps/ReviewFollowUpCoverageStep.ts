@@ -35,6 +35,9 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
     const existingTasks = Array.isArray(config.existing_tasks)
       ? config.existing_tasks
       : [];
+    const droppedTasks = Array.isArray(config.dropped_tasks)
+      ? config.dropped_tasks
+      : [];
 
     enforcePMAcknowledgement(
       context,
@@ -42,6 +45,7 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
       baseFollowUps,
       reviewType,
       this.config.name,
+      droppedTasks,
     );
 
     const coverageItems = this.collectCoverageItems(
@@ -569,28 +573,14 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
     return "high";
   }
 
-  private priorityFromSeverity(
-    severity?: string,
-  ): FollowUpTask["priority"] {
-    switch (severity) {
-      case "critical":
-        return "critical";
-      case "high":
-        return "high";
-      case "medium":
-        return "medium";
-      default:
-        return "high";
-    }
+  private priorityFromSeverity(severity?: string): FollowUpTask["priority"] {
+    const valid = ["critical", "high", "medium", "low"] as const;
+    return (valid.find((v) => v === severity) as FollowUpTask["priority"]) ?? "high";
   }
 
   private categoryFromSeverity(severity?: string): string {
-    if (!severity) {
-      return "follow_up";
-    }
-    return severity === "critical" || severity === "high"
-      ? "urgent"
-      : "follow_up";
+    if (!severity) return "follow_up";
+    return severity === "critical" || severity === "high" ? "urgent" : "follow_up";
   }
 
   private isBlockingSeverity(severity?: string): boolean {

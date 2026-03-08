@@ -74,7 +74,31 @@ export async function commitAndPushPaths(options: {
     }
   }
 
-  await runGit(["add", ...paths], { cwd: repoRoot });
+  try {
+    await runGit(["add", ...paths], { cwd: repoRoot });
+  } catch (addErr: any) {
+    const stderr = String(addErr?.stderr || addErr?.message || "");
+    if (stderr.includes("ignored by one of your .gitignore")) {
+      const ignoredResult = await runGit(
+        ["check-ignore", "--no-index", ...paths],
+        { cwd: repoRoot },
+      ).catch(() => ({ stdout: "" })) as { stdout: string };
+      const ignoredSet = new Set(
+        ignoredResult.stdout.split("\n").map((l: string) => l.trim()).filter(Boolean),
+      );
+      const filtered = paths.filter((p) => !ignoredSet.has(p));
+      if (filtered.length > 0) {
+        await runGit(["add", ...filtered], { cwd: repoRoot });
+      }
+      logger.warn("Filtered gitignored paths from commit", {
+        repoRoot,
+        ignoredCount: paths.length - filtered.length,
+        remainingCount: filtered.length,
+      });
+    } else {
+      throw addErr;
+    }
+  }
 
   let hasChanges = false;
   try {

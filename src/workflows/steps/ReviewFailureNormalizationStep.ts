@@ -4,55 +4,17 @@ import {
   ValidationResult,
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
-
-interface NormalizationConfig {
-  review_type: string;
-  review_result: Record<string, any> | null;
-  review_status: string;
-  task?: { id?: number | string; title?: string } | null;
-  feature_branch?: string | null;
-}
-
-type Severity = "critical" | "high" | "medium" | "low";
-
-interface NormalizedIssue {
-  id: string;
-  title: string;
-  description: string;
-  severity: Severity;
-  blocking: boolean;
-  labels: string[];
-  source: string;
-  file?: string;
-  line?: number | null;
-  raw?: Record<string, any>;
-}
-
-interface NormalizedReview {
-  reviewType: string;
-  status: string;
-  severity: Severity;
-  issues: NormalizedIssue[];
-  blockingIssues: NormalizedIssue[];
-  hasBlockingIssues: boolean;
-  summary?: string;
-  raw: Record<string, any>;
-}
-
-interface SeverityGapEvent {
-  reviewType: string;
-  source: string;
-  field: string;
-  fallback: Severity;
-  rawSeverity: any;
-}
-
-const severityOrder: Record<Severity, number> = {
-  critical: 4,
-  high: 3,
-  medium: 2,
-  low: 1,
-};
+import {
+  Severity,
+  NormalizationConfig,
+  NormalizedIssue,
+  NormalizedReview,
+  SeverityGapEvent,
+  severityOrder,
+  parseTestErrors as parseTestErrorsImpl,
+  normalizeSeverity,
+  isInfraGap,
+} from "./helpers/reviewNormalizationTypes.js";
 
 export class ReviewFailureNormalizationStep extends WorkflowStep {
   protected async validateConfig(
@@ -93,6 +55,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
       config.review_type,
       structuredReview,
       config.review_status,
+      config.pre_qa_test_error,
     );
 
     if (severityGaps.length > 0) {
@@ -153,6 +116,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
     reviewType: string,
     reviewResult: Record<string, any>,
     reviewStatus: string,
+    preQaTestError?: string | null,
   ): { normalized: NormalizedReview; severityGaps: SeverityGapEvent[] } {
     const severityGaps: SeverityGapEvent[] = [];
     const issues = this.collectIssues(
@@ -160,6 +124,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
       reviewResult,
       reviewStatus,
       severityGaps,
+      preQaTestError,
     );
     const blockingIssues = issues.filter((issue) => issue.blocking);
     const maxSeverity = issues.reduce<Severity>(
@@ -193,9 +158,10 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
     reviewResult: Record<string, any>,
     reviewStatus: string,
     severityGaps: SeverityGapEvent[],
+    preQaTestError?: string | null,
   ): NormalizedIssue[] {
     const issues: NormalizedIssue[] = [];
-    const baseSeverity = this.normalizeSeverity(
+    const baseSeverity = normalizeSeverity(
       reviewResult.severity,
       reviewStatus === "fail" ? "high" : "medium",
       {
@@ -205,6 +171,8 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
         field: "review_result.severity",
       },
     );
+
+    this.fromPreQaTestError(reviewType, preQaTestError, issues);
 
     this.fromRootCauses(
       reviewType,
@@ -230,6 +198,53 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
     return issues;
   }
 
+  static parseTestErrors(errorText: string): { file: string; line: number; message: string }[] {
+    return parseTestErrorsImpl(errorText);
+  }
+
+  private fromPreQaTestError(
+    reviewType: string,
+    preQaTestError: string | null | undefined,
+    issues: NormalizedIssue[],
+  ): void {
+    if (!preQaTestError || typeof preQaTestError !== "string" || preQaTestError.trim().length === 0) {
+      return;
+    }
+
+    const parsed = ReviewFailureNormalizationStep.parseTestErrors(preQaTestError);
+    if (parsed.length === 0) {
+      issues.push(
+        this.buildIssue(
+          reviewType,
+          "pre-qa-test-error",
+          "Pre-QA test execution failure",
+          preQaTestError.slice(0, 500),
+          "critical",
+          true,
+          [reviewType, "review-gap", "qa-gap", "pre-qa-test-error"],
+        ),
+      );
+      return;
+    }
+
+    parsed.forEach((error, _index) => {
+      issues.push(
+        this.buildIssue(
+          reviewType,
+          `pre-qa-test-error-${error.file}-L${error.line}`,
+          `${error.file} syntax error at line ${error.line}`,
+          `File ${error.file} has an error at line ${error.line}: ${error.message}`,
+          "critical",
+          true,
+          [reviewType, "review-gap", "qa-gap", "pre-qa-test-error", "config-corruption"],
+          undefined,
+          error.file,
+          error.line,
+        ),
+      );
+    });
+  }
+
   private fromRootCauses(
     reviewType: string,
     reviewResult: Record<string, any>,
@@ -247,7 +262,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
         return;
       }
 
-      const severity = this.normalizeSeverity(cause?.severity, defaultSeverity, {
+      const severity = normalizeSeverity(cause?.severity, defaultSeverity, {
         severityGaps,
         reviewType,
         source: reviewType,
@@ -291,7 +306,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
           return;
         }
 
-        const severity = this.normalizeSeverity(entry?.severity || bucket, "medium", {
+        const severity = normalizeSeverity(entry?.severity || bucket, "medium", {
           severityGaps,
           reviewType,
           source: reviewType,
@@ -332,7 +347,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
         return;
       }
 
-      const severity = this.normalizeSeverity(issue?.severity || issue?.level, "medium", {
+      const severity = normalizeSeverity(issue?.severity || issue?.level, "medium", {
         severityGaps,
         reviewType,
         source: reviewType,
@@ -449,7 +464,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
       labels.add("devops-gap");
     }
 
-    if (this.isInfraGap(text)) {
+    if (isInfraGap(text)) {
       labels.add("infra");
     }
 
@@ -475,84 +490,6 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
       return parts.join(". ");
     }
     return String(cause);
-  }
-
-  private normalizeSeverity(
-    value: any,
-    fallback: Severity = "medium",
-    tracking?: {
-      severityGaps: SeverityGapEvent[];
-      reviewType: string;
-      source: string;
-      field: string;
-    },
-  ): Severity {
-    let severity: Severity = fallback;
-    let usedFallback = false;
-
-    if (value === undefined || value === null) {
-      usedFallback = true;
-    } else if (typeof value === "string") {
-      const normalized = value.toLowerCase();
-      if (normalized.includes("critical") || normalized.includes("severe")) {
-        severity = "critical";
-      } else if (
-        normalized.includes("high") ||
-        normalized.includes("blocker")
-      ) {
-        severity = "high";
-      } else if (
-        normalized.includes("medium") ||
-        normalized.includes("moderate")
-      ) {
-        severity = "medium";
-      } else if (normalized.includes("low") || normalized.includes("minor")) {
-        severity = "low";
-      } else {
-        usedFallback = true;
-      }
-    } else if (typeof value === "number") {
-      if (value >= 0.9) severity = "critical";
-      else if (value >= 0.6) severity = "high";
-      else if (value >= 0.3) severity = "medium";
-      else severity = "low";
-    } else if (typeof value === "boolean") {
-      severity = value ? "high" : fallback;
-      if (!value) {
-        usedFallback = true;
-      }
-    } else {
-      usedFallback = true;
-    }
-
-    if (usedFallback && tracking) {
-      tracking.severityGaps.push({
-        reviewType: tracking.reviewType,
-        source: tracking.source,
-        field: tracking.field,
-        fallback,
-        rawSeverity: value,
-      });
-    }
-
-    return severity;
-  }
-
-  private isInfraGap(text: string): boolean {
-    const normalized = text.toLowerCase();
-    const keywords = [
-      "test framework",
-      "missing test",
-      "no test",
-      "unable to run tests",
-      "testing infrastructure",
-      "qa cannot run",
-      "lack of tests",
-      "vitest",
-      "jest",
-      "pytest",
-    ];
-    return keywords.some((keyword) => normalized.includes(keyword));
   }
 
   private expandReviewResult(

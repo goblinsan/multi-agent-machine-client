@@ -61,6 +61,7 @@ steps:
       review_type: "${review_type}"
       review_result: "${review_result}"
       review_status: "${review_status}"
+      pre_qa_test_error: "${pre_qa_test_error || ''}"
       task: "${task}"
       feature_branch: "${feature_branch || ''}"
 
@@ -158,6 +159,7 @@ steps:
     depends_on: ["filter_follow_up_tasks"]
     config:
       follow_up_tasks: "${filter_follow_up_tasks.filtered_tasks || []}"
+      dropped_tasks: "${filter_follow_up_tasks.dropped_tasks || []}"
       review_result: "${review_result}"
       review_type: "${review_type}"
       task: "${task}"

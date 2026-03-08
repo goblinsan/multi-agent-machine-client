@@ -99,10 +99,96 @@ steps:
         diff_summary: ${review_diff_summary || ''}
         diff_changed_files: ${review_diff_files || []}
 
-  - template: security_review
-    name: security_request
+  - name: mark_task_blocked_on_review_fail
+    type: SimpleTaskStatusStep
+    depends_on: [handle_code_review_failure]
+    condition: ${code_review_request_status} == 'fail'
+    config:
+      status: blocked
+
+  - name: determine_test_entrypoint
+    type: TestCommandDiscoveryStep
     depends_on: [code_review_request]
     condition: ${code_review_request_status} != 'fail'
+    config:
+      variable: detected_test_command
+      require_command: false
+      package_script_priority: ["test:regression", "test:ci", "test"]
+      allow_makefile: true
+
+  - name: run_detected_tests
+    type: QAStep
+    depends_on: [determine_test_entrypoint]
+    condition: ${code_review_request_status} != 'fail' && detected_test_command.length > 0
+    config:
+      testCommand: ${detected_test_command}
+      retryCount: 1
+      skipOnNoTests: true
+      failureThreshold: 0
+      softFail: true
+
+  - template: qa_review
+    name: qa_request
+    depends_on: [collect_review_diff, run_detected_tests]
+    condition: ${code_review_request_status} != 'fail'
+    overrides:
+      config:
+        payload:
+          implementation: null
+          applied_files: []
+          resume_review: true
+          existing_tasks: ${review_existing_tasks || []}
+
+  - name: commit_qa_result
+    type: GitArtifactStep
+    depends_on: [qa_request]
+    condition: ${code_review_request_status} != 'fail'
+    config:
+      source_output: qa_request_result
+      artifact_path: .ma/tasks/${task.id}/reviews/qa.json
+      commit_message: "test(ma): QA review for task ${task.id}"
+      format: json
+
+  - name: handle_qa_failure
+    type: SubWorkflowStep
+    depends_on: [qa_request, load_existing_tasks]
+    condition: ${qa_request_status} == 'fail'
+    config:
+      workflow: review-failure-handling
+      inputs:
+        review_type: qa
+        review_result: ${qa_request_result}
+        review_status: ${qa_request_status}
+        milestone_context: ${milestone}
+        task: ${task}
+        parent_task_id: ${taskId}
+        priority_scores:
+          urgent: 1200
+          deferred: 50
+        config:
+          block_original_task: true
+        project_id: ${projectId}
+        repo_root: ${repo_root}
+        repo_slug: ${repoSlug}
+        project_name: ${projectName}
+        repo: ${repo_remote}
+        tdd_aware: ${tdd_aware || false}
+        tdd_stage: ${tdd_stage || 'implementation'}
+        existing_tasks: ${review_existing_tasks || []}
+        diff_summary: ${review_diff_summary || ''}
+        diff_changed_files: ${review_diff_files || []}
+
+  - name: mark_task_blocked_on_qa_fail
+    type: SimpleTaskStatusStep
+    depends_on: [handle_qa_failure]
+    condition: ${qa_request_status} == 'fail'
+    config:
+      status: blocked
+
+  - template: security_review
+    name: security_request
+    depends_on: [qa_request]
+    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail'
     overrides:
       config:
         payload:
@@ -112,7 +198,7 @@ steps:
   - name: commit_security_result
     type: GitArtifactStep
     depends_on: [security_request]
-    condition: ${code_review_request_status} != 'fail'
+    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail'
     config:
       source_output: security_request_result
       artifact_path: .ma/tasks/${task.id}/reviews/security.json
@@ -151,12 +237,12 @@ steps:
   - template: devops_review
     name: devops_request
     depends_on: [security_request]
-    condition: ${security_request_status} != 'fail'
+    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail' && ${security_request_status} != 'fail'
 
   - name: commit_devops_result
     type: GitArtifactStep
     depends_on: [devops_request]
-    condition: ${security_request_status} != 'fail'
+    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail' && ${security_request_status} != 'fail'
     config:
       source_output: devops_request_result
       artifact_path: .ma/tasks/${task.id}/reviews/devops.json
@@ -195,7 +281,7 @@ steps:
   - name: mark_task_done
     type: SimpleTaskStatusStep
     depends_on: [devops_request]
-    condition: ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'
+    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'
     config:
       status: done
 

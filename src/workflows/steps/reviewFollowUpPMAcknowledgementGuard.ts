@@ -49,6 +49,7 @@ export function enforcePMAcknowledgement(
   followUps: FollowUpTask[],
   fallbackReviewType: string,
   stepName: string,
+  droppedTasks?: { title: string; reason: string }[],
 ): void {
   const reviewType = normalizedReview?.reviewType || fallbackReviewType;
   if (reviewType !== "qa") {
@@ -92,8 +93,18 @@ export function enforcePMAcknowledgement(
   const pmMentionedTests = followUps.some((task) =>
     containsTestKeyword(`${task.title || ""} ${task.description || ""}`),
   );
+  const duplicateDroppedMentionedTests = (droppedTasks || []).some(
+    (task) =>
+      task.reason === "duplicate_existing_task" &&
+      containsTestKeyword(task.title),
+  );
   const pmProvidedInfraTask = followUps.some((task) =>
     containsInfraKeyword(`${task.title || ""} ${task.description || ""}`),
+  );
+  const duplicateDroppedInfraTask = (droppedTasks || []).some(
+    (task) =>
+      task.reason === "duplicate_existing_task" &&
+      containsInfraKeyword(task.title),
   );
 
   context.logger.info("QA follow-up guard evaluated", {
@@ -102,13 +113,15 @@ export function enforcePMAcknowledgement(
     blockingIssueCount: blockingIssues.length,
     keywordIssueCount: keywordMatches.length,
     pmMentionedTests,
+    duplicateDroppedMentionedTests,
     requiresInfraTasks,
     pmProvidedInfraTask,
+    duplicateDroppedInfraTask,
     followUpCount: followUps.length,
     keywordIssueSamples: keywordMatches.slice(0, 3),
   });
 
-  if (!pmMentionedTests) {
+  if (!pmMentionedTests && !duplicateDroppedMentionedTests) {
     context.logger.error("PM response ignored QA test failure", {
       stepName,
       reviewType,
@@ -120,7 +133,7 @@ export function enforcePMAcknowledgement(
     );
   }
 
-  if (requiresInfraTasks && !pmProvidedInfraTask) {
+  if (requiresInfraTasks && !pmProvidedInfraTask && !duplicateDroppedInfraTask) {
     context.logger.error("PM response ignored QA test infrastructure gap", {
       stepName,
       reviewType,

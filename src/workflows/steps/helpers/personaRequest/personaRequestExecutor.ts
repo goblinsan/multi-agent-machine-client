@@ -217,6 +217,12 @@ export async function executePersonaRequestFlow(
         cfg.informationRequests?.duplicateIterationsBeforeForce ??
         2,
     );
+    const forceSynthesisAfterIterations = Math.max(
+      2,
+      config.forceSynthesisAfterIterations ??
+        cfg.informationRequests?.forceSynthesisAfterIterations ??
+        3,
+    );
 
     for (let iteration = 1; iteration <= maxInfoIterations; iteration++) {
       if (forceSynthesisActive) {
@@ -470,6 +476,51 @@ export async function executePersonaRequestFlow(
           requestSignatureVar,
           Array.from(fulfilledRequestSignatures),
         );
+        if (iteration >= forceSynthesisAfterIterations) {
+          forceSynthesisActive = true;
+          context.setVariable(forceSynthesisVar, true);
+          infoBlocks.push(
+            buildSystemInformationBlock(
+              `Absolute research iteration limit reached (${iteration}/${forceSynthesisAfterIterations}). Summarize all existing evidence now.`,
+            ),
+          );
+          context.setVariable(
+            `${stepName}_information_blocks`,
+            infoBlocks.slice(),
+          );
+          context.setVariable(duplicateIterationVar, duplicateIterationCount);
+          logger.warn(
+            "Force synthesis triggered by absolute iteration cap",
+            {
+              workflowId: context.workflowId,
+              persona,
+              step,
+              iteration,
+              forceSynthesisAfterIterations,
+              uniqueSources: uniqueInformationSources.size,
+            },
+          );
+          return buildForcedSynthesisCompletion(
+            context,
+            persona,
+            step,
+            infoBlocks,
+            stepName,
+            outputs,
+            {
+              duplicateIterations: duplicateIterationCount,
+              uniqueSources: uniqueInformationSources.size,
+              maxUniqueSources,
+            },
+          );
+        }
+        if (iteration === forceSynthesisAfterIterations - 1) {
+          infoBlocks.push(
+            buildSystemInformationBlock(
+              "NOTICE: This is your final research iteration. You MUST synthesize all gathered evidence in your next response. Respond with status=\"complete\" and a comprehensive summary. Do NOT request more information.",
+            ),
+          );
+        }
         continue;
       }
 

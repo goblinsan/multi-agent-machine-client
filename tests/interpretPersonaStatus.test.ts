@@ -1,5 +1,66 @@
 import { describe, it, expect } from "vitest";
-import { interpretPersonaStatus } from "../src/agents/persona.js";
+import {
+  interpretPersonaStatus,
+  extractJsonPayloadFromText,
+} from "../src/agents/persona.js";
+
+describe("extractJsonPayloadFromText - robust JSON extraction", () => {
+  it("should extract JSON from code fence", () => {
+    const text = '```json\n{"status": "pass"}\n```';
+    const result = extractJsonPayloadFromText(text);
+    expect(result).toEqual({ status: "pass" });
+  });
+
+  it("should extract first complete JSON when prose follows with braces", () => {
+    const text =
+      '{"status": "pass"}\n\nHandles {edge cases} and {scenarios}.';
+    const result = extractJsonPayloadFromText(text);
+    expect(result).toEqual({ status: "pass" });
+  });
+
+  it("should extract JSON with nested objects correctly", () => {
+    const text =
+      '{"status": "fail", "details": {"count": 3, "items": [1,2]}}\nMore text.';
+    const result = extractJsonPayloadFromText(text);
+    expect(result).toEqual({
+      status: "fail",
+      details: { count: 3, items: [1, 2] },
+    });
+  });
+
+  it("should return null for truncated JSON", () => {
+    const text = '{"status":"fail","test_re';
+    const result = extractJsonPayloadFromText(text);
+    expect(result).toBeNull();
+  });
+
+  it("should handle JSON with escaped quotes in strings", () => {
+    const text = '{"message": "He said \\"hello\\"", "status": "pass"}';
+    const result = extractJsonPayloadFromText(text);
+    expect(result).toEqual({
+      message: 'He said "hello"',
+      status: "pass",
+    });
+  });
+
+  it("should strip think tags before extracting", () => {
+    const text =
+      '<think>Some thinking with {"inner": true}</think>{"status": "pass"}';
+    const result = extractJsonPayloadFromText(text);
+    expect(result).toEqual({ status: "pass" });
+  });
+
+  it("should return null for empty input", () => {
+    expect(extractJsonPayloadFromText("")).toBeNull();
+    expect(extractJsonPayloadFromText(undefined)).toBeNull();
+  });
+
+  it("should fall back to first-to-last brace when depth tracking fails", () => {
+    const text = "prefix {invalid json but}\nmore text {\"valid\": true} suffix";
+    const result = extractJsonPayloadFromText(text);
+    expect(result).toEqual({ valid: true });
+  });
+});
 
 describe("interpretPersonaStatus - robust status parsing", () => {
   describe("nested output field handling (LM Studio wrapper)", () => {
@@ -106,6 +167,56 @@ describe("interpretPersonaStatus - robust status parsing", () => {
       const response = "This is a neutral statement with no status.";
       const result = interpretPersonaStatus(response);
       expect(result.status).toBe("unknown");
+    });
+  });
+
+  describe("prose evaluation sentiment detection", () => {
+    it("should detect pass from 'plan is acceptable' prose", () => {
+      const response =
+        "The proposed implementation plan is concrete, actionable, and appropriate for the task.\n\n**Clear Steps:** The plan has clear steps.\n\nOverall, the plan is acceptable, and it can proceed with minor adjustments.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should detect pass from 'well-structured and provides' prose", () => {
+      const response =
+        "Overall, the plan is well-structured and provides a clear roadmap for implementing a vitest harness.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should detect pass from 'can proceed' prose", () => {
+      const response =
+        "The plan addresses all concerns and can proceed as described.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should detect fail from 'needs revision' prose", () => {
+      const response =
+        "The plan needs revision before it can be implemented. Several critical details are missing.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should detect fail from 'not acceptable' prose", () => {
+      const response =
+        "The plan is not acceptable in its current form. It must be reworked to address the missing tests.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should still return unknown for truly neutral prose", () => {
+      const response = "This is a neutral statement with no evaluation indicators.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("unknown");
+    });
+
+    it("should prefer fail phrases over pass phrases", () => {
+      const response =
+        "The plan is acceptable overall, but it needs revision in several critical areas.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
     });
   });
 
@@ -236,6 +347,20 @@ describe("interpretPersonaStatus - robust status parsing", () => {
       const result = interpretPersonaStatus(response);
       expect(result.status).toBe("pass");
     });
+
+    it("should extract fail from truncated inner JSON in output wrapper", () => {
+      const truncatedLlmOutput = [
+        "<think>The vitest harness file appears to have syntax errors.</think>",
+        "",
+        '{"status":"fail","test_execution_results":{"framework":"vitest","passed":0,"failed":10},"failed_tests":[{"name":"test1","error":"SyntaxError',
+      ].join("\n");
+      const response = JSON.stringify({
+        output: truncatedLlmOutput,
+        duration_ms: 35619,
+      });
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
   });
 
   describe("prose status patterns (non-JSON responses)", () => {
@@ -262,6 +387,91 @@ describe("interpretPersonaStatus - robust status parsing", () => {
     it("should detect Evaluation status: approved (case-insensitive)", () => {
       const response =
         "Evaluation status: approved\n\nThe implementation meets requirements.";
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+  });
+
+  describe("truncated and malformed JSON in output wrappers", () => {
+    it("should extract fail from security review wrapper with truncated inner JSON", () => {
+      const response = JSON.stringify({
+        output:
+          '{"status":"fail","summary":"Insufficient information","findings":{"severe":[],"high":[],"medium":[{"category":"insecure dependencies","file":"package.json',
+        duration_ms: 6327,
+      });
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should extract pass from wrapper where inner JSON has trailing prose with braces", () => {
+      const response = JSON.stringify({
+        output:
+          '{"status": "pass"}\n\nThe implementation handles all cases including {edge cases} properly.',
+        duration_ms: 5000,
+      });
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+      expect(result.payload).toHaveProperty("status", "pass");
+    });
+
+    it("should extract status when inner JSON is severely truncated mid-key", () => {
+      const response = JSON.stringify({
+        output: '{"status":"fail","test_re',
+        duration_ms: 1000,
+      });
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should extract status when LLM returns only a status fragment in wrapper", () => {
+      const response = JSON.stringify({
+        output: '"status": "pass"',
+        duration_ms: 500,
+      });
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+    });
+
+    it("should handle wrapper where inner content is pure prose with status keyword", () => {
+      const response = JSON.stringify({
+        output:
+          "**Status:** fail\n\nThe code has critical issues that need to be resolved.",
+        duration_ms: 8000,
+      });
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should handle wrapper with think tags AND truncated JSON", () => {
+      const response = JSON.stringify({
+        output:
+          '<think>Analyzing the code for security vulnerabilities...</think>\n\n{"status":"fail","findings":{"severe":[{"category":"SQL injection","file":"src/db.ts"',
+        duration_ms: 12000,
+      });
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+  });
+
+  describe("brace-depth JSON extraction robustness", () => {
+    it("should extract first complete JSON when prose follows with braces", () => {
+      const response =
+        '{"status": "pass"}\n\nThe implementation handles {edge cases} and other {scenarios} well.';
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("pass");
+      expect(result.payload).toHaveProperty("status", "pass");
+    });
+
+    it("should handle JSON with nested objects followed by prose braces", () => {
+      const response =
+        '{"status": "fail", "details": {"count": 3}}\n\nThe {reviewer} found {issues}.';
+      const result = interpretPersonaStatus(response);
+      expect(result.status).toBe("fail");
+    });
+
+    it("should handle response with multiple JSON objects", () => {
+      const response =
+        '{"status": "pass"}\n\n{"extra": "data", "status": "fail"}';
       const result = interpretPersonaStatus(response);
       expect(result.status).toBe("pass");
     });

@@ -10,7 +10,7 @@ interface WorkerPayload {
   cwd: string;
   timeoutMs: number;
   idleTimeoutMs: number;
-  env?: NodeJS.ProcessEnv;
+  env?: Record<string, string | undefined>;
 }
 
 const payload = workerData as WorkerPayload;
@@ -41,7 +41,9 @@ function handleAbort(reason: string) {
   completed = true;
   try {
     child.kill("SIGTERM");
-  } catch {}
+  } catch (_) {
+    void 0;
+  }
   cleanupTimers();
   parentPort?.postMessage({
     type: "result",

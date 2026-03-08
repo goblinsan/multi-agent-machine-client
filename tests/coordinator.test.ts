@@ -201,6 +201,6 @@ describe("Coordinator per-task circuit breaker", () => {
       { repo: tempRepo },
     );
 
-    expect(processSpy).toHaveBeenCalledTimes(2);
+    expect(processSpy).toHaveBeenCalledTimes(1);
   });
 });
