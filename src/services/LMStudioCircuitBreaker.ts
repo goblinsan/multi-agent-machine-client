@@ -7,6 +7,7 @@ export interface CircuitBreakerConfig {
   resetTimeoutMs: number;
   halfOpenMaxAttempts: number;
   consecutiveAbortThreshold: number;
+  failureWindowMs: number;
 }
 
 const DEFAULT_CONFIG: CircuitBreakerConfig = {
@@ -14,6 +15,7 @@ const DEFAULT_CONFIG: CircuitBreakerConfig = {
   resetTimeoutMs: 120_000,
   halfOpenMaxAttempts: 1,
   consecutiveAbortThreshold: 3,
+  failureWindowMs: 300_000,
 };
 
 export class LMStudioCircuitBreaker {
@@ -23,6 +25,7 @@ export class LMStudioCircuitBreaker {
   private lastFailureTime = 0;
   private halfOpenAttempts = 0;
   private readonly config: CircuitBreakerConfig;
+  private failureTimestamps: Array<{ time: number; isAbort: boolean }> = [];
 
   constructor(config?: Partial<CircuitBreakerConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -64,8 +67,10 @@ export class LMStudioCircuitBreaker {
   }
 
   recordFailure(isAbort: boolean): void {
+    const now = Date.now();
     this.failureCount += 1;
-    this.lastFailureTime = Date.now();
+    this.lastFailureTime = now;
+    this.failureTimestamps.push({ time: now, isAbort });
 
     if (isAbort) {
       this.consecutiveAborts += 1;
@@ -90,6 +95,27 @@ export class LMStudioCircuitBreaker {
       this.trip(
         `${this.failureCount} total failures (threshold: ${this.config.failureThreshold})`,
       );
+      return;
+    }
+
+    const windowStart = now - this.config.failureWindowMs;
+    this.failureTimestamps = this.failureTimestamps.filter(
+      (f) => f.time >= windowStart,
+    );
+    const windowFailures = this.failureTimestamps.length;
+    const windowAborts = this.failureTimestamps.filter((f) => f.isAbort).length;
+
+    if (windowAborts >= this.config.consecutiveAbortThreshold) {
+      this.trip(
+        `${windowAborts} abort errors in ${Math.round(this.config.failureWindowMs / 1000)}s window (threshold: ${this.config.consecutiveAbortThreshold})`,
+      );
+      return;
+    }
+
+    if (windowFailures >= this.config.failureThreshold) {
+      this.trip(
+        `${windowFailures} failures in ${Math.round(this.config.failureWindowMs / 1000)}s window (threshold: ${this.config.failureThreshold})`,
+      );
     }
   }
 
@@ -99,6 +125,7 @@ export class LMStudioCircuitBreaker {
     this.consecutiveAborts = 0;
     this.halfOpenAttempts = 0;
     this.lastFailureTime = 0;
+    this.failureTimestamps = [];
   }
 
   getStats(): {
@@ -106,17 +133,24 @@ export class LMStudioCircuitBreaker {
     failureCount: number;
     consecutiveAborts: number;
     lastFailureTime: number;
+    windowFailures: number;
   } {
+    const windowStart = Date.now() - this.config.failureWindowMs;
+    const windowFailures = this.failureTimestamps.filter(
+      (f) => f.time >= windowStart,
+    ).length;
     return {
       state: this.getState(),
       failureCount: this.failureCount,
       consecutiveAborts: this.consecutiveAborts,
       lastFailureTime: this.lastFailureTime,
+      windowFailures,
     };
   }
 
   private trip(reason: string): void {
     this.state = "open";
+    this.failureTimestamps = [];
     logger.error("LM Studio circuit breaker OPEN — requests will be rejected", {
       reason,
       failureCount: this.failureCount,

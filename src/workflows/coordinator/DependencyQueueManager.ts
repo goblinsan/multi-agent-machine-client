@@ -1,5 +1,8 @@
 import { logger } from "../../logger.js";
 import { TaskFetcher } from "./TaskFetcher.js";
+import { TaskAPI } from "../../dashboard/TaskAPI.js";
+
+const taskAPI = new TaskAPI();
 
 export type DependencySelection = {
   selectedTask: any;
@@ -18,10 +21,13 @@ export class DependencyQueueManager {
     private readonly logLimit: number,
   ) {}
 
-  selectNextDependencyTask(tasks: any[]): DependencySelection | null {
+  selectNextDependencyTask(
+    tasks: any[],
+    projectId?: string,
+  ): DependencySelection | null {
     if (!Array.isArray(tasks) || tasks.length === 0) return null;
 
-    const dependencyQueue = this.buildDependencyQueue(tasks);
+    const dependencyQueue = this.buildDependencyQueue(tasks, projectId);
 
     if (dependencyQueue.length === 0) {
       return null;
@@ -41,7 +47,10 @@ export class DependencyQueueManager {
     };
   }
 
-  private buildDependencyQueue(tasks: any[]): Array<{
+  private buildDependencyQueue(
+    tasks: any[],
+    projectId?: string,
+  ): Array<{
     task: any;
     parentTaskId: string | number;
     dependencyId: string | number;
@@ -109,16 +118,35 @@ export class DependencyQueueManager {
       }
 
       if (pendingDependenciesFound === 0 && dependencyIds.length > 0) {
-        logger.info("All dependencies resolved but parent still blocked", {
+        logger.info("All dependencies resolved, auto-unblocking task", {
           parentTaskId: task?.id,
           dependencyIds,
+          projectId,
         });
+
+        if (projectId && task?.id) {
+          this.autoUnblockTask(String(task.id), projectId).catch((err) => {
+            logger.warn("Auto-unblock failed, will retry next iteration", {
+              taskId: task.id,
+              error: err?.message || String(err),
+            });
+          });
+        }
       }
     }
 
     return queue.sort((a, b) =>
       this.taskFetcher.compareTaskPriority(a.task, b.task),
     );
+  }
+
+  private async autoUnblockTask(
+    taskId: string,
+    projectId: string,
+  ): Promise<void> {
+    await taskAPI.updateBlockedDependencies(taskId, projectId, []);
+    await taskAPI.updateTaskStatus(taskId, "open", projectId);
+    logger.info("Auto-unblocked task via dashboard API", { taskId, projectId });
   }
 
   private parseBlockedDependencies(input: any): string[] {

@@ -232,6 +232,7 @@ export class WorkflowCoordinator {
         const dependencySelection =
           this.dependencyQueueManager.selectNextDependencyTask(
             actionableTasks,
+            projectId,
           );
 
         logger.info("Fetched tasks debug", {

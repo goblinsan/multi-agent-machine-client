@@ -30,6 +30,82 @@ function parseJsonArray(value: any): string[] | null {
   return null;
 }
 
+function cascadeUnblockDependents(
+  db: any,
+  completedTaskId: number,
+  projectId: number,
+): void {
+  const blockedResult = db.exec(
+    "SELECT id, blocked_dependencies FROM tasks WHERE project_id = ? AND status = 'blocked' AND blocked_dependencies IS NOT NULL",
+    [projectId],
+  );
+
+  if (!blockedResult[0] || blockedResult[0].values.length === 0) return;
+
+  const cols = blockedResult[0].columns;
+  const idIdx = cols.indexOf("id");
+  const depsIdx = cols.indexOf("blocked_dependencies");
+
+  for (const row of blockedResult[0].values) {
+    const taskId = row[idIdx] as number;
+    const deps = parseJsonArray(row[depsIdx]);
+    if (!deps || deps.length === 0) continue;
+
+    if (!deps.includes(String(completedTaskId))) continue;
+
+    const remainingDeps = deps.filter(
+      (d) => d !== String(completedTaskId),
+    );
+
+    if (remainingDeps.length === 0) {
+      const allResolved = checkAllDepsResolved(db, deps, projectId);
+      if (allResolved) {
+        db.run(
+          'UPDATE tasks SET status = \'open\', blocked_dependencies = NULL, updated_at = datetime("now") WHERE id = ? AND project_id = ?',
+          [taskId, projectId],
+        );
+      }
+    } else {
+      const pendingDeps = remainingDeps.filter((depId) => {
+        const depResult = db.exec(
+          "SELECT status FROM tasks WHERE id = ? AND project_id = ?",
+          [parseInt(depId), projectId],
+        );
+        if (!depResult[0] || depResult[0].values.length === 0) return true;
+        return depResult[0].values[0][0] !== "done";
+      });
+
+      if (pendingDeps.length === 0) {
+        db.run(
+          'UPDATE tasks SET status = \'open\', blocked_dependencies = NULL, updated_at = datetime("now") WHERE id = ? AND project_id = ?',
+          [taskId, projectId],
+        );
+      } else {
+        db.run(
+          'UPDATE tasks SET blocked_dependencies = ?, updated_at = datetime("now") WHERE id = ? AND project_id = ?',
+          [JSON.stringify(pendingDeps), taskId, projectId],
+        );
+      }
+    }
+  }
+}
+
+function checkAllDepsResolved(
+  db: any,
+  depIds: string[],
+  projectId: number,
+): boolean {
+  for (const depId of depIds) {
+    const depResult = db.exec(
+      "SELECT status FROM tasks WHERE id = ? AND project_id = ?",
+      [parseInt(depId), projectId],
+    );
+    if (!depResult[0] || depResult[0].values.length === 0) continue;
+    if (depResult[0].values[0][0] !== "done") return false;
+  }
+  return true;
+}
+
 export function registerTaskRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/projects/:projectId/tasks",
@@ -387,6 +463,11 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
         `UPDATE tasks SET ${updates.join(", ")} WHERE id = ? AND project_id = ?`,
         params,
       );
+
+      if (payload.status === "done") {
+        cascadeUnblockDependents(db, parseInt(taskId), parseInt(projectId));
+      }
+
       saveDb(db);
 
       const result = db.exec("SELECT * FROM tasks WHERE id = ?", [

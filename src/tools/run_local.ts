@@ -202,17 +202,20 @@ async function shutdown(transport: any) {
     personaConsumer = null;
   }
 
-  if (dashboardProcess) {
-    console.log("Stopping dashboard backend...");
-    dashboardProcess.kill("SIGTERM");
-    dashboardProcess = null;
-  }
+  console.log("Waiting for in-flight workflow steps to settle...");
+  await new Promise((resolve) => setTimeout(resolve, 3000));
 
   try {
     await transport.quit();
     console.log("Transport disconnected");
   } catch (error) {
     console.error("Error disconnecting transport:", error);
+  }
+
+  if (dashboardProcess) {
+    console.log("Stopping dashboard backend...");
+    dashboardProcess.kill("SIGTERM");
+    dashboardProcess = null;
   }
 
   console.log("Shutdown complete");
