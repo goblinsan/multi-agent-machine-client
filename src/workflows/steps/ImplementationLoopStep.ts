@@ -82,6 +82,19 @@ export class ImplementationLoopStep extends WorkflowStep {
 
       const personaResult = await personaStep.execute(context);
       if (personaResult.status !== "success") {
+        if (attempt < maxAttempts) {
+          context.logger.warn(
+            "Persona request failed, retrying implementation attempt",
+            {
+              workflowId: context.workflowId,
+              attempt,
+              maxAttempts,
+              failureReason:
+                personaResult.error?.message || "Unknown persona failure",
+            },
+          );
+          continue;
+        }
         return personaResult;
       }
       this.syncStepOutput(
@@ -98,6 +111,20 @@ export class ImplementationLoopStep extends WorkflowStep {
 
       const diffResult = await diffStep.execute(context);
       if (diffResult.status !== "success") {
+        if (attempt < maxAttempts) {
+          context.logger.warn(
+            "Diff application failed, retrying implementation attempt",
+            {
+              workflowId: context.workflowId,
+              attempt,
+              maxAttempts,
+              failureReason:
+                diffResult.error?.message || "Unknown diff failure",
+            },
+          );
+          await this.resetStagedChanges(context);
+          continue;
+        }
         return diffResult;
       }
       this.syncStepOutput(context, "apply_implementation_edits", diffResult);
@@ -389,6 +416,20 @@ export class ImplementationLoopStep extends WorkflowStep {
       context.setStepOutput(stepName, result.outputs);
     } else if (result.data) {
       context.setStepOutput(stepName, result.data);
+    }
+  }
+
+  private async resetStagedChanges(context: WorkflowContext): Promise<void> {
+    try {
+      await runGit(["checkout", "."], { cwd: context.repoRoot });
+      context.logger.info("Reset staged changes before retry", {
+        workflowId: context.workflowId,
+      });
+    } catch (err) {
+      context.logger.warn("Failed to reset staged changes", {
+        workflowId: context.workflowId,
+        error: String(err),
+      });
     }
   }
 }

@@ -107,6 +107,52 @@ describe("ImplementationLoopStep", () => {
     return `\`\`\`diff\n--- /dev/null\n+++ b/${relativePath}\n@@ -0,0 +${lines.length} @@\n${additions}\n\`\`\``;
   };
 
+  it("retries on persona request failure then succeeds", async () => {
+    let callCount = 0;
+
+    vi.mocked(persona.interpretPersonaStatus).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return { status: "unknown", details: "malformed response", raw: "" };
+      }
+      return { status: "pass", details: "", raw: "" };
+    });
+
+    const allDiffs = buildDiff(
+      ".example.env",
+      ["LOG_LEVEL=info"].join("\n"),
+    ) +
+      "\n" +
+      buildDiff(
+        "src/config/validator.js",
+        ["export const validator = () => true;"].join("\n"),
+      );
+
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-retry",
+      fields: {
+        result: JSON.stringify({ status: "pass", output: allDiffs }),
+      },
+    });
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 3,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+    expect(result.status).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+  });
+
   it("retries implementation until guard passes", async () => {
     const personaDiffs = [
       buildDiff(

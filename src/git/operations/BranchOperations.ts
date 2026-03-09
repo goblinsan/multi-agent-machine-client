@@ -149,6 +149,76 @@ export async function checkoutBranchFromBase(
   }
 }
 
+const CONTEXT_PATH_PREFIXES = [".ma/context/", ".ma/"];
+
+async function getConflictedFiles(repoRoot: string): Promise<string[]> {
+  const result = await runGit(["diff", "--name-only", "--diff-filter=U"], { cwd: repoRoot });
+  return result.stdout
+    .split("\n")
+    .map((f: string) => f.trim())
+    .filter(Boolean);
+}
+
+function isContextFile(filePath: string): boolean {
+  return CONTEXT_PATH_PREFIXES.some((prefix) => filePath.startsWith(prefix));
+}
+
+async function tryResolveConflicts(
+  repoRoot: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<boolean> {
+  const conflicted = await getConflictedFiles(repoRoot);
+  if (conflicted.length === 0) return false;
+
+  const contextFiles = conflicted.filter(isContextFile);
+  const otherFiles = conflicted.filter((f) => !isContextFile(f));
+
+  if (contextFiles.length > 0) {
+    await runGit(["checkout", "--theirs", "--", ...contextFiles], { cwd: repoRoot });
+    await runGit(["add", "--", ...contextFiles], { cwd: repoRoot });
+    logger.info("Auto-resolved context file conflicts (using source branch)", {
+      repoRoot,
+      files: contextFiles,
+    });
+  }
+
+  for (const file of otherFiles) {
+    try {
+      await runGit(["checkout", "--theirs", "--", file], { cwd: repoRoot });
+      await runGit(["add", "--", file], { cwd: repoRoot });
+      logger.info("Auto-resolved conflict using source branch version", {
+        repoRoot,
+        file,
+      });
+    } catch {
+      logger.warn("Could not auto-resolve conflict", { repoRoot, file });
+      return false;
+    }
+  }
+
+  const remaining = await getConflictedFiles(repoRoot);
+  if (remaining.length > 0) {
+    logger.warn("Unresolved conflicts remain after auto-resolution", {
+      repoRoot,
+      files: remaining,
+    });
+    return false;
+  }
+
+  await runGit(
+    ["commit", "--no-edit"],
+    { cwd: repoRoot },
+  );
+  logger.info("Merge committed after auto-resolving conflicts", {
+    repoRoot,
+    sourceBranch,
+    targetBranch,
+    resolvedFiles: conflicted,
+  });
+  return true;
+}
+
 export async function mergeBranchToMain(
   repoRoot: string,
   sourceBranch: string,
@@ -222,7 +292,21 @@ export async function mergeBranchToMain(
 
     return { merged: true, alreadyUpToDate: !!alreadyUpToDate };
   } catch (mergeErr: any) {
-    logger.error("Merge failed, aborting", {
+    logger.warn("Merge has conflicts, attempting auto-resolution", {
+      repoRoot,
+      sourceBranch,
+      targetBranch,
+    });
+
+    const resolved = await tryResolveConflicts(repoRoot, sourceBranch, targetBranch);
+    if (resolved) {
+      if (await remoteBranchExists(repoRoot, targetBranch)) {
+        await runGit(["push", "origin", targetBranch], { cwd: repoRoot });
+      }
+      return { merged: true, alreadyUpToDate: false };
+    }
+
+    logger.error("Merge conflict auto-resolution failed, aborting", {
       repoRoot,
       sourceBranch,
       targetBranch,

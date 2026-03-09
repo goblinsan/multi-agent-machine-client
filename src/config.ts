@@ -225,6 +225,10 @@ const blockedMaxAttempts = parseRevisionLimit(
   process.env.BLOCKED_MAX_ATTEMPTS,
   10,
 );
+const followUpMaxDepth = parseRevisionLimit(
+  process.env.FOLLOW_UP_MAX_DEPTH,
+  1,
+);
 const personaTimeoutMaxRetries = parseRevisionLimit(
   process.env.PERSONA_TIMEOUT_MAX_RETRIES,
   3,
@@ -391,6 +395,7 @@ export const cfg = {
   coordinatorMaxTaskRetries,
   planMaxIterationsPerStage,
   blockedMaxAttempts,
+  followUpMaxDepth,
   personaTimeoutMaxRetries,
   personaRetryBackoffIncrementMs,
 

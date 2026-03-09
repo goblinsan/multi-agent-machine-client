@@ -151,6 +151,73 @@ describe("ReviewFollowUpAutoSynthesisStep", () => {
     expect(task.external_id).toContain("pre-qa-test-error-vitest.config.ts-l5");
     expect(task.labels).toContain("pre-qa-test-error");
   });
+
+  it("skips follow-up synthesis when task is itself a follow-up", async () => {
+    const step = new ReviewFollowUpAutoSynthesisStep({
+      name: "auto_follow_up_synthesis",
+      type: "ReviewFollowUpAutoSynthesisStep",
+      config: {
+        review_type: "code_review",
+        normalized_review: {
+          reviewType: "code_review",
+          blockingIssues: [
+            {
+              id: "cr-1",
+              title: "Missing error handling",
+              description: "No try/catch around API call",
+              severity: "high",
+              blocking: true,
+              labels: [],
+            },
+          ],
+          hasBlockingIssues: true,
+        },
+        review_result: null,
+        task: { id: 113, title: "Implementing Regression Tests", labels: ["analysis-derived", "ready-for-implementation"] },
+        external_id_base: "code_review-113",
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.auto_follow_up_tasks).toHaveLength(0);
+    expect(result.outputs?.auto_follow_up_count).toBe(0);
+    expect(result.data?.skipped).toBe(true);
+  });
+
+  it("skips follow-up synthesis for tasks with follow-up label", async () => {
+    const step = new ReviewFollowUpAutoSynthesisStep({
+      name: "auto_follow_up_synthesis",
+      type: "ReviewFollowUpAutoSynthesisStep",
+      config: {
+        review_type: "qa",
+        normalized_review: {
+          reviewType: "qa",
+          blockingIssues: [
+            {
+              id: "qa-2",
+              title: "Tests broken",
+              description: "Syntax error in config",
+              severity: "critical",
+              blocking: true,
+              labels: [],
+            },
+          ],
+          hasBlockingIssues: true,
+        },
+        review_result: null,
+        task: { id: 112, title: "Code_review Follow_up", labels: ["follow-up", "auto-follow-up"] },
+        external_id_base: "qa-112",
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.auto_follow_up_tasks).toHaveLength(0);
+    expect(result.outputs?.auto_follow_up_count).toBe(0);
+  });
 });
 
 describe("ReviewFollowUpMergeStep", () => {

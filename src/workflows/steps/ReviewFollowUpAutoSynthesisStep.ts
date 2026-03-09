@@ -13,12 +13,21 @@ import {
 
 type Severity = "critical" | "high" | "medium" | "low";
 
+const FOLLOW_UP_LABELS = new Set([
+  "follow_up",
+  "follow-up",
+  "auto-follow-up",
+  "qa_follow_up",
+  "analysis-derived",
+]);
+
 interface AutoSynthesisConfig {
   normalized_review?: NormalizedReviewPayload | null;
   review_result?: ReviewResult | null;
   review_type?: string;
-  task?: { id?: number | string; title?: string } | null;
+  task?: { id?: number | string; title?: string; labels?: string[] | null } | null;
   external_id_base?: string;
+  follow_up_max_depth?: number;
 }
 
 interface AutoFollowUpSummary {
@@ -83,6 +92,32 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
     const reviewType =
       normalized?.reviewType || config.review_type || "review";
 
+    if (this.isFollowUpTask(config.task)) {
+      const maxDepth = config.follow_up_max_depth ?? 1;
+      context.logger.info("Skipping follow-up synthesis for derivative task", {
+        stepName: this.config.name,
+        taskId: config.task?.id,
+        taskLabels: config.task?.labels,
+        maxDepth,
+      });
+      return {
+        status: "success",
+        outputs: {
+          auto_follow_up_tasks: [],
+          auto_follow_up_summary: {
+            reviewType,
+            blockingIssueCount: 0,
+            synthesizedTaskCount: 0,
+            sourceCounts: {},
+            skipped_reason: "derivative_task_depth_limit",
+          },
+          auto_follow_up_count: 0,
+        },
+        data: { tasks: [], skipped: true },
+        metrics: { duration_ms: Date.now() - startedAt, synthesized_task_count: 0 },
+      } satisfies StepResult;
+    }
+
     const tasksFromBlocking = this.buildTasksFromBlockingIssues(
       normalized,
       reviewType,
@@ -136,6 +171,15 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
         synthesized_task_count: merged.length,
       },
     } satisfies StepResult;
+  }
+
+  private isFollowUpTask(
+    task: AutoSynthesisConfig["task"],
+  ): boolean {
+    if (!task || !Array.isArray(task.labels)) {
+      return false;
+    }
+    return task.labels.some((l) => FOLLOW_UP_LABELS.has(l));
   }
 
   private buildTasksFromBlockingIssues(
