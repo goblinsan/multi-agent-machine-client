@@ -2,6 +2,7 @@ import { cfg } from "./config.js";
 import { fetch } from "undici";
 import { logger } from "./logger.js";
 import { sleep, calculateBackoffDelay } from "./util/retry.js";
+import { lmStudioCircuitBreaker } from "./services/LMStudioCircuitBreaker.js";
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -18,8 +19,33 @@ export async function callLMStudio(
   const maxRetries = Math.max(0, Math.floor(opts?.retries ?? 3));
   const url = `${cfg.lmsBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
 
+  if (!lmStudioCircuitBreaker.canExecute()) {
+    const stats = lmStudioCircuitBreaker.getStats();
+    const err = new Error(
+      `LM Studio circuit breaker is OPEN — ${stats.failureCount} failures, ${stats.consecutiveAborts} consecutive aborts. Will retry after reset timeout.`,
+    );
+    (err as any).circuitBreakerOpen = true;
+    logger.error("callLMStudio rejected by circuit breaker", {
+      url,
+      model,
+      state: stats.state,
+      failureCount: stats.failureCount,
+      consecutiveAborts: stats.consecutiveAborts,
+    });
+    throw err;
+  }
+
   let lastErr: any = null;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    if (attempt > 0 && !lmStudioCircuitBreaker.canExecute()) {
+      const stats = lmStudioCircuitBreaker.getStats();
+      lastErr = new Error(
+        `LM Studio circuit breaker tripped during retries — ${stats.failureCount} failures, ${stats.consecutiveAborts} consecutive aborts`,
+      );
+      (lastErr as any).circuitBreakerOpen = true;
+      break;
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -50,17 +76,33 @@ export async function callLMStudio(
           body: text,
           attempt,
         });
+        lmStudioCircuitBreaker.recordFailure(false);
         throw statusErr;
       }
       const data: any = await res.json().catch(() => null);
       const content = data?.choices?.[0]?.message?.content ?? "";
+      lmStudioCircuitBreaker.recordSuccess();
       return { content, raw: data };
     } catch (err: any) {
       clearTimeout(timer);
-      lastErr = err;
+      const isAbort = !!(
+        err &&
+        (err.name === "AbortError" || err.type === "aborted")
+      );
 
-      if (err && (err.name === "AbortError" || err.type === "aborted")) {
+      if (isAbort) {
         lastErr = new Error(`LM Studio request aborted after ${timeoutMs}ms`);
+        lmStudioCircuitBreaker.recordFailure(true);
+      } else if (!(err as any).circuitBreakerOpen) {
+        lastErr = err;
+        const isConnError = !!(
+          err.code === "ECONNREFUSED" ||
+          err.code === "ECONNRESET" ||
+          err.code === "ENOTFOUND"
+        );
+        lmStudioCircuitBreaker.recordFailure(isConnError);
+      } else {
+        lastErr = err;
       }
 
       logger.warn("callLMStudio attempt failed", {
@@ -69,10 +111,12 @@ export async function callLMStudio(
         errorName: err?.name,
         errorMessage: err?.message,
         code: err?.code,
+        circuitBreaker: lmStudioCircuitBreaker.getStats().state,
         stack: err?.stack ? String(err.stack).slice(0, 200) : undefined,
       });
 
       if (attempt === maxRetries) break;
+      if ((lastErr as any)?.circuitBreakerOpen) break;
 
       const backoff = calculateBackoffDelay(attempt, {
         initialDelayMs: 500,
@@ -92,6 +136,13 @@ export async function callLMStudio(
   const err = new Error(`callLMStudio fetch failed for ${url}: ${errDetails}`);
 
   (err as any).cause = lastErr;
-  logger.error("callLMStudio failed after retries", { url, error: errDetails });
+  (err as any).circuitBreakerOpen =
+    !!(lastErr as any)?.circuitBreakerOpen ||
+    !lmStudioCircuitBreaker.canExecute();
+  logger.error("callLMStudio failed after retries", {
+    url,
+    error: errDetails,
+    circuitBreaker: lmStudioCircuitBreaker.getStats().state,
+  });
   throw err;
 }

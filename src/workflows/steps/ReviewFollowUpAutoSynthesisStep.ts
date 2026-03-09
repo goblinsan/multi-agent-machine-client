@@ -10,6 +10,7 @@ import {
   ReviewResult,
   ReviewRootCause,
 } from "./reviewFollowUpTypes.js";
+import { safeString } from "../../util.js";
 
 type Severity = "critical" | "high" | "medium" | "low";
 
@@ -293,7 +294,7 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
       {
         id: issue?.id || `${source}-${index}`,
         title: issue?.title || `Blocking ${reviewType} issue ${index + 1}`,
-        description: this.safeString(issue?.description) || this.safeString(issue?.summary) || "",
+        description: safeString(issue?.description) || safeString(issue?.summary) || "",
         severity: (issue?.severity as Severity) || "high",
         labels: Array.isArray(issue?.labels) ? issue.labels : [],
         source,
@@ -409,7 +410,7 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
       `Severity: ${severity}`,
       `Category: ${category}`,
       `Source: ${issue.source}`,
-      `Details: ${this.safeString(issue.description)}`,
+      `Details: ${safeString(issue.description)}`,
       "Acceptance criteria:",
       "- Confirm the root cause is mitigated",
       "- Add regression coverage for the reported gap",
@@ -426,16 +427,6 @@ export class ReviewFollowUpAutoSynthesisStep extends WorkflowStep {
       return issueId.replace(/\s+/g, "-").toLowerCase();
     }
     return this.hash(`${description}-${index}`);
-  }
-
-  private safeString(value: unknown): string {
-    if (value === null || value === undefined) return "";
-    if (typeof value === "string") return value;
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
   }
 
   private hash(text: string): string {

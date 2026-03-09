@@ -75,6 +75,19 @@ export function normalizeRepoPath(p: string | undefined, fallback: string) {
   return p.replace(/\\/g, "/");
 }
 
+export function safeString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 export function clipText(text: string, max = 6000) {
   if (!text) return text;
   if (text.length <= max) return text;

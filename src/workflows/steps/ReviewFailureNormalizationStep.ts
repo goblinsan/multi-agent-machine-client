@@ -15,6 +15,7 @@ import {
   normalizeSeverity,
   isInfraGap,
 } from "./helpers/reviewNormalizationTypes.js";
+import { safeString } from "../../util.js";
 
 export class ReviewFailureNormalizationStep extends WorkflowStep {
   protected async validateConfig(
@@ -301,7 +302,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
 
       entries.forEach((entry: any, index: number) => {
         const description =
-          entry?.description || entry?.issue || entry?.summary || String(entry);
+          entry?.description || entry?.issue || entry?.summary || safeString(entry);
         if (!description || typeof description !== "string") {
           return;
         }
@@ -342,7 +343,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
     }
 
     reviewResult.issues.forEach((issue: any, index: number) => {
-      const description = issue?.description || issue?.message || String(issue);
+      const description = issue?.description || issue?.message || safeString(issue);
       if (!description || typeof description !== "string") {
         return;
       }
@@ -484,12 +485,12 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
         .map((value) => value.trim());
 
       if (cause.suggestion) {
-        parts.push(`Suggested fix: ${cause.suggestion}`);
+        parts.push(`Suggested fix: ${safeString(cause.suggestion)}`);
       }
 
-      return parts.join(". ");
+      return parts.length > 0 ? parts.join(". ") : safeString(cause);
     }
-    return String(cause);
+    return safeString(cause);
   }
 
   private expandReviewResult(

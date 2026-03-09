@@ -5,6 +5,7 @@ import {
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
+import { safeString } from "../../util.js";
 import {
   TaskAPI,
   CreateTaskInput as _CreateTaskInput,
@@ -360,20 +361,20 @@ export class ReviewFailureTasksStep extends WorkflowStep {
       ReviewFailureTasksStep.REVIEW_TYPE_LABELS[reviewType] || reviewType;
 
     let formatted = `## ${reviewLabel} Follow-up\n\n`;
-    formatted += `${description}\n\n`;
+    formatted += `${safeString(description)}\n\n`;
 
     if (parentTaskId) {
       formatted += `**Original Task:** #${parentTaskId}\n\n`;
     }
 
     if (pmDecision.reasoning) {
-      formatted += `**PM Decision Reasoning:**\n${pmDecision.reasoning}\n\n`;
+      formatted += `**PM Decision Reasoning:**\n${safeString(pmDecision.reasoning)}\n\n`;
     }
 
     if (pmDecision.immediate_issues && pmDecision.immediate_issues.length > 0) {
       formatted += `**Immediate Issues Identified:**\n`;
       pmDecision.immediate_issues.forEach((issue: string, idx: number) => {
-        formatted += `${idx + 1}. ${issue}\n`;
+        formatted += `${idx + 1}. ${safeString(issue)}\n`;
       });
       formatted += `\n`;
     }

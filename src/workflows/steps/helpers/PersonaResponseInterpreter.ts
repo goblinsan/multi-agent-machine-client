@@ -4,6 +4,16 @@ import {
 } from "../../../agents/persona.js";
 import { logger } from "../../../logger.js";
 import { requiresStatus } from "./personaStatusPolicy.js";
+import {
+  validateReviewFindings,
+  type ValidationContext,
+} from "./ReviewOutputValidator.js";
+
+const REVIEW_PERSONAS = new Set([
+  "code-reviewer",
+  "security-review",
+  "tester-qa",
+]);
 
 interface PersonaStatusInfo {
   status: "pass" | "fail" | "unknown";
@@ -25,6 +35,7 @@ export class PersonaResponseInterpreter {
     step: string,
     corrId: string,
     completion: any,
+    changedFiles?: string[],
   ): ParsedResponse {
     let result: any = {};
 
@@ -55,18 +66,52 @@ export class PersonaResponseInterpreter {
       persona,
       statusRequired: requiresStatus(persona),
     });
-    const adjustedStatusInfo =
-      persona === "tester-qa" && statusInfo.status === "pass"
-        ? this.validateQATestExecution(
-            rawResponse,
-            result,
-            statusInfo,
-            workflowId,
-            step,
-            persona,
-            corrId,
-          )
-        : statusInfo;
+
+    let adjustedStatusInfo = statusInfo;
+
+    if (persona === "tester-qa" && statusInfo.status === "pass") {
+      adjustedStatusInfo = this.validateQATestExecution(
+        rawResponse,
+        result,
+        statusInfo,
+        workflowId,
+        step,
+        persona,
+        corrId,
+      );
+    }
+
+    if (REVIEW_PERSONAS.has(persona) && adjustedStatusInfo.status === "fail") {
+      const validationCtx: ValidationContext = {
+        persona,
+        workflowId,
+        step,
+        corrId,
+        changedFiles,
+      };
+      const validation = validateReviewFindings(
+        adjustedStatusInfo.payload || result,
+        adjustedStatusInfo.status,
+        validationCtx,
+      );
+      if (!validation.valid && validation.overrideStatus) {
+        logger.warn("Review output validation overriding status", {
+          persona,
+          workflowId,
+          step,
+          corrId,
+          originalStatus: adjustedStatusInfo.status,
+          overrideStatus: validation.overrideStatus,
+          reason: validation.reason,
+          droppedFindingCount: validation.droppedFindings?.length || 0,
+        });
+        adjustedStatusInfo = {
+          ...adjustedStatusInfo,
+          status: validation.overrideStatus,
+          details: `${adjustedStatusInfo.details}\n\n[VALIDATION OVERRIDE: ${validation.reason}]`,
+        };
+      }
+    }
 
     return { result, statusInfo: adjustedStatusInfo };
   }

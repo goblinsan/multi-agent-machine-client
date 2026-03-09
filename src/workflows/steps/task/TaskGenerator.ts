@@ -1,4 +1,5 @@
 import { logger } from "../../../logger.js";
+import { safeString } from "../../../util.js";
 
 export interface TaskDefinition {
   id: string;
@@ -193,7 +194,7 @@ export class TaskGenerator {
         tasks.push({
           id: taskId,
           title: rec.title || `QA Recommendation ${i + 1}`,
-          description: rec.description || rec,
+          description: safeString(rec.description || rec),
           priority: rec.priority || "medium",
           category: "improvement",
           confidence: 0.6,
@@ -262,7 +263,7 @@ export class TaskGenerator {
         const task: TaskDefinition = {
           id: taskId,
           title: issue.title || `Address plan issue ${i + 1}`,
-          description: issue.description || issue,
+          description: safeString(issue.description || issue),
           priority: this.mapSeverityToPriority(
             issue.severity || issue.priority || "medium",
           ),
@@ -339,7 +340,7 @@ export class TaskGenerator {
         tasks.push({
           id: taskId,
           title: item.title || `Action from ${stepName}`,
-          description: item.description || item,
+          description: safeString(item.description || item),
           priority: item.priority || "medium",
           category: stepName,
           confidence: 0.5,
@@ -375,9 +376,9 @@ export class TaskGenerator {
 
     if (type === "qa-failure") {
       description = `QA Analysis identified a ${failure.severity} severity issue:\n\n`;
-      description += `**Root Cause:** ${failure.rootCause}\n\n`;
-      description += `**Suggested Fix:** ${failure.suggestedFix}\n\n`;
-      description += `**Pattern:** ${failure.pattern}\n\n`;
+      description += `**Root Cause:** ${safeString(failure.rootCause)}\n\n`;
+      description += `**Suggested Fix:** ${safeString(failure.suggestedFix)}\n\n`;
+      description += `**Pattern:** ${safeString(failure.pattern)}\n\n`;
       description += `**Confidence:** ${(failure.confidence * 100).toFixed(1)}%`;
 
       if (failure.relatedFailures && failure.relatedFailures.length > 0) {

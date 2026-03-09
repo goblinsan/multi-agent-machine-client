@@ -302,6 +302,10 @@ export async function executePersonaRequestFlow(
       }
 
       const rawResponse = retryResult.completion.fields?.result || "";
+      const changedFilesRaw = context.getVariable("review_diff_files");
+      const changedFiles = Array.isArray(changedFilesRaw)
+        ? changedFilesRaw.filter((f: unknown) => typeof f === "string")
+        : undefined;
       const { result, statusInfo } = responseInterpreter.interpret(
         rawResponse,
         persona,
@@ -309,6 +313,7 @@ export async function executePersonaRequestFlow(
         step,
         retryResult.lastCorrId,
         retryResult.completion,
+        changedFiles,
       );
 
       const infoRequestPayload = extractInformationRequestPayload(

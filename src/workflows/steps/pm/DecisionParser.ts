@@ -1,4 +1,5 @@
 import { logger } from "../../../logger.js";
+import { safeString } from "../../../util.js";
 
 export interface PMDecision {
   decision: "immediate_fix" | "defer";
@@ -272,7 +273,7 @@ export class DecisionParser {
         .map((update: any) => ({
           title: update.title || update.name || "",
           description:
-            update.description || update.details || update.summary || "",
+            safeString(update.description || update.details || update.summary || ""),
           priority: this.normalizePriority(update.priority ?? "medium"),
         }))
         .filter((task: any) =>
@@ -332,8 +333,8 @@ export class DecisionParser {
         ? decisionObj.deferred_issues
         : [],
       follow_up_tasks: followUpTasks.map((task: any) => ({
-        title: task.title || "",
-        description: task.description || "",
+        title: safeString(task.title || ""),
+        description: safeString(task.description || ""),
         priority: this.normalizePriority(task.priority),
       })),
     };
@@ -471,8 +472,8 @@ export class DecisionParser {
       const parsed = JSON.parse(`[${str}]`);
       if (Array.isArray(parsed)) {
         return parsed.map((task: any) => ({
-          title: task.title || "",
-          description: task.description || "",
+          title: safeString(task.title || ""),
+          description: safeString(task.description || ""),
           priority: this.normalizePriority(task.priority),
         }));
       }
@@ -487,8 +488,8 @@ export class DecisionParser {
       try {
         const task = JSON.parse(match[0]);
         tasks.push({
-          title: task.title || "",
-          description: task.description || "",
+          title: safeString(task.title || ""),
+          description: safeString(task.description || ""),
           priority: this.normalizePriority(task.priority),
         });
       } catch (e) {

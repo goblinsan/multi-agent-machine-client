@@ -15,6 +15,7 @@ import {
   CoverageSummary,
 } from "./reviewFollowUpTypes.js";
 import { enforcePMAcknowledgement } from "./reviewFollowUpPMAcknowledgementGuard.js";
+import { safeString } from "../../util.js";
 
 export class ReviewFollowUpCoverageStep extends WorkflowStep {
   protected async validateConfig(
@@ -187,11 +188,12 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
       const blocking =
         issue.blocking === true || this.isBlockingSeverity(severity);
       const labels = this.mergeLabels(issue.labels, [reviewType, "blocking"]);
+      const desc = safeString(issue.description);
       return {
-        key: issue.id || this.buildFingerprint(issue.description),
+        key: issue.id || this.buildFingerprint(desc),
         type: `normalized_${reviewType}`,
         source: issue.source || reviewType,
-        description: issue.description,
+        description: desc,
         labels,
         priority: this.priorityFromSeverity(severity),
         category: this.categoryFromSeverity(severity),
@@ -199,7 +201,7 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
           ? [{ branch: "main", policy: "block" }]
           : undefined,
         blocking,
-        fingerprint: issue.id || this.buildFingerprint(issue.description),
+        fingerprint: issue.id || this.buildFingerprint(desc),
         severity,
       } satisfies CoverageItem;
     });
@@ -460,7 +462,7 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
   ): string {
     const original = task?.id ? `Original task: #${task.id}` : null;
     const lines = [
-      `Review reported the following issue: ${item.description}`,
+      `Review reported the following issue: ${safeString(item.description)}`,
       "Add a follow-up task that resolves this blocker so the reviewer can re-run successfully.",
     ];
 
@@ -525,19 +527,19 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
   ): string {
     const parts: string[] = [`Review type: ${reviewType}`];
     if (cause.type) {
-      parts.push(`Issue type: ${cause.type}`);
+      parts.push(`Issue type: ${safeString(cause.type)}`);
     }
     if (cause.description) {
-      parts.push(`Description: ${cause.description}`);
+      parts.push(`Description: ${safeString(cause.description)}`);
     }
     if (cause.details) {
-      parts.push(`Details: ${cause.details}`);
+      parts.push(`Details: ${safeString(cause.details)}`);
     }
     if (cause.message) {
-      parts.push(`Message: ${cause.message}`);
+      parts.push(`Message: ${safeString(cause.message)}`);
     }
     if (cause.suggestion) {
-      parts.push(`Suggested fix: ${cause.suggestion}`);
+      parts.push(`Suggested fix: ${safeString(cause.suggestion)}`);
     }
     const output = parts.join("\n");
     return output.trim();
