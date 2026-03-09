@@ -158,6 +158,9 @@ templates:
         resume_review: ${resume_review}
         tdd_aware: ${tdd_aware}
         tdd_stage: ${tdd_stage}
+        milestone_name: "${milestone_name || ''}"
+        milestone_status: "${milestone_status || ''}"
+        milestone_slug: "${milestone_slug || ''}"
         repo_diff_patch: ${review_diff_patch}
         repo_diff_summary: ${review_diff_summary}
         repo_changed_files: ${review_diff_files}

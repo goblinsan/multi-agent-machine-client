@@ -63,7 +63,7 @@ steps:
     description: "Iterate analyst and reviewer with feedback-driven retries"
     depends_on: ["context_scan", "load_existing_tasks"]
     config:
-      maxIterations: 5
+      maxIterations: 3
       analystPersona: "analyst"
       reviewerPersona: "analysis-reviewer"
       analysisStep: "analysis-root-cause"
