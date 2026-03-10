@@ -11,10 +11,10 @@ export interface CircuitBreakerConfig {
 }
 
 const DEFAULT_CONFIG: CircuitBreakerConfig = {
-  failureThreshold: 5,
+  failureThreshold: 8,
   resetTimeoutMs: 120_000,
   halfOpenMaxAttempts: 1,
-  consecutiveAbortThreshold: 3,
+  consecutiveAbortThreshold: 6,
   failureWindowMs: 300_000,
 };
 

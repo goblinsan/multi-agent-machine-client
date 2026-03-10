@@ -13,13 +13,13 @@ import type {
   ApplyOptions,
   DeleteOp,
   EditSpec,
-  Hunk,
   UpsertOp,
 } from "../fileops.js";
 import {
   reconstructContentFromHunks,
   validateStructuredContent,
   buildNewFileFromHunks,
+  applyHunksToLines,
 } from "./hunkHelpers.js";
 
 type ApplyEditOpsResult = {
@@ -431,55 +431,7 @@ export async function writeDiagnostic(
   }
 }
 
-function applyHunksToLines(
-  baseLines: string[],
-  hunks: Hunk[],
-): { ok: boolean; content?: string } {
-  let lines = baseLines.slice();
-  let offset = 0;
 
-  for (const h of hunks) {
-    const oldStartIdx = h.oldStart - 1 + offset;
-    const oldCount = h.oldCount;
-
-    const newLines: string[] = [];
-    for (const l of h.lines) {
-      if (l.startsWith("+")) newLines.push(l.slice(1));
-      else if (l.startsWith(" ")) newLines.push(l.slice(1));
-      else if (!l.startsWith("-")) newLines.push(l);
-    }
-
-    const contextLines: { idx: number; text: string }[] = [];
-    let scanIdx = h.oldStart - 1;
-    for (const l of h.lines) {
-      if (l.startsWith(" ")) {
-        contextLines.push({ idx: scanIdx, text: l.slice(1) });
-        scanIdx += 1;
-      } else if (l.startsWith("-")) {
-        scanIdx += 1;
-      } else if (!l.startsWith("+")) {
-        contextLines.push({ idx: scanIdx, text: l });
-        scanIdx += 1;
-      }
-    }
-
-    for (const c of contextLines) {
-      const actualIdx = c.idx + offset;
-      if (actualIdx < 0 || actualIdx >= lines.length) {
-        return { ok: false };
-      }
-      if (lines[actualIdx] !== c.text) {
-        return { ok: false };
-      }
-    }
-
-    lines.splice(oldStartIdx, oldCount, ...newLines);
-    offset += newLines.length - oldCount;
-  }
-
-  const content = lines.join("\n") + (lines.length ? "\n" : "");
-  return { ok: true, content };
-}
 
 function extractGitErrorDetails(error: unknown): Record<string, unknown> {
   if (!error || typeof error !== "object") return {};
