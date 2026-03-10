@@ -208,14 +208,17 @@ export class WorkflowSelector {
     const taskStatus = task?.status?.toLowerCase() || "unknown";
 
     if (taskStatus === "blocked" || taskStatus.includes("stuck")) {
-      const blockedWorkflow = engine.getWorkflowDefinition(
-        "blocked-task-resolution",
-      );
-      if (blockedWorkflow) {
-        return {
-          workflow: blockedWorkflow,
-          reason: "blocked-task",
-        };
+      const hasPendingDeps = this.hasUnresolvedDependencies(task);
+      if (hasPendingDeps) {
+        const blockedWorkflow = engine.getWorkflowDefinition(
+          "blocked-task-resolution",
+        );
+        if (blockedWorkflow) {
+          return {
+            workflow: blockedWorkflow,
+            reason: "blocked-task",
+          };
+        }
       }
     }
 
@@ -284,5 +287,24 @@ export class WorkflowSelector {
     }
 
     return `milestone/${repoSlug}`;
+  }
+
+  private hasUnresolvedDependencies(task: any): boolean {
+    const raw = task?.blocked_dependencies ?? task?.blockedDependencies;
+    if (!raw) return false;
+    let deps: unknown[];
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        deps = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        deps = raw.trim() ? [raw] : [];
+      }
+    } else if (Array.isArray(raw)) {
+      deps = raw;
+    } else {
+      return false;
+    }
+    return deps.filter((d) => d !== null && d !== undefined && d !== "").length > 0;
   }
 }
