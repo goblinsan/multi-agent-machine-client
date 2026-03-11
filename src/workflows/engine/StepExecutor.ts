@@ -76,6 +76,7 @@ export class StepExecutor {
       context.recordStepComplete(
         stepDef.name,
         result.status === "success" ? "success" : "failure",
+        result.status !== "success" ? result.error?.message : undefined,
       );
 
       return result.status === "success";

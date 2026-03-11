@@ -50,10 +50,27 @@ function verifyContext(
   return true;
 }
 
+function contextMatchRatio(
+  lines: string[],
+  baseIdx: number,
+  contextLines: { relIdx: number; text: string }[],
+): number {
+  if (contextLines.length === 0) return 1;
+  let hits = 0;
+  for (const c of contextLines) {
+    const actualIdx = baseIdx + c.relIdx;
+    if (actualIdx >= 0 && actualIdx < lines.length && trimEnd(lines[actualIdx]) === trimEnd(c.text)) {
+      hits += 1;
+    }
+  }
+  return hits / contextLines.length;
+}
+
 function tryApplyHunks(
   baseLines: string[],
   hunks: Hunk[],
   fuzzy: boolean,
+  partialThreshold?: number,
 ): { ok: boolean; content?: string } {
   const lines = baseLines.slice();
   let offset = 0;
@@ -80,6 +97,32 @@ function tryApplyHunks(
       }
     }
 
+    if (!matched && partialThreshold !== undefined && contextLines.length > 0) {
+      let bestIdx = startIdx;
+      let bestRatio = contextMatchRatio(lines, startIdx, contextLines);
+      const searchRadius = 30;
+      for (let delta = 1; delta <= searchRadius; delta++) {
+        for (const d of [-delta, delta]) {
+          const candidate = startIdx + d;
+          if (candidate < 0 || candidate >= lines.length) continue;
+          const ratio = contextMatchRatio(lines, candidate, contextLines);
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            bestIdx = candidate;
+          }
+        }
+      }
+      if (bestRatio >= partialThreshold) {
+        startIdx = bestIdx;
+        matched = true;
+        logger.info("Hunk applied via partial context match", {
+          oldStart: h.oldStart,
+          matchedAt: bestIdx + 1,
+          ratio: bestRatio.toFixed(2),
+        });
+      }
+    }
+
     if (!matched) return { ok: false };
 
     lines.splice(startIdx, h.oldCount, ...newLines);
@@ -101,8 +144,15 @@ export function applyHunksToLines(
     logger.info("Hunk application succeeded with fuzzy matching", {
       hunkCount: hunks.length,
     });
+    return fuzzy;
   }
-  return fuzzy;
+  const partial = tryApplyHunks(baseLines, hunks, true, 0.5);
+  if (partial.ok) {
+    logger.info("Hunk application succeeded with partial context matching", {
+      hunkCount: hunks.length,
+    });
+  }
+  return partial;
 }
 
 export function reconstructContentFromHunks(

@@ -116,4 +116,51 @@ describe("AnalysisTaskBuilderStep", () => {
       "Establish vitest",
     );
   });
+
+  it("parses fenced JSON containing raw newlines inside string values", async () => {
+    const rawJson = `{
+  "summary": "The QA review of vitest.config.ts failed due to an expected ';'\nbut found ':' error at line 5",
+  "hypotheses": [{
+    "id": "H1",
+    "statement": "Config has a typo",
+    "confidence": "high",
+    "evidence": ["vitest.config.ts:5"],
+    "remediation_steps": ["Fix the colon to semicolon"],
+    "acceptance_criteria": ["Build passes"],
+    "validation_steps": ["npm test"]
+  }],
+  "action_plan": {
+    "title": "Fix vitest config syntax error",
+    "summary": "Replace colon with semicolon",
+    "steps": ["Edit vitest.config.ts line 5"],
+    "acceptance_criteria": ["Build passes"],
+    "validation_plan": ["npm test"],
+    "key_files": ["vitest.config.ts"],
+    "priority": "high",
+    "labels": ["bug"]
+  }
+}`;
+
+    const analysisPayload = {
+      output: "```json\n" + rawJson + "\n```",
+    };
+
+    const step = new AnalysisTaskBuilderStep({
+      name: "synthesize_tasks",
+      type: "AnalysisTaskBuilderStep",
+      config: {
+        analysis_output: analysisPayload,
+        review_output: { status: "pass" },
+        task: { id: 126, title: "QA follow-up" },
+        default_labels: ["qa_follow_up"],
+      },
+    });
+
+    const result = await step.execute(buildContext());
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.actionable_tasks?.[0]?.title).toBe(
+      "Fix vitest config syntax error",
+    );
+  });
 });

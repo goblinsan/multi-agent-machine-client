@@ -384,13 +384,17 @@ export class WorkflowEngine {
         if (success) {
           completedSteps.push(stepName);
         } else {
-          await this.handleStepFailure(stepDef, context, definition);
+          const stepHistory = context.getExecutionHistory().find(
+            (h) => h.stepName === stepName && h.status === "failure",
+          );
+          const stepErrorMsg = stepHistory?.error || `Step '${stepName}' failed`;
+          await this.handleStepFailure(stepDef, context, definition, stepErrorMsg);
 
           return {
             success: false,
             completedSteps,
             failedStep: stepName,
-            error: new Error(`Step '${stepName}' failed`),
+            error: new Error(stepErrorMsg),
             duration: Date.now() - startTime,
             finalContext: context,
           };
@@ -450,11 +454,12 @@ export class WorkflowEngine {
     failedStep: WorkflowStepDefinition,
     context: WorkflowContext,
     workflowDef: WorkflowDefinition,
+    errorMessage?: string,
   ): Promise<void> {
     context.setVariable("error", {
       step: failedStep.name,
       type: failedStep.type,
-      message: `Step '${failedStep.name}' failed`,
+      message: errorMessage || `Step '${failedStep.name}' failed`,
     });
 
     if (workflowDef.failure_handling?.on_step_failure) {

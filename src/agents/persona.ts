@@ -194,31 +194,43 @@ export function extractJsonPayloadFromText(
     const snippet = match[1];
     try {
       return JSON.parse(snippet);
-    } catch (e) {
-      logger.debug("JSON parse failed for fenced code block", {
-        error: String(e),
-        snippet: snippet.slice(0, 100),
-      });
+    } catch {
+      try {
+        return JSON.parse(snippet.replace(/\r?\n/g, " "));
+      } catch (e) {
+        logger.debug("JSON parse failed for fenced code block", {
+          error: String(e),
+          snippet: snippet.slice(0, 100),
+        });
+      }
     }
   }
   const tracked = findFirstCompleteJsonObject(cleaned);
   if (tracked) {
     try {
       return JSON.parse(tracked);
-    } catch (e) {
-      logger.debug("JSON parse failed for brace-tracked content", {
-        error: String(e),
-        candidate: tracked.slice(0, 100),
-      });
-      let searchFrom = cleaned.indexOf("{") + 1;
-      while (searchFrom < cleaned.length) {
-        const next = findFirstCompleteJsonObject(cleaned, searchFrom);
-        if (!next) break;
-        try {
-          return JSON.parse(next);
-        } catch {
-          const pos = cleaned.indexOf("{", searchFrom);
-          searchFrom = pos !== -1 ? pos + 1 : cleaned.length;
+    } catch {
+      try {
+        return JSON.parse(tracked.replace(/\r?\n/g, " "));
+      } catch (e) {
+        logger.debug("JSON parse failed for brace-tracked content", {
+          error: String(e),
+          candidate: tracked.slice(0, 100),
+        });
+        let searchFrom = cleaned.indexOf("{") + 1;
+        while (searchFrom < cleaned.length) {
+          const next = findFirstCompleteJsonObject(cleaned, searchFrom);
+          if (!next) break;
+          try {
+            return JSON.parse(next);
+          } catch {
+            try {
+              return JSON.parse(next.replace(/\r?\n/g, " "));
+            } catch {
+              const pos = cleaned.indexOf("{", searchFrom);
+              searchFrom = pos !== -1 ? pos + 1 : cleaned.length;
+            }
+          }
         }
       }
     }
@@ -234,11 +246,15 @@ export function extractJsonPayloadFromText(
     const candidate = cleaned.slice(firstBrace, lastBrace + 1);
     try {
       return JSON.parse(candidate);
-    } catch (e) {
-      logger.debug("JSON parse failed for brace-extracted content", {
-        error: String(e),
-        candidate: candidate.slice(0, 100),
-      });
+    } catch {
+      try {
+        return JSON.parse(candidate.replace(/\r?\n/g, " "));
+      } catch (e) {
+        logger.debug("JSON parse failed for brace-extracted content", {
+          error: String(e),
+          candidate: candidate.slice(0, 100),
+        });
+      }
     }
   }
   return null;

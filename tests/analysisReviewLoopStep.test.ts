@@ -157,7 +157,7 @@ describe("AnalysisReviewLoopStep", () => {
       secondPayload.analysis_revision_context?.last_analysis_text,
     ).toContain("attempt-1");
     expect(secondPayload.analysis_revision_directive).toContain(
-      "Refine the previous analysis",
+      "reviewer REJECTED",
     );
     expect(reviewerPayloads.length).toBeGreaterThan(0);
     expect(reviewerPayloads[0].analysis_output_text).toContain("attempt-1");

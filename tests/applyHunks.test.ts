@@ -5,6 +5,7 @@ import _os from "os";
 import { applyEditOps } from "../src/fileops";
 import { cfg } from "../src/config";
 import { makeTempRepo } from "./makeTempRepo";
+import { applyHunksToLines } from "../src/fileops/hunkHelpers";
 
 describe("applyEditOps hunks application", () => {
   it("applies hunks to an existing file when context matches", async () => {
@@ -136,5 +137,28 @@ describe("applyEditOps hunks application", () => {
     expect(res.noop).toBe(true);
     expect(res.sha).toBe(initialSha);
     expect(res.changed).toEqual(["src/file3.ts"]);
+  });
+
+  it("applies hunks via partial context match when some lines are hallucinated", () => {
+    const base = ["line1", "line2-real", "line3-real", "line4"];
+    const hunks = [
+      {
+        oldStart: 1,
+        oldCount: 4,
+        newStart: 1,
+        newCount: 4,
+        lines: [
+          " line1",
+          "-line2-real",
+          "+line2-replaced",
+          " HALLUCINATED_LINE",
+          " line4",
+        ],
+      },
+    ];
+
+    const result = applyHunksToLines(base, hunks);
+    expect(result.ok).toBe(true);
+    expect(result.content).toContain("line2-replaced");
   });
 });

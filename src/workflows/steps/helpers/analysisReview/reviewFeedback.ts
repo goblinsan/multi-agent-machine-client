@@ -78,15 +78,21 @@ export function buildRevisionDirective(
     return undefined;
   }
   const segments: string[] = [
-    "Refine the previous analysis so it directly addresses the reviewer feedback.",
+    "The reviewer REJECTED your previous analysis. You must revise the specific fields called out below — do not resubmit unchanged output.",
   ];
   if (feedback.reason) {
-    segments.push(`Reviewer reason: ${feedback.reason}`);
+    segments.push(`Rejection reason: "${feedback.reason}"`);
   }
   if (feedback.requiredRevisions && feedback.requiredRevisions.length > 0) {
-    segments.push(`Required revisions: ${feedback.requiredRevisions.join("; ")}`);
+    segments.push("Required changes:");
+    for (const rev of feedback.requiredRevisions) {
+      segments.push(`  - ${rev}`);
+    }
   }
-  return segments.join(" ");
+  segments.push(
+    'In remediation_steps and action_plan.steps, replace vague verbs ("investigate", "analyze", "look into") with concrete actions ("add", "create", "modify", "remove", "configure"). Validation steps may use "verify", "check", or "confirm".',
+  );
+  return segments.join("\n");
 }
 
 export function buildReviewFeedbackHistoryDigest(

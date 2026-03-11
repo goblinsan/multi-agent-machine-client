@@ -71,6 +71,21 @@ You are the **analyst** persona. Your only deliverable is a rigorous explanation
   - {{this}}
 {{/each}}
 {{/if}}
+{{#if analysis_revision_directive}}
+
+---
+## ⚠ REVISION PRIORITY
+This is a retry. The reviewer rejected the previous submission. You MUST address the feedback below before anything else. Do not resubmit the same output.
+
+**Directive:** {{analysis_revision_directive}}
+
+**How to comply:**
+- For each item in Required Revisions above, locate the specific JSON field it refers to and rewrite that field.
+- In `remediation_steps` and `steps`, replace any vague verbs ("investigate", "analyze", "look into") with concrete implementation actions ("add", "create", "modify", "remove", "configure").
+- Words like "verify" and "check" are fine in `validation_steps` and `acceptance_criteria` — those are validation contexts.
+- If the reviewer cited a specific field or quote, address that exact text in your revision.
+---
+{{/if}}
 
 ## Expectations
 1. **Enumerate hypotheses** explaining the failure/blocker. Each hypothesis must cite evidence (files, logs, reviewer quotes) and specify affected components.
