@@ -117,7 +117,7 @@ export class PlanningStep extends WorkflowStep {
         model || "default",
         messages,
         temperature,
-        { timeoutMs: 60000 },
+        { timeoutMs: 120000 },
       );
 
       const duration_ms = Date.now() - startTime;

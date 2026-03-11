@@ -7,6 +7,7 @@ import {
 } from "../PersonaRequestHandler.js";
 import { ContextExtractor } from "../context/ContextExtractor.js";
 import { MessageTransport } from "../../transport/index.js";
+import { personaTimeoutMs } from "../../util.js";
 
 export interface PersonaRequestParams {
   persona: string;
@@ -113,8 +114,7 @@ export class PersonaRequestExecutor {
 
     const timeoutMs =
       payload.timeout_ms ||
-      cfg.personaTimeouts[persona] ||
-      cfg.personaDefaultTimeoutMs;
+      personaTimeoutMs(persona, cfg);
 
     logger.debug("PersonaConsumer: Calling LLM", {
       persona,

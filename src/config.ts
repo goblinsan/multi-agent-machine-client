@@ -341,7 +341,7 @@ const personaMaxRetries = parsePersonaMaxRetries(
 
 const personaDefaultTimeoutMs = parseDurationMs(
   process.env.PERSONA_DEFAULT_TIMEOUT_MS,
-  60000,
+  120000,
 );
 
 const personaDefaultMaxRetries = parseRevisionLimit(
