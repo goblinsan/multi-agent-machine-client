@@ -123,4 +123,110 @@ describe("mergeBranchToMain", () => {
     );
     expect(content).toBe("feature context\n");
   });
+
+  it("deep-merges conflicting package.json instead of picking one side", async () => {
+    const mainPkg = {
+      name: "test-project",
+      version: "1.0.0",
+      scripts: { test: "vitest", build: "tsc" },
+      dependencies: { react: "^18.0.0" },
+    };
+    await fs.writeFile(
+      path.join(repoDir, "package.json"),
+      JSON.stringify(mainPkg, null, 2) + "\n",
+    );
+    await git("add .", repoDir);
+    await git('commit -m "main package.json"', repoDir);
+
+    await git("checkout -b feature/pkg-conflict HEAD~1", repoDir);
+    const featurePkg = {
+      name: "test-project",
+      version: "1.0.0",
+      scripts: { dev: "vite", build: "vite build" },
+      dependencies: { zod: "^3.22.0" },
+    };
+    await fs.writeFile(
+      path.join(repoDir, "package.json"),
+      JSON.stringify(featurePkg, null, 2) + "\n",
+    );
+    await git("add .", repoDir);
+    await git('commit -m "feature package.json"', repoDir);
+
+    const { mergeBranchToMain } = await import(
+      "../src/git/operations/BranchOperations.js"
+    );
+
+    const result = await mergeBranchToMain(repoDir, "feature/pkg-conflict", "main");
+    expect(result.merged).toBe(true);
+
+    const merged = JSON.parse(
+      await fs.readFile(path.join(repoDir, "package.json"), "utf-8"),
+    );
+    expect(merged.scripts.test).toBe("vitest");
+    expect(merged.scripts.dev).toBe("vite");
+    expect(merged.scripts.build).toBe("vite build");
+    expect(merged.dependencies.react).toBe("^18.0.0");
+    expect(merged.dependencies.zod).toBe("^3.22.0");
+  });
+
+  it("prefers ours when theirs package.json has duplicate keys", async () => {
+    const cleanPkg = {
+      name: "test-project",
+      version: "1.0.0",
+      scripts: { test: "vitest" },
+    };
+    await fs.writeFile(
+      path.join(repoDir, "package.json"),
+      JSON.stringify(cleanPkg, null, 2) + "\n",
+    );
+    await git("add .", repoDir);
+    await git('commit -m "clean package.json"', repoDir);
+
+    await git("checkout -b feature/corrupt-pkg HEAD~1", repoDir);
+    const corruptRaw =
+      '{\n  "name": "test-project",\n  "scripts": { "test": "vitest" },\n  "name": "test-project",\n  "scripts": { "dev": "vite" }\n}\n';
+    await fs.writeFile(path.join(repoDir, "package.json"), corruptRaw);
+    await git("add .", repoDir);
+    await git('commit -m "corrupt package.json"', repoDir);
+
+    const { mergeBranchToMain } = await import(
+      "../src/git/operations/BranchOperations.js"
+    );
+
+    const result = await mergeBranchToMain(repoDir, "feature/corrupt-pkg", "main");
+    expect(result.merged).toBe(true);
+
+    const merged = JSON.parse(
+      await fs.readFile(path.join(repoDir, "package.json"), "utf-8"),
+    );
+    expect(merged.scripts.test).toBe("vitest");
+    expect(merged.scripts.dev).toBe("vite");
+  });
+
+  it("prefers ours when theirs has duplicate export default", async () => {
+    const cleanConfig = 'export default { test: true };\n';
+    await fs.writeFile(path.join(repoDir, "vitest.config.ts"), cleanConfig);
+    await git("add .", repoDir);
+    await git('commit -m "clean vitest config"', repoDir);
+
+    await git("checkout -b feature/corrupt-config HEAD~1", repoDir);
+    const corruptConfig =
+      'export default { test: true };\nexport default { test: false };\n';
+    await fs.writeFile(path.join(repoDir, "vitest.config.ts"), corruptConfig);
+    await git("add .", repoDir);
+    await git('commit -m "corrupt vitest config"', repoDir);
+
+    const { mergeBranchToMain } = await import(
+      "../src/git/operations/BranchOperations.js"
+    );
+
+    const result = await mergeBranchToMain(repoDir, "feature/corrupt-config", "main");
+    expect(result.merged).toBe(true);
+
+    const content = await fs.readFile(
+      path.join(repoDir, "vitest.config.ts"),
+      "utf-8",
+    );
+    expect(content).toBe(cleanConfig);
+  });
 });

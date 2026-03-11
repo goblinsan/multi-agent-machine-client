@@ -1,3 +1,5 @@
+import fs from "fs/promises";
+import path from "path";
 import { logger } from "../../logger.js";
 import { runGit, guardWorkspaceMutation } from "../core.js";
 import {
@@ -151,6 +153,119 @@ export async function checkoutBranchFromBase(
 
 const CONTEXT_PATH_PREFIXES = [".ma/context/", ".ma/"];
 
+function hasDuplicateJsonKeys(raw: string): boolean {
+  const keyPattern = /"([^"]+)"\s*:/g;
+  const keys: string[] = [];
+  let match;
+  while ((match = keyPattern.exec(raw)) !== null) {
+    keys.push(match[1]);
+  }
+  const unique = new Set(keys);
+  return unique.size < keys.length;
+}
+
+function deepMergeJson(
+  ours: Record<string, any>,
+  theirs: Record<string, any>,
+): Record<string, any> {
+  const merged = { ...ours };
+  for (const key of Object.keys(theirs)) {
+    if (
+      typeof theirs[key] === "object" &&
+      theirs[key] !== null &&
+      !Array.isArray(theirs[key]) &&
+      typeof merged[key] === "object" &&
+      merged[key] !== null &&
+      !Array.isArray(merged[key])
+    ) {
+      merged[key] = { ...merged[key], ...theirs[key] };
+    } else {
+      merged[key] = theirs[key];
+    }
+  }
+  return merged;
+}
+
+async function resolveJsonConflict(repoRoot: string, file: string): Promise<boolean> {
+  const absPath = path.join(repoRoot, file);
+  let oursRaw: string;
+  let theirsRaw: string;
+  try {
+    const oursResult = await runGit(["show", `:2:${file}`], { cwd: repoRoot });
+    oursRaw = oursResult.stdout;
+    const theirsResult = await runGit(["show", `:3:${file}`], { cwd: repoRoot });
+    theirsRaw = theirsResult.stdout;
+  } catch {
+    return false;
+  }
+
+  let oursParsed: Record<string, any> | null = null;
+  let theirsParsed: Record<string, any> | null = null;
+  const oursCorrupt = hasDuplicateJsonKeys(oursRaw);
+  const theirsCorrupt = hasDuplicateJsonKeys(theirsRaw);
+
+  try { oursParsed = JSON.parse(oursRaw); } catch { void 0; }
+  try { theirsParsed = JSON.parse(theirsRaw); } catch { void 0; }
+
+  let resolved: Record<string, any> | null = null;
+
+  if (oursParsed && theirsParsed && !oursCorrupt && !theirsCorrupt) {
+    resolved = deepMergeJson(oursParsed, theirsParsed);
+  } else if (oursParsed && !oursCorrupt) {
+    if (theirsParsed && theirsCorrupt) {
+      resolved = deepMergeJson(oursParsed, theirsParsed);
+    } else {
+      resolved = oursParsed;
+    }
+  } else if (theirsParsed && !theirsCorrupt) {
+    resolved = theirsParsed;
+  } else if (oursParsed) {
+    resolved = oursParsed;
+  } else if (theirsParsed) {
+    resolved = theirsParsed;
+  }
+
+  if (!resolved) return false;
+
+  await fs.writeFile(absPath, JSON.stringify(resolved, null, 2) + "\n");
+  await runGit(["add", "--", file], { cwd: repoRoot });
+  logger.info("Auto-resolved JSON conflict via deep merge", {
+    repoRoot,
+    file,
+    oursCorrupt,
+    theirsCorrupt,
+  });
+  return true;
+}
+
+const CORRUPTION_PATTERNS = [
+  /^export\s+default\b.*\n[\s\S]*^export\s+default\b/m,
+  /^module\.exports\s*=.*\n[\s\S]*^module\.exports\s*=/m,
+];
+
+async function resolveWithValidation(repoRoot: string, file: string): Promise<boolean> {
+  await runGit(["checkout", "--theirs", "--", file], { cwd: repoRoot });
+
+  const absPath = path.join(repoRoot, file);
+  const content = await fs.readFile(absPath, "utf-8");
+
+  const isCorrupt = CORRUPTION_PATTERNS.some((re) => re.test(content));
+  if (isCorrupt) {
+    logger.warn("Source branch version has corruption markers, preferring target", {
+      repoRoot,
+      file,
+    });
+    try {
+      await runGit(["checkout", "--ours", "--", file], { cwd: repoRoot });
+    } catch {
+      return false;
+    }
+  }
+
+  await runGit(["add", "--", file], { cwd: repoRoot });
+  return true;
+}
+
 async function getConflictedFiles(repoRoot: string): Promise<string[]> {
   const result = await runGit(["diff", "--name-only", "--diff-filter=U"], { cwd: repoRoot });
   return result.stdout
@@ -185,12 +300,15 @@ async function tryResolveConflicts(
 
   for (const file of otherFiles) {
     try {
-      await runGit(["checkout", "--theirs", "--", file], { cwd: repoRoot });
-      await runGit(["add", "--", file], { cwd: repoRoot });
-      logger.info("Auto-resolved conflict using source branch version", {
-        repoRoot,
-        file,
-      });
+      if (file.endsWith(".json")) {
+        const jsonResolved = await resolveJsonConflict(repoRoot, file);
+        if (jsonResolved) continue;
+      }
+      const validated = await resolveWithValidation(repoRoot, file);
+      if (!validated) {
+        logger.warn("Could not auto-resolve conflict", { repoRoot, file });
+        return false;
+      }
     } catch {
       logger.warn("Could not auto-resolve conflict", { repoRoot, file });
       return false;
