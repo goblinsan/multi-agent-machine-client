@@ -7,6 +7,21 @@ import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
 import { runGit } from "../../git/core.js";
 
+const GENERATED_FILE_EXCLUSIONS = [
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "bun.lockb",
+  "Cargo.lock",
+  "Gemfile.lock",
+  "poetry.lock",
+  "composer.lock",
+  "go.sum",
+  "flake.lock",
+  "Pipfile.lock",
+  "shrinkwrap.yaml",
+];
+
 interface GitDiffExportConfig {
   repoPath?: string;
   branch?: string;
@@ -74,25 +89,27 @@ export class GitDiffExportStep extends WorkflowStep {
       }
 
       const diffRange = baseRef ? `${baseRef}..${branchRef}` : branchRef;
+      const pathspecs = GENERATED_FILE_EXCLUSIONS.map((f) => `:!${f}`);
 
       const diffText = await this.runGitCommand(
         repoRoot,
-        ["diff", "--unified=3", diffRange],
+        ["diff", "--unified=3", diffRange, "--", ".", ...pathspecs],
       );
       const diffSummary = await this.runGitCommand(
         repoRoot,
-        ["diff", "--stat", diffRange],
+        ["diff", "--stat", diffRange, "--", ".", ...pathspecs],
       );
       const changedFilesRaw = await this.runGitCommand(
         repoRoot,
-        ["diff", "--name-only", diffRange],
+        ["diff", "--name-only", diffRange, "--", ".", ...pathspecs],
       );
 
       const trimmedDiff = this.truncateDiff(diffText, maxBytes);
+      const excluded = new Set(GENERATED_FILE_EXCLUSIONS);
       const changedFiles = changedFilesRaw
         .split(/\r?\n/)
         .map((line) => line.trim())
-        .filter(Boolean);
+        .filter((f) => f && !excluded.has(f.split("/").pop()!));
 
       if (failOnEmptyDiff && trimmedDiff.trim().length === 0) {
         const error = new Error(
