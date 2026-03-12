@@ -97,6 +97,26 @@ export async function applyEditOps(
             const applyResult = applyHunksToLines(baseLines, u.hunks);
             if (applyResult.ok) {
               contentToWrite = applyResult.content;
+              const postApplyError = validateStructuredContent(u.path, contentToWrite!);
+              if (postApplyError) {
+                logger.warn("Hunk application produced invalid structured content", {
+                  path: u.path,
+                  validationError: postApplyError,
+                  hunkCount: u.hunks.length,
+                });
+                const rebuilt = buildNewFileFromHunks(u.hunks);
+                const rebuildError = validateStructuredContent(u.path, rebuilt);
+                if (!rebuildError) {
+                  logger.info("Recovered by rebuilding content from hunk lines", { path: u.path });
+                  contentToWrite = rebuilt;
+                } else {
+                  logger.warn("Recovery failed, preserving base file", {
+                    path: u.path,
+                    rebuildError,
+                  });
+                  contentToWrite = baseText;
+                }
+              }
             } else {
               logger.warn("Hunk context mismatch, falling back to hunk content reconstruction", {
                 path: u.path,

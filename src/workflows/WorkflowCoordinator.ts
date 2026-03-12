@@ -334,6 +334,7 @@ export class WorkflowCoordinator {
             results.push(result);
 
             if (result.success) {
+              exhaustedTaskIds.add(taskId);
               try {
                 const refreshedTasks =
                   await this.fetchProjectTasks(projectId);
@@ -346,7 +347,7 @@ export class WorkflowCoordinator {
 
                 if (postStatus === preStatus) {
                   logger.warn(
-                    "Task status unchanged after successful workflow - marking exhausted",
+                    "Task status unchanged after successful workflow",
                     {
                       workflowId,
                       projectId,
@@ -355,7 +356,6 @@ export class WorkflowCoordinator {
                       attempt: priorAttempts + 1,
                     },
                   );
-                  exhaustedTaskIds.add(taskId);
                 }
               } catch {
                 logger.warn(
