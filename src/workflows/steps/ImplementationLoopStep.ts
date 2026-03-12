@@ -83,6 +83,7 @@ export class ImplementationLoopStep extends WorkflowStep {
       }
 
       await this.loadPlanFileSnippets(context, recordedPlan.planFiles);
+      await this.loadPlanArtifactText(context);
 
       const personaResult = await personaStep.execute(context);
       if (personaResult.status !== "success") {
@@ -427,7 +428,7 @@ export class ImplementationLoopStep extends WorkflowStep {
     context: WorkflowContext,
     planFiles: string[],
   ): Promise<void> {
-    const MAX_SNIPPET_BYTES = 8192;
+    const MAX_SNIPPET_BYTES = 16384;
     const snippets: Array<{ path: string; content: string }> = [];
     const repoRoot = context.repoRoot;
     if (!repoRoot || !planFiles.length) {
@@ -453,6 +454,28 @@ export class ImplementationLoopStep extends WorkflowStep {
       totalFiles: planFiles.length,
       files: snippets.map((s) => s.path),
     });
+  }
+
+  private async loadPlanArtifactText(
+    context: WorkflowContext,
+  ): Promise<void> {
+    const task = context.getVariable("task");
+    const taskId = task?.id || task?.taskId;
+    const repoRoot = context.repoRoot;
+    if (!taskId || !repoRoot) {
+      context.setVariable("implementation_plan_text", "");
+      return;
+    }
+    const artifactPath = path.resolve(
+      repoRoot,
+      `.ma/tasks/${taskId}/03-plan-final.md`,
+    );
+    try {
+      const content = await fs.readFile(artifactPath, "utf-8");
+      context.setVariable("implementation_plan_text", content);
+    } catch {
+      context.setVariable("implementation_plan_text", "");
+    }
   }
 
   private async resetStagedChanges(context: WorkflowContext): Promise<void> {

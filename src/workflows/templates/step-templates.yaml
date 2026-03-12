@@ -35,6 +35,7 @@ templates:
       payload:
         task: ${task}
         plan_artifact: .ma/tasks/${task.id}/03-plan-final.md
+        plan_text: "${implementation_plan_text || ''}"
         plan_required_files: "${plan_required_files || []}"
         missing_plan_files_pre_implementation: "${record_plan_key_files.missing_files || []}"
         implementation_guard_missing_files: "${implementation_guard_missing_files || []}"

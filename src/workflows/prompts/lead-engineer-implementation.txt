@@ -14,8 +14,13 @@ This is not a new task. Treat this request like a targeted correction of the pre
 Task summary:
 {{task.description}}
 
+{{#if plan_text}}
+Approved plan:
+{{plan_text}}
+{{else}}
 Plan artifact: {{plan_artifact}}
-Open this artifact before writing code and follow every instruction it contains.
+{{/if}}
+Follow every instruction in the plan above.
 {{#if plan_required_files}}
 Plan-required files that must exist in this diff:
 {{#each plan_required_files}}- {{this}}
