@@ -1,3 +1,5 @@
+import fs from "fs/promises";
+import path from "path";
 import {
   WorkflowStep,
   WorkflowStepConfig,
@@ -79,6 +81,8 @@ export class ImplementationLoopStep extends WorkflowStep {
       if (attempt === maxAttempts) {
         context.setVariable("implementation_prefer_full_file", true);
       }
+
+      await this.loadPlanFileSnippets(context, recordedPlan.planFiles);
 
       const personaResult = await personaStep.execute(context);
       if (personaResult.status !== "success") {
@@ -417,6 +421,38 @@ export class ImplementationLoopStep extends WorkflowStep {
     } else if (result.data) {
       context.setStepOutput(stepName, result.data);
     }
+  }
+
+  private async loadPlanFileSnippets(
+    context: WorkflowContext,
+    planFiles: string[],
+  ): Promise<void> {
+    const MAX_SNIPPET_BYTES = 8192;
+    const snippets: Array<{ path: string; content: string }> = [];
+    const repoRoot = context.repoRoot;
+    if (!repoRoot || !planFiles.length) {
+      context.setVariable("implementation_file_snippets", []);
+      return;
+    }
+    for (const relPath of planFiles) {
+      try {
+        const absPath = path.resolve(repoRoot, relPath);
+        if (!absPath.startsWith(repoRoot)) continue;
+        const stat = await fs.stat(absPath);
+        if (stat.size > MAX_SNIPPET_BYTES) continue;
+        const content = await fs.readFile(absPath, "utf-8");
+        snippets.push({ path: relPath, content });
+      } catch {
+        void 0;
+      }
+    }
+    context.setVariable("implementation_file_snippets", snippets);
+    context.logger.info("Loaded plan file snippets for implementation", {
+      workflowId: context.workflowId,
+      fileCount: snippets.length,
+      totalFiles: planFiles.length,
+      files: snippets.map((s) => s.path),
+    });
   }
 
   private async resetStagedChanges(context: WorkflowContext): Promise<void> {

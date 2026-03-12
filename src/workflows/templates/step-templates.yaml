@@ -62,6 +62,7 @@ templates:
         pre_qa_test_error: "${pre_qa_test_error || ''}"
         detected_test_command: "${detected_test_command || ''}"
         test_tooling_commands: "${test_tooling_commands || []}"
+        snippets: "${implementation_file_snippets || []}"
 
   qa_review:
     type: PersonaRequestStep

@@ -30,6 +30,8 @@ Plan guard reported missing files: {{implementation_guard_missing_summary}}. Cre
 Workflow branch: {{repo_root}} ({{project_id}}) on {{repo}}
 Allowed languages: {{#if context_allowed_languages}}{{context_allowed_languages}}{{else}}{{context_primary_language}}{{/if}}
 
+IMPORTANT: The actual contents of plan-referenced files are injected into the system context under "Existing project files for reference". Use those exact contents as the base for your diffs. Your diff context lines MUST match the real file contents exactly — do not guess or invent file content.
+
 {{#if implementation_config_validation_summary}}
 Execution rules:
 1. Ignore the broader implementation plan and focus only on the files listed in the validation errors.
