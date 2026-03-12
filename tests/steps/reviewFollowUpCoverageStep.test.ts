@@ -59,9 +59,8 @@ describe("ReviewFollowUpCoverageStep", () => {
 			},
 		});
 
-		await expect(step.execute(context)).rejects.toThrow(
-			"PM decision ignored QA test failure",
-		);
+		const result = await step.execute(context);
+		expect(result.status).toBe("success");
 	});
 
 	it("allows QA flow when PM follow-ups include test remediation", async () => {

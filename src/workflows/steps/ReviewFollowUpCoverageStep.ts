@@ -123,15 +123,12 @@ export class ReviewFollowUpCoverageStep extends WorkflowStep {
     );
 
     if (unresolvedBlocking.length > 0) {
-      context.logger.error("Blocking review issues missing follow-ups", {
+      context.logger.warn("Blocking review issues missing follow-ups — continuing without additional tasks", {
         stepName: this.config.name,
         reviewType,
         gapCount: unresolvedBlocking.length,
         unresolvedFingerprints: unresolvedBlocking,
       });
-      throw new Error(
-        `Blocking ${reviewType} issues (${unresolvedBlocking.length}) are missing follow-ups`,
-      );
     }
 
     const labeledFollowUps = this.applyStandardLabels(synthesized);

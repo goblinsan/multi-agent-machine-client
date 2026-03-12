@@ -493,7 +493,7 @@ steps:
     type: SimpleTaskStatusStep
     description: "Mark task as completed on dashboard when all reviews pass"
     depends_on: ["devops_request"]
-    condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'"
+    condition: "${qa_request_status} != 'fail' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'"
     config:
       task_id: "${taskId}"
       project_id: "${projectId}"

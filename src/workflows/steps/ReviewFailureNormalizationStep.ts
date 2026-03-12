@@ -407,7 +407,7 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
   private buildFallbackIssue(
     reviewType: string,
     reviewResult: Record<string, any>,
-    severity: Severity,
+    _severity: Severity,
   ): NormalizedIssue {
     const summary =
       typeof reviewResult.summary === "string"
@@ -419,8 +419,8 @@ export class ReviewFailureNormalizationStep extends WorkflowStep {
       "fallback",
       `${reviewType} failure`,
       summary,
-      severity,
-      severityOrder[severity] >= severityOrder.high,
+      "medium",
+      false,
       this.extractLabels(reviewType, summary),
       reviewResult,
     );

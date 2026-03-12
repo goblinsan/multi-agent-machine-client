@@ -365,7 +365,8 @@ export function interpretPersonaStatus(
   if (
     contentJson &&
     typeof contentJson.error === "string" &&
-    contentJson.error.trim().length > 0
+    contentJson.error.trim().length > 0 &&
+    !contentJson.status
   ) {
     return {
       status: "fail",

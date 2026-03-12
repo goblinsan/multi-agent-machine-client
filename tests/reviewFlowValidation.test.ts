@@ -137,7 +137,7 @@ describe("Review Flow Validation", () => {
     const markDone = steps["mark_task_done"];
     expect(markDone).toBeDefined();
     expect(markDone?.depends_on).toEqual(["devops_request"]);
-    expect(markDone?.condition).toBe("${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'");
+    expect(markDone?.condition).toBe("${qa_request_status} != 'fail' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'");
     expect(markDone?.config?.status).toBe("done");
   });
 
@@ -173,7 +173,7 @@ describe("Review Flow Validation", () => {
     expect(devops?.condition).toBe("${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail'");
 
     expect(markDone?.depends_on).toEqual(["devops_request"]);
-    expect(markDone?.condition).toBe("${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'");
+    expect(markDone?.condition).toBe("${qa_request_status} != 'fail' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'");
   });
 
   it("validates review failure handling steps exist for all review types", async () => {

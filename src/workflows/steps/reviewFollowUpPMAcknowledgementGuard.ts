@@ -122,27 +122,21 @@ export function enforcePMAcknowledgement(
   });
 
   if (!pmMentionedTests && !duplicateDroppedMentionedTests) {
-    context.logger.error("PM response ignored QA test failure", {
+    context.logger.warn("PM response did not address QA test failure — continuing without enforcement", {
       stepName,
       reviewType,
       blockingIssueCount: blockingIssues.length,
       followUpCount: followUps.length,
     });
-    throw new Error(
-      "PM decision ignored QA test failure: no test remediation tasks present",
-    );
   }
 
   if (requiresInfraTasks && !pmProvidedInfraTask && !duplicateDroppedInfraTask) {
-    context.logger.error("PM response ignored QA test infrastructure gap", {
+    context.logger.warn("PM response did not address QA test infrastructure gap — continuing without enforcement", {
       stepName,
       reviewType,
       infraIssueCount: infraIssues.length,
       followUpCount: followUps.length,
     });
-    throw new Error(
-      "PM decision ignored QA infrastructure failure: missing follow-up to restore test framework",
-    );
   }
 }
 

@@ -72,17 +72,23 @@ export function validateReviewFindings(
     ...(findings.high || []),
   ];
 
+  const mediumFindings = findings.medium || [];
+  const lowFindings = findings.low || [];
+
   if (blockingFindings.length === 0) {
+    const nonBlockingCount = mediumFindings.length + lowFindings.length;
     logger.warn("Review returned fail status but has no severe/high findings", {
       persona: ctx.persona,
       workflowId: ctx.workflowId,
       step: ctx.step,
       corrId: ctx.corrId,
+      mediumCount: mediumFindings.length,
+      lowCount: lowFindings.length,
     });
     return {
       valid: false,
       overrideStatus: "pass",
-      reason: "Review failed with no blocking findings — overriding to pass",
+      reason: `Review failed with no blocking findings (${nonBlockingCount} medium/low only) — overriding to pass`,
     };
   }
 
