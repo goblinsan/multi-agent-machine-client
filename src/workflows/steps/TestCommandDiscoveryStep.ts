@@ -257,6 +257,24 @@ export class TestCommandDiscoveryStep extends WorkflowStep {
       if (manifest && typeof manifest === "object") {
         return manifest as TestCommandManifest;
       }
+
+      const output = (contextResult as any).output;
+      if (typeof output === "string") {
+        try {
+          const cleaned = output
+            .replace(/^```(?:json)?\s*\n?/m, "")
+            .replace(/\n?```\s*$/m, "")
+            .trim();
+          const parsed = JSON.parse(cleaned);
+          const parsedManifest =
+            parsed?.test_command_manifest || parsed?.test_surface;
+          if (parsedManifest && typeof parsedManifest === "object") {
+            return parsedManifest as TestCommandManifest;
+          }
+        } catch {
+          void 0;
+        }
+      }
     }
     return null;
   }

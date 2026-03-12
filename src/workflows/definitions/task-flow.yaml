@@ -396,6 +396,17 @@ steps:
         existing_tasks: "${review_existing_tasks || []}"
         diff_summary: "${review_diff_summary || ''}"
         diff_changed_files: "${review_diff_files || []}"
+      outputs:
+        urgent_tasks_created: "${create_tasks_bulk.urgent_tasks_created || 0}"
+
+  - name: resolve_code_review_override
+    type: VariableResolutionStep
+    description: "Override code review fail status when no blocking tasks were created"
+    depends_on: ["handle_code_review_failure"]
+    condition: "${handle_code_review_failure.urgent_tasks_created} == 0"
+    config:
+      variables:
+        code_review_request_status: "resolved"
 
   - template: security_review
     name: security_request
@@ -442,6 +453,17 @@ steps:
         existing_tasks: "${review_existing_tasks || []}"
         diff_summary: "${review_diff_summary || ''}"
         diff_changed_files: "${review_diff_files || []}"
+      outputs:
+        urgent_tasks_created: "${create_tasks_bulk.urgent_tasks_created || 0}"
+
+  - name: resolve_security_override
+    type: VariableResolutionStep
+    description: "Override security fail status when no blocking tasks were created"
+    depends_on: ["handle_security_failure"]
+    condition: "${handle_security_failure.urgent_tasks_created} == 0"
+    config:
+      variables:
+        security_request_status: "resolved"
 
   - template: devops_review
     name: devops_request
@@ -488,6 +510,17 @@ steps:
         existing_tasks: []
         diff_summary: "${review_diff_summary || ''}"
         diff_changed_files: "${review_diff_files || []}"
+      outputs:
+        urgent_tasks_created: "${create_tasks_bulk.urgent_tasks_created || 0}"
+
+  - name: resolve_devops_override
+    type: VariableResolutionStep
+    description: "Override devops fail status when no blocking tasks were created"
+    depends_on: ["handle_devops_failure"]
+    condition: "${handle_devops_failure.urgent_tasks_created} == 0"
+    config:
+      variables:
+        devops_request_status: "resolved"
 
   - name: mark_task_done
     type: SimpleTaskStatusStep
