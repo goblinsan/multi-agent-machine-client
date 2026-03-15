@@ -110,7 +110,10 @@ const HEAVY_PERSONA_TIMEOUT_DEFAULTS: Record<string, number> = {
   "lead-engineer": 300_000,
   architect: 240_000,
   "implementation-planner": 240_000,
+  "plan-evaluator": 480_000,
   "tester-qa": 180_000,
+  analyst: 240_000,
+  "analysis-reviewer": 240_000,
 };
 
 export function personaTimeoutMs(persona: string, cfg: any) {

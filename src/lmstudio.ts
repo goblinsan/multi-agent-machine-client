@@ -93,6 +93,7 @@ export async function callLMStudio(
       if (isAbort) {
         lastErr = new Error(`LM Studio request aborted after ${timeoutMs}ms`);
         lmStudioCircuitBreaker.recordFailure(true);
+        break;
       } else if (!(err as any).circuitBreakerOpen) {
         lastErr = err;
         const isConnError = !!(

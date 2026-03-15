@@ -63,7 +63,7 @@ steps:
     description: "Iterate analyst and reviewer with feedback-driven retries"
     depends_on: ["context_scan", "load_existing_tasks"]
     config:
-      maxIterations: 3
+      maxIterations: 5
       analystPersona: "analyst"
       reviewerPersona: "analysis-reviewer"
       analysisStep: "analysis-root-cause"
@@ -186,6 +186,10 @@ steps:
     condition: "create_tasks_bulk.task_ids.length > 0"
     config:
       status: "blocked"
+
+timeouts:
+  analysis_loop_timeout: 900000
+  default_step: 300000
 
 outputs:
   synthesized_tasks: "${synthesize_tasks.actionable_tasks || []}"

@@ -45,6 +45,7 @@ import { DependencyTaskCollectorStep } from "./steps/DependencyTaskCollectorStep
 import { ImplementationLoopStep } from "./steps/ImplementationLoopStep";
 import { QAArtifactLoadStep } from "./steps/QAArtifactLoadStep";
 import { TestToolingSetupStep } from "./steps/TestToolingSetupStep";
+import { PreQaAutoRepairStep } from "./steps/PreQaAutoRepairStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -197,6 +198,7 @@ export class WorkflowEngine {
     );
     this.stepRegistry.set("QAArtifactLoadStep", QAArtifactLoadStep);
     this.stepRegistry.set("TestToolingSetupStep", TestToolingSetupStep);
+    this.stepRegistry.set("PreQaAutoRepairStep", PreQaAutoRepairStep);
   }
 
   public registerStep(

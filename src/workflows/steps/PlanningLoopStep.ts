@@ -46,14 +46,14 @@ export class PlanningLoopStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const config = this.config.config as PlanningLoopConfig;
     const {
-      maxIterations = 5,
+      maxIterations = 7,
       plannerPersona,
       evaluatorPersona,
       planStep,
       evaluateStep,
       payload,
       timeout,
-      deadlineSeconds = 600,
+      deadlineSeconds = 1200,
     } = config;
 
     const resolveTimeout = (persona: string) => {

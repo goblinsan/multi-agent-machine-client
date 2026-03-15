@@ -103,10 +103,10 @@ steps:
 
   - name: planning_loop
     type: PlanningLoopStep
-    description: "Plan creation and evaluation loop with max 5 iterations"
+    description: "Plan creation and evaluation loop with max 7 iterations"
     depends_on: ["context_scan", "research_enrichment", "load_previous_qa_feedback"]
     config:
-      maxIterations: 5
+      maxIterations: 7
       plannerPersona: "implementation-planner"
       evaluatorPersona: "plan-evaluator" 
       planStep: "2-plan"
@@ -195,6 +195,16 @@ steps:
         pre_qa_test_result: "${run_detected_tests.qaResult}"
         pre_qa_test_status: "${run_detected_tests.testsPassed}"
         pre_qa_test_error: "${run_detected_tests.error}"
+
+  - name: pre_qa_auto_repair
+    type: PreQaAutoRepairStep
+    description: "Attempt to auto-repair syntax errors before escalating to QA cascade"
+    depends_on: ["persist_pre_qa_test_signal"]
+    condition: "pre_qa_test_error.length > 0"
+    config:
+      maxRepairAttempts: 2
+      testTimeoutMs: 120000
+      testIdleTimeoutMs: 30000
 
   - name: test_harness_synthesis
     type: TestHarnessSynthesisStep
@@ -580,6 +590,6 @@ failure_handling:
 
 timeouts:
   context_request_timeout: 600000
-  planning_loop_timeout: 600000
+  planning_loop_timeout: 1200000
   implementation_loop_timeout: 3000000
   default_step: 300000
