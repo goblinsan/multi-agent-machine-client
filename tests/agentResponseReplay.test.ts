@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { parseAgentEditsFromResponse } from "../src/workflows/helpers/agentResponseParser";
-import { parseUnifiedDiffToEditSpec } from "../src/fileops";
+import { DiffParser } from "../src/agents/parsers/DiffParser";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +21,8 @@ describe("agent diff replay (lead-engineer persona)", () => {
 
     it(`parses diff bundle for ${label}`, async () => {
       const parseOutcome = await parseAgentEditsFromResponse(testCase.input, {
-        parseDiff: (diff: string) => parseUnifiedDiffToEditSpec(diff),
+        parseDiff: (diff: string) =>
+          DiffParser.parsePersonaResponse(diff).editSpec ?? { ops: [] },
         maxDiffCandidates: 12,
       });
 

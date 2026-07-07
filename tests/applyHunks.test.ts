@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import _os from "os";
 import { applyEditOps } from "../src/fileops";
+import { DiffApplyFailure } from "../src/fileops/applyEditOps";
 import { cfg } from "../src/config";
 import { makeTempRepo } from "./makeTempRepo";
 import { applyHunksToLines } from "../src/fileops/hunkHelpers";
@@ -50,7 +51,7 @@ describe("applyEditOps hunks application", () => {
     expect(out).toContain("line2-new");
   });
 
-  it("falls back to provided content if context mismatch", async () => {
+  it("rejects the apply with a structured failure on context mismatch", async () => {
     const repo = await makeTempRepo({
       "package.json": JSON.stringify({ name: "tmp" }),
     });
@@ -84,14 +85,25 @@ describe("applyEditOps hunks application", () => {
         ],
       };
 
-      const res = await applyEditOps(JSON.stringify(editSpec), {
-        repoRoot: repo,
-        branchName: "feat/test-hunks-2",
-        commitMessage: "apply hunks",
-      });
-      expect(res.changed && res.changed.includes("src/file2.js")).toBeTruthy();
+      let thrown: unknown = null;
+      try {
+        await applyEditOps(JSON.stringify(editSpec), {
+          repoRoot: repo,
+          branchName: "feat/test-hunks-2",
+          commitMessage: "apply hunks",
+        });
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(DiffApplyFailure);
+      const failure = thrown as DiffApplyFailure;
+      expect(failure.failures).toHaveLength(1);
+      expect(failure.failures[0].path).toBe("src/file2.js");
+      expect(failure.failures[0].reason).toContain("context");
+
       const out = await fs.readFile(filePath, "utf8");
-      expect(out).toBe("fallback-content\n");
+      expect(out).toBe(base);
 
       const diagDir = path.join(repo, "outputs", "diagnostics");
       const diags = await fs.readdir(diagDir).catch(() => []);
@@ -139,7 +151,7 @@ describe("applyEditOps hunks application", () => {
     expect(res.changed).toEqual(["src/file3.ts"]);
   });
 
-  it("applies hunks via partial context match when some lines are hallucinated", () => {
+  it("refuses hunks whose context lines are hallucinated", () => {
     const base = ["line1", "line2-real", "line3-real", "line4"];
     const hunks = [
       {
@@ -158,7 +170,7 @@ describe("applyEditOps hunks application", () => {
     ];
 
     const result = applyHunksToLines(base, hunks);
-    expect(result.ok).toBe(true);
-    expect(result.content).toContain("line2-replaced");
+    expect(result.ok).toBe(false);
+    expect(result.failedHunk).toBeDefined();
   });
 });

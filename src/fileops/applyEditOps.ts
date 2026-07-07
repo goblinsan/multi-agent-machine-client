@@ -16,7 +16,6 @@ import type {
   UpsertOp,
 } from "../fileops.js";
 import {
-  reconstructContentFromHunks,
   validateStructuredContent,
   buildNewFileFromHunks,
   applyHunksToLines,
@@ -28,6 +27,22 @@ type ApplyEditOpsResult = {
   sha: string;
   noop?: boolean;
 };
+
+export type ApplyOpFailure = { path: string; reason: string };
+
+export class DiffApplyFailure extends Error {
+  readonly failures: ApplyOpFailure[];
+
+  constructor(message: string, failures: ApplyOpFailure[]) {
+    super(message);
+    this.name = "DiffApplyFailure";
+    this.failures = failures;
+  }
+}
+
+type PlannedWrite =
+  | { kind: "write"; path: string; fullPath: string; content: string }
+  | { kind: "delete"; path: string; fullPath: string };
 
 export async function applyEditOps(
   jsonText: string,
@@ -62,7 +77,9 @@ export async function applyEditOps(
   const commitMsg = opts.commitMessage || "agent: apply edits";
   const sanitizedCommitMsg = String(commitMsg).replace(/\s+/g, " ").trim();
 
-  const changed: string[] = [];
+  const planned: PlannedWrite[] = [];
+  const failures: ApplyOpFailure[] = [];
+
   for (const op of spec.ops) {
     if (!op || typeof op !== "object" || typeof (op as any).action !== "string") {
       throw new Error("Bad op object");
@@ -85,93 +102,87 @@ export async function applyEditOps(
       let contentToWrite: string | undefined = u.content;
 
       if (Array.isArray(u.hunks) && u.hunks.length) {
+        let baseText: string | null = null;
         try {
-          let baseText: string | null = null;
-          try {
-            baseText = await fs.readFile(insideRepo(repoRoot, u.path), "utf8");
-          } catch {
-            baseText = null;
-          }
-          if (baseText !== null) {
-            const baseLines = baseText.split(/\r?\n/);
-            const applyResult = applyHunksToLines(baseLines, u.hunks);
-            if (applyResult.ok) {
-              contentToWrite = applyResult.content;
-              const postApplyError = validateStructuredContent(u.path, contentToWrite!);
-              if (postApplyError) {
-                logger.warn("Hunk application produced invalid structured content", {
-                  path: u.path,
-                  validationError: postApplyError,
-                  hunkCount: u.hunks.length,
-                });
-                const rebuilt = buildNewFileFromHunks(u.hunks);
-                const rebuildError = validateStructuredContent(u.path, rebuilt);
-                if (!rebuildError) {
-                  logger.info("Recovered by rebuilding content from hunk lines", { path: u.path });
-                  contentToWrite = rebuilt;
-                } else {
-                  logger.warn("Recovery failed, preserving base file", {
-                    path: u.path,
-                    rebuildError,
-                  });
-                  contentToWrite = baseText;
-                }
-              }
-            } else {
-              logger.warn("Hunk context mismatch, falling back to hunk content reconstruction", {
+          baseText = await fs.readFile(full, "utf8");
+        } catch {
+          baseText = null;
+        }
+
+        if (baseText !== null) {
+          const baseLines = baseText.split(/\r?\n/);
+          const applyResult = applyHunksToLines(baseLines, u.hunks);
+          if (!applyResult.ok) {
+            const failed = applyResult.failedHunk;
+            const hunkLabel = failed
+              ? `@@ -${failed.oldStart},${failed.oldCount} +${failed.newStart},${failed.newCount} @@`
+              : "unknown hunk";
+            failures.push({
+              path: u.path,
+              reason: `Hunk context does not match the current file contents (${hunkLabel}). The diff was generated against stale or invented file contents.`,
+            });
+            try {
+              await writeDiagnostic(repoRoot, u.path, {
+                reason: "hunk_context_mismatch",
                 path: u.path,
-                hunkCount: u.hunks.length,
+                hunks: u.hunks,
+                baseSample: baseLines.slice(0, 50).join("\n"),
               });
-              try {
-                await writeDiagnostic(repoRoot, u.path, {
-                  reason: "hunk_context_mismatch",
-                  path: u.path,
-                  hunks: u.hunks,
-                  baseSample: baseLines.slice(0, 50).join("\n"),
-                });
-              } catch (error) {
-                logger.warn("Failed to write diagnostic for hunk context mismatch", {
-                  path: u.path,
-                  error: String(error),
-                });
-              }
-              contentToWrite = u.content || reconstructContentFromHunks(baseLines, u.hunks);
-              const structuredError = validateStructuredContent(u.path, contentToWrite);
-              if (structuredError) {
-                logger.warn("Reconstructed content failed validation, preserving base file", {
-                  path: u.path,
-                  validationError: structuredError,
-                });
-                try {
-                  await writeDiagnostic(repoRoot, u.path, {
-                    reason: "reconstruction_validation_failure",
-                    path: u.path,
-                    validationError: structuredError,
-                    reconstructedSnippet: contentToWrite.slice(0, 500),
-                  });
-                } catch (diagErr) {
-                  logger.warn("Failed to write reconstruction diagnostic", { error: String(diagErr) });
-                }
-                contentToWrite = baseText;
-              }
+            } catch (error) {
+              logger.warn("Failed to write diagnostic for hunk context mismatch", {
+                path: u.path,
+                error: String(error),
+              });
             }
-          } else {
-            contentToWrite = buildNewFileFromHunks(u.hunks);
+            continue;
           }
-        } catch (error) {
-          logger.error("Failed to read or apply diff hunks", {
+
+          contentToWrite = applyResult.content;
+          const postApplyError = validateStructuredContent(
+            u.path,
+            contentToWrite!,
+          );
+          if (postApplyError) {
+            failures.push({
+              path: u.path,
+              reason: `Applying the diff produced structurally invalid content: ${postApplyError}`,
+            });
+            continue;
+          }
+        } else {
+          contentToWrite = buildNewFileFromHunks(u.hunks);
+          const newFileError = validateStructuredContent(
+            u.path,
+            contentToWrite,
+          );
+          if (newFileError) {
+            failures.push({
+              path: u.path,
+              reason: `New file content is structurally invalid: ${newFileError}`,
+            });
+            continue;
+          }
+        }
+      } else if (typeof contentToWrite === "string") {
+        const contentError = validateStructuredContent(u.path, contentToWrite);
+        if (contentError) {
+          failures.push({
             path: u.path,
-            error: String(error),
+            reason: `File content is structurally invalid: ${contentError}`,
           });
-          throw error;
+          continue;
         }
       }
 
       if (typeof contentToWrite !== "string") {
         throw new Error("No content available for upsert");
       }
-      await upsertFile(full, contentToWrite, maxBytes);
-      changed.push(path.relative(repoRoot, full).replace(/\\/g, "/"));
+      planned.push({
+        kind: "write",
+        path: u.path,
+        fullPath: full,
+        content: contentToWrite,
+      });
       continue;
     }
 
@@ -188,26 +199,66 @@ export async function applyEditOps(
         throw new Error(`Extension blocked by policy: ${d.path}`);
       }
       const full = insideRepo(repoRoot, d.path);
-
-      try {
-        await fs.unlink(full);
-      } catch (error) {
-        logger.debug("Failed to delete file (may not exist)", {
-          path: d.path,
-          error: String(error),
-        });
-      }
-
-      changed.push(path.relative(repoRoot, full).replace(/\\/g, "/"));
+      planned.push({ kind: "delete", path: d.path, fullPath: full });
       continue;
     }
 
     throw new Error(`Unsupported action: ${(op as any).action}`);
   }
 
+  if (failures.length > 0) {
+    const summary = failures
+      .map((f) => `${f.path}: ${f.reason}`)
+      .join("; ");
+    logger.warn("applyEditOps rejected edit spec", {
+      repoRoot,
+      failureCount: failures.length,
+      summary,
+    });
+    throw new DiffApplyFailure(
+      `Diff could not be applied faithfully: ${summary}`,
+      failures,
+    );
+  }
+
+  const changed: string[] = [];
+  for (const write of planned) {
+    if (write.kind === "write") {
+      await upsertFile(write.fullPath, write.content, maxBytes);
+    } else {
+      try {
+        await fs.unlink(write.fullPath);
+      } catch (error) {
+        logger.debug("Failed to delete file (may not exist)", {
+          path: write.path,
+          error: String(error),
+        });
+      }
+    }
+    changed.push(path.relative(repoRoot, write.fullPath).replace(/\\/g, "/"));
+  }
+
   if (!changed.length) {
     return { changed: [], branch, sha: "" };
   }
+
+  return await commitAndPushChanges(
+    repoRoot,
+    changed,
+    branch,
+    sanitizedCommitMsg,
+  );
+}
+
+export async function commitAndPushChanges(
+  repoRoot: string,
+  changed: string[],
+  branch: string,
+  commitMessage: string,
+): Promise<ApplyEditOpsResult> {
+  const sanitizedCommitMsg = String(commitMessage)
+    .replace(/\s+/g, " ")
+    .trim();
 
   try {
     await runGit(["add", ...changed], { cwd: repoRoot });
@@ -381,7 +432,9 @@ async function pushChanges(
       return;
     }
 
-    await runGit(["push", "origin", branch, "--force"], { cwd: repoRoot });
+    await runGit(["push", "origin", branch, "--force-with-lease"], {
+      cwd: repoRoot,
+    });
   } catch (pushErr) {
     logger.error("Git push failed", {
       branch,

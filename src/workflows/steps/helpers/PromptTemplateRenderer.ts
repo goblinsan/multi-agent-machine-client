@@ -45,6 +45,17 @@ export class PromptTemplateRenderer {
         return new Handlebars.SafeString("null");
       }
     });
+    Handlebars.registerHelper("truncate", (value: any, maxChars: any) => {
+      const text = typeof value === "string" ? value : String(value ?? "");
+      const limit = Number(maxChars);
+      if (!Number.isFinite(limit) || limit <= 0 || text.length <= limit) {
+        return new Handlebars.SafeString(text);
+      }
+      const omitted = text.length - limit;
+      return new Handlebars.SafeString(
+        `${text.slice(0, limit)}\n... [truncated ${omitted} chars]`,
+      );
+    });
     this.registered = true;
   }
 

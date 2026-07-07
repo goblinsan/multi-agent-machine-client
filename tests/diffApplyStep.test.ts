@@ -172,6 +172,7 @@ describe("DiffApplyStep Critical Error Handling", () => {
       operations_count: 1,
       branch: "test-branch",
       noop_applied: false,
+      apply_method: "edit-spec",
     });
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -213,6 +214,7 @@ describe("DiffApplyStep Critical Error Handling", () => {
       operations_count: 1,
       branch: "test-branch",
       noop_applied: true,
+      apply_method: "edit-spec",
     });
 
     expect(logger.info).toHaveBeenCalledWith(

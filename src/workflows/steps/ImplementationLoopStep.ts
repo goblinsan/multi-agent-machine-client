@@ -116,6 +116,18 @@ export class ImplementationLoopStep extends WorkflowStep {
 
       const diffResult = await diffStep.execute(context);
       if (diffResult.status !== "success") {
+        const applyFailures = this.extractApplyFailures(diffResult);
+        if (applyFailures.length > 0) {
+          lastValidationErrors = applyFailures;
+          context.setVariable(
+            "implementation_config_validation_errors",
+            applyFailures,
+          );
+          context.setVariable(
+            "implementation_config_validation_summary",
+            this.formatValidationSummary(applyFailures),
+          );
+        }
         if (attempt < maxAttempts) {
           context.logger.warn(
             "Diff application failed, retrying implementation attempt",
@@ -125,6 +137,7 @@ export class ImplementationLoopStep extends WorkflowStep {
               maxAttempts,
               failureReason:
                 diffResult.error?.message || "Unknown diff failure",
+              applyFailures,
             },
           );
           await this.resetStagedChanges(context);
@@ -349,6 +362,24 @@ export class ImplementationLoopStep extends WorkflowStep {
       }
     }
     return [];
+  }
+
+  private extractApplyFailures(result: StepResult): ConfigValidationError[] {
+    const fromError = (result.error as any)?.failures;
+    const fromData = (result.data as any)?.apply_failures;
+    const raw = Array.isArray(fromError)
+      ? fromError
+      : Array.isArray(fromData)
+        ? fromData
+        : [];
+    return raw
+      .filter(
+        (entry: any) =>
+          entry &&
+          typeof entry.path === "string" &&
+          typeof entry.reason === "string",
+      )
+      .map((entry: any) => ({ file: entry.path, reason: entry.reason }));
   }
 
   private extractAppliedFiles(result: StepResult): string[] {

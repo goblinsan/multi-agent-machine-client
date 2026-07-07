@@ -43,6 +43,8 @@ export interface QAResult {
     executedAt: number;
     command: string;
     workingDir: string;
+    exitCode?: number;
+    outputParsed?: boolean;
   };
 }
 
@@ -142,20 +144,42 @@ export class QAStep extends WorkflowStep {
         throw lastError || new Error("QA execution failed after all retries");
       }
 
-      const passRate =
-        (qaResult.testResults.passed / qaResult.testResults.total) * 100;
-      const failureRate =
-        (qaResult.testResults.failed / qaResult.testResults.total) * 100;
+      const total = qaResult.testResults.total;
+      const failed = qaResult.testResults.failed;
+      const exitCode = qaResult.metadata.exitCode;
 
       let qaStatus: "success" | "failure" = "success";
       const issues: string[] = [];
 
-      if (failureRate > failureThreshold) {
+      if (typeof exitCode === "number" && exitCode !== 0) {
         qaStatus = "failure";
-        issues.push(
-          `Test failure rate ${failureRate.toFixed(1)}% exceeds threshold ${failureThreshold}%`,
+        issues.push(`Test command exited with code ${exitCode}`);
+      }
+
+      if (total > 0) {
+        const failureRate = (failed / total) * 100;
+        if (failureRate > failureThreshold) {
+          qaStatus = "failure";
+          issues.push(
+            `Test failure rate ${failureRate.toFixed(1)}% exceeds threshold ${failureThreshold}%`,
+          );
+        }
+      } else if (failed > 0) {
+        qaStatus = "failure";
+        issues.push(`${failed} test failure(s) detected`);
+      } else if (qaStatus === "success" && !qaResult.metadata.outputParsed) {
+        logger.warn(
+          "Test output format not recognized - trusting exit code only",
+          { command: qaResult.metadata.command, exitCode },
         );
       }
+
+      const passRate =
+        total > 0
+          ? (qaResult.testResults.passed / total) * 100
+          : qaStatus === "success"
+            ? 100
+            : 0;
 
       if (requiredCoverage && qaResult.coverage) {
         if (qaResult.coverage.percentage < requiredCoverage) {
@@ -234,7 +258,7 @@ export class QAStep extends WorkflowStep {
     });
 
     try {
-      const testOutput = await this.runCommand(
+      const { output, exitCode } = await this.runCommand(
         fullCommand,
         workingDir,
         timeoutMs,
@@ -243,10 +267,20 @@ export class QAStep extends WorkflowStep {
 
       const duration_ms = Date.now() - startTime;
 
-      const parsed = this.parseTestOutput(testOutput);
+      const parsed = this.parseTestOutput(output);
+      const outputParsed = parsed.total > 0 || parsed.passed > 0 || parsed.failed > 0;
+
+      if (exitCode !== 0 && parsed.failed === 0) {
+        parsed.failed = Math.max(1, parsed.failed);
+        parsed.total = Math.max(parsed.total, parsed.passed + parsed.failed);
+        parsed.failures.push({
+          test: "test command",
+          error: `Command exited with code ${exitCode}. Output tail:\n${output.slice(-2000)}`,
+        });
+      }
 
       return {
-        passed: parsed.failed === 0,
+        passed: exitCode === 0 && parsed.failed === 0,
         testResults: {
           total: parsed.total,
           passed: parsed.passed,
@@ -260,6 +294,8 @@ export class QAStep extends WorkflowStep {
           executedAt: Date.now(),
           command: fullCommand,
           workingDir,
+          exitCode,
+          outputParsed,
         },
       };
     } catch (error: any) {
@@ -277,15 +313,31 @@ export class QAStep extends WorkflowStep {
     workingDir: string,
     timeoutMs: number,
     idleTimeoutMs?: number,
-  ): Promise<string> {
-    const result = await runTestCommandWithWorker({
-      command,
-      cwd: workingDir,
-      timeoutMs,
-      idleTimeoutMs,
-    });
-
-    return [result.stdout, result.stderr].filter(Boolean).join("\n");
+  ): Promise<{ output: string; exitCode: number }> {
+    try {
+      const result = await runTestCommandWithWorker({
+        command,
+        cwd: workingDir,
+        timeoutMs,
+        idleTimeoutMs,
+      });
+      return {
+        output: [result.stdout, result.stderr].filter(Boolean).join("\n"),
+        exitCode: 0,
+      };
+    } catch (error: any) {
+      if (
+        typeof error?.exitCode === "number" &&
+        !error?.timedOut &&
+        !error?.idleTimedOut
+      ) {
+        return {
+          output: [error.stdout, error.stderr].filter(Boolean).join("\n"),
+          exitCode: error.exitCode,
+        };
+      }
+      throw error;
+    }
   }
 
   private parseTestOutput(output: string): any {
@@ -304,12 +356,39 @@ export class QAStep extends WorkflowStep {
     let coverage: any = null;
 
     for (const line of lines) {
-      if (line.match(/Tests:\s*(\d+)\s*passed,\s*(\d+)\s*total/)) {
-        const match = line.match(/Tests:\s*(\d+)\s*passed,\s*(\d+)\s*total/);
-        if (match) {
-          passed = parseInt(match[1]);
-          total = parseInt(match[2]);
-          failed = total - passed;
+      const jestMatch = line.match(
+        /Tests:\s*(?:(\d+)\s*failed,\s*)?(?:(\d+)\s*skipped,\s*)?(?:(\d+)\s*passed,\s*)?(\d+)\s*total/,
+      );
+      if (jestMatch) {
+        failed = jestMatch[1] ? parseInt(jestMatch[1]) : 0;
+        skipped = jestMatch[2] ? parseInt(jestMatch[2]) : 0;
+        passed = jestMatch[3] ? parseInt(jestMatch[3]) : 0;
+        total = parseInt(jestMatch[4]);
+        if (passed === 0 && failed === 0 && skipped === 0) {
+          passed = total;
+        }
+      }
+
+      const vitestMatch = line.match(
+        /^\s*Tests\s+(?:(\d+)\s+failed\s*\|\s*)?(?:(\d+)\s+skipped\s*\|\s*)?(\d+)\s+passed\s*\((\d+)\)/,
+      );
+      if (vitestMatch) {
+        failed = vitestMatch[1] ? parseInt(vitestMatch[1]) : 0;
+        skipped = vitestMatch[2] ? parseInt(vitestMatch[2]) : 0;
+        passed = parseInt(vitestMatch[3]);
+        total = parseInt(vitestMatch[4]);
+      }
+
+      if (/^=+.*\bin\s+[\d.]+s.*=+$/.test(line) || /^=+ .*(passed|failed).*=+$/.test(line)) {
+        const pyFailed = line.match(/(\d+)\s+failed/);
+        const pyPassed = line.match(/(\d+)\s+passed/);
+        const pySkipped = line.match(/(\d+)\s+skipped/);
+        const pyErrors = line.match(/(\d+)\s+errors?/);
+        if (pyFailed || pyPassed) {
+          failed = (pyFailed ? parseInt(pyFailed[1]) : 0) + (pyErrors ? parseInt(pyErrors[1]) : 0);
+          passed = pyPassed ? parseInt(pyPassed[1]) : 0;
+          skipped = pySkipped ? parseInt(pySkipped[1]) : 0;
+          total = passed + failed + skipped;
         }
       }
 

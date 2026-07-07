@@ -44,6 +44,9 @@ export function extractFencedDiffBlocks(text: string): DiffBlock[] {
   return blocks;
 }
 
+const GIT_METADATA_LINE =
+  /^(index |new file mode|deleted file mode|old mode |new mode |similarity index|dissimilarity index|rename from|rename to|copy from|copy to|Binary files|GIT binary patch)/;
+
 export function extractRawDiffBlocks(text: string): DiffBlock[] {
   const blocks: DiffBlock[] = [];
   const lines = text.split("\n");
@@ -53,7 +56,11 @@ export function extractRawDiffBlocks(text: string): DiffBlock[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (line.startsWith("diff --git") || line.match(/^--- a\//)) {
+    if (
+      line.startsWith("diff --git") ||
+      line.match(/^--- a\//) ||
+      (!inDiff && line.match(/^--- \/dev\/null/))
+    ) {
       if (currentBlock.length > 0) {
         blocks.push({
           content: currentBlock.join("\n"),
@@ -66,7 +73,8 @@ export function extractRawDiffBlocks(text: string): DiffBlock[] {
       if (
         line.match(/^[+\-@\s\\]/) ||
         line.startsWith("+++") ||
-        line.startsWith("---")
+        line.startsWith("---") ||
+        GIT_METADATA_LINE.test(line)
       ) {
         currentBlock.push(line);
       } else if (

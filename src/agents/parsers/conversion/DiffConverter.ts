@@ -55,6 +55,11 @@ export function parseDiffBlock(block: DiffBlock): Array<UpsertOp | DeleteOp> {
       continue;
     }
 
+    if (/^--- \/dev\/null/.test(line)) {
+      isNewFile = true;
+      continue;
+    }
+
     if (line.includes("new file mode")) {
       isNewFile = true;
       continue;
@@ -77,7 +82,7 @@ export function parseDiffBlock(block: DiffBlock): Array<UpsertOp | DeleteOp> {
 
     if (line.startsWith("@@") && currentFile) {
       const hunks = extractHunksFromDiff(lines, i);
-      const isAllNewContent = isNewFile || hunks.every(h => h.oldCount === 0);
+      const isAllNewContent = isNewFile;
 
       if (isAllNewContent) {
         const fileContent = extractFileContentFromDiff(lines, i + 1, currentFile);

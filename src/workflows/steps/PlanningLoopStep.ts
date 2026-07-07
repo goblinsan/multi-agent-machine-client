@@ -70,6 +70,14 @@ export class PlanningLoopStep extends WorkflowStep {
     let evaluationResult: any = null;
     let lastEvaluationPassed = false;
     let latestPlanKeyFiles: string[] = [];
+    let stalled = false;
+    let lastFailureSignature: string | null = null;
+    const iterationHistory: Array<{
+      iteration: number;
+      planPreview: string;
+      evaluationStatus: string;
+      evaluationReason: string;
+    }> = [];
 
     logger.info("Starting planning evaluation loop", {
       workflowId: context.workflowId,
@@ -125,6 +133,7 @@ export class PlanningLoopStep extends WorkflowStep {
           iteration: currentIteration,
           planIteration: currentIteration,
           previous_evaluation: evaluationResult,
+          planning_history: this.buildPlanningHistory(iterationHistory),
           is_revision: currentIteration > 1,
           task: context.getVariable("task"),
           repo: repoRemote,
@@ -199,6 +208,23 @@ export class PlanningLoopStep extends WorkflowStep {
             iteration: currentIteration,
             ambiguous_key_files: ambiguousKeyFiles,
           });
+          this.recordIteration(
+            iterationHistory,
+            currentIteration,
+            planResult,
+            "fail",
+            reason,
+          );
+          if (this.isRepeatFailure(reason, lastFailureSignature)) {
+            stalled = true;
+            logger.warn("Planning loop stalled on repeated guard failure", {
+              workflowId: context.workflowId,
+              iteration: currentIteration,
+              reason,
+            });
+            break;
+          }
+          lastFailureSignature = this.normalizeFailureSignature(reason);
           continue;
         }
 
@@ -265,6 +291,23 @@ export class PlanningLoopStep extends WorkflowStep {
             violations: languageViolations,
             allowed_languages: allowedLanguageInfo.display,
           });
+          this.recordIteration(
+            iterationHistory,
+            currentIteration,
+            planResult,
+            "fail",
+            reason,
+          );
+          if (this.isRepeatFailure(reason, lastFailureSignature)) {
+            stalled = true;
+            logger.warn("Planning loop stalled on repeated guard failure", {
+              workflowId: context.workflowId,
+              iteration: currentIteration,
+              reason,
+            });
+            break;
+          }
+          lastFailureSignature = this.normalizeFailureSignature(reason);
           continue;
         }
       } catch (error) {
@@ -319,7 +362,9 @@ export class PlanningLoopStep extends WorkflowStep {
           context_frameworks: contextInsights?.frameworks,
           context_potential_issues: contextInsights?.potentialIssues,
 
-          ...(contextualPrompt ? { _system_prompt: contextualPrompt } : {}),
+          ...(contextualPrompt
+            ? { extra_system_messages: [contextualPrompt] }
+            : {}),
         };
 
         const evalCorrId = await sendPersonaRequest(transport, {
@@ -385,6 +430,21 @@ export class PlanningLoopStep extends WorkflowStep {
 
         lastEvaluationPassed = evaluationStatusInfo.status === "pass";
 
+        const evaluationReason =
+          (evaluationStatusInfo.payload &&
+          typeof evaluationStatusInfo.payload.reason === "string"
+            ? evaluationStatusInfo.payload.reason
+            : "") ||
+          evaluationStatusInfo.details ||
+          "";
+        this.recordIteration(
+          iterationHistory,
+          currentIteration,
+          planResult,
+          evaluationStatusInfo.status,
+          evaluationReason,
+        );
+
         if (lastEvaluationPassed) {
           logger.info("Plan evaluation passed, exiting loop", {
             workflowId: context.workflowId,
@@ -406,6 +466,21 @@ export class PlanningLoopStep extends WorkflowStep {
 
           break;
         } else {
+          if (this.isRepeatFailure(evaluationReason, lastFailureSignature)) {
+            stalled = true;
+            logger.warn(
+              "Planning loop stalled: evaluator rejected consecutive plans for the same reason",
+              {
+                workflowId: context.workflowId,
+                iteration: currentIteration,
+                reason: evaluationReason.substring(0, 300),
+              },
+            );
+            break;
+          }
+          lastFailureSignature =
+            this.normalizeFailureSignature(evaluationReason);
+
           logger.info("Plan evaluation failed or unknown, continuing loop", {
             workflowId: context.workflowId,
             iteration: currentIteration,
@@ -439,6 +514,7 @@ export class PlanningLoopStep extends WorkflowStep {
       iterations: currentIteration,
       evaluationPassed: lastEvaluationPassed,
       reachedMaxIterations: currentIteration >= maxIterations,
+      stalled,
     };
 
     logger.info("Planning loop completed", {
@@ -447,19 +523,96 @@ export class PlanningLoopStep extends WorkflowStep {
       maxIterations,
       finalEvaluationPassed: lastEvaluationPassed,
       reachedMaxIterations: currentIteration >= maxIterations,
+      stalled,
     });
 
     return {
       status: lastEvaluationPassed ? "success" : "failure",
       data: finalResult,
+      error: lastEvaluationPassed
+        ? undefined
+        : new Error(
+            stalled
+              ? "Planning loop stalled: evaluator rejected consecutive plans for the same reason"
+              : `Planning loop failed after ${currentIteration} iteration(s)`,
+          ),
       outputs: {
         plan_result: planResult,
         evaluation_result: evaluationResult,
         iterations: currentIteration,
         evaluation_passed: lastEvaluationPassed,
         plan_key_files: latestPlanKeyFiles,
+        stalled,
       },
     };
+  }
+
+  private recordIteration(
+    history: Array<{
+      iteration: number;
+      planPreview: string;
+      evaluationStatus: string;
+      evaluationReason: string;
+    }>,
+    iteration: number,
+    planResult: any,
+    evaluationStatus: string,
+    evaluationReason: string,
+  ): void {
+    const summary = summarizePlanResult(planResult);
+    history.push({
+      iteration,
+      planPreview: summary?.planPreview || "",
+      evaluationStatus,
+      evaluationReason: (evaluationReason || "").substring(0, 1000),
+    });
+  }
+
+  private buildPlanningHistory(
+    history: Array<{
+      iteration: number;
+      planPreview: string;
+      evaluationStatus: string;
+      evaluationReason: string;
+    }>,
+  ): string | undefined {
+    if (!history.length) return undefined;
+    const recent = history.slice(-3);
+    const parts = recent.map((entry) => {
+      const lines = [
+        `Iteration ${entry.iteration} evaluation: ${entry.evaluationStatus.toUpperCase()}`,
+      ];
+      if (entry.evaluationReason) {
+        lines.push(`Rejection reason: ${entry.evaluationReason}`);
+      }
+      if (entry.planPreview) {
+        lines.push(`Plan excerpt: ${entry.planPreview}`);
+      }
+      return lines.join("\n");
+    });
+    return (
+      "Your previous plan(s) for this task were rejected. You MUST address " +
+      "the rejection reasons below in your next plan — do not resubmit the " +
+      "same plan.\n\n" +
+      parts.join("\n\n---\n\n")
+    );
+  }
+
+  private normalizeFailureSignature(reason: string): string {
+    return (reason || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 400);
+  }
+
+  private isRepeatFailure(
+    reason: string,
+    lastSignature: string | null,
+  ): boolean {
+    if (!lastSignature) return false;
+    const current = this.normalizeFailureSignature(reason);
+    return current.length > 0 && current === lastSignature;
   }
 
   private buildContextOverview(

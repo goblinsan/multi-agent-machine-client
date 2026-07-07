@@ -10,6 +10,11 @@ import {
   DiffParseResult as _DiffParseResult,
 } from "../../agents/parsers/DiffParser.js";
 import { applyEditOps } from "../../fileops.js";
+import {
+  commitAndPushChanges,
+  DiffApplyFailure,
+} from "../../fileops/applyEditOps.js";
+import { tryGitApply } from "../../fileops/gitApply.js";
 
 export interface DiffApplyStepConfig {
   source_output?: string;
@@ -139,7 +144,9 @@ export class DiffApplyStep extends WorkflowStep {
       }
 
       let applyResult;
+      let applyMethod: "git-apply" | "edit-spec" | "dry-run" = "edit-spec";
       if (stepConfig.dry_run) {
+        applyMethod = "dry-run";
         context.logger.info("Dry run mode - changes not applied", {
           stepName: this.config.name,
           operationsCount: parseResult.editSpec.ops.length,
@@ -161,19 +168,48 @@ export class DiffApplyStep extends WorkflowStep {
             ? stepConfig.blocked_extensions
             : undefined;
 
-        const applyOptions = {
-          repoRoot: context.repoRoot,
-          maxBytes: stepConfig.max_file_size || 512 * 1024,
-          branchName: currentBranch,
-          commitMessage:
-            stepConfig.commit_message || this.generateCommitMessage(context),
-        } as Parameters<typeof applyEditOps>[1];
+        const commitMessage =
+          stepConfig.commit_message || this.generateCommitMessage(context);
 
-        if (blockedExtsOverride) {
-          applyOptions.blockedExts = blockedExtsOverride;
+        const rawDiffText = parseResult.diffBlocks
+          .map((block) => block.content)
+          .join("\n");
+        const gitApplyOutcome = await tryGitApply(
+          context.repoRoot,
+          rawDiffText,
+          blockedExtsOverride ? { blockedExts: blockedExtsOverride } : undefined,
+        );
+
+        if (gitApplyOutcome.ok) {
+          applyMethod = "git-apply";
+          applyResult = await commitAndPushChanges(
+            context.repoRoot,
+            gitApplyOutcome.changedFiles,
+            currentBranch,
+            commitMessage,
+          );
+        } else {
+          context.logger.info(
+            "git apply declined diff, falling back to edit-spec pipeline",
+            {
+              stepName: this.config.name,
+              reason: gitApplyOutcome.reason,
+            },
+          );
+
+          const applyOptions = {
+            repoRoot: context.repoRoot,
+            maxBytes: stepConfig.max_file_size || 512 * 1024,
+            branchName: currentBranch,
+            commitMessage,
+          } as Parameters<typeof applyEditOps>[1];
+
+          if (blockedExtsOverride) {
+            applyOptions.blockedExts = blockedExtsOverride;
+          }
+
+          applyResult = await applyEditOps(editSpecJson, applyOptions);
         }
-
-        applyResult = await applyEditOps(editSpecJson, applyOptions);
         const noopApply = applyResult.noop === true;
 
         if (!noopApply && (!applyResult.changed || applyResult.changed.length === 0)) {
@@ -240,6 +276,7 @@ export class DiffApplyStep extends WorkflowStep {
           operations_count: parseResult.editSpec.ops.length,
           branch: applyResult.branch,
           noop_applied: noopResult,
+          apply_method: applyMethod,
         },
         metrics: {
           duration_ms: Date.now() - startTime,
@@ -247,15 +284,19 @@ export class DiffApplyStep extends WorkflowStep {
         },
       };
     } catch (error) {
+      const applyFailures =
+        error instanceof DiffApplyFailure ? error.failures : undefined;
       context.logger.error("Diff application failed", {
         stepName: this.config.name,
         error: String(error),
+        applyFailures,
         stack: error instanceof Error ? error.stack : undefined,
       });
 
       return {
         status: "failure",
         error: error instanceof Error ? error : new Error(String(error)),
+        data: applyFailures ? { apply_failures: applyFailures } : undefined,
         metrics: {
           duration_ms: Date.now() - startTime,
         },
@@ -424,15 +465,10 @@ ${hunks}
     context: WorkflowContext,
     config: DiffApplyStepConfig,
   ): Promise<void> {
-    if (config.validation === "syntax_check") {
-      context.logger.debug("Syntax validation not yet implemented", {
-        stepName: this.config.name,
-      });
-    } else if (config.validation === "full") {
-      context.logger.debug("Full validation not yet implemented", {
-        stepName: this.config.name,
-      });
-    }
+    context.logger.debug("Pre-apply validation delegated to apply layer", {
+      stepName: this.config.name,
+      validation: config.validation,
+    });
   }
 
   private generateCommitMessage(context: WorkflowContext): string {

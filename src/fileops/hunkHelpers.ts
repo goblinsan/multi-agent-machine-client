@@ -50,33 +50,16 @@ function verifyContext(
   return true;
 }
 
-function contextMatchRatio(
-  lines: string[],
-  baseIdx: number,
-  contextLines: { relIdx: number; text: string }[],
-): number {
-  if (contextLines.length === 0) return 1;
-  let hits = 0;
-  for (const c of contextLines) {
-    const actualIdx = baseIdx + c.relIdx;
-    if (actualIdx >= 0 && actualIdx < lines.length && trimEnd(lines[actualIdx]) === trimEnd(c.text)) {
-      hits += 1;
-    }
-  }
-  return hits / contextLines.length;
-}
-
 function tryApplyHunks(
   baseLines: string[],
   hunks: Hunk[],
   fuzzy: boolean,
-  partialThreshold?: number,
-): { ok: boolean; content?: string } {
+): { ok: boolean; content?: string; failedHunk?: Hunk } {
   const lines = baseLines.slice();
   let offset = 0;
 
   for (const h of hunks) {
-    let startIdx = h.oldStart - 1 + offset;
+    let startIdx = Math.max(0, h.oldStart - 1 + offset);
     const { newLines, contextLines } = extractHunkParts(h);
 
     let matched = verifyContext(lines, startIdx, contextLines, fuzzy);
@@ -97,33 +80,7 @@ function tryApplyHunks(
       }
     }
 
-    if (!matched && partialThreshold !== undefined && contextLines.length > 0) {
-      let bestIdx = startIdx;
-      let bestRatio = contextMatchRatio(lines, startIdx, contextLines);
-      const searchRadius = 30;
-      for (let delta = 1; delta <= searchRadius; delta++) {
-        for (const d of [-delta, delta]) {
-          const candidate = startIdx + d;
-          if (candidate < 0 || candidate >= lines.length) continue;
-          const ratio = contextMatchRatio(lines, candidate, contextLines);
-          if (ratio > bestRatio) {
-            bestRatio = ratio;
-            bestIdx = candidate;
-          }
-        }
-      }
-      if (bestRatio >= partialThreshold) {
-        startIdx = bestIdx;
-        matched = true;
-        logger.info("Hunk applied via partial context match", {
-          oldStart: h.oldStart,
-          matchedAt: bestIdx + 1,
-          ratio: bestRatio.toFixed(2),
-        });
-      }
-    }
-
-    if (!matched) return { ok: false };
+    if (!matched) return { ok: false, failedHunk: h };
 
     lines.splice(startIdx, h.oldCount, ...newLines);
     offset += newLines.length - h.oldCount;
@@ -136,7 +93,7 @@ function tryApplyHunks(
 export function applyHunksToLines(
   baseLines: string[],
   hunks: Hunk[],
-): { ok: boolean; content?: string } {
+): { ok: boolean; content?: string; failedHunk?: Hunk } {
   const strict = tryApplyHunks(baseLines, hunks, false);
   if (strict.ok) return strict;
   const fuzzy = tryApplyHunks(baseLines, hunks, true);
@@ -144,43 +101,8 @@ export function applyHunksToLines(
     logger.info("Hunk application succeeded with fuzzy matching", {
       hunkCount: hunks.length,
     });
-    return fuzzy;
   }
-  const partial = tryApplyHunks(baseLines, hunks, true, 0.5);
-  if (partial.ok) {
-    logger.info("Hunk application succeeded with partial context matching", {
-      hunkCount: hunks.length,
-    });
-  }
-  return partial;
-}
-
-export function reconstructContentFromHunks(
-  baseLines: string[],
-  hunks: Hunk[],
-): string {
-  const lines = baseLines.slice();
-  let offset = 0;
-
-  for (const h of hunks) {
-    const oldStartIdx = h.oldStart - 1 + offset;
-    const oldCount = h.oldCount;
-
-    const newLines: string[] = [];
-    for (const l of h.lines) {
-      if (l.startsWith("+")) newLines.push(l.slice(1));
-      else if (l.startsWith(" ")) newLines.push(l.slice(1));
-      else if (!l.startsWith("-")) newLines.push(l);
-    }
-
-    const safeStart = Math.max(0, Math.min(oldStartIdx, lines.length));
-    const safeCount = Math.min(oldCount, lines.length - safeStart);
-    lines.splice(safeStart, safeCount, ...newLines);
-    offset += newLines.length - safeCount;
-  }
-
-  const content = lines.join("\n") + (lines.length ? "\n" : "");
-  return content;
+  return fuzzy;
 }
 
 export function validateStructuredContent(filePath: string, content: string): string | null {

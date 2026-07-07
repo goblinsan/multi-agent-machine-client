@@ -73,6 +73,7 @@ templates:
       persona: tester-qa
       intent: qa
       abortOnFailure: false
+      prompt_template: "prompts/tester-qa-review.txt"
       payload:
         task: ${task}
         implementation: ${implementation_request_result}

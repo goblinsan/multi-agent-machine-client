@@ -1,33 +1,37 @@
 import { describe, it, expect } from "vitest";
-import { parseUnifiedDiffToEditSpec } from "../src/fileops";
+import { DiffParser } from "../src/agents/parsers/DiffParser";
 import {
   extractDiffCandidates,
   parseAgentEditsFromResponse,
 } from "../src/workflows/helpers/agentResponseParser";
 
-describe("parseUnifiedDiffToEditSpec", () => {
+const parseDiffViaDiffParser = (txt: string) =>
+  DiffParser.parsePersonaResponse(txt).editSpec ?? { ops: [] };
+
+describe("DiffParser multi-file bundles", () => {
   it("parses a multi-file unified diff bundle and produces upsert ops", () => {
     const diff = `diff --git a/package.json b/package.json
 index e69de29..4b825dc 100644
 --- a/package.json
 +++ b/package.json
-@@ -0,0 +1,6 @@
-{
-  "name": "example",
-  "version": "1.0.0"
-}
+@@ -1,3 +1,4 @@
+ {
+   "name": "example",
++  "version": "1.0.0"
+ }
 diff --git a/src/App.test.tsx b/src/App.test.tsx
 new file mode 100644
 index 0000000..e69de29
 --- /dev/null
 +++ b/src/App.test.tsx
-@@ -0,0 +1,3 @@
-import React from 'react'
-import { render } from '@testing-library/react'
+@@ -0,0 +1,2 @@
++import React from 'react'
++import { render } from '@testing-library/react'
 `;
 
-    const spec = parseUnifiedDiffToEditSpec(diff);
-    expect(spec).toBeDefined();
+    const result = DiffParser.parsePersonaResponse(diff);
+    expect(result.success).toBe(true);
+    const spec = result.editSpec!;
     expect(spec.ops).toBeInstanceOf(Array);
 
     const upserts = spec.ops.filter((o: any) => o.action === "upsert");
@@ -35,10 +39,14 @@ import { render } from '@testing-library/react'
 
     expect(upserts.map((u: any) => u.path)).toContain("package.json");
     expect(upserts.map((u: any) => u.path)).toContain("src/App.test.tsx");
+
     const pkg = upserts.find((u: any) => u.path === "package.json");
     expect(pkg).toBeDefined();
+    expect(Array.isArray((pkg as any).hunks)).toBe(true);
 
-    expect(pkg!.content).toContain('"name": "example"');
+    const testFile = upserts.find((u: any) => u.path === "src/App.test.tsx");
+    expect(testFile).toBeDefined();
+    expect((testFile as any).content).toContain("import React from 'react'");
   });
 });
 
@@ -261,7 +269,7 @@ index 0000000..1111111 100644
 `;
     const response = { result: { preview: diff } };
     const outcome = await parseAgentEditsFromResponse(response, {
-      parseDiff: (txt: string) => parseUnifiedDiffToEditSpec(txt),
+      parseDiff: parseDiffViaDiffParser,
     });
     const ops = Array.isArray(outcome.editSpec?.ops)
       ? outcome.editSpec?.ops

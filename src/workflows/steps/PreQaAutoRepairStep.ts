@@ -1,4 +1,6 @@
 import fs from "fs/promises";
+import { readFileSync } from "fs";
+import { execSync } from "child_process";
 import path from "path";
 import {
   WorkflowStep,
@@ -118,7 +120,7 @@ export class PreQaAutoRepairStep extends WorkflowStep {
       const allValid = repairedFiles.every((relPath) => {
         try {
           const absPath = path.join(repoRoot, relPath);
-          const content = require("fs").readFileSync(absPath, "utf-8");
+          const content = readFileSync(absPath, "utf-8");
           return validateStructuredContent(absPath, content) === null;
         } catch {
           return false;
@@ -382,11 +384,10 @@ export class PreQaAutoRepairStep extends WorkflowStep {
   private repairByGitBaseRecovery(
     absFile: string,
     repoRoot: string,
-    currentContent: string,
+    _currentContent: string,
   ): string | null {
     try {
       const relPath = path.relative(repoRoot, absFile);
-      const { execSync } = require("child_process");
       const baseContent = execSync(
         `git show HEAD~1:${relPath}`,
         { cwd: repoRoot, encoding: "utf-8", timeout: 5000 },
