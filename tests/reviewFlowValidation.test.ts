@@ -139,6 +139,11 @@ describe("Review Flow Validation", () => {
     expect(markDone?.depends_on).toEqual(["devops_request"]);
     expect(markDone?.condition).toBe("${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'");
     expect(markDone?.config?.status).toBe("done");
+
+    const mergeToMain = steps["merge_branch_to_main"];
+    expect(mergeToMain).toBeDefined();
+    expect(mergeToMain?.depends_on).toEqual(["mark_task_done"]);
+    expect(mergeToMain?.condition).toBe(markDone?.condition);
   });
 
   it("ensures QA failure handling does not block mark_in_review when skipped", async () => {

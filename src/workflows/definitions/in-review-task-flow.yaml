@@ -329,6 +329,7 @@ steps:
     type: GitOperationStep
     description: "Merge feature branch back to main so subsequent tasks see completed work"
     depends_on: [mark_task_done]
+    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'
     config:
       operation: mergeBranchToMain
       sourceBranch: ${branch}
