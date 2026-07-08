@@ -22,6 +22,8 @@ const GENERATED_FILE_EXCLUSIONS = [
   "shrinkwrap.yaml",
 ];
 
+const EXCLUDED_DIRECTORY_PREFIXES = [".ma/"];
+
 interface GitDiffExportConfig {
   repoPath?: string;
   branch?: string;
@@ -89,7 +91,10 @@ export class GitDiffExportStep extends WorkflowStep {
       }
 
       const diffRange = baseRef ? `${baseRef}..${branchRef}` : branchRef;
-      const pathspecs = GENERATED_FILE_EXCLUSIONS.map((f) => `:!${f}`);
+      const pathspecs = [
+        ...GENERATED_FILE_EXCLUSIONS.map((f) => `:!${f}`),
+        ...EXCLUDED_DIRECTORY_PREFIXES.map((d) => `:!${d}`),
+      ];
 
       const diffText = await this.runGitCommand(
         repoRoot,
@@ -109,7 +114,14 @@ export class GitDiffExportStep extends WorkflowStep {
       const changedFiles = changedFilesRaw
         .split(/\r?\n/)
         .map((line) => line.trim())
-        .filter((f) => f && !excluded.has(f.split("/").pop()!));
+        .filter(
+          (f) =>
+            f &&
+            !excluded.has(f.split("/").pop()!) &&
+            !EXCLUDED_DIRECTORY_PREFIXES.some((prefix) =>
+              f.startsWith(prefix),
+            ),
+        );
 
       if (failOnEmptyDiff && trimmedDiff.trim().length === 0) {
         const error = new Error(
