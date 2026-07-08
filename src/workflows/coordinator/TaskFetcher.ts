@@ -25,9 +25,16 @@ export class TaskFetcher {
     const normalized = String(status).toLowerCase().trim();
 
     if (
-      ["done", "completed", "finished", "closed", "resolved"].includes(
-        normalized,
-      )
+      [
+        "done",
+        "completed",
+        "finished",
+        "closed",
+        "resolved",
+        "archived",
+        "cancelled",
+        "canceled",
+      ].includes(normalized)
     ) {
       return "done";
     }
