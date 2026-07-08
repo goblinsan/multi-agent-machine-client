@@ -127,6 +127,9 @@ export class ImplementationLoopStep extends WorkflowStep {
             "implementation_config_validation_summary",
             this.formatValidationSummary(applyFailures),
           );
+          if (this.shouldPreferFullFile(applyFailures)) {
+            context.setVariable("implementation_prefer_full_file", true);
+          }
         }
         if (attempt < maxAttempts) {
           context.logger.warn(
@@ -380,6 +383,12 @@ export class ImplementationLoopStep extends WorkflowStep {
           typeof entry.reason === "string",
       )
       .map((entry: any) => ({ file: entry.path, reason: entry.reason }));
+  }
+
+  private shouldPreferFullFile(errors: ConfigValidationError[]): boolean {
+    const corruptionSignals =
+      /hunk context does not match|structurally invalid|unbalanced|patch does not apply|stale or invented/i;
+    return errors.some((entry) => corruptionSignals.test(entry.reason));
   }
 
   private extractAppliedFiles(result: StepResult): string[] {

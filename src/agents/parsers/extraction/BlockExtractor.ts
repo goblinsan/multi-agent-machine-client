@@ -4,13 +4,17 @@ import { calculateSimilarity } from "../utils/StringUtils.js";
 export function extractDiffBlocks(text: string): DiffBlock[] {
   const blocks: DiffBlock[] = [];
 
-  const fencedBlocks = extractFencedDiffBlocks(text);
+  const { blocks: fullFileBlocks, remainder } = extractFullFileBlocks(text);
+  blocks.push(...fullFileBlocks);
+
+  const fencedBlocks = extractFencedDiffBlocks(remainder);
   blocks.push(...fencedBlocks);
 
-  const rawDiffBlocks = extractRawDiffBlocks(text);
+  const rawDiffBlocks = extractRawDiffBlocks(remainder);
   blocks.push(...rawDiffBlocks);
 
   return blocks.filter((block, index, array) => {
+    if (block.type === "raw" && block.filename) return true;
     if (!block.content.trim()) return false;
 
     return !array
@@ -20,6 +24,33 @@ export function extractDiffBlocks(text: string): DiffBlock[] {
           calculateSimilarity(existing.content, block.content) > 0.9,
       );
   });
+}
+
+export function extractFullFileBlocks(text: string): {
+  blocks: DiffBlock[];
+  remainder: string;
+} {
+  const blocks: DiffBlock[] = [];
+
+  const fencePattern =
+    /```(?:file|rewrite)\s+path=(?:"([^"]+)"|'([^']+)'|(\S+))[^\n]*\n([\s\S]*?)```/g;
+
+  const remainder = text.replace(
+    fencePattern,
+    (_full, dq: string, sq: string, bare: string, content: string) => {
+      const filename = (dq || sq || bare || "").trim();
+      if (filename) {
+        blocks.push({
+          filename,
+          content,
+          type: "raw",
+        });
+      }
+      return "";
+    },
+  );
+
+  return { blocks, remainder };
 }
 
 export function extractFencedDiffBlocks(text: string): DiffBlock[] {

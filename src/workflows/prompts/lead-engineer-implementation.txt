@@ -44,7 +44,11 @@ Execution rules:
 3. If you cannot fix the validation errors, explicitly explain why in place of a diff.
 4. Keep edits minimal and scoped to resolving the validation errors; do not modify other files or artifacts.
 {{#if implementation_prefer_full_file}}
-5. IMPORTANT: Previous diff patches have been corrupting this file. For any config/JSON file in the validation errors, output the COMPLETE file content as a diff from /dev/null (delete all old lines and add all new lines) rather than a partial patch. This ensures the file is written correctly from scratch.
+5. IMPORTANT: Previous diff patches have failed because the target file is corrupted or structurally broken, so its current contents cannot be reproduced as reliable diff context. For each file listed in the validation errors, output the COMPLETE corrected file as a full-file rewrite block instead of a unified diff:
+```file path=path/to/file
+<entire corrected file content>
+```
+Include every line of the corrected file. The rewrite block overwrites the file exactly as written. Do not emit a unified diff for these corrupted files.
 {{/if}}
 {{/if}}
 

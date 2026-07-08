@@ -9,6 +9,14 @@ export function convertDiffBlocksToEditSpec(
 
   for (const block of blocks) {
     try {
+      if (block.type === "raw" && block.filename) {
+        ops.push({
+          action: "upsert",
+          path: block.filename,
+          content: block.content,
+        });
+        continue;
+      }
       const blockOps = parseDiffBlock(block);
       ops.push(...blockOps);
     } catch (error) {

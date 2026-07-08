@@ -172,13 +172,21 @@ export class DiffApplyStep extends WorkflowStep {
           stepConfig.commit_message || this.generateCommitMessage(context);
 
         const rawDiffText = parseResult.diffBlocks
+          .filter((block) => block.type !== "raw")
           .map((block) => block.content)
           .join("\n");
-        const gitApplyOutcome = await tryGitApply(
-          context.repoRoot,
-          rawDiffText,
-          blockedExtsOverride ? { blockedExts: blockedExtsOverride } : undefined,
-        );
+        const gitApplyOutcome = rawDiffText.trim()
+          ? await tryGitApply(
+              context.repoRoot,
+              rawDiffText,
+              blockedExtsOverride
+                ? { blockedExts: blockedExtsOverride }
+                : undefined,
+            )
+          : {
+              ok: false as const,
+              reason: "full-file rewrite (no unified diff blocks)",
+            };
 
         if (gitApplyOutcome.ok) {
           applyMethod = "git-apply";

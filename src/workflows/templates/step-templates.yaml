@@ -42,6 +42,7 @@ templates:
         implementation_guard_missing_summary: "${implementation_guard_missing_summary || ''}"
         implementation_config_validation_summary: "${implementation_config_validation_summary || ''}"
         implementation_config_validation_errors: "${implementation_config_validation_errors || []}"
+        implementation_prefer_full_file: "${implementation_prefer_full_file || false}"
         implementation_retry_attempt: "${implementation_retry_attempt || 1}"
         implementation_retry_max_attempts: "${implementation_retry_max_attempts || 1}"
         context_primary_language: ${context_primary_language}
