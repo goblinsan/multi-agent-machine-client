@@ -321,3 +321,54 @@ describe("AnalysisReviewLoopStep", () => {
 
     await fs.rm(repoRoot, { recursive: true, force: true });
   });
+
+  it("loads referenced file contents into the analyst snippets", async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "analysis-snip-"));
+    await fs.mkdir(path.join(repoRoot, "src"), { recursive: true });
+    const schemaPath = path.join(repoRoot, "src", "schema.ts");
+    await fs.writeFile(schemaPath, "export const schema = { a: 1 };\n");
+
+    const context = buildContext(repoRoot);
+    context.setVariable("task", {
+      id: 52,
+      title: "fix schema",
+      description:
+        "Severity: high\nAffected file: src/schema.ts\nInvalid character at line 36",
+      key_files: ["src/schema.ts"],
+    });
+
+    const step = new AnalysisReviewLoopStep({
+      name: "analysis_loop",
+      type: "AnalysisReviewLoopStep",
+      config: {
+        analystPersona: "analyst",
+        reviewerPersona: "analysis-reviewer",
+        payload: {},
+        reviewPayload: {},
+      },
+    } as WorkflowStepConfig);
+
+    const analystPayloads: Record<string, any>[] = [];
+
+    personaExecuteMock.mockImplementation((config: WorkflowStepConfig) => {
+      if (config.config?.persona === "analyst") {
+        analystPayloads.push(config.config.payload || {});
+        return { status: "success", outputs: { summary: "analysis" } };
+      }
+      return { status: "success", outputs: { status: "pass" } };
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(analystPayloads[0].snippets).toBe("${analyst_file_snippets || []}");
+    const snippets = context.getVariable("analyst_file_snippets") as Array<{
+      path: string;
+      content: string;
+    }>;
+    expect(snippets).toHaveLength(1);
+    expect(snippets[0].path).toBe("src/schema.ts");
+    expect(snippets[0].content).toContain("export const schema");
+
+    await fs.rm(repoRoot, { recursive: true, force: true });
+  });

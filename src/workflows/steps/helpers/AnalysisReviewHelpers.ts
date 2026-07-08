@@ -31,5 +31,6 @@ export {
   extractTaskDescription,
   formatReviewType,
   loadReviewFailureLog,
+  loadTaskFileSnippets,
   unwrapTask,
 } from "./analysisReview/taskContext.js";

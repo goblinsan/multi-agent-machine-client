@@ -17,6 +17,7 @@ import {
   extractTaskDescription,
   formatReviewType,
   loadReviewFailureLog,
+  loadTaskFileSnippets,
   normalizeReviewFeedback,
   resolvePersonaStatus,
   serializeReviewHistory,
@@ -77,6 +78,21 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
     );
     const taskDescription = extractTaskDescription(taskRecord, task);
 
+    const analystFileSnippets = await loadTaskFileSnippets(
+      context.repoRoot,
+      taskRecord,
+      task,
+      [taskDescription, reviewArtifact.logText, qaFindingsText]
+        .filter((part): part is string => typeof part === "string")
+        .join("\n"),
+    );
+    context.logger.info("Loaded task file snippets for analyst", {
+      step: this.config.name,
+      fileCount: analystFileSnippets.length,
+      files: analystFileSnippets.map((snippet) => snippet.path),
+    });
+    context.setVariable("analyst_file_snippets", analystFileSnippets);
+
     let iteration = 0;
     let lastAnalysis: any = null;
     let lastReview: any = null;
@@ -132,6 +148,9 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
         context_overview: contextOverview,
         context_insights: contextInsights,
         existing_tasks: existingTasks,
+        ...(analystFileSnippets.length
+          ? { snippets: "${analyst_file_snippets || []}" }
+          : {}),
         ...(reviewType ? { review_type: reviewType } : {}),
         ...(reviewTypeLabel ? { review_type_label: reviewTypeLabel } : {}),
         ...(parentTaskId ? { parent_task_id: parentTaskId } : {}),
@@ -222,6 +241,9 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
         context_summary_md: contextSummaryMd,
         context_overview: contextOverview,
         context_insights: contextInsights,
+        ...(analystFileSnippets.length
+          ? { snippets: "${analyst_file_snippets || []}" }
+          : {}),
         ...(reviewType ? { review_type: reviewType } : {}),
         ...(reviewTypeLabel ? { review_type_label: reviewTypeLabel } : {}),
         ...(parentTaskId ? { parent_task_id: parentTaskId } : {}),

@@ -320,13 +320,50 @@ export class AnalysisTaskBuilderStep extends WorkflowStep {
     }
 
     const scored = hypotheses
-      .map((hypothesis) => ({
+      .map((hypothesis, index) => ({
         hypothesis,
-        score: this.scoreConfidence(hypothesis.confidence),
+        index,
+        score: this.scoreHypothesis(hypothesis),
       }))
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => b.score - a.score || a.index - b.index);
 
     return scored[0]?.hypothesis || null;
+  }
+
+  private scoreHypothesis(hypothesis: AnalystHypothesis): number {
+    const confidence = this.scoreConfidence(hypothesis.confidence);
+    const evidence = this.scoreEvidence(hypothesis);
+    const cappedConfidence = evidence === 0 ? Math.min(confidence, 1) : confidence;
+    return cappedConfidence * 2 + evidence;
+  }
+
+  private scoreEvidence(hypothesis: AnalystHypothesis): number {
+    let score = 0;
+
+    const evidence = Array.isArray(hypothesis.evidence)
+      ? hypothesis.evidence
+      : [];
+    const substantiveEvidence = evidence
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter((entry) => entry.length > 0);
+    score += Math.min(substantiveEvidence.length, 3);
+
+    const files = [
+      ...(hypothesis.affected_files || []),
+      ...(hypothesis.affected_components || []),
+    ].filter((entry) => typeof entry === "string" && entry.trim().length > 0);
+    if (files.length) {
+      score += 1;
+    }
+
+    const steps = (hypothesis.remediation_steps || []).filter(
+      (entry) => typeof entry === "string" && entry.trim().length > 0,
+    );
+    if (steps.length) {
+      score += 1;
+    }
+
+    return score;
   }
 
   private scoreConfidence(value: string | number | undefined): number {

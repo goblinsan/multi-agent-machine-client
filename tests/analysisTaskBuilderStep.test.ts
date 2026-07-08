@@ -163,4 +163,47 @@ describe("AnalysisTaskBuilderStep", () => {
       "Fix vitest config syntax error",
     );
   });
+
+  it("prefers a well-evidenced hypothesis over a bare high-confidence guess", async () => {
+    const analysisPayload = JSON.stringify({
+      summary: "Root cause analysis",
+      hypotheses: [
+        {
+          id: "H1",
+          statement: "Invalid character at line 36 of schema.ts",
+          confidence: "high",
+          evidence: [],
+          remediation_steps: [],
+        },
+        {
+          id: "H2",
+          statement: "Missing export const schema declaration",
+          confidence: "medium",
+          evidence: [
+            "src/schema.ts ends at line 15",
+            "file lacks the export const schema = z.object opening",
+          ],
+          affected_files: ["src/schema.ts"],
+          remediation_steps: ["Restore the export const schema declaration"],
+          acceptance_criteria: ["File compiles"],
+          validation_steps: ["npm run build"],
+        },
+      ],
+    });
+
+    const step = new AnalysisTaskBuilderStep({
+      name: "synthesize_tasks",
+      type: "AnalysisTaskBuilderStep",
+      config: {
+        analysis_output: analysisPayload,
+        review_output: { status: "pass" },
+        task: { id: 52, title: "Fix schema" },
+      },
+    });
+
+    const result = await step.execute(buildContext());
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.selected_hypothesis?.id).toBe("H2");
+  });
 });

@@ -343,3 +343,110 @@ function getReviewArtifactFileName(reviewType: string): string | undefined {
       return undefined;
   }
 }
+
+const MAX_SNIPPET_BYTES = 16384;
+const MAX_SNIPPET_FILES = 12;
+const SOURCE_PATH_PATTERN =
+  /(?:^|[\s"'`(])((?:src|tests?|lib|app|scripts|config|packages)\/[\w./-]+\.[A-Za-z0-9]+)/g;
+
+export function extractCandidateFilePaths(
+  taskRecord: any,
+  fallback?: any,
+  extraText?: string,
+): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (value: unknown): void => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const normalized = value.trim().replace(/^\.\//, "");
+    if (!normalized || normalized.includes("..") || path.isAbsolute(normalized)) {
+      return;
+    }
+    if (seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    ordered.push(normalized);
+  };
+
+  const pushList = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(push);
+    }
+  };
+
+  for (const record of [taskRecord, fallback]) {
+    if (!record || typeof record !== "object") {
+      continue;
+    }
+    pushList(record.key_files);
+    pushList(record.keyFiles);
+    pushList(record.affected_components);
+    pushList(record.affectedComponents);
+    pushList(record.files);
+  }
+
+  const textParts: string[] = [];
+  const description = extractTaskDescription(taskRecord, fallback);
+  if (description) {
+    textParts.push(description);
+  }
+  if (typeof extraText === "string" && extraText.trim().length > 0) {
+    textParts.push(extraText);
+  }
+
+  const combinedText = textParts.join("\n");
+  if (combinedText) {
+    let match: RegExpExecArray | null;
+    SOURCE_PATH_PATTERN.lastIndex = 0;
+    while ((match = SOURCE_PATH_PATTERN.exec(combinedText)) !== null) {
+      push(match[1]);
+    }
+  }
+
+  return ordered.slice(0, MAX_SNIPPET_FILES);
+}
+
+export async function loadTaskFileSnippets(
+  repoRoot: string,
+  taskRecord: any,
+  fallback?: any,
+  extraText?: string,
+): Promise<Array<{ path: string; content: string }>> {
+  if (!repoRoot) {
+    return [];
+  }
+
+  const candidates = extractCandidateFilePaths(taskRecord, fallback, extraText);
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const repoNormalized = path.normalize(repoRoot + path.sep);
+  const snippets: Array<{ path: string; content: string }> = [];
+
+  for (const relPath of candidates) {
+    const resolvedPath = path.resolve(repoRoot, relPath);
+    if (!resolvedPath.startsWith(repoNormalized)) {
+      continue;
+    }
+    try {
+      const stat = await fs.stat(resolvedPath);
+      if (!stat.isFile() || stat.size > MAX_SNIPPET_BYTES) {
+        continue;
+      }
+      const content = await fs.readFile(resolvedPath, "utf-8");
+      snippets.push({ path: relPath, content });
+    } catch {
+      snippets.push({
+        path: relPath,
+        content: "<file does not exist in the repository>",
+      });
+    }
+  }
+
+  return snippets;
+}
