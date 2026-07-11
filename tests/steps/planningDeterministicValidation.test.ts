@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   enforceRequiredScopeFilesInPlan,
   extractTargetedBaselineCompileFiles,
+  repairScopeExpandedPlan,
   sanitizeVerificationOnlySteps,
   validateDeterministicPlan,
 } from "../../src/workflows/steps/helpers/planningHelpers.js";
@@ -339,6 +340,69 @@ describe("deterministic plan validation", () => {
       "src/config/defaults.ts",
       "src/types/index.ts",
     ]);
+  });
+
+  it("repairs scope-expanded plans by removing out-of-scope files and adding required roots", () => {
+    const planData = {
+      plan: [
+        {
+          goal: "Repair shared config roots",
+          key_files: [
+            "src/__tests__/config-loader.test.ts",
+            "src/types/index.ts",
+            "src/types/logEvent.ts",
+            "src/settings-panel.tsx",
+          ],
+        },
+      ],
+    };
+    const requiredScopeFiles = [
+      "src/config/defaults.ts",
+      "src/config/loader.ts",
+      "src/config/schema.ts",
+      "src/types/index.ts",
+      "src/types/logEvent.ts",
+    ];
+
+    const beforeRepair = validateDeterministicPlan(planData, {
+      taskTitle:
+        "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+      requiredScopeFiles,
+    });
+    expect(beforeRepair.valid).toBe(false);
+    expect(beforeRepair.issues.map((issue) => issue.guard)).toEqual([
+      "scope_viability_required_files",
+      "targeted_task_scope",
+    ]);
+
+    const repair = repairScopeExpandedPlan(
+      planData,
+      requiredScopeFiles,
+      beforeRepair.issues,
+    );
+
+    expect(repair.changed).toBe(true);
+    expect(repair.removedFiles).toEqual(["src/settings-panel.tsx"]);
+    expect(repair.addedFiles).toEqual([
+      "src/config/defaults.ts",
+      "src/config/loader.ts",
+      "src/config/schema.ts",
+    ]);
+    expect(planData.plan[0].key_files).toEqual([
+      "src/__tests__/config-loader.test.ts",
+      "src/types/index.ts",
+      "src/types/logEvent.ts",
+      "src/config/defaults.ts",
+      "src/config/loader.ts",
+      "src/config/schema.ts",
+    ]);
+
+    const afterRepair = validateDeterministicPlan(planData, {
+      taskTitle:
+        "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+      requiredScopeFiles,
+    });
+    expect(afterRepair.valid).toBe(true);
   });
 
   it("removes verification-only steps even when they list concrete files", () => {

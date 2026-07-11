@@ -24,11 +24,11 @@ import {
   findPlanLanguageViolations,
   collectAllowedLanguages,
   collectPlanKeyFiles,
-  enforceRequiredScopeFilesInPlan,
   findAmbiguousPlanKeyFiles,
   buildSyntheticEvaluationFailure,
   formatPlanArtifact,
   formatEvaluationArtifact,
+  repairScopeExpandedPlan,
   validateDeterministicPlan,
 } from "./helpers/planningHelpers.js";
 import { requiresStatus } from "./helpers/personaStatusPolicy.js";
@@ -261,11 +261,12 @@ export class PlanningLoopStep extends WorkflowStep {
         if (
           !deterministicValidation.valid &&
           requiredScopeFiles.length > 0 &&
-          this.hasOnlyMissingRequiredScopeFiles(deterministicValidation.issues)
+          this.hasRepairableScopeExpansionIssues(deterministicValidation.issues)
         ) {
-          const scopeRepair = enforceRequiredScopeFilesInPlan(
+          const scopeRepair = repairScopeExpandedPlan(
             planData,
             requiredScopeFiles,
+            deterministicValidation.issues,
           );
 
           if (scopeRepair.changed) {
@@ -286,6 +287,7 @@ export class PlanningLoopStep extends WorkflowStep {
                 workflowId: context.workflowId,
                 iteration: currentIteration,
                 addedFiles: scopeRepair.addedFiles,
+                removedFiles: scopeRepair.removedFiles,
                 targetStepIndex: scopeRepair.targetStepIndex,
                 validationPassed: deterministicValidation.valid,
               },
@@ -903,12 +905,16 @@ export class PlanningLoopStep extends WorkflowStep {
     return current.length > 0 && current === lastSignature;
   }
 
-  private hasOnlyMissingRequiredScopeFiles(
+  private hasRepairableScopeExpansionIssues(
     issues: Array<{ guard: string }>,
   ): boolean {
+    const repairableGuards = new Set([
+      "scope_viability_required_files",
+      "targeted_task_scope",
+    ]);
     return (
       issues.length > 0 &&
-      issues.every((issue) => issue.guard === "scope_viability_required_files")
+      issues.every((issue) => repairableGuards.has(issue.guard))
     );
   }
 

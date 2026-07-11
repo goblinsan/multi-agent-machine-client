@@ -266,6 +266,70 @@ export function enforceRequiredScopeFilesInPlan(
   };
 }
 
+export function repairScopeExpandedPlan(
+  planData: any,
+  requiredScopeFiles: string[],
+  issues: Array<{ guard: string; details?: any }>,
+): {
+  changed: boolean;
+  addedFiles: string[];
+  removedFiles: string[];
+  targetStepIndex: number | null;
+} {
+  const removedFiles = removeOutOfScopePlanFiles(planData, issues);
+  const scopeRepair = enforceRequiredScopeFilesInPlan(
+    planData,
+    requiredScopeFiles,
+  );
+
+  return {
+    changed: removedFiles.length > 0 || scopeRepair.changed,
+    addedFiles: scopeRepair.addedFiles,
+    removedFiles,
+    targetStepIndex: scopeRepair.targetStepIndex,
+  };
+}
+
+function removeOutOfScopePlanFiles(
+  planData: any,
+  issues: Array<{ guard: string; details?: any }>,
+): string[] {
+  if (!Array.isArray(planData?.plan) || planData.plan.length === 0) {
+    return [];
+  }
+
+  const outOfScopeFiles = new Set(
+    issues
+      .filter((issue) => issue.guard === "targeted_task_scope")
+      .flatMap((issue) =>
+        Array.isArray(issue.details?.out_of_scope_files)
+          ? issue.details.out_of_scope_files
+          : [],
+      )
+      .map((file) => normalizePlanFilePath(String(file)))
+      .filter((file) => file.length > 0),
+  );
+  if (outOfScopeFiles.size === 0) {
+    return [];
+  }
+
+  const removed = new Set<string>();
+  for (const step of planData.plan) {
+    if (!Array.isArray(step?.key_files)) continue;
+    step.key_files = step.key_files.filter((entry: any) => {
+      if (typeof entry !== "string") return true;
+      const normalized = normalizePlanFilePath(entry);
+      if (!outOfScopeFiles.has(normalized)) {
+        return true;
+      }
+      removed.add(normalized);
+      return false;
+    });
+  }
+
+  return Array.from(removed);
+}
+
 function findScopeRepairStepIndex(planData: any, missingFiles: string[]): number {
   const missingDirs = new Set(
     missingFiles.map((file) => file.split("/").slice(0, -1).join("/")),
