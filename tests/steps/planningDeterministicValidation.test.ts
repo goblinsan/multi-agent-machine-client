@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  enforceRequiredScopeFilesInPlan,
   extractTargetedBaselineCompileFiles,
   sanitizeVerificationOnlySteps,
   validateDeterministicPlan,
@@ -205,6 +206,79 @@ describe("deterministic plan validation", () => {
     );
 
     expect(result.valid).toBe(true);
+  });
+
+  it("deterministically repairs scope-expanded plans missing root-cause files", () => {
+    const planData = {
+      plan: [
+        {
+          goal: "Add missing properties to the Config interface and schema",
+          key_files: ["src/config/index.ts", "src/config/schema.ts"],
+          dependencies: [],
+          acceptance_criteria: ["Schema includes corresponding fields"],
+        },
+        {
+          goal: "Fix test file imports for missing Config properties",
+          key_files: ["src/__tests__/config.test.ts"],
+          dependencies: ["step_1"],
+        },
+      ],
+    };
+
+    const requiredScopeFiles = [
+      "src/config/defaults.ts",
+      "src/types/index.ts",
+      "src/types/logEvent.ts",
+    ];
+
+    const beforeRepair = validateDeterministicPlan(planData, {
+      requiredScopeFiles,
+    });
+    expect(beforeRepair.valid).toBe(false);
+
+    const repair = enforceRequiredScopeFilesInPlan(
+      planData,
+      requiredScopeFiles,
+    );
+    expect(repair.changed).toBe(true);
+    expect(repair.addedFiles).toEqual(requiredScopeFiles);
+    expect(repair.targetStepIndex).toBe(0);
+
+    expect(planData.plan[0].key_files).toEqual([
+      "src/config/index.ts",
+      "src/config/schema.ts",
+      "src/config/defaults.ts",
+      "src/types/index.ts",
+      "src/types/logEvent.ts",
+    ]);
+    expect(planData.plan[1].dependencies).toEqual(["step_1"]);
+
+    const afterRepair = validateDeterministicPlan(planData, {
+      requiredScopeFiles,
+    });
+    expect(afterRepair.valid).toBe(true);
+  });
+
+  it("does not repair scope plans when required files are already present", () => {
+    const planData = {
+      plan: [
+        {
+          goal: "Repair shared config and type roots",
+          key_files: ["src/config/defaults.ts", "src/types/index.ts"],
+        },
+      ],
+    };
+
+    const repair = enforceRequiredScopeFilesInPlan(planData, [
+      "src/config/defaults.ts",
+      "src/types/index.ts",
+    ]);
+
+    expect(repair.changed).toBe(false);
+    expect(planData.plan[0].key_files).toEqual([
+      "src/config/defaults.ts",
+      "src/types/index.ts",
+    ]);
   });
 
   it("removes verification-only steps even when they list concrete files", () => {

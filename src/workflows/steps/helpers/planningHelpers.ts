@@ -199,6 +199,106 @@ export function collectPlanKeyFiles(planData: any): string[] {
   return Array.from(files);
 }
 
+export function enforceRequiredScopeFilesInPlan(
+  planData: any,
+  requiredScopeFiles: string[],
+): {
+  changed: boolean;
+  addedFiles: string[];
+  targetStepIndex: number | null;
+} {
+  if (!Array.isArray(planData?.plan) || planData.plan.length === 0) {
+    return { changed: false, addedFiles: [], targetStepIndex: null };
+  }
+
+  const normalizedRequiredFiles = Array.from(
+    new Set(
+      requiredScopeFiles
+        .map((file) => normalizePlanFilePath(String(file)))
+        .filter((file) => file.length > 0),
+    ),
+  );
+  if (normalizedRequiredFiles.length === 0) {
+    return { changed: false, addedFiles: [], targetStepIndex: null };
+  }
+
+  const plannedFiles = new Set(
+    collectPlanKeyFiles(planData).map(normalizePlanFilePath),
+  );
+  const missingFiles = normalizedRequiredFiles.filter(
+    (file) => !plannedFiles.has(file),
+  );
+  if (missingFiles.length === 0) {
+    return { changed: false, addedFiles: [], targetStepIndex: null };
+  }
+
+  const targetStepIndex = findScopeRepairStepIndex(planData, missingFiles);
+  const targetStep = planData.plan[targetStepIndex];
+  if (!Array.isArray(targetStep.key_files)) {
+    targetStep.key_files = [];
+  }
+
+  const stepFiles = new Set(
+    targetStep.key_files
+      .filter((file: any) => typeof file === "string")
+      .map((file: string) => normalizePlanFilePath(file)),
+  );
+  for (const file of missingFiles) {
+    if (!stepFiles.has(file)) {
+      targetStep.key_files.push(file);
+      stepFiles.add(file);
+    }
+  }
+
+  const note =
+    "Repair the deterministic scope root-cause files before downstream edits.";
+  if (!Array.isArray(targetStep.acceptance_criteria)) {
+    targetStep.acceptance_criteria = [];
+  }
+  if (!targetStep.acceptance_criteria.includes(note)) {
+    targetStep.acceptance_criteria.unshift(note);
+  }
+
+  return {
+    changed: true,
+    addedFiles: missingFiles,
+    targetStepIndex,
+  };
+}
+
+function findScopeRepairStepIndex(planData: any, missingFiles: string[]): number {
+  const missingDirs = new Set(
+    missingFiles.map((file) => file.split("/").slice(0, -1).join("/")),
+  );
+
+  const steps = planData.plan as any[];
+  let bestIndex = 0;
+  let bestScore = -1;
+
+  steps.forEach((step, index) => {
+    const keyFiles = Array.isArray(step?.key_files) ? step.key_files : [];
+    const goal = typeof step?.goal === "string" ? step.goal.toLowerCase() : "";
+    let score = 0;
+
+    if (/\b(root|cause|shared|schema|type|config|interface|definition|default)\b/.test(goal)) {
+      score += 2;
+    }
+
+    for (const file of keyFiles) {
+      if (typeof file !== "string") continue;
+      const dir = normalizePlanFilePath(file).split("/").slice(0, -1).join("/");
+      if (missingDirs.has(dir)) score += 1;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+
+  return bestIndex;
+}
+
 export interface AmbiguousPlanKeyFiles {
   stepGoal: string;
   basePath: string;

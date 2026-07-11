@@ -24,6 +24,7 @@ import {
   findPlanLanguageViolations,
   collectAllowedLanguages,
   collectPlanKeyFiles,
+  enforceRequiredScopeFilesInPlan,
   findAmbiguousPlanKeyFiles,
   buildSyntheticEvaluationFailure,
   formatPlanArtifact,
@@ -249,13 +250,48 @@ export class PlanningLoopStep extends WorkflowStep {
             context.getVariable("scope_viability_root_cause_files"),
           )
           : [];
-        const deterministicValidation = validateDeterministicPlan(planData, {
+        let deterministicValidation = validateDeterministicPlan(planData, {
           existingPaths,
           allowedLanguages: allowedLanguageInfo.normalized,
           taskTitle,
           taskDescription,
           requiredScopeFiles,
         });
+
+        if (
+          !deterministicValidation.valid &&
+          requiredScopeFiles.length > 0 &&
+          this.hasOnlyMissingRequiredScopeFiles(deterministicValidation.issues)
+        ) {
+          const scopeRepair = enforceRequiredScopeFilesInPlan(
+            planData,
+            requiredScopeFiles,
+          );
+
+          if (scopeRepair.changed) {
+            planResult = this.withRepairedPlanResult(planResult, planData);
+            latestPlanKeyFiles = collectPlanKeyFiles(planData);
+            context.setVariable("planning_loop_plan_files", latestPlanKeyFiles);
+            deterministicValidation = validateDeterministicPlan(planData, {
+              existingPaths,
+              allowedLanguages: allowedLanguageInfo.normalized,
+              taskTitle,
+              taskDescription,
+              requiredScopeFiles,
+            });
+
+            logger.info(
+              "Deterministically repaired scope-expanded plan key_files",
+              {
+                workflowId: context.workflowId,
+                iteration: currentIteration,
+                addedFiles: scopeRepair.addedFiles,
+                targetStepIndex: scopeRepair.targetStepIndex,
+                validationPassed: deterministicValidation.valid,
+              },
+            );
+          }
+        }
         deterministicPlanPassed = deterministicValidation.valid;
 
         if (!deterministicValidation.valid) {
@@ -865,6 +901,35 @@ export class PlanningLoopStep extends WorkflowStep {
     if (!lastSignature) return false;
     const current = this.normalizeFailureSignature(reason);
     return current.length > 0 && current === lastSignature;
+  }
+
+  private hasOnlyMissingRequiredScopeFiles(
+    issues: Array<{ guard: string }>,
+  ): boolean {
+    return (
+      issues.length > 0 &&
+      issues.every((issue) => issue.guard === "scope_viability_required_files")
+    );
+  }
+
+  private withRepairedPlanResult(planResult: any, planData: any): any {
+    const repairedResult = JSON.stringify(planData);
+    if (!planResult || typeof planResult !== "object") {
+      return {
+        fields: {
+          status: "done",
+          result: repairedResult,
+        },
+      };
+    }
+
+    return {
+      ...planResult,
+      fields: {
+        ...(planResult.fields ?? {}),
+        result: repairedResult,
+      },
+    };
   }
 
   private buildContextOverview(
