@@ -358,6 +358,7 @@ export class ImplementationLoopStep extends WorkflowStep {
     let missingFiles = input.missingFiles;
     let lastValidationErrors: ConfigValidationError[] = [];
     let previousFailureSummary = "";
+    const noEffectiveChangeCounts = new Map<string, number>();
     const extraSnippetFiles = new Set<string>();
     let attempt = 0;
     let effectiveMaxAttempts = maxAttempts;
@@ -789,9 +790,19 @@ export class ImplementationLoopStep extends WorkflowStep {
             throw error;
           }
 
+          const noEffectiveChangeSignature =
+            this.buildNoEffectiveChangeSignature(appliedFiles);
+          const repeatedNoEffectiveChanges =
+            (noEffectiveChangeCounts.get(noEffectiveChangeSignature) || 0) + 1;
+          noEffectiveChangeCounts.set(
+            noEffectiveChangeSignature,
+            repeatedNoEffectiveChanges,
+          );
+          const repeatedNoop = repeatedNoEffectiveChanges >= 2;
+
           lastValidationErrors = [
             this.buildNoEditValidationError(
-              `${NO_EFFECTIVE_CHANGE_MESSAGE}. The previous response rewrote files that already matched the working tree. ` +
+              `${repeatedNoop ? "Repeated " : ""}${NO_EFFECTIVE_CHANGE_MESSAGE}. The previous response rewrote files that already matched the working tree. ` +
                 "Do not repeat an unchanged full-file rewrite. Make a concrete edit to one of the stage files that addresses the unresolved task, " +
                 "or explicitly report that the task is already resolved if no relevant compile error remains.",
             ),
@@ -809,11 +820,46 @@ export class ImplementationLoopStep extends WorkflowStep {
               maxAttempts,
               appliedFiles,
               stageFiles,
+              repeatedNoEffectiveChanges,
             },
           );
           await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
-          if (attempt >= effectiveMaxAttempts) {
-            break;
+          if (repeatedNoop) {
+            context.setVariable("implementation_attempts", attempt);
+            context.setVariable(
+              "implementation_no_effective_change_repeated",
+              true,
+            );
+            context.setVariable(
+              "implementation_no_effective_change_signature",
+              noEffectiveChangeSignature,
+            );
+            return {
+              kind: "failed",
+              attempts: attempt,
+              missingFiles,
+              lastValidationErrors,
+              result: {
+                status: "failure",
+                error: new Error(
+                  "Implementation is repeating the same no-op edit. The stage is already resolved for those files or the repair scope is wrong.",
+                ),
+                data: {
+                  reason: "already_resolved_or_bad_scope",
+                  repeatedNoEffectiveChanges,
+                  noEffectiveChangeSignature,
+                  appliedFiles,
+                  stageFiles,
+                },
+                outputs: {
+                  reason: "already_resolved_or_bad_scope",
+                  repeatedNoEffectiveChanges,
+                  noEffectiveChangeSignature,
+                  appliedFiles,
+                  stageFiles,
+                },
+              },
+            };
           }
           continue;
         }
@@ -2041,6 +2087,13 @@ export class ImplementationLoopStep extends WorkflowStep {
   private isNoEffectiveChangeError(error: unknown): boolean {
     return error instanceof Error &&
       error.message.includes(NO_EFFECTIVE_CHANGE_MESSAGE);
+  }
+
+  private buildNoEffectiveChangeSignature(appliedFiles: string[]): string {
+    const files = this.normalizeStringArray(appliedFiles)
+      .map((file) => this.normalizeRelativePath(file))
+      .sort();
+    return files.length > 0 ? files.join("|") : "__no_files__";
   }
 
   private async resolveHead(context: WorkflowContext): Promise<string> {

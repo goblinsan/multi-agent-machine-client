@@ -355,6 +355,68 @@ describe("ImplementationLoopStep", () => {
     expect(envContent).toContain("LOG_FILE_PATH=./logs/app.log");
   });
 
+  it("fails fast when the same no-op rewrite repeats", async () => {
+    const envPath = path.join(repoRoot, ".example.env");
+    await fs.writeFile(envPath, "LOG_LEVEL=info\n", "utf-8");
+    execSync("git add .example.env", { cwd: repoRoot });
+    execSync("git commit --no-verify -m baseline-env", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", [".example.env"]);
+    context.setVariable("plan_required_files", [".example.env"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: [".example.env"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Update env defaults",
+                key_files: [".example.env"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const unchangedRewrite = buildFileBlock(".example.env", "LOG_LEVEL=info\n");
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-noop",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: unchangedRewrite,
+        }),
+      },
+    } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 3,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    expect(result.error?.message).toContain("same no-op edit");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+    expect(
+      context.getVariable("implementation_no_effective_change_repeated"),
+    ).toBe(true);
+    expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
+  });
+
   it("rolls back failed attempts before retrying", async () => {
     const personaDiffs = [
       buildDiff(
