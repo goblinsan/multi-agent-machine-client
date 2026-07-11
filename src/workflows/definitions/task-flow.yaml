@@ -125,7 +125,7 @@ steps:
         upsert_by_external_id: true
         check_duplicates: true
         existing_tasks: "${review_existing_tasks || []}"
-        duplicate_match_strategy: "content_hash"
+        duplicate_match_strategy: "external_id"
 
   - name: research_enrichment
     type: SubWorkflowStep

@@ -591,6 +591,38 @@ export class ImplementationLoopStep extends WorkflowStep {
       this.syncStepOutput(context, "apply_implementation_edits", diffResult);
       appliedFiles = this.extractAppliedFiles(diffResult);
 
+      const scopeTouchErrors = this.evaluateScopeRootCauseTouchGate(
+        context,
+        appliedFiles,
+        stageFiles,
+      );
+      if (scopeTouchErrors.length > 0) {
+        lastValidationErrors = scopeTouchErrors;
+        this.recordNoEditFailure(context, scopeTouchErrors);
+        for (const failure of scopeTouchErrors) {
+          const details = (failure as any).details;
+          if (Array.isArray(details?.required_root_cause_files)) {
+            for (const file of details.required_root_cause_files) {
+              extraSnippetFiles.add(this.normalizeRelativePath(file));
+            }
+          }
+        }
+        context.logger.warn(
+          "Scope-expanded implementation omitted root-cause edits",
+          {
+            workflowId: context.workflowId,
+            attempt,
+            appliedFiles,
+            errors: scopeTouchErrors,
+          },
+        );
+        await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        if (attempt < effectiveMaxAttempts) {
+          continue;
+        }
+        break;
+      }
+
       const guardResult = await guardStep.execute(context);
       if (guardResult.status !== "success") {
         await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
@@ -1268,6 +1300,61 @@ export class ImplementationLoopStep extends WorkflowStep {
         "Implementation response did not include edits for this still-missing plan file. " +
         "Create or update every missing plan file in the same response before any edits are applied.",
     }));
+  }
+
+  private evaluateScopeRootCauseTouchGate(
+    context: WorkflowContext,
+    appliedFiles: string[],
+    stageFiles: string[],
+  ): ConfigValidationError[] {
+    if (context.getVariable("scope_viability_status") !== "requires_scope_expansion") {
+      return [];
+    }
+
+    const requiredRootCauseFiles = this.normalizeStringArray([
+      ...this.normalizeStringArray(
+        context.getVariable("scope_viability_root_cause_files"),
+      ),
+      ...this.normalizeStringArray(
+        context.getVariable("scope_viability_required_files"),
+      ),
+    ]);
+    if (requiredRootCauseFiles.length === 0) {
+      return [];
+    }
+
+    const stageFileSet = new Set(this.normalizeStringArray(stageFiles));
+    const requiredInStage = requiredRootCauseFiles.filter((file) =>
+      stageFileSet.has(file),
+    );
+    if (requiredInStage.length === 0) {
+      return [];
+    }
+
+    const touchedFiles = new Set(this.normalizeStringArray(appliedFiles));
+    const touchedRootCauseFiles = requiredInStage.filter((file) =>
+      touchedFiles.has(file),
+    );
+    if (touchedRootCauseFiles.length > 0) {
+      return [];
+    }
+
+    const touchedSummary =
+      touchedFiles.size > 0 ? Array.from(touchedFiles).join(", ") : "none";
+    return [
+      {
+        file: "__scope_viability__",
+        reason:
+          "Scope expansion determined this task cannot pass by editing only downstream files. " +
+          `This stage must edit at least one root-cause file (${requiredInStage.join(", ")}), ` +
+          `but the implementation only touched: ${touchedSummary}. ` +
+          "Patch the shared schema/default/type source first, then make downstream test edits if still needed.",
+        details: {
+          required_root_cause_files: requiredInStage,
+          applied_files: Array.from(touchedFiles),
+        },
+      } as ConfigValidationError,
+    ];
   }
 
   private extractEditedFilesFromPersonaResult(result: StepResult): Set<string> {

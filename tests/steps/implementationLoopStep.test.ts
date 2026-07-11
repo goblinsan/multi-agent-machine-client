@@ -123,6 +123,55 @@ describe("ImplementationLoopStep", () => {
   const buildFileBlock = (relativePath: string, contents: string) =>
     `\`\`\`file path=${relativePath}\n${contents.trimEnd()}\n\`\`\``;
 
+  it("rejects scope-expanded attempts that omit root-cause files", () => {
+    context.setVariable("scope_viability_status", "requires_scope_expansion");
+    context.setVariable("scope_viability_root_cause_files", [
+      "src/config/schema.ts",
+      "src/config/defaults.ts",
+    ]);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {},
+    });
+
+    const errors = (step as any).evaluateScopeRootCauseTouchGate(
+      context,
+      ["src/__tests__/config-loader.test.ts"],
+      [
+        "src/__tests__/config-loader.test.ts",
+        "src/config/schema.ts",
+        "src/config/defaults.ts",
+      ],
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].file).toBe("__scope_viability__");
+    expect(errors[0].reason).toContain("must edit at least one root-cause file");
+  });
+
+  it("allows scope-expanded attempts that touch a root-cause file", () => {
+    context.setVariable("scope_viability_status", "requires_scope_expansion");
+    context.setVariable("scope_viability_root_cause_files", [
+      "src/config/schema.ts",
+    ]);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {},
+    });
+
+    const errors = (step as any).evaluateScopeRootCauseTouchGate(
+      context,
+      ["src/config/schema.ts", "src/__tests__/config-loader.test.ts"],
+      ["src/config/schema.ts", "src/__tests__/config-loader.test.ts"],
+    );
+
+    expect(errors).toEqual([]);
+  });
+
   it("retries on persona request failure then succeeds", async () => {
     let callCount = 0;
 

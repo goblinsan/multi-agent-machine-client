@@ -77,4 +77,70 @@ describe("TaskDuplicateDetector", () => {
 
     expect(match).toBeNull();
   });
+
+  it("does not fuzzy-match distinct baseline repair files", () => {
+    const existingTasks = [
+      {
+        id: "56",
+        title:
+          "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+        description:
+          "Details: src/__tests__/config-loader.test.ts has compile errors. Acceptance criteria: npx tsc --noEmit reports zero errors.",
+        milestone_slug: "machine-client-log-summarizer",
+        external_id:
+          "baseline-repair-src___tests___config-loader.test.ts",
+      },
+    ];
+
+    const candidate = {
+      title:
+        "Fix baseline compile errors in src/config/retention-engine.ts",
+      description:
+        "Details: src/config/retention-engine.ts has compile errors. Acceptance criteria: npx tsc --noEmit reports zero errors.",
+      milestone_slug: "machine-client-log-summarizer",
+      external_id: "baseline-repair-src_config_retention-engine.ts",
+    };
+
+    const match = detector.findDuplicateWithDetails(
+      candidate,
+      existingTasks,
+      "content_hash",
+    );
+
+    expect(match).toBeNull();
+  });
+
+  it("matches baseline repair tasks with the same external id", () => {
+    const existingTasks = [
+      {
+        id: "56",
+        title:
+          "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+        description:
+          "Details: src/__tests__/config-loader.test.ts has compile errors.",
+        milestone_slug: "machine-client-log-summarizer",
+        external_id:
+          "baseline-repair-src___tests___config-loader.test.ts",
+      },
+    ];
+
+    const candidate = {
+      title:
+        "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+      description:
+        "Details: src/__tests__/config-loader.test.ts has compile errors.",
+      milestone_slug: "machine-client-log-summarizer",
+      external_id:
+        "baseline-repair-src___tests___config-loader.test.ts",
+    };
+
+    const match = detector.findDuplicateWithDetails(
+      candidate,
+      existingTasks,
+      "content_hash",
+    );
+
+    expect(match?.duplicate.id).toBe("56");
+    expect(match?.matchScore).toBe(100);
+  });
 });

@@ -189,6 +189,11 @@ export class TaskDuplicateDetector {
     task: TaskForDuplication,
     existing: ExistingTask,
   ): DuplicateMatchResult | null {
+    const baselineMatch = this.compareBaselineRepairTasks(task, existing);
+    if (baselineMatch !== undefined) {
+      return baselineMatch;
+    }
+
     if (
       task.milestone_slug &&
       existing.milestone_slug &&
@@ -214,6 +219,35 @@ export class TaskDuplicateDetector {
         duplicate: existing,
         strategy: "content_hash",
         matchScore: overlapScore,
+      };
+    }
+
+    return null;
+  }
+
+  private compareBaselineRepairTasks(
+    task: TaskForDuplication,
+    existing: ExistingTask,
+  ): DuplicateMatchResult | null | undefined {
+    const taskExternalId = task.external_id || "";
+    const existingExternalId = existing.external_id || "";
+    const taskIsBaseline = taskExternalId.startsWith("baseline-repair-");
+    const existingIsBaseline = existingExternalId.startsWith("baseline-repair-");
+
+    if (!taskIsBaseline && !existingIsBaseline) {
+      return undefined;
+    }
+
+    if (
+      taskIsBaseline &&
+      existingIsBaseline &&
+      taskExternalId.length > 0 &&
+      taskExternalId === existingExternalId
+    ) {
+      return {
+        duplicate: existing,
+        strategy: "content_hash",
+        matchScore: 100,
       };
     }
 
