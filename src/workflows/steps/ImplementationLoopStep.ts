@@ -171,6 +171,26 @@ export class ImplementationLoopStep extends WorkflowStep {
         if (stageOutcome.result) {
           return stageOutcome.result;
         }
+        if (this.isScopeExpansionActive(context)) {
+          context.logger.warn(
+            "Scope-expanded plan step failed - stopping before downstream stages",
+            {
+              workflowId: context.workflowId,
+              failedStage: `${stage.index}/${stages.length}`,
+              stageGoal: stage.goal || undefined,
+            },
+          );
+          return this.buildExhaustionFailure(
+            context,
+            stage,
+            stages.length,
+            maxAttempts,
+            totalAttempts,
+            missingFiles,
+            lastValidationErrors,
+            missingVariable,
+          );
+        }
         if (cfg.continueOnStageFailure && stages.length > 1) {
           failedStages.push({
             stage,
@@ -1307,7 +1327,7 @@ export class ImplementationLoopStep extends WorkflowStep {
     appliedFiles: string[],
     stageFiles: string[],
   ): ConfigValidationError[] {
-    if (context.getVariable("scope_viability_status") !== "requires_scope_expansion") {
+    if (!this.isScopeExpansionActive(context)) {
       return [];
     }
 
@@ -1355,6 +1375,10 @@ export class ImplementationLoopStep extends WorkflowStep {
         },
       } as ConfigValidationError,
     ];
+  }
+
+  private isScopeExpansionActive(context: WorkflowContext): boolean {
+    return context.getVariable("scope_viability_status") === "requires_scope_expansion";
   }
 
   private extractEditedFilesFromPersonaResult(result: StepResult): Set<string> {

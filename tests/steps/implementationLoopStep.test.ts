@@ -1042,6 +1042,85 @@ describe("ImplementationLoopStep", () => {
     expect(gitStatus).toBe("");
   });
 
+  it("stops scope-expanded plans after a failed root-cause stage", async () => {
+    context.setVariable("scope_viability_status", "requires_scope_expansion");
+    context.setVariable("scope_viability_root_cause_files", [".example.env"]);
+    context.setVariable("planning_loop_plan_files", [
+      ".example.env",
+      "src/config/validator.js",
+      "src/later.js",
+    ]);
+    context.setVariable("plan_required_files", [
+      ".example.env",
+      "src/config/validator.js",
+      "src/later.js",
+    ]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: [".example.env", "src/config/validator.js", "src/later.js"],
+      missing_files: ["src/config/validator.js", "src/later.js"],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Repair root cause",
+                key_files: [".example.env", "src/config/validator.js"],
+              },
+              {
+                goal: "Apply downstream cleanup",
+                key_files: ["src/later.js"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-stage-one",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: buildDiff(".example.env", ["LOG_LEVEL=info"].join("\n")),
+        }),
+      },
+    } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 1,
+        continueOnStageFailure: true,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [
+            ".example.env",
+            "src/config/validator.js",
+            "src/later.js",
+          ],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    expect(result.error?.message).toContain("missing plan files:");
+    expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(1);
+    await expect(
+      fs.access(path.join(repoRoot, "src/later.js")),
+    ).rejects.toThrow();
+    const gitStatus = execSync("git status --porcelain", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+    }).trim();
+    expect(gitStatus).toBe("");
+  });
+
   it("grants a bonus attempt while validation errors keep changing", async () => {
     const script =
       "node -e \"const fs=require('fs'); if(!fs.existsSync('src/config/validator.js'))process.exit(0); const s=fs.readFileSync('src/config/validator.js','utf8'); if(s.includes('MARKER_A')){console.error('src/config/validator.js(1,1): error TS2304: Cannot find name MarkerA.'); process.exit(2);} if(s.includes('MARKER_B')){console.error('src/config/validator.js(1,1): error TS2304: Cannot find name MarkerB.'); process.exit(2);}\"";
