@@ -282,13 +282,17 @@ export class PlanningLoopStep extends WorkflowStep {
             });
 
             logger.info(
-              "Deterministically repaired scope-expanded plan key_files",
+              "Deterministically repaired scope-expanded plan structure",
               {
                 workflowId: context.workflowId,
                 iteration: currentIteration,
                 addedFiles: scopeRepair.addedFiles,
                 removedFiles: scopeRepair.removedFiles,
                 targetStepIndex: scopeRepair.targetStepIndex,
+                rootStageFiles: scopeRepair.rootStageFiles,
+                planSteps: Array.isArray(planData?.plan)
+                  ? planData.plan.length
+                  : undefined,
                 validationPassed: deterministicValidation.valid,
               },
             );

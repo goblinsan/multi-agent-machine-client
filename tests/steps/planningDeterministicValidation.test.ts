@@ -388,14 +388,73 @@ describe("deterministic plan validation", () => {
       "src/config/loader.ts",
       "src/config/schema.ts",
     ]);
+    expect(repair.rootStageFiles).toEqual(requiredScopeFiles);
     expect(planData.plan[0].key_files).toEqual([
-      "src/__tests__/config-loader.test.ts",
-      "src/types/index.ts",
-      "src/types/logEvent.ts",
       "src/config/defaults.ts",
       "src/config/loader.ts",
       "src/config/schema.ts",
+      "src/types/index.ts",
+      "src/types/logEvent.ts",
     ]);
+    expect(planData.plan[0].goal).toContain("root-cause");
+    expect(planData.plan[1].key_files).toEqual([
+      "src/__tests__/config-loader.test.ts",
+    ]);
+
+    const afterRepair = validateDeterministicPlan(planData, {
+      taskTitle:
+        "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+      requiredScopeFiles,
+    });
+    expect(afterRepair.valid).toBe(true);
+  });
+
+  it("turns downstream-first scope-expanded plans into a root-cause-first stage", () => {
+    const planData = {
+      plan: [
+        {
+          goal:
+            "Fix all compile errors in src/__tests__/config-loader.test.ts by removing references to non-existent Config properties",
+          key_files: ["src/__tests__/config-loader.test.ts"],
+          acceptance_criteria: ["Config-loader test compiles"],
+        },
+        {
+          goal:
+            "Fix type assertions in config-loader.test.ts by removing references to non-existent properties",
+          key_files: ["src/__tests__/config-loader.test.ts"],
+          acceptance_criteria: ["Assertions use real Config properties"],
+        },
+      ],
+    };
+    const requiredScopeFiles = [
+      "src/config/defaults.ts",
+      "src/config/loader.ts",
+      "src/config/schema.ts",
+      "src/types/index.ts",
+      "src/types/logEvent.ts",
+    ];
+
+    const beforeRepair = validateDeterministicPlan(planData, {
+      taskTitle:
+        "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+      requiredScopeFiles,
+    });
+    expect(beforeRepair.valid).toBe(false);
+
+    const repair = repairScopeExpandedPlan(
+      planData,
+      requiredScopeFiles,
+      beforeRepair.issues,
+    );
+
+    expect(repair.changed).toBe(true);
+    expect(planData.plan).toHaveLength(2);
+    expect(planData.plan[0].goal).toContain("root-cause");
+    expect(planData.plan[0].key_files).toEqual(requiredScopeFiles);
+    expect(planData.plan[1].key_files).toEqual([
+      "src/__tests__/config-loader.test.ts",
+    ]);
+    expect(planData.plan[1].dependencies).toEqual(["Step 1"]);
 
     const afterRepair = validateDeterministicPlan(planData, {
       taskTitle:

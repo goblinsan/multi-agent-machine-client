@@ -275,9 +275,10 @@ export function repairScopeExpandedPlan(
   addedFiles: string[];
   removedFiles: string[];
   targetStepIndex: number | null;
+  rootStageFiles: string[];
 } {
   const removedFiles = removeOutOfScopePlanFiles(planData, issues);
-  const scopeRepair = enforceRequiredScopeFilesInPlan(
+  const scopeRepair = enforceScopeRootCauseFirstStage(
     planData,
     requiredScopeFiles,
   );
@@ -287,7 +288,120 @@ export function repairScopeExpandedPlan(
     addedFiles: scopeRepair.addedFiles,
     removedFiles,
     targetStepIndex: scopeRepair.targetStepIndex,
+    rootStageFiles: scopeRepair.rootStageFiles,
   };
+}
+
+function enforceScopeRootCauseFirstStage(
+  planData: any,
+  requiredScopeFiles: string[],
+): {
+  changed: boolean;
+  addedFiles: string[];
+  targetStepIndex: number | null;
+  rootStageFiles: string[];
+} {
+  if (!Array.isArray(planData?.plan) || planData.plan.length === 0) {
+    return {
+      changed: false,
+      addedFiles: [],
+      targetStepIndex: null,
+      rootStageFiles: [],
+    };
+  }
+
+  const rootStageFiles = Array.from(
+    new Set(
+      requiredScopeFiles
+        .map((file) => normalizePlanFilePath(String(file)))
+        .filter((file) => file.length > 0),
+    ),
+  );
+  if (rootStageFiles.length === 0) {
+    return {
+      changed: false,
+      addedFiles: [],
+      targetStepIndex: null,
+      rootStageFiles: [],
+    };
+  }
+
+  const before = JSON.stringify(planData.plan);
+  const rootFileSet = new Set(rootStageFiles);
+  const previousFiles = new Set(collectPlanKeyFiles(planData).map(normalizePlanFilePath));
+  const downstreamByFiles = new Map<string, any>();
+
+  for (const step of planData.plan) {
+    if (!step || typeof step !== "object") continue;
+    const remainingFiles = Array.from(
+      new Set(
+        (Array.isArray(step.key_files) ? step.key_files : [])
+          .filter((file: any) => typeof file === "string")
+          .map((file: string) => normalizePlanFilePath(file))
+          .filter((file: string) => file.length > 0 && !rootFileSet.has(file)),
+      ),
+    );
+    if (remainingFiles.length === 0) continue;
+
+    const key = remainingFiles.join("\n");
+    const existing = downstreamByFiles.get(key);
+    if (!existing) {
+      downstreamByFiles.set(key, {
+        ...step,
+        key_files: remainingFiles,
+        dependencies: ["Step 1"],
+      });
+      continue;
+    }
+
+    existing.acceptance_criteria = mergeStringArrays(
+      existing.acceptance_criteria,
+      step.acceptance_criteria,
+    );
+  }
+
+  const rootStage = {
+    goal:
+      "Repair the shared root-cause schema, defaults, loader, and type files before downstream edits",
+    key_files: rootStageFiles,
+    owners: inferOwners(planData.plan),
+    dependencies: [],
+    acceptance_criteria: [
+      "Root-cause files match the repository's actual compile-time contracts.",
+      "Do not change downstream test files in this stage unless a root-cause edit requires a matching import or type reference.",
+    ],
+  };
+
+  planData.plan = [rootStage, ...Array.from(downstreamByFiles.values())];
+
+  const addedFiles = rootStageFiles.filter((file) => !previousFiles.has(file));
+  return {
+    changed: JSON.stringify(planData.plan) !== before,
+    addedFiles,
+    targetStepIndex: 0,
+    rootStageFiles,
+  };
+}
+
+function mergeStringArrays(...values: unknown[]): string[] {
+  const merged = new Set<string>();
+  for (const value of values) {
+    if (!Array.isArray(value)) continue;
+    for (const entry of value) {
+      if (typeof entry !== "string") continue;
+      const trimmed = entry.trim();
+      if (trimmed.length > 0) merged.add(trimmed);
+    }
+  }
+  return Array.from(merged);
+}
+
+function inferOwners(steps: any[]): string[] {
+  for (const step of steps) {
+    const owners = mergeStringArrays(step?.owners);
+    if (owners.length > 0) return owners;
+  }
+  return ["lead-engineer"];
 }
 
 function removeOutOfScopePlanFiles(
