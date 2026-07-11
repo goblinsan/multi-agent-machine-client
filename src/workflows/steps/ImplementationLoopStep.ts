@@ -74,6 +74,8 @@ const MAX_CONVERGENCE_BONUS_ATTEMPTS = 2;
 const RUNAWAY_RESPONSE_CHAR_THRESHOLD = 24000;
 const REPETITIVE_PREFIX_THRESHOLD = 24;
 const REPETITIVE_PREFIX_MIN_RATIO = 0.18;
+const NO_EFFECTIVE_CHANGE_MESSAGE =
+  "Implementation produced no new committed changes";
 
 export class ImplementationLoopStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
@@ -769,17 +771,52 @@ export class ImplementationLoopStep extends WorkflowStep {
       }
 
       if (gatedMissing.length === 0 && combinedValidationErrors.length === 0) {
-        const commitResult = await this.commitValidatedAttempt(
-          context,
-          appliedFiles,
-          this.resolveStageCommitMessage(
+        let commitResult: { sha: string; branch: string };
+        try {
+          commitResult = await this.commitValidatedAttempt(
             context,
-            cfg.diffConfig,
-            attempt,
-            stage,
-            stagesTotal,
-          ),
-        );
+            appliedFiles,
+            this.resolveStageCommitMessage(
+              context,
+              cfg.diffConfig,
+              attempt,
+              stage,
+              stagesTotal,
+            ),
+          );
+        } catch (error) {
+          if (!this.isNoEffectiveChangeError(error)) {
+            throw error;
+          }
+
+          lastValidationErrors = [
+            this.buildNoEditValidationError(
+              `${NO_EFFECTIVE_CHANGE_MESSAGE}. The previous response rewrote files that already matched the working tree. ` +
+                "Do not repeat an unchanged full-file rewrite. Make a concrete edit to one of the stage files that addresses the unresolved task, " +
+                "or explicitly report that the task is already resolved if no relevant compile error remains.",
+            ),
+          ];
+          this.recordNoEditFailure(context, lastValidationErrors);
+          context.setVariable("implementation_prefer_full_file", false);
+          for (const file of stageFiles) {
+            extraSnippetFiles.add(this.normalizeRelativePath(file));
+          }
+          context.logger.warn(
+            "Implementation attempt produced no effective committed changes, retrying",
+            {
+              workflowId: context.workflowId,
+              attempt,
+              maxAttempts,
+              appliedFiles,
+              stageFiles,
+            },
+          );
+          await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+          if (attempt >= effectiveMaxAttempts) {
+            break;
+          }
+          continue;
+        }
         context.logger.info("Implementation stage completed", {
           workflowId: context.workflowId,
           stage: `${stage.index}/${stagesTotal}`,
@@ -1995,10 +2032,15 @@ export class ImplementationLoopStep extends WorkflowStep {
     );
     if (result.noop === true) {
       throw new Error(
-        "Implementation produced no new committed changes; retry with a concrete edit or mark the task already resolved before implementation",
+        `${NO_EFFECTIVE_CHANGE_MESSAGE}; retry with a concrete edit or mark the task already resolved before implementation`,
       );
     }
     return result;
+  }
+
+  private isNoEffectiveChangeError(error: unknown): boolean {
+    return error instanceof Error &&
+      error.message.includes(NO_EFFECTIVE_CHANGE_MESSAGE);
   }
 
   private async resolveHead(context: WorkflowContext): Promise<string> {

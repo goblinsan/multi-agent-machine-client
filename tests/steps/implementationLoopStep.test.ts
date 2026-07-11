@@ -288,6 +288,73 @@ describe("ImplementationLoopStep", () => {
     expect(context.getVariable("implementation_guard_missing_files")).toEqual([]);
   });
 
+  it("retries when a validated attempt rewrites an unchanged file", async () => {
+    const envPath = path.join(repoRoot, ".example.env");
+    await fs.writeFile(envPath, "LOG_LEVEL=info\n", "utf-8");
+    execSync("git add .example.env", { cwd: repoRoot });
+    execSync("git commit --no-verify -m baseline-env", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", [".example.env"]);
+    context.setVariable("plan_required_files", [".example.env"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: [".example.env"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Update env defaults",
+                key_files: [".example.env"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const personaDiffs = [
+      buildFileBlock(".example.env", "LOG_LEVEL=info\n"),
+      buildFileBlock(
+        ".example.env",
+        ["LOG_LEVEL=debug", "LOG_FILE_PATH=./logs/app.log"].join("\n"),
+      ),
+    ];
+
+    vi.mocked(persona.waitForPersonaCompletion).mockImplementation(async () => ({
+      id: `event-${personaDiffs.length}`,
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: personaDiffs.shift() ?? "",
+        }),
+      },
+    }));
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 3,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+    expect(result.status, result.error?.message).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+
+    const envContent = await fs.readFile(envPath, "utf-8");
+    expect(envContent).toContain("LOG_LEVEL=debug");
+    expect(envContent).toContain("LOG_FILE_PATH=./logs/app.log");
+  });
+
   it("rolls back failed attempts before retrying", async () => {
     const personaDiffs = [
       buildDiff(
