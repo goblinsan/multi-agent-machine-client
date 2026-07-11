@@ -483,20 +483,30 @@ export function validateDeterministicPlan(
     `${options.taskTitle || ""}\n${options.taskDescription || ""}`,
   );
   if (targetedBaselineFiles.length > 0) {
-    const allowedTargets = new Set(targetedBaselineFiles);
+    const allowedTargets = new Set([
+      ...targetedBaselineFiles,
+      ...requiredScopeFiles,
+    ]);
     const outOfScopeFiles = collectPlanKeyFiles(planData)
       .map(normalizePlanFilePath)
       .filter((file) => file && !allowedTargets.has(file));
 
     if (outOfScopeFiles.length > 0) {
+      const scopeExpansionNote =
+        requiredScopeFiles.length > 0
+          ? " Deterministic scope expansion may include required root-cause files."
+          : "";
       issues.push({
         guard: "targeted_task_scope",
         reason:
           "Baseline compile-error tasks are file-scoped. Plan key_files must stay limited to " +
-          `${targetedBaselineFiles.map((file) => `'${file}'`).join(", ")}; ` +
+          `${Array.from(allowedTargets).map((file) => `'${file}'`).join(", ")};` +
+          scopeExpansionNote +
+          " " +
           `remove out-of-scope files: ${Array.from(new Set(outOfScopeFiles)).map((file) => `'${file}'`).join(", ")}.`,
         details: {
           targeted_files: targetedBaselineFiles,
+          required_scope_files: requiredScopeFiles,
           out_of_scope_files: Array.from(new Set(outOfScopeFiles)),
         },
       });

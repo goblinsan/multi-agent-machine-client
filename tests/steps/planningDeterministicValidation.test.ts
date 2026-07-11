@@ -138,6 +138,66 @@ describe("deterministic plan validation", () => {
     ).toBe(true);
   });
 
+  it("allows deterministic scope expansion root files for baseline compile-error tasks", () => {
+    const result = validateDeterministicPlan(
+      {
+        plan: [
+          {
+            goal: "Fix test and shared config root cause",
+            key_files: [
+              "src/__tests__/config-loader.test.ts",
+              "src/config/defaults.ts",
+              "src/config/loader.ts",
+              "src/config/schema.ts",
+              "src/types/index.ts",
+              "src/types/logEvent.ts",
+            ],
+          },
+        ],
+      },
+      {
+        taskTitle:
+          "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+        requiredScopeFiles: [
+          "src/config/defaults.ts",
+          "src/config/loader.ts",
+          "src/config/schema.ts",
+          "src/types/index.ts",
+          "src/types/logEvent.ts",
+        ],
+      },
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("still rejects unrelated files during baseline scope expansion", () => {
+    const result = validateDeterministicPlan(
+      {
+        plan: [
+          {
+            goal: "Fix test, root cause, and unrelated UI",
+            key_files: [
+              "src/__tests__/config-loader.test.ts",
+              "src/config/loader.ts",
+              "src/settings-panel.tsx",
+            ],
+          },
+        ],
+      },
+      {
+        taskTitle:
+          "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
+        requiredScopeFiles: ["src/config/loader.ts"],
+      },
+    );
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some((issue) => issue.guard === "targeted_task_scope"),
+    ).toBe(true);
+  });
+
   it("allows the targeted file for a baseline compile-error task", () => {
     const result = validateDeterministicPlan(
       {
