@@ -318,22 +318,22 @@ steps:
       variables:
         devops_request_status: resolved
 
-  - name: mark_task_done
-    type: SimpleTaskStatusStep
-    depends_on: [devops_request]
-    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'
-    config:
-      status: done
-
   - name: merge_branch_to_main
     type: GitOperationStep
     description: "Merge feature branch back to main so subsequent tasks see completed work"
-    depends_on: [mark_task_done]
+    depends_on: [devops_request]
     condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'
     config:
       operation: mergeBranchToMain
       sourceBranch: ${branch}
       targetBranch: main
+
+  - name: mark_task_done
+    type: SimpleTaskStatusStep
+    depends_on: [merge_branch_to_main]
+    condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'
+    config:
+      status: done
 
 failure_handling:
   on_workflow_failure:

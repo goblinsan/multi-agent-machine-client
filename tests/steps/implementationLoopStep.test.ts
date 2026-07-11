@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import path from "path";
 import fs from "fs/promises";
+import { execSync } from "child_process";
 import { makeTempRepo } from "../makeTempRepo.js";
 import { WorkflowContext } from "../../src/workflows/engine/WorkflowContext.js";
 import { ImplementationLoopStep } from "../../src/workflows/steps/ImplementationLoopStep.js";
@@ -107,6 +108,21 @@ describe("ImplementationLoopStep", () => {
     return `\`\`\`diff\n--- /dev/null\n+++ b/${relativePath}\n@@ -0,0 +${lines.length} @@\n${additions}\n\`\`\``;
   };
 
+  const buildReplaceDiff = (
+    relativePath: string,
+    oldContents: string,
+    newContents: string,
+  ) => {
+    const oldLines = oldContents.trimEnd().split("\n");
+    const newLines = newContents.trimEnd().split("\n");
+    const removals = oldLines.map((line) => `-${line}`).join("\n");
+    const additions = newLines.map((line) => `+${line}`).join("\n");
+    return `\`\`\`diff\n--- a/${relativePath}\n+++ b/${relativePath}\n@@ -1,${oldLines.length} +1,${newLines.length} @@\n${removals}\n${additions}\n\`\`\``;
+  };
+
+  const buildFileBlock = (relativePath: string, contents: string) =>
+    `\`\`\`file path=${relativePath}\n${contents.trimEnd()}\n\`\`\``;
+
   it("retries on persona request failure then succeeds", async () => {
     let callCount = 0;
 
@@ -149,7 +165,7 @@ describe("ImplementationLoopStep", () => {
     });
 
     const result = await step.execute(context);
-    expect(result.status).toBe("success");
+    expect(result.status, result.error?.message).toBe("success");
     expect(context.getVariable("implementation_attempts")).toBe(2);
   });
 
@@ -170,7 +186,16 @@ describe("ImplementationLoopStep", () => {
           "  return true;",
           "};",
         ].join("\n"),
-      ),
+      ) +
+        "\n" +
+        buildDiff(
+          ".example.env",
+          [
+            "# Example configuration",
+            "LOG_LEVEL=info",
+            "LOG_FILE_PATH=./logs/app.log",
+          ].join("\n"),
+        ),
     ];
 
     vi.mocked(persona.waitForPersonaCompletion).mockImplementation(async () => ({
@@ -212,6 +237,646 @@ describe("ImplementationLoopStep", () => {
     );
     expect(validatorContent).toContain("export const validator");
     expect(context.getVariable("implementation_guard_missing_files")).toEqual([]);
+  });
+
+  it("rolls back failed attempts before retrying", async () => {
+    const personaDiffs = [
+      buildDiff(
+        ".example.env",
+        [
+          "# Incomplete configuration",
+          "LOG_LEVEL=debug",
+        ].join("\n"),
+      ),
+      buildDiff(
+        ".example.env",
+        [
+          "# Example configuration",
+          "LOG_LEVEL=info",
+          "LOG_FILE_PATH=./logs/app.log",
+        ].join("\n"),
+      ) +
+        "\n" +
+        buildDiff(
+          "src/config/validator.js",
+          [
+          "export const validator = () => {",
+          "  return true;",
+          "};",
+          ].join("\n"),
+        ),
+    ];
+
+    vi.mocked(persona.waitForPersonaCompletion).mockImplementation(async () => ({
+      id: `event-${personaDiffs.length}`,
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: personaDiffs.shift() ?? "",
+        }),
+      },
+    }));
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 3,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+    expect(result.status, result.error?.message).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+
+    const envContent = await fs.readFile(
+      path.join(repoRoot, ".example.env"),
+      "utf-8",
+    );
+    expect(envContent).toContain("LOG_LEVEL=info");
+
+    const validatorContent = await fs.readFile(
+      path.join(repoRoot, "src/config/validator.js"),
+      "utf-8",
+    );
+    expect(validatorContent).toContain("export const validator");
+    expect(context.getVariable("implementation_guard_missing_files")).toEqual([]);
+  });
+
+  it("retries forced duplicate information completions instead of applying empty diffs", async () => {
+    const validDiff =
+      buildDiff(
+        ".example.env",
+        [
+          "# Example configuration",
+          "LOG_LEVEL=info",
+          "LOG_FILE_PATH=./logs/app.log",
+        ].join("\n"),
+      ) +
+      "\n" +
+      buildDiff(
+        "src/config/validator.js",
+        [
+          "export const validator = () => {",
+          "  return true;",
+          "};",
+        ].join("\n"),
+      );
+
+    vi.mocked(persona.waitForPersonaCompletion)
+      .mockResolvedValueOnce({
+        id: "event-forced-info",
+        fields: {
+          result: JSON.stringify({
+            status: "complete",
+            summary:
+              "System forced completion after repeated duplicate information requests.",
+            information_blocks: [
+              "src/config/validator.js was not found; create it as a new file.",
+            ],
+            system_note: {
+              reason:
+                "forced_completion_due_to_duplicate_information_requests",
+            },
+          }),
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        id: "event-implementation",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: validDiff,
+          }),
+        },
+      } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+    expect(
+      context.getVariable("implementation_information_request_summary"),
+    ).toContain("create it as a new file");
+    expect(
+      context.getVariable(
+        "implementation_request_force_synthesis_due_to_duplicates",
+      ),
+    ).toBe(false);
+
+    const validatorContent = await fs.readFile(
+      path.join(repoRoot, "src/config/validator.js"),
+      "utf-8",
+    );
+    expect(validatorContent).toContain("export const validator");
+  });
+
+  it("rejects truncated repetitive implementation output before diff parsing", async () => {
+    const repeatedLines = Array.from({ length: 280 }, (_, index) => {
+      const suffix = [
+        "Undefined",
+        "EmptyString",
+        "Null",
+        "UndefinedTypeAndNull",
+        "NullTypeAndEmptyString",
+      ][index % 5];
+      return `export const defaultsForTestWithFileExportPath${suffix}${index} = { export: { path: "" } };`;
+    }).join("\n");
+    const runawayOutput =
+      "```file path=src/config/validator.js\n" + repeatedLines;
+
+    const validDiff =
+      buildDiff(
+        ".example.env",
+        [
+          "# Example configuration",
+          "LOG_LEVEL=info",
+          "LOG_FILE_PATH=./logs/app.log",
+        ].join("\n"),
+      ) +
+      "\n" +
+      buildDiff(
+        "src/config/validator.js",
+        [
+          "export const validator = () => {",
+          "  return true;",
+          "};",
+        ].join("\n"),
+      );
+
+    vi.mocked(persona.waitForPersonaCompletion)
+      .mockResolvedValueOnce({
+        id: "event-runaway",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: runawayOutput,
+            truncated: true,
+          }),
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        id: "event-small-patch",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: validDiff,
+          }),
+        },
+      } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status, result.error?.message).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+    expect(
+      context.getVariable("implementation_config_validation_summary"),
+    ).toBe("");
+
+    const validatorContent = await fs.readFile(
+      path.join(repoRoot, "src/config/validator.js"),
+      "utf-8",
+    );
+    expect(validatorContent).toContain("export const validator");
+  });
+
+  it("rolls back typecheck-corrupting attempts before retrying", async () => {
+    const originalTypes = [
+      "export interface LogEvent {",
+      "  id: string;",
+      "}",
+      "export interface EventMeta {",
+      "  source: string;",
+      "}",
+    ].join("\n");
+    await fs.mkdir(path.join(repoRoot, "src/types"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, "src/types/logEvent.ts"),
+      originalTypes,
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({
+        scripts: {
+          typecheck:
+            "node -e \"const fs=require('fs'); const s=fs.readFileSync('src/types/logEvent.ts','utf8'); if(!s.includes('interface LogEvent') || !s.includes('interface EventMeta')) process.exit(2);\"",
+        },
+      }),
+      "utf-8",
+    );
+    await fs.writeFile(path.join(repoRoot, "tsconfig.json"), "{}", "utf-8");
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m types", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", ["src/types/logEvent.ts"]);
+    context.setVariable("plan_required_files", ["src/types/logEvent.ts"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/types/logEvent.ts"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Update event query params",
+                key_files: ["src/types/logEvent.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const corruptedTypes = "export interface EventQueryParams {\n  limit?: number;\n}";
+    const repairedTypes = [
+      originalTypes,
+      "export interface EventQueryParams {",
+      "  limit?: number;",
+      "}",
+    ].join("\n");
+    const personaDiffs = [
+      buildReplaceDiff("src/types/logEvent.ts", originalTypes, corruptedTypes),
+      buildReplaceDiff("src/types/logEvent.ts", originalTypes, repairedTypes),
+    ];
+
+    vi.mocked(persona.waitForPersonaCompletion).mockImplementation(async () => ({
+      id: `event-${personaDiffs.length}`,
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: personaDiffs.shift() ?? "",
+        }),
+      },
+    }));
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["src/types/logEvent.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+    const finalTypes = await fs.readFile(
+      path.join(repoRoot, "src/types/logEvent.ts"),
+      "utf-8",
+    );
+    expect(finalTypes).toContain("interface LogEvent");
+    expect(finalTypes).toContain("interface EventMeta");
+    expect(finalTypes).toContain("interface EventQueryParams");
+    const commitCount = execSync("git rev-list --count HEAD", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+    }).trim();
+    expect(commitCount).toBe("3");
+  });
+
+  it("retains all required and missing plan files after partial retry output", async () => {
+    const originalTypes = [
+      "export interface ExistingEvent {",
+      "  id: string;",
+      "}",
+    ].join("\n");
+    const updatedTypes = [
+      "export interface ExistingEvent {",
+      "  id: string;",
+      "}",
+      "export interface EventQueryParams {",
+      "  limit?: number;",
+      "}",
+    ].join("\n");
+    await fs.mkdir(path.join(repoRoot, "src/types"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, "src/types/eventTypes.ts"),
+      originalTypes,
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m event-types", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", [
+      "src/types/eventTypes.ts",
+      "src/routes/events.ts",
+    ]);
+    context.setVariable("event_plan_files", [
+      "src/types/eventTypes.ts",
+      "src/routes/events.ts",
+    ]);
+    context.setVariable("event_plan_files", [
+      "src/types/eventTypes.ts",
+      "src/routes/events.ts",
+    ]);
+    context.setVariable("plan_required_files", [
+      "src/types/eventTypes.ts",
+      "src/routes/events.ts",
+    ]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/types/eventTypes.ts", "src/routes/events.ts"],
+      missing_files: ["src/routes/events.ts"],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Add event types and route",
+                key_files: ["src/types/eventTypes.ts", "src/routes/events.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const wrongBase = "export interface InventedEvent {\n  id: string;\n}";
+    vi.mocked(persona.waitForPersonaCompletion)
+      .mockResolvedValueOnce({
+        id: "event-stale-diff",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: buildReplaceDiff(
+              "src/types/eventTypes.ts",
+              wrongBase,
+              updatedTypes,
+            ),
+          }),
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        id: "event-partial-retry",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: buildFileBlock("src/types/eventTypes.ts", updatedTypes),
+          }),
+        },
+      } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "event_plan_files",
+          additional_files: ["src/types/eventTypes.ts", "src/routes/events.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    expect(context.getVariable("implementation_required_files")).toEqual([
+      "src/types/eventTypes.ts",
+      "src/routes/events.ts",
+    ]);
+    expect(context.getVariable("implementation_missing_plan_files")).toEqual([
+      "src/routes/events.ts",
+    ]);
+    expect(
+      context.getVariable("implementation_missing_plan_files_summary"),
+    ).toBe("src/routes/events.ts");
+    expect(context.getVariable("implementation_prefer_full_file")).toBe(true);
+  });
+
+  it("rejects partial output for still-missing plan files before applying edits", async () => {
+    const partialEnv = [
+      "LOG_LEVEL=debug",
+      "PARTIAL_MARKER=true",
+    ].join("\n");
+    const finalEnv = [
+      "LOG_LEVEL=info",
+      "LOG_FILE_PATH=./logs/app.log",
+      "FINAL_MARKER=true",
+    ].join("\n");
+    const validator = [
+      "export const validator = () => {",
+      "  return true;",
+      "};",
+    ].join("\n");
+
+    vi.mocked(persona.waitForPersonaCompletion)
+      .mockResolvedValueOnce({
+        id: "event-partial",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: buildFileBlock(".example.env", partialEnv),
+          }),
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        id: "event-complete",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output:
+              buildFileBlock(".example.env", finalEnv) +
+              "\n" +
+              buildFileBlock("src/config/validator.js", validator),
+          }),
+        },
+      } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status, result.error?.message).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(2);
+    const envContent = await fs.readFile(
+      path.join(repoRoot, ".example.env"),
+      "utf-8",
+    );
+    expect(envContent).toContain("FINAL_MARKER=true");
+    expect(envContent).not.toContain("PARTIAL_MARKER=true");
+    await expect(
+      fs.access(path.join(repoRoot, "src/config/validator.js")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("ignores parsed typecheck errors outside touched and plan files", async () => {
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({
+        scripts: {
+          typecheck:
+            "node -e \"console.error('src/utils/pathExtractor.ts(10,5): error TS2304: Cannot find name MissingType.'); process.exit(2);\"",
+        },
+      }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m package", { cwd: repoRoot });
+
+    const allDiffs =
+      buildDiff(
+        ".example.env",
+        ["LOG_LEVEL=info", "LOG_FILE_PATH=./logs/app.log"].join("\n"),
+      ) +
+      "\n" +
+      buildDiff(
+        "src/config/validator.js",
+        [
+          "export const validator = () => {",
+          "  return true;",
+          "};",
+        ].join("\n"),
+      );
+
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-unrelated-typecheck",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: allDiffs,
+        }),
+      },
+    });
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 1,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(context.getVariable("implementation_typecheck_validation_errors")).toEqual([]);
+    const preexistingSummary = context.getVariable(
+      "implementation_typecheck_preexisting_summary",
+    ) as string;
+    expect(preexistingSummary).toContain("src/utils/pathExtractor.ts");
+  });
+
+  it("caps relevant typecheck diagnostics before rendering retry feedback", async () => {
+    const longMessage = "X".repeat(500);
+    const script =
+      "node -e \"if(!require('fs').existsSync('src/config/validator.js'))process.exit(0); for(let i=1;i<=12;i++) console.error('src/config/validator.js('+i+',1): error TS2304: Cannot find name " +
+      longMessage +
+      "'); process.exit(2);\"";
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({ scripts: { typecheck: script } }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m package", { cwd: repoRoot });
+
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-relevant-typecheck",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: buildDiff(
+            "src/config/validator.js",
+            [
+              "export const validator = () => {",
+              "  return true;",
+              "};",
+            ].join("\n"),
+          ),
+        }),
+      },
+    });
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 1,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    const compactErrors = context.getVariable(
+      "implementation_config_validation_errors",
+    ) as Array<{ file: string; reason: string }>;
+    const fullErrors = context.getVariable(
+      "implementation_config_validation_errors_full",
+    ) as Array<{ file: string; reason: string }>;
+    const summary = context.getVariable(
+      "implementation_config_validation_summary",
+    ) as string;
+
+    expect(fullErrors.length).toBe(12);
+    expect(compactErrors.length).toBeLessThanOrEqual(3);
+    expect(summary.length).toBeLessThanOrEqual(6500);
+    expect(summary).toContain("additional diagnostic(s) omitted");
+    expect(summary).not.toContain(longMessage);
   });
 
   it("fails after exhausting attempts when files remain missing", async () => {
@@ -274,7 +939,130 @@ describe("ImplementationLoopStep", () => {
     ).rejects.toThrow();
   });
 
-  it("reports config validation errors for untouched plan files", async () => {
+  it("rolls back the final failed attempt so later stages see no residue", async () => {
+    const script =
+      "node -e \"const fs=require('fs'); if(!fs.existsSync('src/config/validator.js'))process.exit(0); const s=fs.readFileSync('src/config/validator.js','utf8'); if(s.includes('MARKER_A')){console.error('src/config/validator.js(1,1): error TS2304: Cannot find name MarkerA.'); process.exit(2);}\"";
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({ scripts: { typecheck: script } }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m package", { cwd: repoRoot });
+
+    const badDiff =
+      buildDiff(".example.env", ["LOG_LEVEL=info"].join("\n")) +
+      "\n" +
+      buildDiff(
+        "src/config/validator.js",
+        "export const validator = 'MARKER_A';",
+      );
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-bad",
+      fields: {
+        result: JSON.stringify({ status: "pass", output: badDiff }),
+      },
+    } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    await expect(
+      fs.access(path.join(repoRoot, "src/config/validator.js")),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(repoRoot, ".example.env")),
+    ).rejects.toThrow();
+    const gitStatus = execSync("git status --porcelain", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+    }).trim();
+    expect(gitStatus).toBe("");
+  });
+
+  it("grants a bonus attempt while validation errors keep changing", async () => {
+    const script =
+      "node -e \"const fs=require('fs'); if(!fs.existsSync('src/config/validator.js'))process.exit(0); const s=fs.readFileSync('src/config/validator.js','utf8'); if(s.includes('MARKER_A')){console.error('src/config/validator.js(1,1): error TS2304: Cannot find name MarkerA.'); process.exit(2);} if(s.includes('MARKER_B')){console.error('src/config/validator.js(1,1): error TS2304: Cannot find name MarkerB.'); process.exit(2);}\"";
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({ scripts: { typecheck: script } }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m package", { cwd: repoRoot });
+
+    const envDiff = buildDiff(".example.env", ["LOG_LEVEL=info"].join("\n"));
+    const personaDiffs = [
+      envDiff +
+        "\n" +
+        buildDiff(
+          "src/config/validator.js",
+          "export const validator = 'MARKER_A';",
+        ),
+      envDiff +
+        "\n" +
+        buildDiff(
+          "src/config/validator.js",
+          "export const validator = 'MARKER_B';",
+        ),
+      envDiff +
+        "\n" +
+        buildDiff(
+          "src/config/validator.js",
+          "export const validator = () => true;",
+        ),
+    ];
+
+    vi.mocked(persona.waitForPersonaCompletion).mockImplementation(
+      async () => ({
+        id: `event-${personaDiffs.length}`,
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: personaDiffs.shift() ?? "",
+          }),
+        },
+      }),
+    );
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status, result.error?.message).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(3);
+    const validatorContent = await fs.readFile(
+      path.join(repoRoot, "src/config/validator.js"),
+      "utf-8",
+    );
+    expect(validatorContent).toContain("() => true");
+  });
+
+  it("rejects edits that stray outside the plan scope", async () => {
     await fs.writeFile(
       path.join(repoRoot, "package.json"),
       '{ "name": "demo", }',
@@ -336,14 +1124,14 @@ describe("ImplementationLoopStep", () => {
 
     const result = await step.execute(context);
     expect(result.status).toBe("failure");
-    expect(result.error?.message).toContain("config validation errors");
+    expect(result.error?.message).toContain("outside the approved scope");
     const summary = context.getVariable(
       "implementation_config_validation_summary",
     ) as string;
-    expect(summary).toContain("package.json");
+    expect(summary).toContain("README.md");
     const errors = context.getVariable(
       "implementation_config_validation_errors",
     ) as Array<{ file: string }>;
-    expect(errors[0]?.file).toBe("package.json");
+    expect(errors[0]?.file).toBe("README.md");
   });
 });

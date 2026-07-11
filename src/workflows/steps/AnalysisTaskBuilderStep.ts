@@ -123,6 +123,21 @@ export class AnalysisTaskBuilderStep extends WorkflowStep {
     const plan = this.derivePlan(analysis, cfg.default_priority);
 
     if (!plan) {
+      if (review && review.status && review.status.toLowerCase() === "pass") {
+        return {
+          status: "success",
+          data: {
+            task_count: 0,
+            hypothesis_id: null,
+          },
+          outputs: {
+            actionable_tasks: [],
+            analysis_summary: analysis.summary || analysis.root_cause || "No remediation plan required",
+            selected_hypothesis: null,
+          },
+        } satisfies StepResult;
+      }
+
       return {
         status: "failure",
         error: new Error(

@@ -11,7 +11,9 @@ import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import type { MessageTransport } from "../transport/index.js";
 import { join as _join, basename } from "path";
 import { extractRepoRemote } from "./helpers/repoRemoteResolver.js";
+import { TaskAPI } from "../dashboard/TaskAPI.js";
 const projectAPI = new ProjectAPI();
+const taskAPI = new TaskAPI();
 import { TaskFetcher } from "./coordinator/TaskFetcher.js";
 import { WorkflowSelector } from "./coordinator/WorkflowSelector.js";
 import { DependencyQueueManager } from "./coordinator/DependencyQueueManager.js";
@@ -104,6 +106,15 @@ export class WorkflowCoordinator {
     }
 
     await this.loadWorkflows();
+
+    try {
+      await taskAPI.adoptOrphanTasks(projectId, cfg.consumerId || "unknown-worker");
+    } catch (e: any) {
+      logger.warn("Failed to adopt orphan tasks at startup", {
+        projectId,
+        error: e.message,
+      });
+    }
 
     logger.info("WorkflowCoordinator starting", {
       workflowId,
@@ -313,6 +324,22 @@ export class WorkflowCoordinator {
               },
             );
             exhaustedTaskIds.add(taskId);
+            continue;
+          }
+
+          const expectedStatus = task?.status || "open";
+          logger.info("Attempting to atomically claim task", { taskId, projectId, expectedStatus });
+          const claimResult = await taskAPI.updateTaskStatus(
+            taskId,
+            "in_progress",
+            projectId,
+            undefined,
+            expectedStatus,
+            cfg.consumerId || "unknown-worker",
+          );
+
+          if (!claimResult.ok && claimResult.status === 409) {
+            logger.warn("Task already claimed by another worker, skipping", { taskId, projectId });
             continue;
           }
 

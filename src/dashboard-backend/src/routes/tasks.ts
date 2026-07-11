@@ -416,7 +416,28 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
           });
       }
 
+      const cols = checkResult[0].columns;
+      const row = checkResult[0].values[0];
+      const task: any = {};
+      cols.forEach((col, idx) => {
+        task[col] = row[idx];
+      });
+
       const payload = request.body as any;
+
+      if (payload.expected_status !== undefined) {
+        if (task.status !== payload.expected_status) {
+          return reply
+            .status(409)
+            .send({
+              type: "https://api.example.com/errors/conflict",
+              title: "Conflict",
+              status: 409,
+              detail: `Task status mismatch: expected '${payload.expected_status}' but was '${task.status}'`,
+            });
+        }
+      }
+
       const updates: string[] = [];
       const params: any[] = [];
       if (payload.title !== undefined) {
@@ -447,6 +468,14 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
             : null,
         );
       }
+      if (payload.claimed_by !== undefined) {
+        updates.push("claimed_by = ?");
+        params.push(payload.claimed_by);
+      }
+      if (payload.claimed_at !== undefined) {
+        updates.push("claimed_at = ?");
+        params.push(payload.claimed_at);
+      }
 
       if (updates.length === 0)
         return reply
@@ -473,11 +502,11 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
       const result = db.exec("SELECT * FROM tasks WHERE id = ?", [
         parseInt(taskId),
       ]);
-      const cols = result[0].columns;
-      const row = result[0].values[0];
+      const resultCols = result[0].columns;
+      const resultRow = result[0].values[0];
       const updated: any = {};
-      cols.forEach((col, idx) => {
-        updated[col] = row[idx];
+      resultCols.forEach((col, idx) => {
+        updated[col] = resultRow[idx];
       });
       if (updated.labels) updated.labels = JSON.parse(updated.labels);
       updated.blocked_dependencies =
@@ -485,5 +514,37 @@ export function registerTaskRoutes(fastify: FastifyInstance) {
 
       return updated;
     },
+  );
+
+  fastify.post(
+    "/projects/:projectId/tasks/adopt-orphans",
+    async (request: any, reply: any) => {
+      const { projectId } = request.params as any;
+      const { consumer_id } = request.body as any;
+      const db = await getDb();
+
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+      let query = `
+        UPDATE tasks
+        SET status = 'open', claimed_by = NULL, claimed_at = NULL
+        WHERE project_id = ? AND status = 'in_progress' AND (claimed_at < ? OR claimed_at IS NULL
+      `;
+      const queryParams: any[] = [parseInt(projectId), fifteenMinutesAgo];
+
+      if (consumer_id) {
+        query += " OR claimed_by = ?";
+        queryParams.push(consumer_id);
+      }
+
+      query += ")";
+
+      db.run(query, queryParams);
+      saveDb(db);
+
+      console.log(`Adopted orphan tasks for project ${projectId} and consumer ${consumer_id}`);
+
+      return { ok: true };
+    }
   );
 }

@@ -3,7 +3,11 @@ export type PersonaStatus = "pass" | "fail" | "unknown";
 export interface AnalysisReviewLoopConfig {
   maxIterations?: number;
   analystPersona: string;
-  reviewerPersona: string;
+  reviewerPersona?: string;
+  analysisReviewer?: boolean | string | number;
+  analysis_reviewer?: boolean | string | number;
+  enableReviewer?: boolean | string | number;
+  enable_reviewer?: boolean | string | number;
   analysisStep?: string;
   reviewStep?: string;
   analysisIntent?: string;

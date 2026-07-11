@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, vi as _vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi as _vi } from "vitest";
 import { GitArtifactStep } from "../src/workflows/steps/GitArtifactStep.js";
 import { WorkflowContext } from "../src/workflows/engine/WorkflowContext.js";
 import type { StepResult } from "../src/workflows/engine/WorkflowStep.js";
 import { makeTempRepo } from "./makeTempRepo.js";
 import { runGit } from "../src/gitUtils.js";
+import { cfg } from "../src/config.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -25,8 +26,10 @@ const assertSuccess = (result: StepResult): SuccessResult => {
 describe("GitArtifactStep", () => {
   let repoDir: string;
   let context: WorkflowContext;
+  const originalArtifactMode = cfg.maArtifactsMode;
 
   beforeEach(async () => {
+    (cfg as any).maArtifactsMode = originalArtifactMode;
     repoDir = await makeTempRepo();
 
     context = new WorkflowContext(
@@ -42,6 +45,10 @@ describe("GitArtifactStep", () => {
       {} as any,
       {},
     );
+  });
+
+  afterEach(() => {
+    (cfg as any).maArtifactsMode = originalArtifactMode;
   });
 
   describe("Basic Functionality", () => {
@@ -76,6 +83,29 @@ describe("GitArtifactStep", () => {
       expect(result.outputs?.commit_plan_path).toBe(
         ".ma/tasks/1/03-plan-final.md",
       );
+    });
+
+    it("publishes in API mode without writing .ma/tasks locally", async () => {
+      (cfg as any).maArtifactsMode = "api";
+      context.setVariable("qa_result", { status: "pass" });
+
+      const step = new GitArtifactStep({
+        name: "commit_qa",
+        type: "GitArtifactStep",
+        config: {
+          source_output: "qa_result",
+          artifact_path: ".ma/tasks/1/reviews/qa.json",
+          commit_message: "docs(ma): QA results for task 1",
+          format: "json",
+        },
+      });
+
+      const result = assertSuccess(await step.execute(context));
+
+      expect(result.data.sha).toBe("api-only");
+      await expect(
+        fs.access(path.join(repoDir, ".ma/tasks/1/reviews/qa.json")),
+      ).rejects.toThrow();
     });
 
     it("should extract nested field when extract_field specified", async () => {

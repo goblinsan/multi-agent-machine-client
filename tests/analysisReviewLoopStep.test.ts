@@ -60,6 +60,7 @@ describe("AnalysisReviewLoopStep", () => {
       config: {
         analystPersona: "analyst",
         reviewerPersona: "analysis-reviewer",
+        analysisReviewer: "on",
         payload: {},
         reviewPayload: {},
       },
@@ -95,6 +96,132 @@ describe("AnalysisReviewLoopStep", () => {
     expect(personaExecuteMock).toHaveBeenCalledTimes(4);
   });
 
+  it("skips the LLM analysis reviewer by default after deterministic validation passes", async () => {
+    const context = buildContext();
+    const step = new AnalysisReviewLoopStep({
+      name: "analysis_loop",
+      type: "AnalysisReviewLoopStep",
+      config: {
+        analystPersona: "analyst",
+        reviewerPersona: "analysis-reviewer",
+        payload: {},
+        reviewPayload: {},
+      },
+    } as WorkflowStepConfig);
+
+    personaExecuteMock.mockImplementation((config: WorkflowStepConfig) => {
+      expect(config.config?.persona).toBe("analyst");
+      return {
+        status: "success",
+        outputs: {
+          summary: "Type mismatches are isolated to test mocks.",
+          action_plan: {
+            title: "Fix test mock types",
+            key_files: ["src/__tests__/batched-writer.test.ts"],
+          },
+        },
+      };
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.analysis_iterations).toBe(1);
+    expect(result.outputs?.analysis_review_status).toBe("pass");
+    expect(result.outputs?.analysis_auto_pass).toBe(false);
+    expect(result.outputs?.analysis_review_result).toMatchObject({
+      status: "pass",
+      deterministic: true,
+      reviewer_disabled: true,
+    });
+    expect(personaExecuteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("parses wrapped analyst output before deterministic validation", async () => {
+    const context = buildContext();
+    const step = new AnalysisReviewLoopStep({
+      name: "analysis_loop",
+      type: "AnalysisReviewLoopStep",
+      config: {
+        analystPersona: "analyst",
+        payload: {},
+      },
+    } as WorkflowStepConfig);
+
+    personaExecuteMock.mockImplementation(() => ({
+      status: "success",
+      outputs: {
+        output:
+          "```json\n" +
+          JSON.stringify({
+            summary: "Wrapped analysis should be accepted.",
+            hypotheses: [
+              {
+                id: "h1",
+                statement: "Mocks use stale types.",
+              },
+            ],
+            action_plan: {
+              title: "Fix stale mocks",
+              key_files: ["src/__tests__/batched-writer.test.ts"],
+            },
+          }) +
+          "\n```",
+        duration_ms: 72883,
+      },
+    }));
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.analysis_iterations).toBe(1);
+    expect(result.outputs?.analysis_request_result).toMatchObject({
+      summary: "Wrapped analysis should be accepted.",
+      action_plan: {
+        title: "Fix stale mocks",
+      },
+    });
+    expect(result.outputs?.analysis_request_result).not.toHaveProperty(
+      "duration_ms",
+    );
+    expect(result.outputs?.analysis_review_status).toBe("pass");
+    expect(personaExecuteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries analyst output when deterministic structure validation fails", async () => {
+    const context = buildContext();
+    const step = new AnalysisReviewLoopStep({
+      name: "analysis_loop",
+      type: "AnalysisReviewLoopStep",
+      config: {
+        analystPersona: "analyst",
+        maxIterations: 2,
+        payload: {},
+      },
+    } as WorkflowStepConfig);
+
+    const analystPayloads: Record<string, any>[] = [];
+    personaExecuteMock.mockImplementation((config: WorkflowStepConfig) => {
+      analystPayloads.push(config.config?.payload || {});
+      if (analystPayloads.length === 1) {
+        return { status: "success", outputs: {} };
+      }
+      return {
+        status: "success",
+        outputs: { summary: "Now structured." },
+      };
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.analysis_iterations).toBe(2);
+    expect(analystPayloads[1].is_revision).toBe(true);
+    expect(analystPayloads[1].review_feedback_text).toContain(
+      "Analyst output must include",
+    );
+  });
+
   it("injects reviewer feedback into subsequent analyst payloads", async () => {
     const context = buildContext();
     const step = new AnalysisReviewLoopStep({
@@ -103,6 +230,7 @@ describe("AnalysisReviewLoopStep", () => {
       config: {
         analystPersona: "analyst",
         reviewerPersona: "analysis-reviewer",
+        analysisReviewer: "on",
         payload: {},
         reviewPayload: {},
       },
@@ -172,6 +300,7 @@ describe("AnalysisReviewLoopStep", () => {
       config: {
         analystPersona: "analyst",
         reviewerPersona: "analysis-reviewer",
+        analysisReviewer: "on",
         payload: {},
         reviewPayload: {},
         maxIterations: 5,
@@ -216,6 +345,7 @@ describe("AnalysisReviewLoopStep", () => {
       config: {
         analystPersona: "analyst",
         reviewerPersona: "analysis-reviewer",
+        analysisReviewer: "on",
         payload: {},
         reviewPayload: {},
         maxIterations: 5,

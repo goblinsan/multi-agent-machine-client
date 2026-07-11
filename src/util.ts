@@ -112,8 +112,11 @@ const HEAVY_PERSONA_TIMEOUT_DEFAULTS: Record<string, number> = {
   "implementation-planner": 240_000,
   "plan-evaluator": 480_000,
   "tester-qa": 180_000,
-  analyst: 240_000,
-  "analysis-reviewer": 240_000,
+  analyst: 420_000,
+  "analysis-reviewer": 300_000,
+  "security-review": 480_000,
+  "code-reviewer": 300_000,
+  devops: 240_000,
 };
 
 export function personaTimeoutMs(persona: string, cfg: any) {
@@ -143,6 +146,9 @@ export function calculateProgressiveTimeout(
   backoffIncrementMs: number = 30000,
 ): number {
   if (attemptNumber <= 1) return baseTimeoutMs;
-  const additionalBackoff = (attemptNumber - 1) * backoffIncrementMs;
-  return baseTimeoutMs + additionalBackoff;
+  const linear = baseTimeoutMs + (attemptNumber - 1) * backoffIncrementMs;
+  const multiplicative = Math.floor(
+    baseTimeoutMs * Math.pow(1.5, attemptNumber - 1),
+  );
+  return Math.min(Math.max(linear, multiplicative), 1_800_000);
 }

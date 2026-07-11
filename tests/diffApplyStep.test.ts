@@ -172,7 +172,8 @@ describe("DiffApplyStep Critical Error Handling", () => {
       operations_count: 1,
       branch: "test-branch",
       noop_applied: false,
-      apply_method: "edit-spec",
+      apply_method: "edit-spec-strict",
+      out_of_scope_files: [],
     });
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -214,7 +215,8 @@ describe("DiffApplyStep Critical Error Handling", () => {
       operations_count: 1,
       branch: "test-branch",
       noop_applied: true,
-      apply_method: "edit-spec",
+      apply_method: "edit-spec-strict",
+      out_of_scope_files: [],
     });
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -289,5 +291,88 @@ describe("DiffApplyStep Critical Error Handling", () => {
     expect(result.status).toBe("success");
     const applyArgs = (applyEditOps as any).mock.calls.at(-1)[1];
     expect(applyArgs.blockedExts).toEqual([".env"]);
+  });
+
+  it("drops out-of-scope ops and reports them when allowed_paths is set", async () => {
+    diffApplyStep = new DiffApplyStep({
+      name: "test-diff-apply",
+      type: "DiffApplyStep",
+      config: {
+        source_output: "test_output",
+        allowed_paths: ["src/routes/events.ts", "src/types/"],
+      },
+    });
+
+    (mockContext.getStepOutput as any).mockReturnValue("some diff content");
+
+    const { DiffParser } = await import("../src/agents/parsers/DiffParser.js");
+    (DiffParser.parsePersonaResponse as any).mockReturnValue({
+      success: true,
+      editSpec: {
+        ops: [
+          { action: "upsert", path: "src/routes/events.ts", content: "a" },
+          { action: "upsert", path: "src/types/eventTypes.ts", content: "b" },
+          { action: "upsert", path: "src/settings-panel.tsx", content: "c" },
+        ],
+      },
+      diffBlocks: [],
+      errors: [],
+      warnings: [],
+    });
+
+    const { applyEditOps } = await import("../src/fileops.js");
+    (applyEditOps as any).mockResolvedValue({
+      changed: ["src/routes/events.ts", "src/types/eventTypes.ts"],
+      branch: "test-branch",
+      sha: "commit-sha-123",
+    });
+
+    const result = await diffApplyStep.execute(mockContext);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.out_of_scope_files).toEqual([
+      "src/settings-panel.tsx",
+    ]);
+
+    const editSpecArg = JSON.parse((applyEditOps as any).mock.calls.at(-1)[0]);
+    expect(editSpecArg.ops).toHaveLength(2);
+    expect(
+      editSpecArg.ops.map((op: any) => op.path),
+    ).toEqual(["src/routes/events.ts", "src/types/eventTypes.ts"]);
+  });
+
+  it("fails with structured apply failures when every op is out of scope", async () => {
+    diffApplyStep = new DiffApplyStep({
+      name: "test-diff-apply",
+      type: "DiffApplyStep",
+      config: {
+        source_output: "test_output",
+        allowed_paths: ["src/routes/events.ts"],
+      },
+    });
+
+    (mockContext.getStepOutput as any).mockReturnValue("some diff content");
+
+    const { DiffParser } = await import("../src/agents/parsers/DiffParser.js");
+    (DiffParser.parsePersonaResponse as any).mockReturnValue({
+      success: true,
+      editSpec: {
+        ops: [{ action: "upsert", path: "src/App.tsx", content: "x" }],
+      },
+      diffBlocks: [],
+      errors: [],
+      warnings: [],
+    });
+
+    const result = await diffApplyStep.execute(mockContext);
+
+    expect(result.status).toBe("failure");
+    expect(result.error?.message).toContain("outside the approved scope");
+    const failures = (result.data as any)?.apply_failures;
+    expect(failures).toHaveLength(1);
+    expect(failures[0].path).toBe("src/App.tsx");
+
+    const { applyEditOps } = await import("../src/fileops.js");
+    expect(applyEditOps).not.toHaveBeenCalled();
   });
 });

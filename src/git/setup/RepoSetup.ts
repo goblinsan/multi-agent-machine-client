@@ -21,6 +21,48 @@ export async function ensureProjectBase() {
   await fs.mkdir(cfg.projectBase, { recursive: true });
 }
 
+const MA_EXCLUDE_PATTERNS = [".ma/"];
+
+export async function ensureMaExcludes(repoRoot: string): Promise<void> {
+  if (cfg.maArtifactsMode !== "api") return;
+  try {
+    const excludePath = path.join(repoRoot, ".git", "info", "exclude");
+    await fs.mkdir(path.dirname(excludePath), { recursive: true });
+
+    let existing = "";
+    try {
+      existing = await fs.readFile(excludePath, "utf8");
+    } catch {
+      existing = "";
+    }
+
+    const lines = new Set(
+      existing.split(/\r?\n/).map((line) => line.trim()),
+    );
+    const missing = MA_EXCLUDE_PATTERNS.filter((p) => !lines.has(p));
+    if (!missing.length) return;
+
+    const prefix =
+      existing.length === 0 || existing.endsWith("\n")
+        ? existing
+        : `${existing}\n`;
+    await fs.writeFile(
+      excludePath,
+      `${prefix}${missing.join("\n")}\n`,
+      "utf8",
+    );
+    logger.info("Added .ma exclude patterns to git info/exclude", {
+      repoRoot,
+      patterns: missing,
+    });
+  } catch (error) {
+    logger.warn("Failed to update git info/exclude", {
+      repoRoot,
+      error: String(error),
+    });
+  }
+}
+
 export function repoDirectoryFor(remote: string, projectHint?: string | null) {
   if (projectHint && projectHint.trim().length) {
     const segments = projectHint
@@ -185,6 +227,7 @@ export async function ensureRepo(
   }
 
   await configureCredentialStore(repoRoot, remoteInfo.credentialUrl);
+  await ensureMaExcludes(repoRoot);
 
   if (branch) {
     const remoteExists = await remoteBranchExists(repoRoot, branch);

@@ -173,4 +173,88 @@ describe("applyEditOps hunks application", () => {
     expect(result.ok).toBe(false);
     expect(result.failedHunk).toBeDefined();
   });
+
+  it("applies hunks with fuzzy trim mode when indentation differs on JS/TS files", () => {
+    const base = [
+      "import fs from 'fs';",
+      "function run() {",
+      "  const a = 1;",
+      "  if (a) {",
+      "    console.log(a);",
+      "  }",
+      "}"
+    ];
+    const hunks = [
+      {
+        oldStart: 3,
+        oldCount: 4,
+        newStart: 3,
+        newCount: 4,
+        lines: [
+          "const a = 1;",
+          "if (a) {",
+          "-console.log(a);",
+          "+console.log('val:', a);",
+          "}"
+        ]
+      }
+    ];
+
+    const result = applyHunksToLines(base, hunks, "src/run.ts");
+    expect(result.ok).toBe(true);
+    expect(result.fuzzyMode).toBe("trim");
+    expect(result.content).toContain("console.log('val:', a);");
+  });
+
+  it("avoids fuzzy trim matching on indentation-sensitive files (.py, .yaml, .yml)", () => {
+    const base = [
+      "def run():",
+      "    a = 1",
+      "    if a:",
+      "        print(a)",
+      "    return a"
+    ];
+    const hunks = [
+      {
+        oldStart: 2,
+        oldCount: 3,
+        newStart: 2,
+        newCount: 3,
+        lines: [
+          "a = 1",
+          "if a:",
+          "-print(a)",
+          "+print('val:', a)"
+        ]
+      }
+    ];
+
+    const result = applyHunksToLines(base, hunks, "src/run.py");
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects fuzzy trim matching if there are fewer than 2 context anchors", () => {
+    const base = [
+      "function test() {",
+      "  const val = 100;",
+      "}"
+    ];
+    const hunks = [
+      {
+        oldStart: 2,
+        oldCount: 2,
+        newStart: 2,
+        newCount: 2,
+        lines: [
+          "const val = 100;",
+          "-}",
+          "+  return val;",
+          "+}"
+        ]
+      }
+    ];
+
+    const result = applyHunksToLines(base, hunks, "src/test.ts");
+    expect(result.ok).toBe(false);
+  });
 });

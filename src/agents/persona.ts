@@ -3,6 +3,7 @@ import { cfg } from "../config.js";
 import { logger } from "../logger.js";
 import { PERSONAS } from "../personaNames.js";
 import { personaTimeoutMs } from "../util.js";
+import { abortedWorkflows } from "../workflows/helpers/abortState.js";
 
 type PersonaEvent = { id: string; fields: Record<string, string> };
 
@@ -26,6 +27,9 @@ export async function waitForPersonaCompletion(
 
     let lastId = "0-0";
     while (Date.now() - started < effectiveTimeout) {
+      if (abortedWorkflows.has(workflowId)) {
+        throw new Error(`Workflow ${workflowId} was aborted`);
+      }
       const elapsed = Date.now() - started;
       const remaining = Math.max(0, effectiveTimeout - elapsed);
       const blockMs = Math.max(

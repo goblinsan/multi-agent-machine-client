@@ -92,5 +92,10 @@ function collectPaths(entries: WorkingTreeEntry[]): string[] {
       unique.add(entry.secondaryPath);
     }
   }
-  return Array.from(unique);
+  return Array.from(unique).filter((p) => !isArtifactWorkingPath(p));
+}
+
+function isArtifactWorkingPath(p: string): boolean {
+  const normalized = p.replace(/\\/g, "/").replace(/^\.\/+/, "");
+  return normalized === ".ma" || normalized.startsWith(".ma/");
 }

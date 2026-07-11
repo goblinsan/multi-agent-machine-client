@@ -7,6 +7,11 @@ import {
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { runGit } from "../../gitUtils.js";
 import { logger } from "../../logger.js";
+import {
+  inferArtifactKindFromPath,
+  publishArtifactToDashboard,
+  shouldCommitArtifactsToGit,
+} from "../helpers/artifactPublisher.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -18,6 +23,7 @@ interface GitArtifactStepConfig {
   extract_field?: string;
   template?: string;
   require_push?: boolean;
+  artifact_kind?: string;
 }
 
 export class GitArtifactStep extends WorkflowStep {
@@ -112,7 +118,45 @@ export class GitArtifactStep extends WorkflowStep {
         );
       }
 
+      const artifactKind =
+        config.artifact_kind || inferArtifactKindFromPath(resolvedPath);
+      const publishArtifact = () =>
+        publishArtifactToDashboard({
+          projectId: context.projectId,
+          taskId: this.resolveTaskId(context),
+          workflowId: context.workflowId,
+          kind: artifactKind,
+          content,
+        });
+
       const repoRoot = context.repoRoot;
+
+      if (!shouldCommitArtifactsToGit()) {
+        await publishArtifact();
+
+        context.logger.info("Artifact published without git commit", {
+          stepName: this.config.name,
+          artifactPath: resolvedPath,
+          kind: artifactKind,
+          mode: "api",
+        });
+
+        return {
+          status: "success",
+          data: {
+            path: resolvedPath,
+            sha: "api-only",
+            contentLength: content.length,
+            format,
+            elapsed: Date.now() - startTime,
+          },
+          outputs: {
+            [`${this.config.name}_sha`]: "api-only",
+            [`${this.config.name}_path`]: resolvedPath,
+          },
+        };
+      }
+
       const expectedBranch = this.resolveExpectedBranch(context);
 
       if (!expectedBranch) {
@@ -208,6 +252,8 @@ export class GitArtifactStep extends WorkflowStep {
         commitMessage: commitMsg,
       });
 
+      await publishArtifact();
+
       const branch = expectedBranch ?? activeBranch;
       const requirePush = config.require_push === true;
       let pushSucceeded = false;
@@ -295,6 +341,17 @@ export class GitArtifactStep extends WorkflowStep {
           failed: true,
         },
       };
+    }
+  }
+
+  private resolveTaskId(context: WorkflowContext): string | null {
+    try {
+      const task = context.getVariable("task");
+      const id =
+        task?.id ?? task?.data?.id ?? context.getVariable("taskId");
+      return id !== undefined && id !== null ? String(id) : null;
+    } catch {
+      return null;
     }
   }
 

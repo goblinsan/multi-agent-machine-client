@@ -22,4 +22,5 @@ export type ApplyOptions = {
   blockedExts?: string[];
   branchName?: string;
   commitMessage?: string;
+  commit?: boolean;
 };

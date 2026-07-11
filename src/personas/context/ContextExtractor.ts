@@ -1,5 +1,9 @@
 import { logger } from "../../logger.js";
 import { cfg } from "../../config.js";
+import {
+  fetchArtifactContentForPath,
+  fetchProjectArtifactContentFromApi,
+} from "../../workflows/helpers/artifactReader.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -140,8 +144,26 @@ export class ContextExtractor {
     payload: any,
     repo?: string,
   ): Promise<string | null> {
+    const resolvedPath = this.resolveArtifactPath(artifactPath, payload);
+
+    const taskId =
+      payload?.task?.id ?? payload?.task?.data?.id ?? payload?.task_id ?? null;
+    const apiContent = await fetchArtifactContentForPath({
+      projectId: payload?.project_id,
+      taskId,
+      artifactPath: resolvedPath,
+    });
+
+    if (apiContent !== null) {
+      logger.info(`Loaded ${artifactType} from artifacts API`, {
+        persona,
+        artifactPath: resolvedPath,
+        contentLength: apiContent.length,
+      });
+      return apiContent;
+    }
+
     try {
-      const resolvedPath = this.resolveArtifactPath(artifactPath, payload);
       const content = await this.readArtifactFromGit(
         resolvedPath,
         repo,
@@ -232,6 +254,18 @@ export class ContextExtractor {
       } catch {
         continue;
       }
+    }
+
+    const apiSummary = await fetchProjectArtifactContentFromApi({
+      projectId: payload?.project_id,
+      kind: "context_summary",
+    });
+    if (apiSummary && apiSummary.trim().length > 0) {
+      logger.debug("Loaded scan summary from artifacts API", {
+        persona,
+        length: apiSummary.length,
+      });
+      return apiSummary;
     }
 
     return null;

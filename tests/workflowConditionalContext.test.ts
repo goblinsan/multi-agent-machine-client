@@ -22,7 +22,7 @@ describe("Workflow Conditional Context Optimization", () => {
 
     expect(contextRequestStep).toContain("condition:");
     expect(contextRequestStep).toMatch(
-      /condition:.*context_scan\.reused_existing.*(!=\s+true|==\s+false)/,
+      /condition:.*context_scan\.analysis_required.*==\s+true/,
     );
 
     expect(contextRequestStep).toContain("template: context_analysis");
@@ -44,7 +44,7 @@ describe("Workflow Conditional Context Optimization", () => {
     expect(contextRequestSection).toBeDefined();
 
     const section = contextRequestSection![0];
-    expect(section).toContain("context_scan.reused_existing");
+    expect(section).toContain("context_scan.analysis_required");
   });
 
   it("should pass reused_existing flag to context persona payload", async () => {

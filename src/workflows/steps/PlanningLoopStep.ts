@@ -1,7 +1,7 @@
 import {
   WorkflowStep,
   StepResult,
-  ValidationResult as _ValidationResult,
+  ValidationResult,
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import {
@@ -28,33 +28,29 @@ import {
   buildSyntheticEvaluationFailure,
   formatPlanArtifact,
   formatEvaluationArtifact,
+  validateDeterministicPlan,
 } from "./helpers/planningHelpers.js";
 import { requiresStatus } from "./helpers/personaStatusPolicy.js";
-
-interface PlanningLoopConfig {
-  maxIterations?: number;
-  plannerPersona: string;
-  evaluatorPersona: string;
-  planStep: string;
-  evaluateStep: string;
-  payload: Record<string, any>;
-  timeout?: number;
-  deadlineSeconds?: number;
-}
+import { loadTaskFileSnippets } from "./helpers/analysisReview/taskContext.js";
+import {
+  publishArtifactToDashboard,
+  shouldCommitArtifactsToGit,
+} from "../helpers/artifactPublisher.js";
 
 export class PlanningLoopStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
-    const config = this.config.config as PlanningLoopConfig;
+    const config = this.config.config as any;
+    const maxIterations = config.maxIterations ?? config.max_iterations ?? 4;
     const {
-      maxIterations = 7,
-      plannerPersona,
-      evaluatorPersona,
       planStep,
       evaluateStep,
       payload,
       timeout,
       deadlineSeconds = 1200,
     } = config;
+    const plannerPersona = config.plannerPersona || "implementation-planner";
+    const evaluatorPersona = config.evaluatorPersona || "plan-evaluator";
+    const evaluatorEnabled = this.isEvaluatorEnabled(config);
 
     const resolveTimeout = (persona: string) => {
       if (typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0)
@@ -63,7 +59,9 @@ export class PlanningLoopStep extends WorkflowStep {
     };
 
     const plannerTimeoutMs = resolveTimeout(plannerPersona);
-    const evaluatorTimeoutMs = resolveTimeout(evaluatorPersona);
+    const evaluatorTimeoutMs = evaluatorEnabled
+      ? resolveTimeout(evaluatorPersona)
+      : 0;
 
     let currentIteration = 0;
     let planResult: any = null;
@@ -84,6 +82,7 @@ export class PlanningLoopStep extends WorkflowStep {
       maxIterations,
       plannerPersona,
       evaluatorPersona,
+      evaluatorEnabled,
     });
 
     const transport = context.transport;
@@ -119,6 +118,22 @@ export class PlanningLoopStep extends WorkflowStep {
         contextInsights,
         contextSummaryMd,
       );
+      let deterministicPlanPassed = false;
+
+      const task = context.getVariable("task");
+      const taskDescription = task?.description || "";
+      const taskTitle = task?.title || "";
+      const taskFileSnippets = await loadTaskFileSnippets(
+        context.repoRoot,
+        task,
+        undefined,
+        `${taskTitle}\n${taskDescription}`
+      );
+      logger.info("Loaded task file snippets for planner", {
+        workflowId: context.workflowId,
+        fileCount: taskFileSnippets.length,
+        files: taskFileSnippets.map((s) => s.path),
+      });
 
       try {
         logger.info("Making planning request", {
@@ -132,6 +147,7 @@ export class PlanningLoopStep extends WorkflowStep {
           ...payload,
           iteration: currentIteration,
           planIteration: currentIteration,
+          snippets: taskFileSnippets,
           previous_evaluation: evaluationResult,
           planning_history: this.buildPlanningHistory(iterationHistory),
           is_revision: currentIteration > 1,
@@ -170,9 +186,188 @@ export class PlanningLoopStep extends WorkflowStep {
         );
 
         const parsedPlanResult = summarizePlanResult(planResult);
-        const { planData } = normalizePlanPayload(planResult);
+        const { planData, parsed } = normalizePlanPayload(planResult);
+
+        const planEmpty =
+          !Array.isArray(planData?.plan) || planData.plan.length === 0;
+        if (planEmpty && parsed?.truncated === true) {
+          const reason =
+            "Your previous plan response was TRUNCATED at the output token limit before the JSON was complete - it had far too many steps. " +
+            "Produce a plan with AT MOST 6 steps, grouping related small fixes (multiple imports, types, or annotations in the same file) into a single step. " +
+            "Keep goals and acceptance criteria to one short sentence each.";
+          evaluationResult = buildSyntheticEvaluationFailure(
+            reason,
+            { truncated: true },
+            "response_truncated",
+          );
+
+          const syntheticEvalContent = formatEvaluationArtifact(
+            evaluationResult,
+            currentIteration,
+          );
+          await this.commitArtifact(
+            context,
+            syntheticEvalContent,
+            planEvalArtifactPath,
+            `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+            { kind: "plan_eval", iteration: currentIteration },
+          );
+
+          lastEvaluationPassed = false;
+          logger.warn("Plan rejected: response truncated at max_tokens", {
+            workflowId: context.workflowId,
+            iteration: currentIteration,
+          });
+          this.recordIteration(
+            iterationHistory,
+            currentIteration,
+            planResult,
+            "fail",
+            reason,
+          );
+          if (this.isRepeatFailure(reason, lastFailureSignature)) {
+            stalled = true;
+            logger.warn("Planning loop stalled on repeated truncation", {
+              workflowId: context.workflowId,
+              iteration: currentIteration,
+            });
+            break;
+          }
+          lastFailureSignature = this.normalizeFailureSignature(reason);
+          continue;
+        }
+
         latestPlanKeyFiles = collectPlanKeyFiles(planData);
         context.setVariable("planning_loop_plan_files", latestPlanKeyFiles);
+
+        const repoScan = context.getVariable("repoScan") as any[] || [];
+        const existingPaths = new Set(repoScan.map((f: any) => f.path.replace(/\\/g, "/")));
+        const allowedLanguageInfo = collectAllowedLanguages(contextInsights);
+        const scopeViabilityStatus = context.getVariable("scope_viability_status");
+        const requiredScopeFiles = scopeViabilityStatus === "requires_scope_expansion"
+          ? this.normalizeStringArray(
+            context.getVariable("scope_viability_root_cause_files"),
+          )
+          : [];
+        const deterministicValidation = validateDeterministicPlan(planData, {
+          existingPaths,
+          allowedLanguages: allowedLanguageInfo.normalized,
+          taskTitle,
+          taskDescription,
+          requiredScopeFiles,
+        });
+        deterministicPlanPassed = deterministicValidation.valid;
+
+        if (!deterministicValidation.valid) {
+          const reason = deterministicValidation.issues
+            .map((issue) => issue.reason)
+            .join(" ");
+          evaluationResult = buildSyntheticEvaluationFailure(
+            reason,
+            {
+              issues: deterministicValidation.issues,
+            },
+            "deterministic_plan_validation",
+          );
+
+          const syntheticEvalContent = formatEvaluationArtifact(
+            evaluationResult,
+            currentIteration,
+          );
+          await this.commitArtifact(
+            context,
+            syntheticEvalContent,
+            planEvalArtifactPath,
+            `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+            { kind: "plan_eval", iteration: currentIteration },
+          );
+
+          lastEvaluationPassed = false;
+          logger.warn("Plan rejected by deterministic validation", {
+            workflowId: context.workflowId,
+            iteration: currentIteration,
+            issues: deterministicValidation.issues,
+          });
+          this.recordIteration(
+            iterationHistory,
+            currentIteration,
+            planResult,
+            "fail",
+            reason,
+          );
+          if (this.isRepeatFailure(reason, lastFailureSignature)) {
+            stalled = true;
+            logger.warn("Planning loop stalled on repeated deterministic validation failure", {
+              workflowId: context.workflowId,
+              iteration: currentIteration,
+              reason,
+            });
+            break;
+          }
+          lastFailureSignature = this.normalizeFailureSignature(reason);
+          continue;
+        }
+
+        let pathViolationReason: string | null = null;
+        const invalidFiles: string[] = [];
+
+        for (const file of latestPlanKeyFiles) {
+          const fileNorm = file.replace(/\\/g, "/");
+          if (!existingPaths.has(fileNorm)) {
+            const matches = findNearbyPaths(fileNorm, existingPaths);
+            if (matches.length > 0) {
+              invalidFiles.push(`- '${file}' does not exist. Did you mean: ${matches.map(m => `'${m}'`).join(" or ")}?`);
+            }
+          }
+        }
+
+        if (invalidFiles.length > 0) {
+          pathViolationReason = "Plan references nonexistent files that appear to be typos of existing repository files:\n" + invalidFiles.join("\n") + "\nPlease correct these paths in the plan's key_files.";
+          evaluationResult = buildSyntheticEvaluationFailure(
+            pathViolationReason,
+            {
+              invalid_files: invalidFiles,
+            },
+            "path_violations",
+          );
+
+          const syntheticEvalContent = formatEvaluationArtifact(
+            evaluationResult,
+            currentIteration,
+          );
+          await this.commitArtifact(
+            context,
+            syntheticEvalContent,
+            planEvalArtifactPath,
+            `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+            { kind: "plan_eval", iteration: currentIteration },
+          );
+
+          lastEvaluationPassed = false;
+          logger.warn("Plan rejected due to nonexistent plan key files", {
+            workflowId: context.workflowId,
+            iteration: currentIteration,
+            invalidFiles,
+          });
+          this.recordIteration(
+            iterationHistory,
+            currentIteration,
+            planResult,
+            "fail",
+            pathViolationReason,
+          );
+          if (this.isRepeatFailure(pathViolationReason, lastFailureSignature)) {
+            stalled = true;
+            logger.warn("Planning loop stalled on repeated guard failure", {
+              workflowId: context.workflowId,
+              iteration: currentIteration,
+              reason: pathViolationReason,
+            });
+            break;
+          }
+          lastFailureSignature = this.normalizeFailureSignature(pathViolationReason);
+          continue;
+        }
 
         const ambiguousKeyFiles = findAmbiguousPlanKeyFiles(planData);
         if (ambiguousKeyFiles.length > 0) {
@@ -200,6 +395,7 @@ export class PlanningLoopStep extends WorkflowStep {
             syntheticEvalContent,
             planEvalArtifactPath,
             `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+            { kind: "plan_eval", iteration: currentIteration },
           );
 
           lastEvaluationPassed = false;
@@ -252,9 +448,9 @@ export class PlanningLoopStep extends WorkflowStep {
           planContent,
           planIterationArtifactPath,
           `docs(ma): plan iteration ${currentIteration} for task ${taskId}`,
+          { kind: "plan", iteration: currentIteration },
         );
 
-        const allowedLanguageInfo = collectAllowedLanguages(contextInsights);
         const languageViolations = findPlanLanguageViolations(
           planData,
           allowedLanguageInfo.normalized,
@@ -283,6 +479,7 @@ export class PlanningLoopStep extends WorkflowStep {
             syntheticEvalContent,
             planEvalArtifactPath,
             `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+            { kind: "plan_eval", iteration: currentIteration },
           );
           lastEvaluationPassed = false;
           logger.warn("Plan rejected due to language policy violation", {
@@ -309,6 +506,41 @@ export class PlanningLoopStep extends WorkflowStep {
           }
           lastFailureSignature = this.normalizeFailureSignature(reason);
           continue;
+        }
+
+        if (!evaluatorEnabled) {
+          lastEvaluationPassed = true;
+          evaluationResult = null;
+          this.recordIteration(
+            iterationHistory,
+            currentIteration,
+            planResult,
+            "deterministic_pass",
+            "Plan accepted by deterministic validation; LLM evaluator disabled.",
+          );
+
+          logger.info(
+            "Plan accepted by deterministic validation; skipping LLM evaluator",
+            {
+              workflowId: context.workflowId,
+              iteration: currentIteration,
+              evaluatorPersona,
+            },
+          );
+
+          const finalPlanContent = formatPlanArtifact(
+            planResult,
+            currentIteration,
+          );
+          await this.commitArtifact(
+            context,
+            finalPlanContent,
+            `.ma/tasks/${taskId}/03-plan-final.md`,
+            `docs(ma): approved plan for task ${taskId}`,
+            { kind: "plan_final" },
+          );
+
+          break;
         }
       } catch (error) {
         logger.error("Planning request failed", {
@@ -426,17 +658,22 @@ export class PlanningLoopStep extends WorkflowStep {
           evalContent,
           planEvalArtifactPath,
           `docs(ma): plan evaluation ${currentIteration} for task ${taskId}`,
+          { kind: "plan_eval", iteration: currentIteration },
         );
 
         lastEvaluationPassed = evaluationStatusInfo.status === "pass";
 
-        const evaluationReason =
+        let evaluationReason =
           (evaluationStatusInfo.payload &&
           typeof evaluationStatusInfo.payload.reason === "string"
             ? evaluationStatusInfo.payload.reason
             : "") ||
           evaluationStatusInfo.details ||
           "";
+
+        if (evaluationStatusInfo.status === "unknown" && !evaluationReason) {
+          evaluationReason = "unknown evaluator status";
+        }
         this.recordIteration(
           iterationHistory,
           currentIteration,
@@ -444,6 +681,20 @@ export class PlanningLoopStep extends WorkflowStep {
           evaluationStatusInfo.status,
           evaluationReason,
         );
+
+        if (!lastEvaluationPassed && deterministicPlanPassed) {
+          logger.warn(
+            "Plan evaluator rejected a deterministically valid plan; treating rejection as advisory",
+            {
+              workflowId: context.workflowId,
+              iteration: currentIteration,
+              evaluationStatus: evaluationStatusInfo.status,
+              evaluationReason: evaluationReason.substring(0, 500),
+            },
+          );
+          lastEvaluationPassed = true;
+          evaluationReason = "";
+        }
 
         if (lastEvaluationPassed) {
           logger.info("Plan evaluation passed, exiting loop", {
@@ -462,6 +713,7 @@ export class PlanningLoopStep extends WorkflowStep {
             finalPlanContent,
             `.ma/tasks/${taskId}/03-plan-final.md`,
             `docs(ma): approved plan for task ${taskId}`,
+            { kind: "plan_final" },
           );
 
           break;
@@ -663,6 +915,7 @@ export class PlanningLoopStep extends WorkflowStep {
     content: string,
     artifactPath: string,
     commitMessage: string,
+    artifact?: { kind: string; iteration?: number },
   ): Promise<void> {
     const skipGitOps = ((): boolean => {
       try {
@@ -678,12 +931,28 @@ export class PlanningLoopStep extends WorkflowStep {
       return;
     }
 
-    const repoRoot = context.repoRoot;
-    const fullPath = path.join(repoRoot, artifactPath);
+    if (artifact) {
+      await publishArtifactToDashboard({
+        projectId: context.projectId,
+        taskId: this.resolveTaskId(context),
+        workflowId: context.workflowId,
+        kind: artifact.kind,
+        iteration: artifact.iteration ?? null,
+        content,
+      });
+    }
 
     try {
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      if (!shouldCommitArtifactsToGit()) {
+        logger.debug("Skipping artifact git commit (MA_ARTIFACTS_MODE=api)", {
+          artifactPath,
+        });
+        return;
+      }
 
+      const repoRoot = context.repoRoot;
+      const fullPath = path.join(repoRoot, artifactPath);
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, "utf-8");
 
       const relativePath = path.relative(repoRoot, fullPath);
@@ -743,4 +1012,147 @@ export class PlanningLoopStep extends WorkflowStep {
     }
     return "unknown";
   }
+
+  private isEvaluatorEnabled(config: any): boolean {
+    const configured =
+      config.planningEvaluator ??
+      config.planning_evaluator ??
+      config.enableEvaluator ??
+      config.enable_evaluator;
+    if (configured !== undefined) {
+      return this.parseEvaluatorFlag(configured);
+    }
+    return this.parseEvaluatorFlag(process.env.PLANNING_EVALUATOR ?? "off");
+  }
+
+  private parseEvaluatorFlag(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["1", "true", "yes", "on", "enabled"].includes(normalized);
+  }
+
+  private normalizeStringArray(value: unknown): string[] {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) =>
+          typeof entry === "string" ? entry.trim() : String(entry ?? "").trim(),
+        )
+        .filter((entry) => entry.length > 0);
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      return [value.trim()];
+    }
+    return [];
+  }
+
+  protected async validateConfig(
+    _context: WorkflowContext,
+  ): Promise<ValidationResult> {
+    const config = this.config.config as any;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    const maxIterations = config.maxIterations ?? config.max_iterations ?? 4;
+    const deadlineSeconds = config.deadlineSeconds ?? 1200;
+    const stepTimeoutMs = deadlineSeconds * 1000;
+
+    const plannerPersona = config.plannerPersona || "implementation-planner";
+    const evaluatorPersona = config.evaluatorPersona || "plan-evaluator";
+    const evaluatorEnabled = this.isEvaluatorEnabled(config);
+
+    const plannerTimeoutMs = personaTimeoutMs(plannerPersona, cfg);
+    const evaluatorTimeoutMs = evaluatorEnabled
+      ? personaTimeoutMs(evaluatorPersona, cfg)
+      : 0;
+    const maxPersonaTimeoutMs = Math.max(plannerTimeoutMs, evaluatorTimeoutMs);
+
+    const callsPerIteration = evaluatorEnabled ? 2 : 1;
+    const totalPotentialWaitMs =
+      maxPersonaTimeoutMs * maxIterations * callsPerIteration;
+
+    if (totalPotentialWaitMs > stepTimeoutMs) {
+      const msg = `WARNING: PlanningLoopStep timeout budget mismatch! Total potential wait time of persona calls (${totalPotentialWaitMs / 1000}s) exceeds step deadline (${deadlineSeconds}s) by ${Math.ceil((totalPotentialWaitMs - stepTimeoutMs) / 1000)}s. Lower maxIterations or increase deadlineSeconds/timeout.`;
+      logger.warn(msg);
+      console.warn(`\x1b[33m${msg}\x1b[0m`);
+      warnings.push(msg);
+    }
+
+    return {
+      valid: true,
+      errors,
+      warnings,
+    };
+  }
+}
+
+function findNearbyPaths(file: string, existingPaths: Set<string>): string[] {
+  const fileNorm = file.replace(/\\/g, "/");
+  const fileLower = fileNorm.toLowerCase();
+  const fileBase = fileNorm.split("/").pop() || "";
+  const fileBaseLower = fileBase.toLowerCase();
+
+  const matches: string[] = [];
+
+  for (const p of existingPaths) {
+    const pLower = p.toLowerCase();
+    const pBase = p.split("/").pop() || "";
+    const pBaseLower = pBase.toLowerCase();
+
+    if (pLower === fileLower) {
+      matches.push(p);
+      continue;
+    }
+
+    const fileBaseNoExt = fileBase.substring(0, fileBase.lastIndexOf(".")) || fileBase;
+    const pBaseNoExt = pBase.substring(0, pBase.lastIndexOf(".")) || pBase;
+
+    if (fileBaseLower === pBaseLower) {
+      matches.push(p);
+      continue;
+    }
+    if (fileBaseNoExt.toLowerCase() === pBaseNoExt.toLowerCase() && p.split("/").slice(0, -1).join("/") === fileNorm.split("/").slice(0, -1).join("/")) {
+      matches.push(p);
+      continue;
+    }
+
+    if (p.endsWith("/" + fileNorm) || fileNorm.endsWith("/" + p)) {
+      matches.push(p);
+      continue;
+    }
+  }
+
+  if (matches.length === 0) {
+    for (const p of existingPaths) {
+      const pBase = p.split("/").pop() || "";
+      const dist = levenshteinDistance(fileBase.toLowerCase(), pBase.toLowerCase());
+      if (dist <= 2 && fileBase.length > 3) {
+        matches.push(p);
+      }
+    }
+  }
+
+  return [...new Set(matches)].slice(0, 3);
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const matrix = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + 1
+        );
+      }
+    }
+  }
+  return matrix[a.length][b.length];
 }

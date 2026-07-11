@@ -32,19 +32,31 @@ function extractHunkParts(h: Hunk): {
   return { newLines, contextLines };
 }
 
+export type FuzzyMode = "strict" | "trim-end" | "trim";
+
 function verifyContext(
   lines: string[],
   baseIdx: number,
   contextLines: { relIdx: number; text: string }[],
-  fuzzy: boolean,
+  mode: FuzzyMode,
+  filePath?: string,
 ): boolean {
+  if (mode === "trim") {
+    if (contextLines.length < 2) return false;
+
+    const ext = filePath ? path.extname(filePath).toLowerCase() : "";
+    if ([".py", ".yaml", ".yml"].includes(ext)) return false;
+  }
+
   for (const c of contextLines) {
     const actualIdx = baseIdx + c.relIdx;
     if (actualIdx < 0 || actualIdx >= lines.length) return false;
-    if (fuzzy) {
-      if (trimEnd(lines[actualIdx]) !== trimEnd(c.text)) return false;
-    } else {
+    if (mode === "strict") {
       if (lines[actualIdx] !== c.text) return false;
+    } else if (mode === "trim-end") {
+      if (trimEnd(lines[actualIdx]) !== trimEnd(c.text)) return false;
+    } else if (mode === "trim") {
+      if (lines[actualIdx].trim() !== c.text.trim()) return false;
     }
   }
   return true;
@@ -53,7 +65,8 @@ function verifyContext(
 function tryApplyHunks(
   baseLines: string[],
   hunks: Hunk[],
-  fuzzy: boolean,
+  mode: FuzzyMode,
+  filePath?: string,
 ): { ok: boolean; content?: string; failedHunk?: Hunk } {
   const lines = baseLines.slice();
   let offset = 0;
@@ -62,15 +75,15 @@ function tryApplyHunks(
     let startIdx = Math.max(0, h.oldStart - 1 + offset);
     const { newLines, contextLines } = extractHunkParts(h);
 
-    let matched = verifyContext(lines, startIdx, contextLines, fuzzy);
+    let matched = verifyContext(lines, startIdx, contextLines, mode, filePath);
 
-    if (!matched && fuzzy && contextLines.length > 0) {
+    if (!matched && mode !== "strict" && contextLines.length > 0) {
       const searchRadius = 30;
       for (let delta = 1; delta <= searchRadius; delta++) {
         for (const d of [-delta, delta]) {
           const candidate = startIdx + d;
           if (candidate < 0 || candidate >= lines.length) continue;
-          if (verifyContext(lines, candidate, contextLines, true)) {
+          if (verifyContext(lines, candidate, contextLines, mode, filePath)) {
             startIdx = candidate;
             matched = true;
             break;
@@ -93,16 +106,31 @@ function tryApplyHunks(
 export function applyHunksToLines(
   baseLines: string[],
   hunks: Hunk[],
-): { ok: boolean; content?: string; failedHunk?: Hunk } {
-  const strict = tryApplyHunks(baseLines, hunks, false);
-  if (strict.ok) return strict;
-  const fuzzy = tryApplyHunks(baseLines, hunks, true);
-  if (fuzzy.ok) {
-    logger.info("Hunk application succeeded with fuzzy matching", {
+  filePath?: string,
+): { ok: boolean; content?: string; failedHunk?: Hunk; fuzzyMode?: FuzzyMode } {
+  const strict = tryApplyHunks(baseLines, hunks, "strict", filePath);
+  if (strict.ok) return { ...strict, fuzzyMode: "strict" };
+
+  const trimEndResult = tryApplyHunks(baseLines, hunks, "trim-end", filePath);
+  if (trimEndResult.ok) {
+    logger.info("Hunk application succeeded with fuzzy matching (trim-end)", {
       hunkCount: hunks.length,
+      filePath,
     });
+    return { ...trimEndResult, fuzzyMode: "trim-end" };
   }
-  return fuzzy;
+
+  const trimResult = tryApplyHunks(baseLines, hunks, "trim", filePath);
+  if (trimResult.ok) {
+    logger.info("Hunk application succeeded with fuzzy matching (trim)", {
+      hunkCount: hunks.length,
+      filePath,
+      fuzzyMode: "trim",
+    });
+    return { ...trimResult, fuzzyMode: "trim" };
+  }
+
+  return { ok: false, failedHunk: trimResult.failedHunk ?? trimEndResult.failedHunk ?? strict.failedHunk };
 }
 
 export function validateStructuredContent(filePath: string, content: string): string | null {

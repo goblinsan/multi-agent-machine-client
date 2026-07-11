@@ -20,6 +20,8 @@ interface PreQaAutoRepairConfig {
   maxRepairAttempts?: number;
   testTimeoutMs?: number;
   testIdleTimeoutMs?: number;
+  sourceErrorVariable?: string;
+  clearErrorVariable?: string;
 }
 
 interface RepairAttempt {
@@ -44,8 +46,10 @@ export class PreQaAutoRepairStep extends WorkflowStep {
     const maxAttempts = config.maxRepairAttempts ?? 2;
     const testTimeoutMs = config.testTimeoutMs ?? 120000;
     const testIdleTimeoutMs = config.testIdleTimeoutMs ?? 30000;
+    const sourceErrorVariable = config.sourceErrorVariable || "pre_qa_test_error";
+    const clearErrorVariable = config.clearErrorVariable || sourceErrorVariable;
 
-    const preQaTestError = context.getVariable("pre_qa_test_error");
+    const preQaTestError = context.getVariable(sourceErrorVariable);
     if (!preQaTestError || typeof preQaTestError !== "string" || preQaTestError.trim().length === 0) {
       return {
         status: "success",
@@ -163,7 +167,10 @@ export class PreQaAutoRepairStep extends WorkflowStep {
       });
     }
 
-    context.setVariable("pre_qa_test_error", "");
+    context.setVariable(clearErrorVariable, "");
+    if (clearErrorVariable !== "pre_qa_test_error") {
+      context.setVariable("pre_qa_test_error", "");
+    }
     context.setVariable("pre_qa_test_status", true);
 
     logger.info("Pre-QA auto-repair: successfully repaired syntax errors", {

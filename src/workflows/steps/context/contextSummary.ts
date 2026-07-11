@@ -122,15 +122,10 @@ export function buildContextSummary(
   summary += `- **Max Depth**: ${metadata.maxDepth}\n\n`;
 
   summary += `## Directory Structure\n\n\`\`\`\n`;
-  const sortedDirs = Object.keys(dirTree).sort();
-  sortedDirs.forEach((dir) => {
-    const files = dirTree[dir];
-    summary += `${dir}/\n`;
-    files.forEach((file) => {
-      const name = path.basename(file.path);
-      const size = `${(file.bytes / 1024).toFixed(1)}KB`;
-      summary += `  ${name} (${size})\n`;
-    });
+  const sortedScan = [...repoScan].sort((a, b) => a.path.localeCompare(b.path));
+  sortedScan.forEach((file) => {
+    const size = `${(file.bytes / 1024).toFixed(1)}KB`;
+    summary += `${file.path} (${size})\n`;
   });
   summary += `\`\`\`\n\n`;
 

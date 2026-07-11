@@ -61,10 +61,31 @@ steps:
       variables:
         qa_required_files: "${qa_previous_result.required_files}"
 
+  - name: task_reality_audit
+    type: TaskRealityAuditStep
+    description: "Audit whether the task is already resolved or obsolete before spending persona cycles"
+    depends_on: ["derive_qa_required_files"]
+    config:
+      run_typecheck: true
+      run_tests: false
+      timeout_ms: 60000
+      update_task_status: true
+      resolved_status: "completed"
+
   - template: context_analysis
     name: context_request
-    depends_on: ["context_scan", "load_previous_qa_feedback"]
-    condition: ${context_scan.reused_existing} == false
+    depends_on: ["task_reality_audit"]
+    condition: ${context_scan.analysis_required} == true
+
+  - name: publish_context_analysis
+    type: PublishProjectArtifactStep
+    description: "Persist the context analysis so unchanged repos can reuse it"
+    depends_on: ["context_request"]
+    condition: ${context_scan.analysis_required} == true
+    config:
+      source_variable: "context_request_result"
+      kind: "context_analysis"
+      allow_missing: true
 
   - name: load_existing_tasks
     type: FetchProjectTasksStep
@@ -74,6 +95,37 @@ steps:
       project_id: "${projectId}"
       include_completed: false
       store_variable: review_existing_tasks
+
+  - name: baseline_health_synthesis
+    type: BaselineHealthSynthesisStep
+    description: "Synthesize repair tasks for pre-existing compile errors on the base branch"
+    depends_on: ["context_scan"]
+    condition: "${baseline_compile_errors.length} > 0"
+    config:
+      max_tasks: 5
+      priority: "high"
+      labels:
+        - "baseline-health"
+        - "auto"
+
+  - name: create_baseline_repair_tasks
+    type: BulkTaskCreationStep
+    description: "Upsert baseline repair tasks so the repo trends toward a green base"
+    depends_on: ["baseline_health_synthesis", "load_existing_tasks"]
+    condition: "${baseline_health_synthesis.repair_task_count} > 0"
+    config:
+      project_id: "${projectId}"
+      tasks: "${baseline_health_synthesis.repair_tasks || []}"
+      priority_mapping:
+        critical: 1500
+        high: 1200
+        medium: 800
+        low: 50
+      options:
+        upsert_by_external_id: true
+        check_duplicates: true
+        existing_tasks: "${review_existing_tasks || []}"
+        duplicate_match_strategy: "content_hash"
 
   - name: research_enrichment
     type: SubWorkflowStep
@@ -103,12 +155,11 @@ steps:
 
   - name: planning_loop
     type: PlanningLoopStep
-    description: "Plan creation and evaluation loop with max 7 iterations"
+    description: "Plan creation and evaluation loop with max 4 iterations"
     depends_on: ["context_scan", "research_enrichment", "load_previous_qa_feedback"]
     config:
-      maxIterations: 7
+      maxIterations: 4
       plannerPersona: "implementation-planner"
-      evaluatorPersona: "plan-evaluator" 
       planStep: "2-plan"
       evaluateStep: "2.5-evaluate-plan"
       payload:
@@ -138,13 +189,83 @@ steps:
       record_variable: "plan_required_files"
       additional_files_variable: "qa_required_files"
 
+  - name: scope_viability
+    type: ScopeViabilityStep
+    description: "Detect plans that cannot pass global validation within their approved file scope"
+    depends_on: ["record_plan_key_files"]
+    config:
+      plan_files_variable: "plan_required_files"
+      timeout_ms: 120000
+      fail_on_scope_expansion: false
+
+  - name: scope_expansion_planning_loop
+    type: PlanningLoopStep
+    description: "Regenerate the plan when deterministic validation proves the original scope is insufficient"
+    depends_on: ["scope_viability"]
+    condition: "scope_viability_status == 'requires_scope_expansion'"
+    config:
+      maxIterations: 2
+      plannerPersona: "implementation-planner"
+      planStep: "2-plan-scope-expansion"
+      evaluateStep: "2.5-evaluate-scope-expansion-plan"
+      payload:
+        task: ${task}
+        repo: "${repo_remote}"
+        repo_root: "${repo_root}"
+        project_id: "${projectId}"
+        repo_slug: "${repoSlug}"
+        project_name: "${projectName}"
+        research_status: "${research_enrichment.research_status || 'skipped'}"
+        research_summary: "Deterministic scope viability rejected the previous plan. The expanded plan must address these root-cause files: ${scope_viability_root_cause_files}. Downstream blocked files: ${scope_viability_blocked_files}."
+        research_next_actions: "${research_enrichment.research_next_actions || []}"
+        research_findings: "${research_enrichment.research_findings || []}"
+        research_information_blocks: "${research_enrichment.research_information_blocks || []}"
+        previous_qa_result: "${qa_previous_result || null}"
+        qa_required_files: "${qa_required_files || []}"
+        scope_viability: "${scope_viability || {}}"
+        scope_viability_required_files: "${scope_viability_root_cause_files || []}"
+        scope_viability_blocked_files: "${scope_viability_blocked_files || []}"
+
+  - name: record_scope_expansion_plan_key_files
+    type: PlanKeyFileGuardStep
+    description: "Record expanded plan files after deterministic scope recovery"
+    depends_on: ["scope_expansion_planning_loop"]
+    condition: "scope_viability_status == 'requires_scope_expansion'"
+    config:
+      plan_step: "scope_expansion_planning_loop"
+      plan_files_variable: "scope_expansion_plan_files"
+      auto_create_missing: false
+      fail_on_missing: false
+      record_variable: "plan_required_files"
+      additional_files_variable: "scope_viability_root_cause_files"
+
+  - name: select_original_implementation_plan
+    type: VariableResolutionStep
+    description: "Use the original plan when deterministic scope is viable"
+    depends_on: ["scope_viability"]
+    condition: "scope_viability_status != 'requires_scope_expansion'"
+    config:
+      variables:
+        implementation_plan_step: "planning_loop"
+
+  - name: select_expanded_implementation_plan
+    type: VariableResolutionStep
+    description: "Use the regenerated scope-expanded plan for implementation"
+    depends_on: ["record_scope_expansion_plan_key_files"]
+    condition: "scope_viability_status == 'requires_scope_expansion'"
+    config:
+      variables:
+        implementation_plan_step: "scope_expansion_planning_loop"
+        planning_loop_plan_files: "${scope_expansion_plan_files}"
+
   - name: implementation_loop
     type: ImplementationLoopStep
     description: "Retry implementation edits until plan-required files exist"
-    depends_on: ["record_plan_key_files"]
+    depends_on: ["select_original_implementation_plan", "select_expanded_implementation_plan"]
     config:
       maxAttempts: 3
       implementationTemplate: "implementation"
+      continueOnStageFailure: true
       diffConfig:
         commit_message: "feat: implement ${taskName}"
       planGuard:
@@ -153,10 +274,17 @@ steps:
         additional_files: "${record_plan_key_files.key_files || []}"
         additional_files_variable: "qa_required_files"
 
+  - name: context_rescan
+    type: ContextStep
+    description: "Recalculate repository context and diagnostics after edits are made"
+    depends_on: ["implementation_loop"]
+    config:
+      forceRescan: true
+
   - name: determine_test_entrypoint
     type: TestCommandDiscoveryStep
     description: "Detect or enforce presence of a runnable test command before QA"
-    depends_on: ["implementation_loop"]
+    depends_on: ["context_rescan"]
     config:
       variable: "detected_test_command"
       require_command: false
@@ -205,6 +333,54 @@ steps:
       maxRepairAttempts: 2
       testTimeoutMs: 120000
       testIdleTimeoutMs: 30000
+
+  - name: run_project_validation
+    type: QAStep
+    description: "Collect project validation regressions with typecheck plus detected tests before final hard gate"
+    depends_on: ["pre_qa_auto_repair"]
+    condition: "detected_test_command.length > 0"
+    config:
+      testCommand: "${detected_test_command}"
+      retryCount: 0
+      skipOnNoTests: true
+      failureThreshold: 0
+      softFail: true
+
+  - name: persist_project_validation_signal
+    type: VariableResolutionStep
+    description: "Surface project validation regressions for deterministic post-validation repair"
+    depends_on: ["run_project_validation"]
+    condition: "detected_test_command.length > 0"
+    config:
+      variables:
+        project_validation_result: "${run_project_validation.qaResult}"
+        project_validation_status: "${run_project_validation.testsPassed}"
+        project_validation_error: "${run_project_validation.errorText}"
+        project_validation_failure_files: "${run_project_validation.failureFiles || []}"
+
+  - name: post_project_validation_auto_repair
+    type: PreQaAutoRepairStep
+    description: "Attempt deterministic repairs for parseable final validation regressions"
+    depends_on: ["persist_project_validation_signal"]
+    condition: "project_validation_error.length > 0"
+    config:
+      sourceErrorVariable: "project_validation_error"
+      clearErrorVariable: "project_validation_error"
+      maxRepairAttempts: 2
+      testTimeoutMs: 120000
+      testIdleTimeoutMs: 30000
+
+  - name: rerun_project_validation
+    type: QAStep
+    description: "Hard gate project validation after any deterministic repair"
+    depends_on: ["post_project_validation_auto_repair"]
+    condition: "detected_test_command.length > 0"
+    config:
+      testCommand: "${detected_test_command}"
+      retryCount: 0
+      skipOnNoTests: true
+      failureThreshold: 0
+      softFail: false
 
   - name: test_harness_synthesis
     type: TestHarnessSynthesisStep
@@ -273,7 +449,7 @@ steps:
   - name: verify_diff
     type: GitOperationStep
     description: "Verify remote branch has diff from base"
-    depends_on: ["determine_test_entrypoint"]
+    depends_on: ["rerun_project_validation"]
     condition: "test_harness_required != true"
     config:
       operation: "verifyRemoteBranchHasDiff"
@@ -535,7 +711,7 @@ steps:
   - name: mark_task_done
     type: SimpleTaskStatusStep
     description: "Mark task as completed on dashboard when all reviews pass"
-    depends_on: ["devops_request"]
+    depends_on: ["merge_branch_to_main"]
     condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'"
     config:
       task_id: "${taskId}"
@@ -545,7 +721,7 @@ steps:
   - name: merge_branch_to_main
     type: GitOperationStep
     description: "Merge feature branch back to main so subsequent tasks see completed work"
-    depends_on: ["mark_task_done"]
+    depends_on: ["devops_request"]
     condition: "${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'"
     config:
       operation: "mergeBranchToMain"

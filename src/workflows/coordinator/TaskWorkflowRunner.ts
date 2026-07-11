@@ -109,6 +109,7 @@ export class TaskWorkflowRunner {
       repo_remote: context.remote,
       effective_repo_path: context.repoRoot,
       force_rescan: context.force_rescan || false,
+      branch: context.branch || "main",
     };
 
     if (!context.remote) {

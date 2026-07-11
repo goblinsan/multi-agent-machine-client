@@ -347,7 +347,7 @@ function getReviewArtifactFileName(reviewType: string): string | undefined {
 const MAX_SNIPPET_BYTES = 16384;
 const MAX_SNIPPET_FILES = 12;
 const SOURCE_PATH_PATTERN =
-  /(?:^|[\s"'`(])((?:src|tests?|lib|app|scripts|config|packages)\/[\w./-]+\.[A-Za-z0-9]+)/g;
+  /(?:^|[\s"'`(])((?:src|tests?|lib|app|scripts|config|packages|\.ma)\/[\w./-]+\.[A-Za-z0-9]+|(?:\.gitignore|\.env|\.env\.example|tsconfig\.json|package\.json|README\.md|[\w.-]+\.(?:json|ts|tsx|js|jsx|md|txt|yml|yaml)))/g;
 
 export function extractCandidateFilePaths(
   taskRecord: any,

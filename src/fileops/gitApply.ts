@@ -12,7 +12,11 @@ import {
 } from "../fileopsPolicy.js";
 
 export type GitApplyOutcome =
-  | { ok: true; changedFiles: string[] }
+  | {
+      ok: true;
+      changedFiles: string[];
+      method: "git-apply-strict" | "git-apply-ignore-whitespace" | "git-apply-3way";
+    }
   | { ok: false; reason: string };
 
 export async function tryGitApply(
@@ -67,24 +71,97 @@ export async function tryGitApply(
         };
       }
     }
+    const originalContents = new Map<string, string | null>();
+    for (const target of targets) {
+      let fullPath: string;
+      try {
+        fullPath = insideRepo(repoRoot, target);
+      } catch (err) {
+        return { ok: false, reason: `Path traversal detected: ${target}` };
+      }
+      try {
+        const content = await fs.readFile(fullPath, "utf8");
+        originalContents.set(target, content);
+      } catch (err) {
+        originalContents.set(target, null);
+      }
+    }
 
+    let applyMethod: "git-apply-strict" | "git-apply-ignore-whitespace" | "git-apply-3way";
     try {
+      logger.info("tryGitApply: Attempting strict apply");
       await runGit(["apply", "--recount", "--whitespace=nowarn", tmpFile], {
         cwd: repoRoot,
       });
-    } catch (err) {
-      return {
-        ok: false,
-        reason: `git apply rejected diff: ${extractGitStderr(err)}`,
-      };
+      applyMethod = "git-apply-strict";
+      logger.info("tryGitApply: Strict apply succeeded");
+    } catch (strictErr) {
+      logger.info("tryGitApply: Strict apply failed, trying whitespace-tolerant apply", {
+        error: extractGitStderr(strictErr),
+      });
+
+      try {
+        await runGit(
+          ["apply", "--recount", "--whitespace=nowarn", "--ignore-whitespace", tmpFile],
+          { cwd: repoRoot },
+        );
+        applyMethod = "git-apply-ignore-whitespace";
+        logger.info("tryGitApply: Whitespace-tolerant apply succeeded");
+      } catch (wsErr) {
+        logger.info("tryGitApply: Whitespace-tolerant apply failed, trying 3-way apply", {
+          error: extractGitStderr(wsErr),
+        });
+
+        try {
+          await runGit(
+            ["apply", "--recount", "--whitespace=nowarn", "--3way", tmpFile],
+            { cwd: repoRoot },
+          );
+          applyMethod = "git-apply-3way";
+          logger.info("tryGitApply: 3-way apply succeeded");
+        } catch (threeWayErr) {
+          logger.warn("tryGitApply: All git apply attempts failed. Restoring original file contents.", {
+            error: extractGitStderr(threeWayErr),
+          });
+
+          try {
+            await runGit(["reset", "HEAD", "--", ...targets], { cwd: repoRoot }).catch(() => {});
+          } catch (resetErr) {
+            logger.warn("tryGitApply: Failed to reset git index after failed apply", {
+              error: String(resetErr),
+            });
+          }
+
+          for (const [target, originalContent] of originalContents.entries()) {
+            const fullPath = path.resolve(repoRoot, target);
+            try {
+              if (originalContent === null) {
+                await fs.unlink(fullPath).catch(() => {});
+              } else {
+                await fs.writeFile(fullPath, originalContent, "utf8");
+              }
+            } catch (restoreErr) {
+              logger.error(`tryGitApply: Failed to restore ${target}`, {
+                error: String(restoreErr),
+              });
+            }
+          }
+
+          return {
+            ok: false,
+            reason: `git apply sequence failed. Strict: ${extractGitStderr(strictErr)}; WS: ${extractGitStderr(wsErr)}; 3Way: ${extractGitStderr(threeWayErr)}`,
+          };
+        }
+      }
     }
 
     logger.info("Diff applied via git apply", {
       repoRoot,
       fileCount: targets.length,
       files: targets,
+      method: applyMethod,
     });
-    return { ok: true, changedFiles: targets };
+    return { ok: true, changedFiles: targets, method: applyMethod };
   } finally {
     try {
       await fs.unlink(tmpFile);
@@ -92,6 +169,15 @@ export async function tryGitApply(
       void 0;
     }
   }
+}
+
+function insideRepo(repoRoot: string, relPath: string): string {
+  const full = path.resolve(repoRoot, relPath);
+  const normRoot = repoRoot.endsWith(path.sep) ? repoRoot : repoRoot + path.sep;
+  if (!full.startsWith(normRoot)) {
+    throw new Error(`Path escapes repo: ${relPath}`);
+  }
+  return full;
 }
 
 function parseNumstatPaths(numstatOutput: string): string[] {

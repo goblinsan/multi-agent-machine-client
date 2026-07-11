@@ -30,10 +30,17 @@ coverage/
 
 # Backup files
 *.bak
+*.bak-*
 
 # Misc
 *.log
 *.tmp
+*.db
+*.db-*
+
+# Local coordination scratchpads
+scratch/
+.agents/
 
 # Diagnostics and run artifacts
 outputs/diagnostics/

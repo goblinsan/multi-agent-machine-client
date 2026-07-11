@@ -3,6 +3,9 @@ import { PlanningLoopStep } from "../src/workflows/steps/PlanningLoopStep.js";
 import { WorkflowContext } from "../src/workflows/engine/WorkflowContext.js";
 import { logger } from "../src/logger.js";
 import { cfg } from "../src/config.js";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 
 const personaMocks = vi.hoisted(() => ({
   sendPersonaRequestMock: vi.fn(),
@@ -29,11 +32,15 @@ vi.mock("../src/agents/persona.js", async () => {
 });
 
 describe("PlanningLoopStep logging", () => {
+  const originalArtifactMode = cfg.maArtifactsMode;
+
   beforeEach(() => {
+    (cfg as any).maArtifactsMode = originalArtifactMode;
     vi.clearAllMocks();
   });
 
   afterEach(() => {
+    (cfg as any).maArtifactsMode = originalArtifactMode;
     vi.restoreAllMocks();
   });
 
@@ -59,23 +66,17 @@ describe("PlanningLoopStep logging", () => {
     });
 
     const planPayload = {
-      plan: "Implement feature X with steps A and B.",
-      breakdown: [
+      plan: [
         {
-          step: 1,
-          title: "Setup",
-          description: "Prepare environment",
-          dependencies: [],
-          estimatedDuration: "1h",
-          complexity: "low",
+          goal: "Setup",
+          key_files: ["src/setup.ts"],
+          acceptance_criteria: ["Setup module exists"],
         },
         {
-          step: 2,
-          title: "Implement",
-          description: "Build feature",
-          dependencies: [1],
-          estimatedDuration: "2h",
-          complexity: "medium",
+          goal: "Implement",
+          key_files: ["src/feature.ts"],
+          dependencies: ["Step 1"],
+          acceptance_criteria: ["Feature module exists"],
         },
       ],
       risks: [
@@ -128,6 +129,7 @@ describe("PlanningLoopStep logging", () => {
         maxIterations: 1,
         plannerPersona: "implementation-planner",
         evaluatorPersona: "plan-evaluator",
+        planningEvaluator: "on",
         planStep: "2-plan",
         evaluateStep: "2.5-evaluate-plan",
         payload: {},
@@ -148,8 +150,7 @@ describe("PlanningLoopStep logging", () => {
     expect(planLog).toBeDefined();
     expect(planLog?.[1]).toMatchObject({
       plan: expect.objectContaining({
-        planPreview: expect.stringContaining("Implement feature X"),
-        breakdownSteps: 2,
+        planPreview: expect.stringContaining("src/feature.ts"),
         riskCount: 1,
       }),
     });
@@ -165,6 +166,148 @@ describe("PlanningLoopStep logging", () => {
         payloadPreview: expect.stringContaining("Looks great"),
       }),
     });
+  });
+
+  it("skips the LLM plan evaluator by default after deterministic validation passes", async () => {
+    const context = new WorkflowContext(
+      "wf-skip-eval",
+      "proj-skip-eval",
+      "/tmp/repo",
+      "main",
+      {
+        name: "test-workflow",
+        version: "1.0.0",
+        steps: [],
+      } as any,
+      {} as any,
+    );
+    context.setVariable("SKIP_GIT_OPERATIONS", true);
+    context.setVariable("task", {
+      id: "task-skip-eval",
+      title: "Implement deterministic-only planning",
+      description: "Accept plans once deterministic validation passes.",
+    });
+
+    const planPayload = {
+      plan: [
+        {
+          goal: "Update planner",
+          key_files: ["src/workflows/steps/PlanningLoopStep.ts"],
+        },
+      ],
+    };
+
+    personaMocks.sendPersonaRequestMock.mockResolvedValueOnce("corr-plan-only");
+    personaMocks.waitForPersonaCompletionMock.mockResolvedValueOnce({
+      id: "plan-event-only",
+      status: "success",
+      fields: {
+        status: "done",
+        corr_id: "corr-plan-only",
+        result: JSON.stringify(planPayload),
+      },
+    });
+
+    const step = new PlanningLoopStep({
+      name: "planning_loop",
+      type: "PlanningLoopStep",
+      config: {
+        maxIterations: 1,
+        plannerPersona: "implementation-planner",
+        evaluatorPersona: "plan-evaluator",
+        planStep: "2-plan",
+        evaluateStep: "2.5-evaluate-plan",
+        payload: {},
+      },
+    } as any);
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.evaluation_passed).toBe(true);
+    expect(result.outputs?.evaluation_result).toBeNull();
+    expect(personaMocks.sendPersonaRequestMock).toHaveBeenCalledTimes(1);
+    expect(personaMocks.sendPersonaRequestMock.mock.calls[0][1]).toMatchObject({
+      toPersona: "implementation-planner",
+    });
+    expect(
+      personaMocks.sendPersonaRequestMock.mock.calls.some(
+        ([, opts]) => opts.toPersona === "plan-evaluator",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not write .ma/tasks artifacts locally in API mode", async () => {
+    (cfg as any).maArtifactsMode = "api";
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "planning-api-"));
+    const context = new WorkflowContext(
+      "wf-api-artifacts",
+      "proj-log",
+      repoRoot,
+      "main",
+      {
+        name: "test-workflow",
+        version: "1.0.0",
+        steps: [],
+      } as any,
+      {} as any,
+    );
+    context.setVariable("task", {
+      id: "task-api",
+      type: "feature",
+      data: { description: "Test task" },
+    });
+
+    personaMocks.sendPersonaRequestMock
+      .mockResolvedValueOnce("corr-plan-api")
+      .mockResolvedValueOnce("corr-eval-api");
+    personaMocks.waitForPersonaCompletionMock
+      .mockResolvedValueOnce({
+        id: "plan-event-api",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-plan-api",
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Implement API artifact mode",
+                key_files: ["src/api.ts"],
+              },
+            ],
+          }),
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "eval-event-api",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-eval-api",
+          result: JSON.stringify({ status: "pass" }),
+        },
+      });
+
+    const step = new PlanningLoopStep({
+      name: "planning_loop",
+      type: "PlanningLoopStep",
+      config: {
+        maxIterations: 1,
+        plannerPersona: "implementation-planner",
+        evaluatorPersona: "plan-evaluator",
+        planningEvaluator: "on",
+        planStep: "2-plan",
+        evaluateStep: "2.5-evaluate-plan",
+        payload: {},
+      },
+    } as any);
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    await expect(
+      fs.access(path.join(repoRoot, ".ma/tasks/task-api")),
+    ).rejects.toThrow();
   });
 
   it("exposes plan_key_files output and stores plan files in context", async () => {
@@ -239,6 +382,7 @@ describe("PlanningLoopStep logging", () => {
         maxIterations: 1,
         plannerPersona: "implementation-planner",
         evaluatorPersona: "plan-evaluator",
+        planningEvaluator: "on",
         planStep: "2-plan",
         evaluateStep: "2.5-evaluate-plan",
         payload: {},
@@ -260,6 +404,102 @@ describe("PlanningLoopStep logging", () => {
     expect(context.getVariable("plan_required_files")).toEqual([
       "tests/regression/gap.test.ts",
       "package.json",
+    ]);
+  });
+
+  it("treats unsupported evaluator rejection as advisory when deterministic gates pass", async () => {
+    const mockWorkflowConfig = {
+      name: "test-workflow",
+      version: "1.0.0",
+      steps: [],
+    };
+
+    const context = new WorkflowContext(
+      "wf-advisory-eval",
+      "proj-advisory-eval",
+      "/tmp/repo",
+      "main",
+      mockWorkflowConfig as any,
+      {} as any,
+    );
+    context.setVariable("SKIP_GIT_OPERATIONS", true);
+    context.setVariable("task", {
+      id: "task-advisory-eval",
+      title: "Events API",
+      description: "Create an events API route.",
+    });
+    context.setVariable("repoScan", [
+      { path: "src/types/logEvent.ts" },
+      { path: "src/utils/index.ts" },
+    ]);
+    context.setVariable("context_insights", {
+      primaryLanguage: "typescript",
+      secondaryLanguages: [],
+    });
+
+    const structuredPlan = {
+      plan: [
+        {
+          goal: "Define event query types",
+          key_files: ["src/types/logEvent.ts"],
+        },
+        {
+          goal: "Create events route",
+          key_files: ["src/routes/events.ts"],
+          dependencies: ["Step 1"],
+        },
+      ],
+    };
+
+    personaMocks.sendPersonaRequestMock
+      .mockResolvedValueOnce("corr-plan-advisory")
+      .mockResolvedValueOnce("corr-eval-advisory");
+
+    personaMocks.waitForPersonaCompletionMock
+      .mockResolvedValueOnce({
+        id: "plan-event-advisory",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-plan-advisory",
+          result: JSON.stringify({ output: JSON.stringify(structuredPlan) }),
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "eval-event-advisory",
+        status: "success",
+        fields: {
+          status: "done",
+          corr_id: "corr-eval-advisory",
+          result: JSON.stringify({
+            status: "fail",
+            reason:
+              "Plan references src/routes/events.ts but actual repository uses src/routes/events/index.ts",
+          }),
+        },
+      });
+
+    const step = new PlanningLoopStep({
+      name: "planning_loop",
+      type: "PlanningLoopStep",
+      config: {
+        maxIterations: 1,
+        plannerPersona: "implementation-planner",
+        evaluatorPersona: "plan-evaluator",
+        planningEvaluator: "on",
+        planStep: "2-plan",
+        evaluateStep: "2.5-evaluate-plan",
+        payload: {},
+      },
+    } as any);
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.evaluation_passed).toBe(true);
+    expect(result.outputs?.plan_key_files).toEqual([
+      "src/types/logEvent.ts",
+      "src/routes/events.ts",
     ]);
   });
 
@@ -303,8 +543,12 @@ describe("PlanningLoopStep logging", () => {
           status: "done",
           corr_id: "corr-plan-timeout",
           result: JSON.stringify({
-            plan: "Step data",
-            breakdown: [],
+            plan: [
+              {
+                goal: "Validate timeout behavior",
+                key_files: ["src/timeout.ts"],
+              },
+            ],
             risks: [],
             metadata: {},
           }),
@@ -327,6 +571,7 @@ describe("PlanningLoopStep logging", () => {
         maxIterations: 1,
         plannerPersona: "implementation-planner",
         evaluatorPersona: "plan-evaluator",
+        planningEvaluator: "on",
         planStep: "2-plan",
         evaluateStep: "2.5-evaluate-plan",
         payload: {},
@@ -386,8 +631,12 @@ describe("PlanningLoopStep logging", () => {
     context.setVariable("SKIP_GIT_OPERATIONS", true);
 
     const planPayload = {
-      plan: "Sample draft plan",
-      breakdown: [],
+      plan: [
+        {
+          goal: "Implement handshake fixture",
+          key_files: ["src/handshake.ts"],
+        },
+      ],
       risks: [],
     };
 
@@ -426,6 +675,7 @@ describe("PlanningLoopStep logging", () => {
         maxIterations: 1,
         plannerPersona: "implementation-planner",
         evaluatorPersona: "plan-evaluator",
+        planningEvaluator: "on",
         planStep: "2-plan",
         evaluateStep: "2.5-evaluate-plan",
         payload: {},

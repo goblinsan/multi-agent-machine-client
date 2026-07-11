@@ -122,7 +122,34 @@ export function normalizePlanPayload(planResult: any) {
       planData = structuredOutput;
     }
   }
+  sanitizeVerificationOnlySteps(planData);
   return { planData, parsed, rawText: resultText };
+}
+
+const VERIFICATION_GOAL_PATTERN =
+  /\b(verify|verification|run(ning)?\s+(the\s+)?(full\s+)?tests?|test\s+suite|typecheck|type-check|run\s+lint|smoke\s*test|regression\s+(test|suite|check))\b/i;
+const IMPLEMENTATION_GOAL_PATTERN =
+  /\b(add|create|define|implement|modify|update|fix|repair|replace|write)\b/i;
+
+export function sanitizeVerificationOnlySteps(planData: any): void {
+  if (!Array.isArray(planData?.plan)) return;
+
+  const removed: string[] = [];
+  planData.plan = planData.plan.filter((step: any) => {
+    const goal = typeof step?.goal === "string" ? step.goal : "";
+    if (!VERIFICATION_GOAL_PATTERN.test(goal)) return true;
+    if (IMPLEMENTATION_GOAL_PATTERN.test(goal)) return true;
+
+    removed.push(goal || "unnamed step");
+    return false;
+  });
+
+  if (removed.length > 0) {
+    logger.info(
+      "Removed verification-only plan steps - the workflow validates each step automatically",
+      { removed },
+    );
+  }
 }
 
 function tryParseJson(value: string): any | null {
@@ -148,6 +175,9 @@ function buildAmbiguityKey(normalizedPath: string): string {
   const parsed = path.posix.parse(normalizedPath);
   const dir = parsed.dir === "." ? "" : parsed.dir;
   const dirPrefix = dir ? `${dir}/` : "";
+  if (parsed.name === "index" && dir) {
+    return dir;
+  }
   return `${dirPrefix}${parsed.name}`.replace(/\/$/, "");
 }
 
@@ -228,6 +258,367 @@ export function findPlanLanguageViolations(
   if (!planData?.plan || allowedLanguages.size === 0) return [];
   const files = collectPlanKeyFiles(planData);
   return findLanguageViolationsForFiles(files, allowedLanguages);
+}
+
+export type DeterministicPlanValidationIssue = {
+  guard: string;
+  reason: string;
+  details?: Record<string, unknown>;
+};
+
+export type DeterministicPlanValidationResult = {
+  valid: boolean;
+  issues: DeterministicPlanValidationIssue[];
+};
+
+export function validateDeterministicPlan(
+  planData: any,
+  options: {
+    existingPaths?: Set<string>;
+    allowedLanguages?: Set<string>;
+    taskTitle?: string;
+    taskDescription?: string;
+    requiredScopeFiles?: string[];
+  } = {},
+): DeterministicPlanValidationResult {
+  const issues: DeterministicPlanValidationIssue[] = [];
+
+  if (!planData || typeof planData !== "object" || Array.isArray(planData)) {
+    issues.push({
+      guard: "plan_schema",
+      reason: "Plan payload must be a JSON object.",
+    });
+    return { valid: false, issues };
+  }
+
+  if (!Array.isArray(planData.plan) || planData.plan.length === 0) {
+    issues.push({
+      guard: "plan_schema",
+      reason: "Plan payload must contain a non-empty plan array.",
+    });
+    return { valid: false, issues };
+  }
+
+  planData.plan.forEach((step: any, index: number) => {
+    const stepLabel = `Step ${index + 1}`;
+    if (!step || typeof step !== "object" || Array.isArray(step)) {
+      issues.push({
+        guard: "plan_schema",
+        reason: `${stepLabel} must be an object.`,
+      });
+      return;
+    }
+
+    if (typeof step.goal !== "string" || step.goal.trim().length === 0) {
+      issues.push({
+        guard: "plan_schema",
+        reason: `${stepLabel} must include a concrete goal.`,
+      });
+    }
+
+    if (!Array.isArray(step.key_files) || step.key_files.length === 0) {
+      issues.push({
+        guard: "key_files",
+        reason: `${stepLabel} must include at least one key_files entry.`,
+      });
+      return;
+    }
+
+    step.key_files.forEach((entry: any) => {
+      if (typeof entry !== "string" || entry.trim().length === 0) {
+        issues.push({
+          guard: "key_files",
+          reason: `${stepLabel} has an empty or non-string key_files entry.`,
+        });
+        return;
+      }
+
+      const normalized = normalizePlanFilePath(entry);
+      const invalidReason = validateConcreteKeyFilePath(normalized);
+      if (invalidReason) {
+        issues.push({
+          guard: "key_files",
+          reason: `${stepLabel} key_files entry '${entry}' is not concrete: ${invalidReason}`,
+        });
+      }
+    });
+  });
+
+  for (const conflict of findAmbiguousPlanKeyFiles(planData)) {
+    issues.push({
+      guard: "ambiguous_key_files",
+      reason: `${conflict.stepGoal} lists mutually exclusive key_files alternatives: ${conflict.variants.join(" vs ")}`,
+      details: { conflict },
+    });
+  }
+
+  const requiredScopeFiles = Array.from(
+    new Set(
+      (options.requiredScopeFiles || [])
+        .map((file) => normalizePlanFilePath(file))
+        .filter((file) => file.length > 0),
+    ),
+  );
+  if (requiredScopeFiles.length > 0) {
+    const plannedFiles = new Set(collectPlanKeyFiles(planData).map(normalizePlanFilePath));
+    const missing = requiredScopeFiles.filter((file) => !plannedFiles.has(file));
+    if (missing.length > 0) {
+      issues.push({
+        guard: "scope_viability_required_files",
+        reason:
+          "Scope expansion is required. The plan must include root-cause files: " +
+          missing.map((file) => `'${file}'`).join(", ") + ".",
+        details: {
+          required_scope_files: requiredScopeFiles,
+          missing_scope_files: missing,
+        },
+      });
+    }
+  }
+
+  const dependencyIssues = validatePlanDependencyGraph(planData);
+  issues.push(...dependencyIssues);
+
+  const targetedBaselineFiles = extractTargetedBaselineCompileFiles(
+    `${options.taskTitle || ""}\n${options.taskDescription || ""}`,
+  );
+  if (targetedBaselineFiles.length > 0) {
+    const allowedTargets = new Set(targetedBaselineFiles);
+    const outOfScopeFiles = collectPlanKeyFiles(planData)
+      .map(normalizePlanFilePath)
+      .filter((file) => file && !allowedTargets.has(file));
+
+    if (outOfScopeFiles.length > 0) {
+      issues.push({
+        guard: "targeted_task_scope",
+        reason:
+          "Baseline compile-error tasks are file-scoped. Plan key_files must stay limited to " +
+          `${targetedBaselineFiles.map((file) => `'${file}'`).join(", ")}; ` +
+          `remove out-of-scope files: ${Array.from(new Set(outOfScopeFiles)).map((file) => `'${file}'`).join(", ")}.`,
+        details: {
+          targeted_files: targetedBaselineFiles,
+          out_of_scope_files: Array.from(new Set(outOfScopeFiles)),
+        },
+      });
+    }
+  }
+
+  const allowedLanguages = options.allowedLanguages ?? new Set<string>();
+  if (allowedLanguages.size > 0) {
+    for (const violation of findPlanLanguageViolations(planData, allowedLanguages)) {
+      issues.push({
+        guard: "language_policy",
+        reason: `Plan introduces unsupported language: ${violation.file} (${violation.language})`,
+        details: { violation },
+      });
+    }
+  }
+
+  const existingPaths = options.existingPaths ?? new Set<string>();
+  if (existingPaths.size > 0) {
+    for (const file of collectPlanKeyFiles(planData)) {
+      const normalized = normalizePlanFilePath(file);
+      if (!normalized || existingPaths.has(normalized)) continue;
+      const invalidReason = validateConcreteKeyFilePath(normalized);
+      if (invalidReason) continue;
+      const nearby = findNearbyExistingPaths(normalized, existingPaths);
+      if (nearby.length > 0) {
+        issues.push({
+          guard: "path_violations",
+          reason: `'${file}' does not exist. Did you mean: ${nearby.map((match) => `'${match}'`).join(" or ")}?`,
+          details: { file, suggestions: nearby },
+        });
+      }
+    }
+  }
+
+  return { valid: issues.length === 0, issues };
+}
+
+export function extractTargetedBaselineCompileFiles(text: string): string[] {
+  const files = new Set<string>();
+  const pattern =
+    /\bFix\s+baseline\s+compile\s+errors?\s+in\s+([A-Za-z0-9_.@/+\\-]+\.[A-Za-z0-9]+)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const normalized = normalizePlanFilePath(match[1]);
+    if (validateConcreteKeyFilePath(normalized) === null) {
+      files.add(normalized);
+    }
+  }
+  return Array.from(files);
+}
+
+function validateConcreteKeyFilePath(normalized: string): string | null {
+  if (!normalized) return "path is empty";
+  if (normalized.startsWith("/") || normalized.includes("..")) {
+    return "path must stay inside the repository";
+  }
+  if (normalized.includes("*") || normalized.includes("{") || normalized.includes("}")) {
+    return "glob patterns are not allowed";
+  }
+  if (/\b(or|and\/or)\b/i.test(normalized) || normalized.includes("|")) {
+    return "alternatives are not allowed";
+  }
+  if (normalized.endsWith("/")) {
+    return "directory placeholders are not allowed";
+  }
+  if (normalized.includes("...") || /<[^>]+>/.test(normalized)) {
+    return "placeholder paths are not allowed";
+  }
+  const base = normalized.split("/").pop() || "";
+  if (!base.includes(".")) {
+    return "file path must include a concrete filename and extension";
+  }
+  return null;
+}
+
+function validatePlanDependencyGraph(
+  planData: any,
+): DeterministicPlanValidationIssue[] {
+  if (!Array.isArray(planData?.plan)) return [];
+
+  const issues: DeterministicPlanValidationIssue[] = [];
+  const steps = planData.plan;
+  const edges = new Map<number, number[]>();
+  const goalToIndex = new Map<string, number>();
+
+  steps.forEach((step: any, index: number) => {
+    edges.set(index, []);
+    if (typeof step?.goal === "string" && step.goal.trim()) {
+      goalToIndex.set(step.goal.trim().toLowerCase(), index);
+    }
+  });
+
+  steps.forEach((step: any, index: number) => {
+    const dependencies = Array.isArray(step?.dependencies)
+      ? step.dependencies
+      : Array.isArray(step?.depends_on)
+        ? step.depends_on
+        : [];
+
+    for (const dependency of dependencies) {
+      const depIndex = resolveDependencyIndex(dependency, goalToIndex);
+      if (depIndex === null) continue;
+      if (depIndex === index) {
+        issues.push({
+          guard: "dependency_graph",
+          reason: `Step ${index + 1} depends on itself.`,
+        });
+      }
+      edges.get(index)!.push(depIndex);
+    }
+  });
+
+  const visiting = new Set<number>();
+  const visited = new Set<number>();
+
+  const visit = (node: number, stack: number[]): boolean => {
+    if (visiting.has(node)) {
+      const cycle = [...stack, node].map((idx) => `Step ${idx + 1}`);
+      issues.push({
+        guard: "dependency_graph",
+        reason: `Plan dependency graph contains a cycle: ${cycle.join(" -> ")}`,
+      });
+      return true;
+    }
+    if (visited.has(node)) return false;
+    visiting.add(node);
+    for (const dep of edges.get(node) || []) {
+      visit(dep, [...stack, node]);
+    }
+    visiting.delete(node);
+    visited.add(node);
+    return false;
+  };
+
+  for (let i = 0; i < steps.length; i++) {
+    visit(i, []);
+  }
+
+  return issues;
+}
+
+function resolveDependencyIndex(
+  dependency: any,
+  goalToIndex: Map<string, number>,
+): number | null {
+  if (typeof dependency === "number" && Number.isInteger(dependency)) {
+    return dependency > 0 ? dependency - 1 : dependency;
+  }
+  if (typeof dependency === "string") {
+    const trimmed = dependency.trim();
+    const stepMatch = trimmed.match(/^step\s+(\d+)$/i);
+    if (stepMatch) return parseInt(stepMatch[1], 10) - 1;
+    if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10) - 1;
+    return goalToIndex.get(trimmed.toLowerCase()) ?? null;
+  }
+  if (dependency && typeof dependency === "object") {
+    return resolveDependencyIndex(
+      dependency.step ??
+        dependency.step_index ??
+        dependency.stepNumber ??
+        dependency.goal ??
+        dependency.dependency,
+      goalToIndex,
+    );
+  }
+  return null;
+}
+
+function findNearbyExistingPaths(file: string, existingPaths: Set<string>): string[] {
+  const fileNorm = file.replace(/\\/g, "/");
+  const fileLower = fileNorm.toLowerCase();
+  const fileBase = fileNorm.split("/").pop() || "";
+  const fileBaseLower = fileBase.toLowerCase();
+  const matches: string[] = [];
+
+  for (const p of existingPaths) {
+    const pLower = p.toLowerCase();
+    const pBase = p.split("/").pop() || "";
+    const pBaseLower = pBase.toLowerCase();
+    const fileBaseNoExt = fileBase.substring(0, fileBase.lastIndexOf(".")) || fileBase;
+    const pBaseNoExt = pBase.substring(0, pBase.lastIndexOf(".")) || pBase;
+
+    if (
+      pLower === fileLower ||
+      fileBaseLower === pBaseLower ||
+      (fileBaseNoExt.toLowerCase() === pBaseNoExt.toLowerCase() &&
+        p.split("/").slice(0, -1).join("/") === fileNorm.split("/").slice(0, -1).join("/")) ||
+      p.endsWith(`/${fileNorm}`) ||
+      fileNorm.endsWith(`/${p}`)
+    ) {
+      matches.push(p);
+    }
+  }
+
+  if (matches.length === 0 && fileBase.length > 3) {
+    for (const p of existingPaths) {
+      const pBase = p.split("/").pop() || "";
+      if (levenshtein(fileBase.toLowerCase(), pBase.toLowerCase()) <= 2) {
+        matches.push(p);
+      }
+    }
+  }
+
+  return [...new Set(matches)].slice(0, 3);
+}
+
+function levenshtein(a: string, b: string): number {
+  const matrix = Array.from({ length: a.length + 1 }, () =>
+    Array(b.length + 1).fill(0),
+  );
+  for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      matrix[i][j] =
+        a[i - 1] === b[j - 1]
+          ? matrix[i - 1][j - 1]
+          : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+    }
+  }
+  return matrix[a.length][b.length];
 }
 
 export function buildSyntheticEvaluationFailure(

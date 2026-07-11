@@ -1,5 +1,6 @@
 import { WorkflowStep, StepResult } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
+import { extractJsonPayloadFromText } from "../../agents/persona.js";
 import {
   AnalysisReviewLoopConfig,
   PersonaStatus,
@@ -30,9 +31,11 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
     const cfg = this.config.config as AnalysisReviewLoopConfig;
     const maxIterations = cfg.maxIterations ?? 5;
-    if (!cfg.analystPersona || !cfg.reviewerPersona) {
+    const reviewerEnabled = this.isReviewerEnabled(cfg);
+    const reviewerPersona = cfg.reviewerPersona || "analysis-reviewer";
+    if (!cfg.analystPersona) {
       throw new Error(
-        "AnalysisReviewLoopStep requires analystPersona and reviewerPersona",
+        "AnalysisReviewLoopStep requires analystPersona",
       );
     }
 
@@ -211,7 +214,9 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
         } satisfies StepResult;
       }
 
-      lastAnalysis = extractPersonaOutputs(analystStepResult);
+      lastAnalysis = this.normalizeAnalysisOutput(
+        extractPersonaOutputs(analystStepResult),
+      );
       if (!lastAnalysis) {
         return {
           status: "failure",
@@ -223,6 +228,49 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
       }
 
       previousAnalysisOutput = lastAnalysis;
+
+      const deterministicReview = this.validateAnalysisOutput(lastAnalysis);
+      if (!deterministicReview.valid) {
+        finalStatus = "fail";
+        lastReview = {
+          status: "fail",
+          deterministic: true,
+          reason: deterministicReview.reason,
+          required_revisions: deterministicReview.requiredRevisions,
+        };
+        reviewHistory.push({
+          iteration,
+          raw: lastReview,
+          normalized: normalizeReviewFeedback(lastReview),
+        });
+
+        if (iteration >= maxIterations) {
+          break;
+        }
+
+        previousReview = lastReview;
+        continue;
+      }
+
+      if (!reviewerEnabled) {
+        finalStatus = "pass";
+        lastReview = {
+          status: "pass",
+          deterministic: true,
+          reviewer_disabled: true,
+          reason:
+            "Analysis accepted by deterministic structure validation; LLM reviewer disabled.",
+        };
+        context.logger.info(
+          "Analysis accepted by deterministic validation; skipping LLM reviewer",
+          {
+            step: this.config.name,
+            iteration,
+            reviewerPersona,
+          },
+        );
+        break;
+      }
 
       const reviewPayload = {
         ...baseReviewPayload,
@@ -264,7 +312,7 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
       const reviewerStepResult = await executePersonaInvocation(context, {
         name: reviewerStepName,
         step: cfg.reviewStep || "analysis-review",
-        persona: cfg.reviewerPersona,
+        persona: reviewerPersona,
         intent: cfg.reviewIntent || "analysis_evaluation",
         payload: reviewPayload,
         promptTemplate: cfg.reviewPromptTemplate,
@@ -287,7 +335,7 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
       const reviewerStatus = resolvePersonaStatus(
         context,
         reviewerStepName,
-        cfg.reviewerPersona,
+        reviewerPersona,
         lastReview,
       );
       finalStatus = reviewerStatus;
@@ -347,7 +395,14 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
     context.setVariable("analysis_auto_pass", autoPass);
 
     return {
-      status: "success",
+      status: finalStatus === "fail" ? "failure" : "success",
+      error:
+        finalStatus === "fail"
+          ? new Error(
+              lastReview?.reason ||
+                "Analysis failed deterministic validation",
+            )
+          : undefined,
       outputs: {
         analysis_request_result: lastAnalysis,
         analysis_review_result: lastReview,
@@ -356,5 +411,92 @@ export class AnalysisReviewLoopStep extends WorkflowStep {
         analysis_auto_pass: autoPass,
       },
     } satisfies StepResult;
+  }
+
+  private isReviewerEnabled(cfg: AnalysisReviewLoopConfig): boolean {
+    const configured =
+      cfg.analysisReviewer ??
+      cfg.analysis_reviewer ??
+      cfg.enableReviewer ??
+      cfg.enable_reviewer;
+    if (configured !== undefined) {
+      return this.parseReviewerFlag(configured);
+    }
+    return this.parseReviewerFlag(process.env.ANALYSIS_REVIEWER ?? "off");
+  }
+
+  private parseReviewerFlag(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["1", "true", "yes", "on", "enabled"].includes(normalized);
+  }
+
+  private normalizeAnalysisOutput(analysis: any): any {
+    if (typeof analysis === "string") {
+      return extractJsonPayloadFromText(analysis) ?? analysis;
+    }
+
+    if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) {
+      return analysis;
+    }
+
+    for (const key of ["output", "result", "response", "data"]) {
+      const value = analysis[key];
+      if (typeof value === "string") {
+        const parsed = extractJsonPayloadFromText(value);
+        if (parsed && typeof parsed === "object") {
+          return parsed;
+        }
+      } else if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value;
+      }
+    }
+
+    return analysis;
+  }
+
+  private validateAnalysisOutput(analysis: any): {
+    valid: boolean;
+    reason?: string;
+    requiredRevisions?: string[];
+  } {
+    if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) {
+      return {
+        valid: false,
+        reason: "Analyst output must be a structured JSON object.",
+        requiredRevisions: ["Return a JSON object with summary and remediation fields."],
+      };
+    }
+
+    const hasUsefulContent = [
+      "summary",
+      "root_cause",
+      "hypotheses",
+      "action_plan",
+      "actionPlan",
+      "remediation_steps",
+      "follow_up_tasks",
+    ].some((key) => {
+      const value = analysis[key];
+      return Array.isArray(value)
+        ? value.length > 0
+        : typeof value === "object"
+          ? value !== null
+          : typeof value === "string" && value.trim().length > 0;
+    });
+
+    if (!hasUsefulContent) {
+      return {
+        valid: false,
+        reason:
+          "Analyst output must include a non-empty summary, hypothesis, action plan, remediation steps, or follow-up tasks.",
+        requiredRevisions: [
+          "Provide a concrete analysis summary and remediation-ready action plan.",
+        ],
+      };
+    }
+
+    return { valid: true };
   }
 }

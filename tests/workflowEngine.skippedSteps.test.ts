@@ -68,4 +68,50 @@ describe("WorkflowEngine conditional skips", () => {
     expect(result.finalContext.getVariable("executed")).toBe(true);
     expect(result.finalContext.getVariable("should_not_exist")).toBeUndefined();
   });
+
+  it("stops workflow execution when a step requests a graceful stop", async () => {
+    const engine = new WorkflowEngine();
+    const workflowDef: WorkflowDefinition = {
+      name: "stop-test",
+      description: "Ensures explicit workflow stop prevents downstream work",
+      version: "1.0.0",
+      trigger: { condition: "true" },
+      context: { repo_required: false },
+      steps: [
+        {
+          name: "request_stop",
+          type: "VariableResolutionStep",
+          description: "Request workflow stop",
+          config: {
+            variables: {
+              workflow_stop_requested: true,
+              workflow_stop_reason: "already_resolved",
+            },
+          },
+        },
+        {
+          name: "downstream_step",
+          type: "VariableResolutionStep",
+          description: "Should not run",
+          depends_on: ["request_stop"],
+          config: {
+            variables: { should_not_run: true },
+          },
+        },
+      ],
+    };
+
+    const result = await engine.executeWorkflowDefinition(
+      workflowDef,
+      "test-project",
+      process.cwd(),
+      "main",
+      mockTransport,
+      {},
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.completedSteps).toEqual(["request_stop"]);
+    expect(result.finalContext.getVariable("should_not_run")).toBeUndefined();
+  });
 });

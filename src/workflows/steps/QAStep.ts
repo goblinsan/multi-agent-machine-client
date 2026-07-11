@@ -6,6 +6,9 @@ import {
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
 import { runTestCommandWithWorker } from "../helpers/testRunner.js";
+import { execSync } from "child_process";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import * as path from "path";
 
 export interface QAConfig {
   testCommand?: string;
@@ -45,7 +48,19 @@ export interface QAResult {
     workingDir: string;
     exitCode?: number;
     outputParsed?: boolean;
+    preExistingFailuresCount?: number;
   };
+}
+
+interface TypecheckResult {
+  passed: boolean;
+  errors: Array<{
+    file: string;
+    line?: number;
+    code: string;
+    message: string;
+  }>;
+  output: string;
 }
 
 export class QAStep extends WorkflowStep {
@@ -63,7 +78,7 @@ export class QAStep extends WorkflowStep {
       softFail = false,
     } = config;
 
-    logger.info("Starting QA execution", {
+    logger.info("Starting QA execution (delta-based)", {
       testCommand,
       testPath,
       timeout,
@@ -74,14 +89,18 @@ export class QAStep extends WorkflowStep {
 
     try {
       const contextData = context.getVariable("context");
-      const workingDir = contextData?.metadata?.repoPath || process.cwd();
+      const workingDir =
+        contextData?.metadata?.repoPath || context.repoRoot || process.cwd();
+
+      const headTcResult = await this.runTypecheck(workingDir, 60000);
+      const headTcErrors = headTcResult.errors;
 
       let lastError: Error | null = null;
-      let qaResult: QAResult | null = null;
+      let headQaResult: QAResult | null = null;
 
       for (let attempt = 0; attempt <= retryCount; attempt++) {
         try {
-          qaResult = await this.executeTests(
+          headQaResult = await this.executeTests(
             workingDir,
             testCommand,
             testPath,
@@ -91,7 +110,7 @@ export class QAStep extends WorkflowStep {
           break;
         } catch (error: any) {
           lastError = error;
-          logger.warn(`QA execution attempt ${attempt + 1} failed`, {
+          logger.warn(`QA test execution attempt ${attempt + 1} failed`, {
             error: error.message,
             attempt: attempt + 1,
             maxAttempts: retryCount + 1,
@@ -104,7 +123,7 @@ export class QAStep extends WorkflowStep {
         }
       }
 
-      if (!qaResult) {
+      if (!headQaResult) {
         if (skipOnNoTests && lastError?.message.includes("no tests found")) {
           logger.info("No tests found, skipping QA step");
           return {
@@ -112,118 +131,133 @@ export class QAStep extends WorkflowStep {
             data: { reason: "No tests found" },
           };
         }
-        if (softFail) {
-          const errorMessage = lastError
-            ? lastError.message
-            : "QA execution failed after all retries";
-          logger.warn("QA execution failed but softFail enabled", {
-            error: errorMessage,
-            testCommand,
-          });
-          context.setVariable("qaResult", null);
-          context.setVariable("testsPassed", false);
-          context.setVariable("failures", []);
-          return {
+        throw lastError || new Error("QA test execution failed after all retries");
+      }
+
+      const hasHeadFailures = headTcErrors.length > 0 || headQaResult.failures.length > 0 || !headQaResult.passed;
+
+      if (!hasHeadFailures) {
+        context.setVariable("qaResult", headQaResult);
+        context.setVariable("testsPassed", true);
+        context.setVariable("failures", []);
+
+        return {
+          status: "success",
+          data: headQaResult,
+          outputs: {
+            qaResult: headQaResult,
+            testsPassed: true,
+            failures: [],
+            failureFiles: [],
+            errorText: "",
             status: "success",
-            data: {
-              error: errorMessage,
-              executed: false,
-              command: testCommand,
-              status: "error",
-            },
-            outputs: {
-              qaResult: null,
-              testsPassed: false,
-              failures: [],
-              error: errorMessage,
-              executed: false,
-              status: "error",
-            },
-          } satisfies StepResult;
-        }
-        throw lastError || new Error("QA execution failed after all retries");
+          },
+        };
       }
 
-      const total = qaResult.testResults.total;
-      const failed = qaResult.testResults.failed;
-      const exitCode = qaResult.metadata.exitCode;
+      const baseBranch = context.getVariable("baseBranch") || context.getVariable("base_branch") || "main";
+      const baseCommit = this.gitGetMergeBase(workingDir, baseBranch);
 
-      let qaStatus: "success" | "failure" = "success";
-      const issues: string[] = [];
-
-      if (typeof exitCode === "number" && exitCode !== 0) {
-        qaStatus = "failure";
-        issues.push(`Test command exited with code ${exitCode}`);
+      if (!baseCommit) {
+        logger.warn("Could not determine base commit SHA. Bypassing delta-based checking (failing absolute).");
+        return this.returnAbsoluteFail(headQaResult, headTcErrors, softFail);
       }
 
-      if (total > 0) {
-        const failureRate = (failed / total) * 100;
-        if (failureRate > failureThreshold) {
-          qaStatus = "failure";
-          issues.push(
-            `Test failure rate ${failureRate.toFixed(1)}% exceeds threshold ${failureThreshold}%`,
-          );
-        }
-      } else if (failed > 0) {
-        qaStatus = "failure";
-        issues.push(`${failed} test failure(s) detected`);
-      } else if (qaStatus === "success" && !qaResult.metadata.outputParsed) {
-        logger.warn(
-          "Test output format not recognized - trusting exit code only",
-          { command: qaResult.metadata.command, exitCode },
-        );
-      }
+      const baseQA = await this.getBaseFailures(
+        workingDir,
+        baseCommit,
+        testCommand,
+        testPath,
+        timeout,
+        idleTimeoutMs
+      );
 
-      const passRate =
-        total > 0
-          ? (qaResult.testResults.passed / total) * 100
-          : qaStatus === "success"
-            ? 100
-            : 0;
+      const tcErrorSignature = (err: { file: string; code: string; message: string }) => {
+        const normalizedFile = err.file.replace(/\\/g, "/");
+        return `${normalizedFile}:${err.code}:${err.message}`;
+      };
 
-      if (requiredCoverage && qaResult.coverage) {
-        if (qaResult.coverage.percentage < requiredCoverage) {
-          qaStatus = "failure";
-          issues.push(
-            `Coverage ${qaResult.coverage.percentage.toFixed(1)}% below required ${requiredCoverage}%`,
-          );
-        }
-      }
+      const headTcSignatures = headTcErrors.map(tcErrorSignature);
+      const newTcSignatures = headTcSignatures.filter(sig => !baseQA.typecheckErrors.includes(sig));
+      const newTcErrors = headTcErrors.filter(err => newTcSignatures.includes(tcErrorSignature(err)));
 
-      context.setVariable("qaResult", qaResult);
-      context.setVariable("testsPassed", qaStatus === "success");
-      context.setVariable("failures", qaResult.failures);
+      const testFailureSignature = (fail: { file?: string; test: string }) => {
+        const normalizedFile = fail.file ? fail.file.replace(/\\/g, "/").split("/").pop() : "";
+        return `${normalizedFile}:${fail.test}`;
+      };
 
-      logger.info("QA execution completed", {
-        status: qaStatus,
-        totalTests: qaResult.testResults.total,
-        passed: qaResult.testResults.passed,
-        failed: qaResult.testResults.failed,
-        passRate: passRate.toFixed(1) + "%",
-        duration: qaResult.testResults.duration_ms,
-        issues: issues.length,
+      const headTestSignatures = headQaResult.failures.map(testFailureSignature);
+      const newTestSignatures = headTestSignatures.filter(sig => !baseQA.testFailures.includes(sig));
+      const newTestFailures = headQaResult.failures.filter(fail => newTestSignatures.includes(testFailureSignature(fail)));
+
+      const preExistingTcCount = headTcErrors.length - newTcErrors.length;
+      const preExistingTestCount = headQaResult.failures.length - newTestFailures.length;
+      const totalPreExistingCount = preExistingTcCount + preExistingTestCount;
+
+      logger.info("Delta-based QA review results", {
+        baseCommit,
+        totalHeadTcErrors: headTcErrors.length,
+        newTcErrors: newTcErrors.length,
+        preExistingTcErrors: preExistingTcCount,
+        totalHeadTestFailures: headQaResult.failures.length,
+        newTestFailures: newTestFailures.length,
+        preExistingTestFailures: preExistingTestCount,
       });
+
+      const hasRegressions = newTcErrors.length > 0 || newTestFailures.length > 0;
+
+      const deltaQaResult: QAResult = {
+        passed: !hasRegressions,
+        testResults: {
+          total: headQaResult.testResults.total,
+          passed: headQaResult.testResults.passed + preExistingTestCount,
+          failed: newTestFailures.length,
+          skipped: headQaResult.testResults.skipped,
+          duration_ms: headQaResult.testResults.duration_ms,
+        },
+        coverage: headQaResult.coverage,
+        failures: [
+          ...newTcErrors.map(err => ({
+            test: `Typecheck: ${err.file}`,
+            error: `${err.file}:${err.line} - error ${err.code}: ${err.message}`,
+            file: err.file,
+            line: err.line,
+          })),
+          ...newTestFailures,
+        ],
+        metadata: {
+          ...headQaResult.metadata,
+          preExistingFailuresCount: totalPreExistingCount,
+        },
+      };
+
+      let qaStatus: "success" | "failure" = hasRegressions ? "failure" : "success";
+
+      context.setVariable("qaResult", deltaQaResult);
+      context.setVariable("testsPassed", qaStatus === "success");
+      context.setVariable("failures", deltaQaResult.failures);
+      const failureFiles = this.extractFailureFiles(deltaQaResult.failures);
+      const errorText = this.formatFailureText(deltaQaResult.failures);
 
       const finalStatus = qaStatus === "failure" && softFail ? "success" : qaStatus;
 
       return {
         status: finalStatus,
-        data: qaResult,
+        data: deltaQaResult,
         outputs: {
-          qaResult,
+          qaResult: deltaQaResult,
           testsPassed: qaStatus === "success",
-          failures: qaResult.failures,
+          failures: deltaQaResult.failures,
+          failureFiles,
+          errorText,
           status: qaStatus,
-        },
-        metrics: {
-          duration_ms: qaResult.testResults.duration_ms,
-          operations_count: qaResult.testResults.total,
         },
         error:
           qaStatus === "failure" && !softFail
-            ? new Error(`QA failed: ${issues.join(", ")}`)
+            ? new Error(`QA failed with regressions: ${newTcErrors.length} typecheck and ${newTestFailures.length} test failures. (${totalPreExistingCount} pre-existing bypassed)`)
             : undefined,
       };
+
     } catch (error: any) {
       logger.error("QA execution failed", {
         error: error.message,
@@ -234,6 +268,273 @@ export class QAStep extends WorkflowStep {
         status: "failure",
         error: new Error(`QA execution failed: ${error.message}`),
       };
+    }
+  }
+
+  private returnAbsoluteFail(headQaResult: QAResult, tcErrors: Array<any>, softFail: boolean): StepResult {
+    const combinedFailures = [
+      ...tcErrors.map(err => ({
+        test: `Typecheck: ${err.file}`,
+        error: `${err.file}:${err.line} - error ${err.code}: ${err.message}`,
+        file: err.file,
+        line: err.line,
+      })),
+      ...headQaResult.failures,
+    ];
+
+    const absoluteQaResult: QAResult = {
+      passed: false,
+      testResults: {
+        ...headQaResult.testResults,
+        failed: combinedFailures.length,
+      },
+      coverage: headQaResult.coverage,
+      failures: combinedFailures,
+      metadata: headQaResult.metadata,
+    };
+
+    return {
+      status: softFail ? "success" : "failure",
+      data: absoluteQaResult,
+      outputs: {
+        qaResult: absoluteQaResult,
+        testsPassed: false,
+        failures: combinedFailures,
+        failureFiles: this.extractFailureFiles(combinedFailures),
+        errorText: this.formatFailureText(combinedFailures),
+        status: "failure",
+      },
+      error: !softFail ? new Error(`QA failed: ${combinedFailures.length} absolute errors`) : undefined,
+    };
+  }
+
+  private extractFailureFiles(
+    failures: Array<{ file?: string }>,
+  ): string[] {
+    return Array.from(
+      new Set(
+        failures
+          .map((failure) => failure.file?.replace(/\\/g, "/").trim())
+          .filter((file): file is string => Boolean(file)),
+      ),
+    );
+  }
+
+  private formatFailureText(
+    failures: Array<{ error?: string; file?: string; line?: number }>,
+  ): string {
+    return failures
+      .map((failure) => {
+        if (failure.error && failure.error.trim().length > 0) {
+          return failure.error.trim();
+        }
+        if (failure.file) {
+          const line = failure.line ? `:${failure.line}` : "";
+          return `${failure.file}${line}: failure`;
+        }
+        return "";
+      })
+      .filter((line) => line.length > 0)
+      .join("\n");
+  }
+
+  private async runTypecheck(
+    workingDir: string,
+    timeoutMs: number = 60000
+  ): Promise<TypecheckResult> {
+    let command = "npx tsc --noEmit";
+    try {
+      const pkgPath = path.join(workingDir, "package.json");
+      if (existsSync(pkgPath)) {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+        if (pkg.scripts && pkg.scripts.typecheck) {
+          command = "npm run typecheck";
+        }
+      }
+    } catch {
+      void 0;
+    }
+
+    logger.info("Executing typecheck command", { command, workingDir });
+
+    try {
+      const { output, exitCode } = await this.runCommand(command, workingDir, timeoutMs);
+      const errors = this.parseTypecheckOutput(output);
+      return {
+        passed: exitCode === 0 && errors.length === 0,
+        errors,
+        output,
+      };
+    } catch (e: any) {
+      logger.warn("Typecheck run failed with error", { error: e.message });
+      return {
+        passed: false,
+        errors: [{ file: "compiler", code: "TS_RUN_ERR", message: e.message }],
+        output: e.message,
+      };
+    }
+  }
+
+  private parseTypecheckOutput(output: string): Array<{ file: string; line?: number; code: string; message: string }> {
+    const lines = output.split("\n");
+    const errors: Array<{ file: string; line?: number; code: string; message: string }> = [];
+    const lineRegex = /^([^(]+)\((\d+),\d+\): error (TS\d+): (.+)$/;
+    for (const line of lines) {
+      const match = line.trim().match(lineRegex);
+      if (match) {
+        errors.push({
+          file: match[1].trim(),
+          line: parseInt(match[2]),
+          code: match[3].trim(),
+          message: match[4].trim(),
+        });
+      }
+    }
+    return errors;
+  }
+
+  private gitGetMergeBase(workingDir: string, baseBranch: string): string {
+    const candidates = [
+      `origin/${baseBranch}`,
+      baseBranch,
+      `origin/main`,
+      `main`,
+      `origin/master`,
+      `master`,
+    ];
+    for (const cand of candidates) {
+      try {
+        const sha = execSync(`git merge-base ${cand} HEAD`, { cwd: workingDir, encoding: "utf8" }).trim();
+        if (sha) return sha;
+      } catch {
+      void 0;
+    }
+    }
+    try {
+      return execSync(`git rev-parse HEAD~1`, { cwd: workingDir, encoding: "utf8" }).trim();
+    } catch {
+      return "";
+    }
+  }
+
+  private async getBaseFailures(
+    workingDir: string,
+    baseCommit: string,
+    testCommand: string,
+    testPath?: string,
+    timeoutMs: number = 300000,
+    idleTimeoutMs?: number,
+  ): Promise<{ typecheckErrors: string[]; testFailures: string[] }> {
+    const cacheDir = path.join(workingDir, ".ma");
+    if (!existsSync(cacheDir)) {
+      mkdirSync(cacheDir, { recursive: true });
+    }
+    const cachePath = path.join(cacheDir, `base_qa_cache_${baseCommit}.json`);
+
+    if (existsSync(cachePath)) {
+      try {
+        logger.info("Using cached base QA results", { baseCommit });
+        return JSON.parse(readFileSync(cachePath, "utf-8"));
+      } catch (e: any) {
+        logger.warn("Failed to parse base QA cache, re-running", { error: e.message });
+      }
+    }
+
+    logger.info("Base QA results not cached. Running base ref validation...", { baseCommit });
+
+    let isDirty = false;
+    let originalCommit = "";
+    try {
+      originalCommit = execSync("git rev-parse HEAD", { cwd: workingDir, encoding: "utf-8" }).trim();
+      const statusOutput = execSync("git status --porcelain", { cwd: workingDir, encoding: "utf-8" }).trim();
+      isDirty = statusOutput.length > 0;
+
+      if (isDirty) {
+        logger.info("Stashing dirty working directory files before checking out base ref");
+        execSync("git stash --include-untracked -m 'temp_base_qa_stash'", { cwd: workingDir });
+      }
+
+      logger.info(`Checking out base commit: ${baseCommit}`);
+      execSync(`git checkout ${baseCommit}`, { cwd: workingDir });
+
+      let typecheckCmd = "npx tsc --noEmit";
+      try {
+        const pkgPath = path.join(workingDir, "package.json");
+        if (existsSync(pkgPath)) {
+          const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+          if (pkg.scripts && pkg.scripts.typecheck) {
+            typecheckCmd = "npm run typecheck";
+          }
+        }
+      } catch {
+      void 0;
+    }
+
+      let baseTcErrors: string[] = [];
+      try {
+        const tcRes = await this.runCommand(typecheckCmd, workingDir, 60000);
+        baseTcErrors = this.parseTypecheckOutput(tcRes.output).map(err => {
+          const normalizedFile = err.file.replace(/\\/g, "/");
+          return `${normalizedFile}:${err.code}:${err.message}`;
+        });
+      } catch (tcErr: any) {
+        if (tcErr.stdout || tcErr.stderr) {
+          const out = [tcErr.stdout, tcErr.stderr].filter(Boolean).join("\n");
+          baseTcErrors = this.parseTypecheckOutput(out).map(err => {
+            const normalizedFile = err.file.replace(/\\/g, "/");
+            return `${normalizedFile}:${err.code}:${err.message}`;
+          });
+        }
+      }
+
+      let baseTestFailures: string[] = [];
+      try {
+        let fullCommand = testCommand;
+        if (testPath) {
+          fullCommand += ` ${testPath}`;
+        }
+        const testRes = await this.runCommand(fullCommand, workingDir, timeoutMs, idleTimeoutMs);
+        const parsed = this.parseTestOutput(testRes.output);
+        baseTestFailures = parsed.failures.map((fail: any) => {
+          const normalizedFile = fail.file ? fail.file.replace(/\\/g, "/").split("/").pop() : "";
+          return `${normalizedFile}:${fail.test}`;
+        });
+      } catch (testErr: any) {
+        if (testErr.stdout || testErr.stderr) {
+          const out = [testErr.stdout, testErr.stderr].filter(Boolean).join("\n");
+          baseTestFailures = this.parseTestOutput(out).failures.map((fail: any) => {
+            const normalizedFile = fail.file ? fail.file.replace(/\\/g, "/").split("/").pop() : "";
+            return `${normalizedFile}:${fail.test}`;
+          });
+        }
+      }
+
+      const results = {
+        typecheckErrors: baseTcErrors,
+        testFailures: baseTestFailures,
+      };
+
+      try {
+        writeFileSync(cachePath, JSON.stringify(results, null, 2), "utf-8");
+        logger.info("Saved base QA results to cache file", { cachePath });
+      } catch (writeErr: any) {
+        logger.warn("Failed to write base QA cache file", { error: writeErr.message });
+      }
+
+      return results;
+    } finally {
+      try {
+        if (originalCommit) {
+          logger.info(`Checking back out to original commit: ${originalCommit}`);
+          execSync(`git checkout ${originalCommit}`, { cwd: workingDir });
+        }
+        if (isDirty) {
+          logger.info("Unstashing dirty working directory files");
+          execSync("git stash pop", { cwd: workingDir });
+        }
+      } catch (restoreErr: any) {
+        logger.error("CRITICAL: Failed to restore git state after base QA run", { error: restoreErr.message });
+      }
     }
   }
 

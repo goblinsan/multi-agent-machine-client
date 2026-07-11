@@ -2,6 +2,7 @@ import { cfg } from "../../config.js";
 import { logger } from "../../logger.js";
 import { PERSONAS as _PERSONAS } from "../../personaNames.js";
 import type { WorkflowContext } from "../engine/WorkflowContext.js";
+import { abortedWorkflows } from "./abortState.js";
 
 const STREAM_NAME = cfg.requestStream;
 
@@ -78,6 +79,7 @@ export async function abortWorkflowWithReason(
   }
 
   const workflowId = context.workflowId;
+  abortedWorkflows.add(workflowId);
   let cleanupResult: { removed: number; acked: number } | null = null;
 
   try {

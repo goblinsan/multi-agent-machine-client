@@ -3,6 +3,7 @@ import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
 import { PersonaConsumer } from "../personas/PersonaConsumer.js";
+import { acquireSingleInstanceLock } from "../util/singleInstanceLock.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -23,6 +24,35 @@ if (!process.env.DASHBOARD_BASE_URL) {
 let dashboardProcess: ChildProcess | null = null;
 let personaConsumer: PersonaConsumer | null = null;
 let isShuttingDown = false;
+
+async function verifyDashboardArtifactApi(dashboardUrl: string): Promise<void> {
+  const url = `${dashboardUrl.replace(/\/$/, "")}/projects/0/artifacts?latest=1&meta_only=1`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(1000),
+    });
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : String(error ?? "unknown");
+    throw new Error(`dashboard artifact API check failed: ${reason}`);
+  }
+
+  if (response.ok) return;
+
+  let body = "";
+  try {
+    body = await response.text();
+  } catch {
+    body = "";
+  }
+
+  throw new Error(
+    `dashboard artifact API check failed: GET /projects/0/artifacts returned ${response.status}${body ? ` ${body}` : ""}`,
+  );
+}
 
 function printUsage() {
   console.error(
@@ -77,15 +107,21 @@ async function startDashboard(): Promise<void> {
     });
 
     if (response.ok) {
-      console.log(`Dashboard backend already running at ${dashboardUrl}`);
+      await verifyDashboardArtifactApi(dashboardUrl);
+      console.log(
+        `Dashboard backend already running at ${dashboardUrl} with artifact API available`,
+      );
       return;
     }
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : String(error ?? "unknown");
-    console.log(
-      `Dashboard health check unavailable, starting local backend (${reason})`,
-    );
+    if (reason.includes("artifact API check failed")) {
+      throw new Error(
+        `Dashboard at ${dashboardUrl} is healthy but missing required routes. Stop the stale backend process and rerun. ${reason}`,
+      );
+    }
+    console.log(`Dashboard unavailable, starting local backend (${reason})`);
   }
 
   if (!fs.existsSync(path.join(dashboardPath, "node_modules"))) {
@@ -117,7 +153,7 @@ async function startDashboard(): Promise<void> {
     });
   }
 
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     console.log("Starting dashboard backend...");
 
     dashboardProcess = spawn("npm", ["run", "dev"], {
@@ -188,6 +224,8 @@ async function startDashboard(): Promise<void> {
       }
     });
   });
+
+  await verifyDashboardArtifactApi(dashboardUrl);
 }
 
 async function shutdown(transport: any) {
@@ -247,6 +285,20 @@ async function main() {
     console.warn(
       `Warning: TRANSPORT_TYPE is '${cfg.transportType}', but 'local' is recommended for single-process development`,
     );
+  }
+
+  const lock = acquireSingleInstanceLock(cfg.projectBase);
+  if (!lock.acquired) {
+    console.error(
+      `Another machine-client instance is already running (pid ${lock.holderPid}, lock ${lock.lockPath}).`,
+    );
+    console.error(
+      "Concurrent instances share the same repos, dashboard, and log file and will corrupt each other's runs.",
+    );
+    console.error(
+      `Stop it first (kill ${lock.holderPid}) or wait for it to finish.`,
+    );
+    process.exit(1);
   }
 
   const projectId = projectIdArg.trim();

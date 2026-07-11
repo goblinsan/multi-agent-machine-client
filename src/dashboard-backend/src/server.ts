@@ -6,9 +6,10 @@ import { registerRepositoryRoutes } from "./routes/repositories";
 import { registerMilestoneRoutes } from "./routes/milestones";
 import { registerTaskRoutes } from "./routes/tasks";
 import { registerHealthRoutes } from "./routes/health";
+import { registerArtifactRoutes } from "./routes/artifacts";
 
 export function build() {
-  const fastify = Fastify({ logger: true });
+  const fastify = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
 
   registerHealthRoutes(fastify);
 
@@ -19,6 +20,8 @@ export function build() {
   registerMilestoneRoutes(fastify);
 
   registerTaskRoutes(fastify);
+
+  registerArtifactRoutes(fastify);
 
   return fastify;
 }

@@ -7,6 +7,7 @@ import {
   WorkflowStep,
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
+import { fetchArtifactContentFromApi } from "../helpers/artifactReader.js";
 
 interface QAArtifactLoadConfig {
   artifact_name?: string;
@@ -29,6 +30,44 @@ export class QAArtifactLoadStep extends WorkflowStep {
       artifactName,
       context,
     );
+
+    const apiContent = await fetchArtifactContentFromApi({
+      projectId: context.projectId,
+      taskId: this.resolveTaskId(context),
+      kind: artifactName.replace(/-/g, "_"),
+    });
+
+    if (apiContent !== null) {
+      try {
+        const parsed = JSON.parse(apiContent);
+        context.setVariable(outputVariable, parsed);
+        context.setVariable(`${outputVariable}_path`, artifactPath);
+        context.setVariable(`${outputVariable}_loaded_at`, Date.now());
+        context.setVariable(`${outputVariable}_source`, "api");
+
+        return {
+          status: "success",
+          data: {
+            artifactPath,
+            found: true,
+            outputVariable,
+            source: "api",
+          },
+        } satisfies StepResult;
+      } catch (parseError) {
+        context.logger.warn(
+          "QAArtifactLoadStep: API artifact was not valid JSON, falling back to git file",
+          {
+            workflowId: context.workflowId,
+            artifactName,
+            error:
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError),
+          },
+        );
+      }
+    }
 
     try {
       const raw = await fs.readFile(path.join(repoRoot, artifactPath), "utf-8");

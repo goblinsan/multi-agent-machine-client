@@ -75,7 +75,7 @@ export class FetchProjectTasksStep extends WorkflowStep {
       if (config.include_completed === false) {
         filtered = filtered.filter((task: any) => {
           const status = String(task.status || "").toLowerCase();
-          return status !== "done" && status !== "completed";
+          return status !== "done" && status !== "completed" && status !== "archived";
         });
       }
 

@@ -348,13 +348,46 @@ export class GitOperationStep extends WorkflowStep {
         }
 
         case "mergeBranchToMain": {
-          const sourceBranch =
-            this.resolveVariable(config.sourceBranch, context) ||
-            context.getVariable("branch") ||
-            newBranch;
           const targetBranch =
             this.resolveVariable(config.targetBranch, context) ||
             baseBranch;
+
+          let sourceBranch =
+            this.resolveVariable(config.sourceBranch, context) ||
+            context.getVariable("branch") ||
+            "";
+          if (!sourceBranch || sourceBranch.includes("${")) {
+            sourceBranch = context.getCurrentBranch() || "";
+          }
+          if (!sourceBranch || sourceBranch.includes("${")) {
+            const headResult = await gitUtils.runGit(
+              ["rev-parse", "--abbrev-ref", "HEAD"],
+              { cwd: repoRoot },
+            );
+            sourceBranch = headResult.stdout.trim();
+          }
+
+          if (!sourceBranch || sourceBranch === "HEAD") {
+            throw new Error(
+              "mergeBranchToMain: unable to determine source branch from config, context, or git HEAD",
+            );
+          }
+
+          if (sourceBranch === targetBranch) {
+            logger.info(
+              "Merge skipped - source branch is already the target branch",
+              {
+                repoRoot,
+                sourceBranch,
+                targetBranch,
+                workflowId: context.workflowId,
+              },
+            );
+            result = { merged: false, reason: "source equals target" };
+            context.setVariable("merge_completed", true);
+            context.setVariable("merge_result", result);
+            break;
+          }
 
           logger.info("Merging branch to main", {
             repoRoot,

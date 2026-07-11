@@ -51,7 +51,6 @@ export class PersonaRetryCoordinator {
     let lastCorrId = "";
     let attempt = 0;
     let completion = null;
-    const allCorrIds: string[] = [];
 
     logger.info(`Making persona request`, {
       workflowId: params.workflowId,
@@ -87,9 +86,14 @@ export class PersonaRetryCoordinator {
         backoffIncrementMs,
       );
 
-      const corrId = await sendPersonaRequest(transport, params);
+      const corrId = await sendPersonaRequest(transport, {
+        ...params,
+        payload: {
+          ...params.payload,
+          timeout_ms: currentTimeoutMs,
+        },
+      });
       lastCorrId = corrId;
-      allCorrIds.push(corrId);
 
       logger.info(`Persona request sent`, {
         workflowId: params.workflowId,
@@ -105,9 +109,22 @@ export class PersonaRetryCoordinator {
           transport,
           params.toPersona,
           params.workflowId,
-          allCorrIds,
+          corrId,
           currentTimeoutMs,
         );
+        if (completion && this.isTimeoutFailureEnvelope(completion)) {
+          logger.warn(
+            "Persona reported a model timeout - treating as retryable attempt failure",
+            {
+              workflowId: params.workflowId,
+              step: params.step,
+              persona: params.toPersona,
+              corrId: completion.fields?.corr_id,
+              attempt,
+            },
+          );
+          completion = null;
+        }
       } catch (error: any) {
         if (error.message && error.message.includes("Timed out waiting")) {
           completion = null;
@@ -142,6 +159,15 @@ export class PersonaRetryCoordinator {
       backoffIncrementMs,
     );
 
+    return this.buildResult(completion, attempt, lastCorrId, finalTimeoutMs);
+  }
+
+  private buildResult(
+    completion: any,
+    attempt: number,
+    lastCorrId: string,
+    finalTimeoutMs: number,
+  ): RetryResult {
     return {
       success: !!completion,
       completion,
@@ -149,6 +175,21 @@ export class PersonaRetryCoordinator {
       lastCorrId,
       finalTimeoutMs,
     };
+  }
+
+  private isTimeoutFailureEnvelope(completion: any): boolean {
+    const rawResult = completion?.fields?.result;
+    if (typeof rawResult !== "string") return false;
+    try {
+      const parsed = JSON.parse(rawResult);
+      if (parsed?.status !== "fail" && parsed?.status !== "error") {
+        return false;
+      }
+      const errorText = String(parsed?.error || "");
+      return /aborted after \d+ms|timed out|request timeout/i.test(errorText);
+    } catch {
+      return false;
+    }
   }
 
   private logAttempt(

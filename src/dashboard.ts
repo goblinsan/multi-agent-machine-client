@@ -6,9 +6,16 @@ import {
   CreateTaskInput,
   CreateTaskResult,
 } from "./dashboard/TaskAPI.js";
+import {
+  ArtifactAPI,
+  PublishArtifactInput,
+  PublishArtifactResult,
+  FetchArtifactsInput,
+} from "./dashboard/ArtifactAPI.js";
 
 const projectAPI = new ProjectAPI();
 const taskAPI = new TaskAPI();
+const artifactAPI = new ArtifactAPI();
 
 export async function fetchContext(workflowId: string) {
   try {
@@ -84,4 +91,16 @@ export async function updateTaskStatus(
   lockVersion?: number,
 ): Promise<CreateTaskResult> {
   return taskAPI.updateTaskStatus(taskId, status, projectId, lockVersion);
+}
+
+export async function publishTaskArtifact(
+  input: PublishArtifactInput,
+): Promise<PublishArtifactResult> {
+  return artifactAPI.publishTaskArtifact(input);
+}
+
+export async function fetchTaskArtifacts(
+  input: FetchArtifactsInput,
+): Promise<any[] | null> {
+  return artifactAPI.fetchTaskArtifacts(input);
 }

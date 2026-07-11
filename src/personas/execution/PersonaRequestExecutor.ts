@@ -1,6 +1,7 @@
 import { logger } from "../../logger.js";
 import { cfg } from "../../config.js";
 import { SYSTEM_PROMPTS } from "../../personas.js";
+import { getPersonaResponseFormat } from "../responseSchemas.js";
 import {
   buildPersonaMessages,
   callPersonaModel,
@@ -112,15 +113,21 @@ export class PersonaRequestExecutor {
       extraSystemMessages: payload.extra_system_messages,
     });
 
-    const timeoutMs =
+    const requestedTimeoutMs =
       payload.timeout_ms ||
       personaTimeoutMs(persona, cfg);
+    const timeoutMs = Math.max(30_000, requestedTimeoutMs - 15_000);
+
+    const responseFormat = cfg.structuredOutputs
+      ? getPersonaResponseFormat(persona)
+      : undefined;
 
     logger.debug("PersonaConsumer: Calling LLM", {
       persona,
       model,
       messageCount: messages.length,
       timeoutMs,
+      structured: !!responseFormat,
     });
 
     const response = await callPersonaModel({
@@ -128,6 +135,7 @@ export class PersonaRequestExecutor {
       model,
       messages,
       timeoutMs,
+      responseFormat,
     });
 
     logger.info("PersonaConsumer: LLM call completed", {
@@ -135,11 +143,13 @@ export class PersonaRequestExecutor {
       workflowId,
       durationMs: response.duration_ms,
       contentLength: response.content.length,
+      truncated: response.truncated || undefined,
     });
 
     return {
       output: response.content,
       duration_ms: response.duration_ms,
+      ...(response.truncated ? { truncated: true } : {}),
     };
   }
 }

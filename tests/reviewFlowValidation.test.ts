@@ -75,6 +75,39 @@ describe("Review Flow Validation", () => {
     expect(markInReview?.condition).toBe("${qa_request_status} == 'pass'");
     expect(markInReview?.config?.status).toBe("in_review");
 
+    const projectValidation = steps["run_project_validation"];
+    expect(projectValidation).toBeDefined();
+    expect((projectValidation as any)?.type).toBe("QAStep");
+    expect(projectValidation?.depends_on).toEqual(["pre_qa_auto_repair"]);
+    expect(projectValidation?.condition).toBe(
+      "detected_test_command.length > 0",
+    );
+    expect(projectValidation?.config?.testCommand).toBe(
+      "${detected_test_command}",
+    );
+    expect(projectValidation?.config?.softFail).toBe(true);
+
+    const postValidationRepair = steps["post_project_validation_auto_repair"];
+    expect(postValidationRepair).toBeDefined();
+    expect(postValidationRepair?.depends_on).toEqual([
+      "persist_project_validation_signal",
+    ]);
+    expect(postValidationRepair?.condition).toBe(
+      "project_validation_error.length > 0",
+    );
+
+    const rerunProjectValidation = steps["rerun_project_validation"];
+    expect(rerunProjectValidation).toBeDefined();
+    expect((rerunProjectValidation as any)?.type).toBe("QAStep");
+    expect(rerunProjectValidation?.depends_on).toEqual([
+      "post_project_validation_auto_repair",
+    ]);
+    expect(rerunProjectValidation?.config?.softFail).toBe(false);
+
+    const verifyDiff = steps["verify_diff"];
+    expect(verifyDiff).toBeDefined();
+    expect(verifyDiff?.depends_on).toEqual(["rerun_project_validation"]);
+
     const collectDiff = steps["collect_review_diff"];
     expect(collectDiff).toBeDefined();
     expect(collectDiff?.depends_on).toEqual(["ensure_branch_published"]);
@@ -136,13 +169,13 @@ describe("Review Flow Validation", () => {
 
     const markDone = steps["mark_task_done"];
     expect(markDone).toBeDefined();
-    expect(markDone?.depends_on).toEqual(["devops_request"]);
+    expect(markDone?.depends_on).toEqual(["merge_branch_to_main"]);
     expect(markDone?.condition).toBe("${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'");
     expect(markDone?.config?.status).toBe("done");
 
     const mergeToMain = steps["merge_branch_to_main"];
     expect(mergeToMain).toBeDefined();
-    expect(mergeToMain?.depends_on).toEqual(["mark_task_done"]);
+    expect(mergeToMain?.depends_on).toEqual(["devops_request"]);
     expect(mergeToMain?.condition).toBe(markDone?.condition);
   });
 
@@ -177,7 +210,7 @@ describe("Review Flow Validation", () => {
     expect(devops?.depends_on).toEqual(["security_request"]);
     expect(devops?.condition).toBe("${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail'");
 
-    expect(markDone?.depends_on).toEqual(["devops_request"]);
+    expect(markDone?.depends_on).toEqual(["merge_branch_to_main"]);
     expect(markDone?.condition).toBe("${qa_request_status} == 'pass' && ${code_review_request_status} != 'fail' && ${security_request_status} != 'fail' && ${devops_request_status} != 'fail'");
   });
 

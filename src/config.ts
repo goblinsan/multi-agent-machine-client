@@ -71,6 +71,20 @@ function parseDurationMs(value: string | undefined, fallbackMs: number) {
   return Math.floor(num * 1000);
 }
 
+function numberInRange(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (value === undefined || value.trim() === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    return fallback;
+  }
+  return parsed;
+}
+
 function readHostPatternFile(filePath: string | undefined): string[] {
   if (!filePath || !filePath.trim()) return [];
   const expanded = expandHome(filePath.trim());
@@ -324,8 +338,17 @@ const logFile = (() => {
 const dashboardContextEndpoint = (() => {
   const raw = process.env.DASHBOARD_CONTEXT_ENDPOINT;
   if (raw && raw.trim().length) return raw.trim();
-  return "/context/upsert";
+  return "";
 })();
+
+const maArtifactsMode = (() => {
+  const raw = (process.env.MA_ARTIFACTS_MODE || "both").trim().toLowerCase();
+  if (raw === "git" || raw === "api" || raw === "both") return raw;
+  console.warn(
+    `[config] Invalid MA_ARTIFACTS_MODE '${raw}' - expected git|api|both, defaulting to 'both'`,
+  );
+  return "both";
+})() as "git" | "api" | "both";
 
 const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();
 const gitUserEmail = (
@@ -360,6 +383,16 @@ export const cfg = {
   consumerId: process.env.CONSUMER_ID || "worker-1",
   allowedPersonas: splitCsv(process.env.ALLOWED_PERSONAS, []),
   lmsBaseUrl: process.env.LMS_BASE_URL || "http://127.0.0.1:1234",
+  lmsMaxTokens: Number(process.env.LMS_MAX_TOKENS || 6000),
+  lmsFrequencyPenalty: numberInRange(
+    process.env.LMS_FREQUENCY_PENALTY,
+    0.5,
+    -2,
+    2,
+  ),
+  personaPromptMaxChars: Number(
+    process.env.PERSONA_PROMPT_MAX_CHARS || 90000,
+  ),
   personaModels: jsonOr(
     process.env.PERSONA_MODELS_JSON,
     {} as Record<string, string>,
@@ -367,6 +400,8 @@ export const cfg = {
   dashboardBaseUrl: process.env.DASHBOARD_BASE_URL || "http://localhost:8787",
   dashboardApiKey: process.env.DASHBOARD_API_KEY || "dev",
   dashboardContextEndpoint,
+  maArtifactsMode,
+  structuredOutputs: bool(process.env.STRUCTURED_OUTPUTS, true),
 
   dashboardCreateMilestoneIfMissing: bool(
     process.env.DASHBOARD_CREATE_MILESTONE_IF_MISSING,

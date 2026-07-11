@@ -197,6 +197,8 @@ export class TaskAPI extends DashboardClient {
     status: string,
     projectId?: string,
     lockVersion?: number,
+    expectedStatus?: string,
+    claimedBy?: string,
   ): Promise<CreateTaskResult> {
     if (!this.baseUrl) {
       logger.warn("dashboard update skipped: base URL not configured");
@@ -214,6 +216,8 @@ export class TaskAPI extends DashboardClient {
         endpoint,
         status,
         lockVersion ?? undefined,
+        expectedStatus,
+        claimedBy,
       );
       if (first.statusCode >= 200 && first.statusCode < 300) {
         logger.info("dashboard task updated", {
@@ -230,6 +234,14 @@ export class TaskAPI extends DashboardClient {
       }
 
       if (first.statusCode === 409 || first.statusCode === 422) {
+        if (expectedStatus !== undefined) {
+          logger.info("Atomic claim mismatch, returning 409 Conflict without retry", {
+            taskId,
+            projectId,
+            expectedStatus,
+          });
+          return { ok: false, status: 409, body: first.responseBody };
+        }
         const retryResult = await this.retryWithFreshLock(
           endpoint,
           taskId,
@@ -320,9 +332,16 @@ export class TaskAPI extends DashboardClient {
     endpoint: string,
     status: string,
     lv?: number | null,
+    expectedStatus?: string,
+    claimedBy?: string,
   ): Promise<{ statusCode: number; responseBody: any }> {
     const payload: any = { status };
     if (lv !== undefined && lv !== null) payload.lock_version = lv;
+    if (expectedStatus !== undefined) payload.expected_status = expectedStatus;
+    if (claimedBy !== undefined) {
+      payload.claimed_by = claimedBy;
+      payload.claimed_at = new Date().toISOString();
+    }
 
     const res = await fetch(endpoint, {
       method: "PATCH",
@@ -428,5 +447,31 @@ export class TaskAPI extends DashboardClient {
       projectId,
       dependencyCount: dependencyIds.length,
     });
+  }
+
+  async adoptOrphanTasks(projectId: string, consumerId: string): Promise<boolean> {
+    if (!this.baseUrl) return false;
+
+    const endpoint = `/projects/${encodeURIComponent(projectId)}/tasks/adopt-orphans`;
+    const payload = { consumer_id: consumerId };
+
+    try {
+      const response = await this.post(endpoint, payload);
+      if (!response.ok) {
+        logger.warn("adoptOrphanTasks failed", {
+          projectId,
+          status: response.status,
+        });
+        return false;
+      }
+      logger.info("Adopted orphan tasks successfully", { projectId, consumerId });
+      return true;
+    } catch (e) {
+      logger.warn("adoptOrphanTasks exception", {
+        projectId,
+        error: (e as Error).message,
+      });
+      return false;
+    }
   }
 }

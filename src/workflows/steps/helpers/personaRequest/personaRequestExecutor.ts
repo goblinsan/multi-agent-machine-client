@@ -29,6 +29,7 @@ import {
   applyOutputVariables,
   recordInformationSources,
   buildForcedSynthesisCompletion,
+  buildForcedSynthesisFailure,
 } from "./personaRequestOutcomes.js";
 
 export type PersonaRequestExecutorArgs = {
@@ -211,7 +212,7 @@ export async function executePersonaRequestFlow(
     }
     const forceSynthesisVar = `${stepName}_force_synthesis_due_to_duplicates`;
     let forceSynthesisActive = Boolean(context.getVariable(forceSynthesisVar));
-    const duplicateForceLimit = Math.max(
+  const duplicateForceLimit = Math.max(
       1,
       config.duplicateRequestForceIterations ??
         cfg.informationRequests?.duplicateIterationsBeforeForce ??
@@ -223,22 +224,38 @@ export async function executePersonaRequestFlow(
         cfg.informationRequests?.forceSynthesisAfterIterations ??
         3,
     );
+    const forcedSynthesisShouldFail = intent === "implementation";
+    const buildForcedSynthesisResult = (meta?: {
+      duplicateIterations?: number;
+      uniqueSources?: number;
+      maxUniqueSources?: number;
+    }) =>
+      forcedSynthesisShouldFail
+        ? buildForcedSynthesisFailure(
+            context,
+            persona,
+            step,
+            infoBlocks,
+            stepName,
+            meta,
+          )
+        : buildForcedSynthesisCompletion(
+            context,
+            persona,
+            step,
+            infoBlocks,
+            stepName,
+            outputs,
+            meta,
+          );
 
     for (let iteration = 1; iteration <= maxInfoIterations; iteration++) {
       if (forceSynthesisActive) {
-        return buildForcedSynthesisCompletion(
-          context,
-          persona,
-          step,
-          infoBlocks,
-          stepName,
-          outputs,
-          {
-            duplicateIterations: duplicateIterationCount,
-            uniqueSources: uniqueInformationSources.size,
-            maxUniqueSources,
-          },
-        );
+        return buildForcedSynthesisResult({
+          duplicateIterations: duplicateIterationCount,
+          uniqueSources: uniqueInformationSources.size,
+          maxUniqueSources,
+        });
       }
 
       const iterationPayload = buildIterationPayload(
@@ -431,19 +448,11 @@ export async function executePersonaRequestFlow(
               infoBlocks.slice(),
             );
             context.setVariable(duplicateIterationVar, duplicateIterationCount);
-            return buildForcedSynthesisCompletion(
-              context,
-              persona,
-              step,
-              infoBlocks,
-              stepName,
-              outputs,
-              {
-                duplicateIterations: duplicateIterationCount,
-                uniqueSources: uniqueInformationSources.size,
-                maxUniqueSources,
-              },
-            );
+            return buildForcedSynthesisResult({
+              duplicateIterations: duplicateIterationCount,
+              uniqueSources: uniqueInformationSources.size,
+              maxUniqueSources,
+            });
           } else {
             infoBlocks.push(
               buildSystemInformationBlock(
@@ -505,19 +514,11 @@ export async function executePersonaRequestFlow(
               uniqueSources: uniqueInformationSources.size,
             },
           );
-          return buildForcedSynthesisCompletion(
-            context,
-            persona,
-            step,
-            infoBlocks,
-            stepName,
-            outputs,
-            {
-              duplicateIterations: duplicateIterationCount,
-              uniqueSources: uniqueInformationSources.size,
-              maxUniqueSources,
-            },
-          );
+          return buildForcedSynthesisResult({
+            duplicateIterations: duplicateIterationCount,
+            uniqueSources: uniqueInformationSources.size,
+            maxUniqueSources,
+          });
         }
         if (iteration === forceSynthesisAfterIterations - 1) {
           infoBlocks.push(

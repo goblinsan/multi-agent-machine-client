@@ -60,9 +60,15 @@ steps:
           hotfix_mode: true
         timeout: 600000
 
+  - name: context_rescan
+    type: ContextStep
+    depends_on: ["implementation_request"]
+    config:
+      forceRescan: true
+
   - name: collect_review_diff
     type: GitDiffExportStep
-    depends_on: ["implementation_request"]
+    depends_on: ["context_rescan"]
     config:
       repoPath: ${repo_root}
       branch: ${featureBranchName}

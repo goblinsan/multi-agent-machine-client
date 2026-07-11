@@ -151,8 +151,8 @@ describe("PersonaRequestStep - Progressive Timeout and Retry Logic", () => {
 
       expect(timeoutValues.length).toBe(3);
       expect(timeoutValues[0]).toBe(90000);
-      expect(timeoutValues[1]).toBe(120000);
-      expect(timeoutValues[2]).toBe(150000);
+      expect(timeoutValues[1]).toBe(135000);
+      expect(timeoutValues[2]).toBe(202500);
 
       expect(result.status).toBe("success");
       expect(result.data?.totalAttempts).toBe(3);
@@ -169,10 +169,13 @@ describe("PersonaRequestStep - Progressive Timeout and Retry Logic", () => {
         90000,
       );
       expect(calculateProgressiveTimeout(baseTimeout, 3, increment)).toBe(
-        120000,
+        135000,
       );
       expect(calculateProgressiveTimeout(baseTimeout, 4, increment)).toBe(
-        150000,
+        202500,
+      );
+      expect(calculateProgressiveTimeout(1_500_000, 5, increment)).toBe(
+        1_800_000,
       );
     });
 
@@ -204,6 +207,88 @@ describe("PersonaRequestStep - Progressive Timeout and Retry Logic", () => {
       const duration = Date.now() - startTime;
 
       expect(duration).toBeLessThan(100);
+    });
+
+    it("should wait only for the active retry correlation id", async () => {
+      vi.mocked(persona.sendPersonaRequest)
+        .mockResolvedValueOnce("corr-attempt-1")
+        .mockResolvedValueOnce("corr-attempt-2");
+
+      const waitedCorrIds: Array<string | string[]> = [];
+      vi.mocked(persona.waitForPersonaCompletion).mockImplementation(
+        async (_redis, _persona, _workflowId, corrId) => {
+          waitedCorrIds.push(corrId);
+          if (corrId === "corr-attempt-1") {
+            throw new Error("Timed out waiting for context completion");
+          }
+          return {
+            id: "event-2",
+            fields: {
+              corr_id: "corr-attempt-2",
+              result: JSON.stringify({ status: "success" }),
+            },
+          } as any;
+        },
+      );
+
+      const step = new PersonaRequestStep({
+        name: "test-persona-request",
+        type: "persona_request",
+        config: {
+          step: "1-test",
+          persona: "context",
+          intent: "test",
+          payload: { test: "data" },
+        },
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe("success");
+      expect(waitedCorrIds).toEqual(["corr-attempt-1", "corr-attempt-2"]);
+      expect(waitedCorrIds.some((corrId) => Array.isArray(corrId))).toBe(false);
+    });
+
+    it("should treat model timeout envelopes as retryable attempt failures", async () => {
+      vi.mocked(persona.sendPersonaRequest)
+        .mockResolvedValueOnce("corr-timeout")
+        .mockResolvedValueOnce("corr-success");
+
+      vi.mocked(persona.waitForPersonaCompletion)
+        .mockResolvedValueOnce({
+          id: "event-timeout",
+          fields: {
+            corr_id: "corr-timeout",
+            result: JSON.stringify({
+              status: "fail",
+              error: "LM Studio request aborted after 240000ms",
+            }),
+          },
+        } as any)
+        .mockResolvedValueOnce({
+          id: "event-success",
+          fields: {
+            corr_id: "corr-success",
+            result: JSON.stringify({ status: "success" }),
+          },
+        } as any);
+
+      const step = new PersonaRequestStep({
+        name: "test-persona-request",
+        type: "persona_request",
+        config: {
+          step: "1-test",
+          persona: "context",
+          intent: "test",
+          payload: { test: "data" },
+        },
+      });
+
+      const result = await step.execute(context);
+
+      expect(result.status).toBe("success");
+      expect(persona.sendPersonaRequest).toHaveBeenCalledTimes(2);
+      expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -565,9 +650,9 @@ describe("PersonaRequestStep - Progressive Timeout and Retry Logic", () => {
 
       expect(result.status).toBe("failure");
       expect(result.data?.baseTimeoutMs).toBe(90000);
-      expect(result.data?.finalTimeoutMs).toBe(150000);
+      expect(result.data?.finalTimeoutMs).toBe(202500);
       expect(result.error?.message).toContain("Base timeout: 1.50min");
-      expect(result.error?.message).toContain("Final timeout: 2.50min");
+      expect(result.error?.message).toContain("Final timeout: 3.38min");
     });
   });
 

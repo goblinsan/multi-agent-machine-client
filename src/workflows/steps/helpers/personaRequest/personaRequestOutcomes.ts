@@ -161,6 +161,46 @@ export function buildInformationSourceCapFailure(
   } satisfies StepResult;
 }
 
+export function buildForcedSynthesisFailure(
+  context: WorkflowContext,
+  persona: string,
+  step: string,
+  infoBlocks: string[],
+  stepName: string,
+  meta?: ForcedSynthesisMeta,
+): StepResult {
+  const message =
+    `Persona '${persona}' repeated information requests instead of producing ` +
+    `the required implementation response.`;
+  logger.warn("Failing persona request after duplicate information loop", {
+    workflowId: context.workflowId,
+    persona,
+    step,
+    duplicateIterations: meta?.duplicateIterations ?? 0,
+    uniqueSources: meta?.uniqueSources ?? 0,
+    maxUniqueSources: meta?.maxUniqueSources ?? null,
+  });
+
+  context.setVariable(`${stepName}_status`, "forced_information_failure");
+  context.setVariable(`${stepName}_forced_completion`, true);
+  context.setVariable(`${stepName}_information_blocks`, infoBlocks.slice());
+
+  return {
+    status: "failure",
+    error: new Error(message),
+    data: {
+      step,
+      persona,
+      forcedCompletion: true,
+      forcedInformationFailure: true,
+      duplicateIterations: meta?.duplicateIterations ?? 0,
+      uniqueSources: meta?.uniqueSources ?? 0,
+      maxUniqueSources: meta?.maxUniqueSources ?? null,
+      infoBlocks,
+    },
+  } satisfies StepResult;
+}
+
 export function recordInformationSources(
   acquisitions: InformationRequestRecord[],
   seenSources: Set<string>,

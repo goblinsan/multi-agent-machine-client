@@ -12,6 +12,7 @@ vi.mock("fs/promises", () => ({
     readFile: vi.fn(),
     writeFile: vi.fn(),
     mkdir: vi.fn(),
+    utimes: vi.fn(),
   },
 }));
 vi.mock("../src/scanRepo.js", () => ({
@@ -23,6 +24,7 @@ vi.mock("../src/logger.js", () => ({
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
+    debug: vi.fn(),
   },
 }));
 
@@ -32,25 +34,57 @@ vi.mock("../src/gitUtils.js", () => ({
   runGit: runGitMock,
 }));
 
+const SNAPSHOT_PATH = _path.join(
+  "/test/repo",
+  ".ma",
+  "context",
+  "snapshot.json",
+);
+
+function snapshotJson(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    timestamp: Date.now() - 60000,
+    repoPath: "/test/repo",
+    files: [
+      {
+        path: "src/test.ts",
+        bytes: 1000,
+        lines: 50,
+        mtime: Date.now() - 120000,
+      },
+    ],
+    totals: { files: 1, bytes: 1000 },
+    ...overrides,
+  });
+}
+
 describe("ContextStep Change Detection", () => {
   let contextStep: ContextStep;
   let mockContext: WorkflowContext;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    runGitMock.mockClear();
+    runGitMock.mockReset();
     runGitMock.mockImplementation(async (args: string[]) => {
-      if (args[0] === "rev-parse") {
-        return { stdout: "main\n" };
-      }
-
+      if (args[0] === "rev-parse") return { stdout: "abc123\n" };
       return { stdout: "" };
     });
 
+    (fs.mkdir as any).mockReset();
     (fs.mkdir as any).mockResolvedValue(undefined);
+    (fs.writeFile as any).mockReset();
     (fs.writeFile as any).mockResolvedValue(undefined);
+    (fs.utimes as any).mockReset();
+    (fs.utimes as any).mockResolvedValue(undefined);
+    (fs.access as any).mockReset();
     (fs.access as any).mockResolvedValue(undefined);
+    (fs.readFile as any).mockReset();
     (fs.readFile as any).mockResolvedValue("{}");
+    (fs.stat as any).mockReset();
+    (fs.stat as any).mockResolvedValue({
+      isDirectory: () => true,
+      mtime: new Date(Date.now() - 60000),
+    });
 
     contextStep = new ContextStep({
       name: "test-context",
@@ -71,14 +105,9 @@ describe("ContextStep Change Detection", () => {
       branch: "main",
       projectId: "proj-456",
     } as any;
-
-    (fs.stat as any).mockResolvedValue({
-      isDirectory: () => true,
-      mtime: new Date(Date.now() - 60000),
-    });
   });
 
-  it("should rescan when context files do not exist", async () => {
+  it("performs a full scan when no previous snapshot exists", async () => {
     (fs.access as any).mockRejectedValue(new Error("File not found"));
 
     const { scanRepo } = await import("../src/scanRepo.js");
@@ -90,14 +119,8 @@ describe("ContextStep Change Detection", () => {
 
     expect(result.status).toBe("success");
     expect(result.outputs?.reused_existing).toBe(false);
-    expect(logger.info).toHaveBeenCalledWith(
-      "Context artifacts missing, rescan needed",
-      expect.objectContaining({
-        snapshotExists: false,
-        summaryExists: false,
-        filesNdjsonExists: false,
-      }),
-    );
+    expect(result.outputs?.scan_mode).toBe("full");
+    expect(result.outputs?.analysis_required).toBe(true);
     expect(fs.writeFile).toHaveBeenCalledWith(
       _path.join("/test/repo", ".ma", "context", "files.ndjson"),
       expect.any(String),
@@ -105,11 +128,8 @@ describe("ContextStep Change Detection", () => {
     );
   });
 
-  it("should rescan when files.ndjson is missing", async () => {
-    (fs.access as any)
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("Missing files.ndjson"));
+  it("performs a full scan when the snapshot is unparseable", async () => {
+    (fs.readFile as any).mockResolvedValue("not json");
 
     const { scanRepo } = await import("../src/scanRepo.js");
     (scanRepo as any).mockResolvedValue([
@@ -119,95 +139,103 @@ describe("ContextStep Change Detection", () => {
     const result = await contextStep.execute(mockContext);
 
     expect(result.status).toBe("success");
-    expect(result.outputs?.reused_existing).toBe(false);
-    expect(logger.info).toHaveBeenCalledWith(
-      "Context artifacts missing, rescan needed",
-      expect.objectContaining({
-        snapshotExists: true,
-        summaryExists: true,
-        filesNdjsonExists: false,
-      }),
-    );
+    expect(result.outputs?.scan_mode).toBe("full");
   });
 
-  it("should rescan when source files have been modified since last scan", async () => {
-    const lastScanTime = Date.now() - 60000;
-    const newerFileTime = Date.now() - 30000;
+  it("scans incrementally when the mtime probe detects changes", async () => {
+    const newerMtime = Date.now() - 1000;
 
-    (fs.access as any).mockResolvedValue(undefined);
-
-    (fs.stat as any)
-      .mockResolvedValueOnce({
-        isDirectory: () => true,
-        mtime: new Date(),
-      })
-      .mockResolvedValueOnce({
-        isDirectory: () => false,
-        mtime: new Date(lastScanTime),
-      });
+    (fs.readFile as any).mockImplementation(async (p: string) => {
+      if (String(p) === SNAPSHOT_PATH) return snapshotJson();
+      return "line1\nline2\n";
+    });
 
     const { scanRepo } = await import("../src/scanRepo.js");
-    (scanRepo as any)
-      .mockResolvedValueOnce([
-        { path: "src/test.ts", bytes: 1000, lines: 50, mtime: newerFileTime },
-      ])
-      .mockResolvedValueOnce([
-        { path: "src/test.ts", bytes: 1000, lines: 50, mtime: newerFileTime },
-      ]);
+    (scanRepo as any).mockResolvedValue([
+      { path: "src/test.ts", bytes: 1000, mtime: newerMtime },
+    ]);
 
     const result = await contextStep.execute(mockContext);
 
     expect(result.status).toBe("success");
+    expect(result.outputs?.scan_mode).toBe("incremental");
     expect(result.outputs?.reused_existing).toBe(false);
-    expect(logger.info).toHaveBeenCalledWith(
-      "Source files modified since last scan, rescan needed",
-      expect.objectContaining({
-        newerFilesFound: 1,
-      }),
+    expect(result.outputs?.delta_modified).toBe(1);
+    expect(result.outputs?.files_read).toBe(1);
+    expect(result.outputs?.analysis_required).toBe(true);
+    expect(result.outputs?.analysis_decision).toContain(
+      "no cached context analysis",
     );
   });
 
-  it("should reuse existing context when source files unchanged", async () => {
-    const lastScanTime = Date.now() - 60000;
+  it("reuses context via the git delta when nothing changed", async () => {
+    (fs.readFile as any).mockImplementation(async (p: string) => {
+      if (String(p) === SNAPSHOT_PATH) {
+        return snapshotJson({ headSha: "abc123" });
+      }
+      return "{}";
+    });
+
+    const { scanRepo } = await import("../src/scanRepo.js");
+    (scanRepo as any).mockResolvedValue([]);
+
+    const result = await contextStep.execute(mockContext);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.scan_mode).toBe("reused");
+    expect(result.outputs?.reused_existing).toBe(true);
+    expect(result.outputs?.analysis_required).toBe(false);
+    expect(runGitMock).toHaveBeenCalledWith(
+      ["diff", "--name-only", "abc123", "HEAD"],
+      expect.objectContaining({ cwd: "/test/repo" }),
+    );
+    expect(scanRepo).not.toHaveBeenCalled();
+  });
+
+  it("scans incrementally when the git delta reports changes", async () => {
+    runGitMock.mockImplementation(async (args: string[]) => {
+      if (args[0] === "rev-parse") return { stdout: "def456\n" };
+      if (args[0] === "diff") return { stdout: "src/test.ts\n" };
+      return { stdout: "" };
+    });
+
+    (fs.readFile as any).mockImplementation(async (p: string) => {
+      if (String(p) === SNAPSHOT_PATH) {
+        return snapshotJson({ headSha: "abc123" });
+      }
+      return "line1\nline2\nline3\n";
+    });
+
+    const { scanRepo } = await import("../src/scanRepo.js");
+    (scanRepo as any).mockResolvedValue([
+      { path: "src/test.ts", bytes: 1200, mtime: Date.now() },
+    ]);
+
+    const result = await contextStep.execute(mockContext);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.scan_mode).toBe("incremental");
+    expect(result.outputs?.delta_modified).toBe(1);
+  });
+
+  it("reuses context when the mtime probe finds no changes", async () => {
     const olderFileTime = Date.now() - 120000;
 
-    (fs.access as any).mockResolvedValue(undefined);
-
-    (fs.stat as any)
-      .mockResolvedValueOnce({
-        isDirectory: () => true,
-        mtime: new Date(),
-      })
-      .mockResolvedValueOnce({
-        isDirectory: () => false,
-        mtime: new Date(lastScanTime),
-      });
+    (fs.readFile as any).mockImplementation(async (p: string) => {
+      if (String(p) === SNAPSHOT_PATH) return snapshotJson();
+      return "{}";
+    });
 
     const { scanRepo } = await import("../src/scanRepo.js");
     (scanRepo as any).mockResolvedValue([
       { path: "src/test.ts", bytes: 1000, lines: 50, mtime: olderFileTime },
     ]);
 
-    (fs.readFile as any).mockResolvedValue(
-      JSON.stringify({
-        files: [
-          { path: "src/test.ts", bytes: 1000, lines: 50, mtime: olderFileTime },
-        ],
-        totals: { files: 1, bytes: 1000, lines: 50 },
-        timestamp: lastScanTime,
-      }),
-    );
-
     const result = await contextStep.execute(mockContext);
 
     expect(result.status).toBe("success");
     expect(result.outputs?.reused_existing).toBe(true);
-    expect(logger.info).toHaveBeenCalledWith(
-      "Source files unchanged since last scan, reusing context",
-      expect.objectContaining({
-        filesChecked: 1,
-      }),
-    );
+    expect(result.outputs?.scan_mode).toBe("reused");
     expect(logger.info).toHaveBeenCalledWith(
       "Context gathering completed using existing data",
       expect.objectContaining({
@@ -217,7 +245,7 @@ describe("ContextStep Change Detection", () => {
     );
   });
 
-  it("should force rescan when forceRescan is true", async () => {
+  it("forces a full rescan when forceRescan is true", async () => {
     const forceRescanStep = new ContextStep({
       name: "test-context-force",
       type: "ContextStep",
@@ -236,6 +264,7 @@ describe("ContextStep Change Detection", () => {
 
     expect(result.status).toBe("success");
     expect(result.outputs?.reused_existing).toBe(false);
+    expect(result.outputs?.scan_mode).toBe("full");
     expect(logger.info).toHaveBeenCalledWith(
       "Performing new repository scan",
       expect.objectContaining({
@@ -244,24 +273,27 @@ describe("ContextStep Change Detection", () => {
     );
   });
 
-  it("should handle errors gracefully and fall back to rescan", async () => {
-    (fs.stat as any).mockResolvedValueOnce({
-      isDirectory: () => true,
-      mtime: new Date(),
+  it("falls back to incremental scan when the freshness probe errors", async () => {
+    (fs.readFile as any).mockImplementation(async (p: string) => {
+      if (String(p) === SNAPSHOT_PATH) return snapshotJson();
+      return "line1\n";
     });
-
-    (fs.access as any).mockResolvedValue(undefined);
-    (fs.stat as any).mockRejectedValueOnce(new Error("Permission denied"));
+    (fs.stat as any)
+      .mockResolvedValueOnce({
+        isDirectory: () => true,
+        mtime: new Date(),
+      })
+      .mockRejectedValueOnce(new Error("Permission denied"));
 
     const { scanRepo } = await import("../src/scanRepo.js");
     (scanRepo as any).mockResolvedValue([
-      { path: "src/test.ts", bytes: 1000, lines: 50, mtime: Date.now() },
+      { path: "src/test.ts", bytes: 1000, mtime: Date.now() },
     ]);
 
     const result = await contextStep.execute(mockContext);
 
     expect(result.status).toBe("success");
-    expect(result.outputs?.reused_existing).toBe(false);
+    expect(result.outputs?.scan_mode).toBe("incremental");
     expect(logger.warn).toHaveBeenCalledWith(
       "Error checking context freshness, will rescan",
       expect.objectContaining({

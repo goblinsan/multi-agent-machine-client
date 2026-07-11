@@ -44,8 +44,12 @@ import { TestHarnessSynthesisStep } from "./steps/TestHarnessSynthesisStep";
 import { DependencyTaskCollectorStep } from "./steps/DependencyTaskCollectorStep";
 import { ImplementationLoopStep } from "./steps/ImplementationLoopStep";
 import { QAArtifactLoadStep } from "./steps/QAArtifactLoadStep";
+import { PublishProjectArtifactStep } from "./steps/PublishProjectArtifactStep";
+import { BaselineHealthSynthesisStep } from "./steps/BaselineHealthSynthesisStep";
 import { TestToolingSetupStep } from "./steps/TestToolingSetupStep";
 import { PreQaAutoRepairStep } from "./steps/PreQaAutoRepairStep";
+import { TaskRealityAuditStep } from "./steps/TaskRealityAuditStep";
+import { ScopeViabilityStep } from "./steps/ScopeViabilityStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -197,8 +201,18 @@ export class WorkflowEngine {
       DependencyTaskCollectorStep,
     );
     this.stepRegistry.set("QAArtifactLoadStep", QAArtifactLoadStep);
+    this.stepRegistry.set(
+      "PublishProjectArtifactStep",
+      PublishProjectArtifactStep,
+    );
+    this.stepRegistry.set(
+      "BaselineHealthSynthesisStep",
+      BaselineHealthSynthesisStep,
+    );
     this.stepRegistry.set("TestToolingSetupStep", TestToolingSetupStep);
     this.stepRegistry.set("PreQaAutoRepairStep", PreQaAutoRepairStep);
+    this.stepRegistry.set("TaskRealityAuditStep", TaskRealityAuditStep);
+    this.stepRegistry.set("ScopeViabilityStep", ScopeViabilityStep);
   }
 
   public registerStep(
@@ -385,6 +399,14 @@ export class WorkflowEngine {
 
         if (success) {
           completedSteps.push(stepName);
+          if (context.getVariable("workflow_stop_requested") === true) {
+            context.logger.info("Workflow stop requested by step", {
+              workflowId: context.workflowId,
+              stepName,
+              reason: context.getVariable("workflow_stop_reason"),
+            });
+            break;
+          }
         } else {
           const stepHistory = context.getExecutionHistory().find(
             (h) => h.stepName === stepName && h.status === "failure",

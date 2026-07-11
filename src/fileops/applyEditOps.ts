@@ -21,11 +21,12 @@ import {
   applyHunksToLines,
 } from "./hunkHelpers.js";
 
-type ApplyEditOpsResult = {
+export type ApplyEditOpsResult = {
   changed: string[];
   branch: string;
   sha: string;
   noop?: boolean;
+  applyMethod?: string;
 };
 
 export type ApplyOpFailure = { path: string; reason: string };
@@ -77,6 +78,9 @@ export async function applyEditOps(
   const commitMsg = opts.commitMessage || "agent: apply edits";
   const sanitizedCommitMsg = String(commitMsg).replace(/\s+/g, " ").trim();
 
+  let hasRewrites = false;
+  let fuzzyLevel: "strict" | "trim-end" | "trim" = "strict";
+
   const planned: PlannedWrite[] = [];
   const failures: ApplyOpFailure[] = [];
 
@@ -100,6 +104,7 @@ export async function applyEditOps(
 
       const full = insideRepo(repoRoot, u.path);
       let contentToWrite: string | undefined = u.content;
+      const fileExists = await fs.access(full).then(() => true).catch(() => false);
 
       if (Array.isArray(u.hunks) && u.hunks.length) {
         let baseText: string | null = null;
@@ -111,7 +116,7 @@ export async function applyEditOps(
 
         if (baseText !== null) {
           const baseLines = baseText.split(/\r?\n/);
-          const applyResult = applyHunksToLines(baseLines, u.hunks);
+          const applyResult = applyHunksToLines(baseLines, u.hunks, u.path);
           if (!applyResult.ok) {
             const failed = applyResult.failedHunk;
             const hunkLabel = failed
@@ -135,6 +140,12 @@ export async function applyEditOps(
               });
             }
             continue;
+          }
+
+          if (applyResult.fuzzyMode === "trim") {
+            fuzzyLevel = "trim";
+          } else if (applyResult.fuzzyMode === "trim-end" && fuzzyLevel !== "trim") {
+            fuzzyLevel = "trim-end";
           }
 
           contentToWrite = applyResult.content;
@@ -171,6 +182,9 @@ export async function applyEditOps(
             reason: `File content is structurally invalid: ${contentError}`,
           });
           continue;
+        }
+        if (fileExists) {
+          hasRewrites = true;
         }
       }
 
@@ -238,16 +252,38 @@ export async function applyEditOps(
     changed.push(path.relative(repoRoot, write.fullPath).replace(/\\/g, "/"));
   }
 
-  if (!changed.length) {
-    return { changed: [], branch, sha: "" };
+  let applyMethod = "edit-spec-strict";
+  if (hasRewrites) {
+    applyMethod = "full-file-rewrite";
+  } else if (fuzzyLevel === "trim") {
+    applyMethod = "edit-spec-fuzzy-trim";
+  } else if (fuzzyLevel === "trim-end") {
+    applyMethod = "edit-spec-fuzzy-trim-end";
   }
 
-  return await commitAndPushChanges(
+  if (!changed.length) {
+    return { changed: [], branch, sha: "", applyMethod };
+  }
+
+  if (opts.commit === false) {
+    return {
+      changed,
+      branch,
+      sha: "",
+      applyMethod,
+    };
+  }
+
+  const commitResult = await commitAndPushChanges(
     repoRoot,
     changed,
     branch,
     sanitizedCommitMsg,
   );
+  return {
+    ...commitResult,
+    applyMethod,
+  };
 }
 
 export async function commitAndPushChanges(

@@ -19,6 +19,32 @@ function ensureColumn(
 
 export function ensureTaskSchemaUpgrades(db: Database): void {
   ensureColumn(db, "tasks", "blocked_dependencies", "TEXT");
+  ensureColumn(db, "tasks", "claimed_by", "TEXT");
+  ensureColumn(db, "tasks", "claimed_at", "TEXT");
+}
+
+export function ensureArtifactsTable(db: Database): void {
+  db.run(`CREATE TABLE IF NOT EXISTS artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    task_id INTEGER,
+    workflow_id TEXT,
+    kind TEXT NOT NULL,
+    iteration INTEGER,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_upsert_key
+     ON artifacts(project_id, task_id, kind, COALESCE(iteration, -1))`,
+  );
+  db.run(
+    `CREATE INDEX IF NOT EXISTS idx_artifacts_task_kind
+     ON artifacts(task_id, kind, created_at)`,
+  );
 }
 
 export function runMigrations(db: Database): void {
@@ -41,7 +67,10 @@ export function runMigrations(db: Database): void {
     schema = schema.replace(/PRAGMA journal_mode = WAL;/g, "");
     schema = schema.replace(/PRAGMA synchronous = NORMAL;/g, "");
 
-    schema = schema.replace(/CREATE INDEX/g, "CREATE INDEX IF NOT EXISTS");
+    schema = schema.replace(
+      /CREATE INDEX (?!IF NOT EXISTS)/g,
+      "CREATE INDEX IF NOT EXISTS ",
+    );
 
     db.run("PRAGMA foreign_keys = ON;");
 
@@ -72,4 +101,5 @@ export function runMigrations(db: Database): void {
   }
 
   ensureTaskSchemaUpgrades(db);
+  ensureArtifactsTable(db);
 }

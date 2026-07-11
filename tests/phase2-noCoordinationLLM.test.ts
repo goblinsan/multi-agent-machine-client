@@ -5,6 +5,13 @@ import { makeTempRepo } from "./makeTempRepo.js";
 import * as persona from "../src/agents/persona.js";
 
 vi.mock("../src/dashboard/ProjectAPI.js");
+vi.mock("../src/dashboard/TaskAPI.js", () => ({
+  TaskAPI: class {
+    updateTaskStatus = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, body: {} });
+  },
+}));
 vi.mock("../src/agents/persona.js");
 vi.mock("../src/gitUtils.js", () => ({
   resolveRepoFromPayload: vi.fn().mockResolvedValue({

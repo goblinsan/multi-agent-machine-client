@@ -1,7 +1,16 @@
 import { logger } from "../logger.js";
-import { callLMStudio } from "../lmstudio.js";
+import { cfg } from "../config.js";
+import { callLMStudio, ResponseFormat } from "../lmstudio.js";
 
 export type ChatMessage = { role: "system" | "user"; content: string };
+
+const TRIM_MARKER = "\n... [trimmed to fit prompt budget]";
+
+function truncateSection(section: string, maxChars: number): string {
+  if (section.length <= maxChars) return section;
+  const keep = Math.max(0, maxChars - TRIM_MARKER.length);
+  return section.slice(0, keep) + TRIM_MARKER;
+}
 
 export type BuildMessagesInput = {
   persona: string;
@@ -75,6 +84,44 @@ export function buildPersonaMessages(input: BuildMessagesInput): ChatMessage[] {
     }
   }
 
+  const budget = cfg.personaPromptMaxChars;
+  const fixedChars = systemPrompt.length + userText.length;
+  let totalChars =
+    fixedChars +
+    systemParts
+      .slice(1)
+      .reduce((sum, section) => sum + section.length, 0);
+
+  if (Number.isFinite(budget) && budget > 0 && totalChars > budget) {
+    const overBudgetBy = totalChars - budget;
+    const trimmable = systemParts
+      .map((section, index) => ({ section, index }))
+      .slice(1)
+      .sort((a, b) => b.section.length - a.section.length);
+
+    let remainingToTrim = overBudgetBy;
+    for (const entry of trimmable) {
+      if (remainingToTrim <= 0) break;
+      const original = systemParts[entry.index];
+      const target = Math.max(2000, original.length - remainingToTrim);
+      if (target >= original.length) continue;
+      systemParts[entry.index] = truncateSection(original, target);
+      remainingToTrim -= original.length - systemParts[entry.index].length;
+    }
+
+    const trimmedTotal =
+      fixedChars +
+      systemParts.slice(1).reduce((sum, section) => sum + section.length, 0);
+    logger.warn("Persona prompt exceeded budget - trimmed context sections", {
+      persona,
+      budget,
+      beforeChars: totalChars,
+      afterChars: trimmedTotal,
+      estimatedTokens: Math.round(trimmedTotal / 4),
+    });
+    totalChars = trimmedTotal;
+  }
+
   const messages: ChatMessage[] = [
     { role: "system", content: systemParts.join("\n\n") },
     { role: "user", content: userText },
@@ -83,6 +130,8 @@ export function buildPersonaMessages(input: BuildMessagesInput): ChatMessage[] {
   logger.debug("PersonaRequestHandler: built messages", {
     persona,
     systemCount: 1,
+    promptChars: totalChars,
+    estimatedTokens: Math.round(totalChars / 4),
   });
   return messages;
 }
@@ -92,22 +141,33 @@ export type CallModelInput = {
   model: string;
   messages: ChatMessage[];
   timeoutMs?: number;
+  responseFormat?: ResponseFormat;
 };
 
 export async function callPersonaModel(
   input: CallModelInput,
-): Promise<{ content: string; duration_ms: number }> {
-  const { persona, model, messages, timeoutMs } = input;
+): Promise<{ content: string; duration_ms: number; truncated: boolean }> {
+  const { persona, model, messages, timeoutMs, responseFormat } = input;
   const started = Date.now();
   try {
-    const resp = await callLMStudio(model, messages as any, 0.2, { timeoutMs });
+    const resp = await callLMStudio(model, messages as any, 0.2, {
+      timeoutMs,
+      responseFormat,
+    });
     const duration_ms = Date.now() - started;
+    const truncated = resp.finishReason === "length";
+    if (truncated) {
+      logger.warn("persona response truncated at the output token limit", {
+        persona,
+        contentLength: resp.content.length,
+      });
+    }
     const preview =
       resp.content && resp.content.length > 4000
         ? resp.content.slice(0, 4000) + "... (truncated)"
         : resp.content;
     logger.info("persona response", { persona, preview });
-    return { content: resp.content, duration_ms };
+    return { content: resp.content, duration_ms, truncated };
   } catch (e: any) {
     const duration_ms = Date.now() - started;
     logger.error("PersonaRequestHandler: LM call failed", {

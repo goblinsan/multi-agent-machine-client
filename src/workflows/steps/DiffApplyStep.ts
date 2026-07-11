@@ -24,7 +24,9 @@ export interface DiffApplyStepConfig {
   max_file_size?: number;
   blocked_extensions?: string[];
   commit_message?: string;
+  commit?: boolean;
   dry_run?: boolean;
+  allowed_paths?: string[];
 }
 
 export class DiffApplyStep extends WorkflowStep {
@@ -139,12 +141,19 @@ export class DiffApplyStep extends WorkflowStep {
         );
       }
 
+      const scope = this.applyScopeFilter(
+        parseResult.editSpec,
+        stepConfig.allowed_paths,
+        context,
+      );
+      parseResult.editSpec = scope.editSpec;
+
       if (stepConfig.validation && stepConfig.validation !== "none") {
         await this.validateChanges(parseResult.editSpec, context, stepConfig);
       }
 
       let applyResult;
-      let applyMethod: "git-apply" | "edit-spec" | "dry-run" = "edit-spec";
+      let applyMethod: string = "edit-spec-strict";
       if (stepConfig.dry_run) {
         applyMethod = "dry-run";
         context.logger.info("Dry run mode - changes not applied", {
@@ -168,6 +177,7 @@ export class DiffApplyStep extends WorkflowStep {
             ? stepConfig.blocked_extensions
             : undefined;
 
+        const shouldCommit = stepConfig.commit !== false;
         const commitMessage =
           stepConfig.commit_message || this.generateCommitMessage(context);
 
@@ -175,7 +185,9 @@ export class DiffApplyStep extends WorkflowStep {
           .filter((block) => block.type !== "raw")
           .map((block) => block.content)
           .join("\n");
-        const gitApplyOutcome = rawDiffText.trim()
+        const gitApplyEligible =
+          rawDiffText.trim().length > 0 && scope.droppedPaths.length === 0;
+        const gitApplyOutcome = gitApplyEligible
           ? await tryGitApply(
               context.repoRoot,
               rawDiffText,
@@ -185,17 +197,26 @@ export class DiffApplyStep extends WorkflowStep {
             )
           : {
               ok: false as const,
-              reason: "full-file rewrite (no unified diff blocks)",
+              reason:
+                scope.droppedPaths.length > 0
+                  ? "out-of-scope edits were filtered, using edit-spec pipeline"
+                  : "full-file rewrite (no unified diff blocks)",
             };
 
         if (gitApplyOutcome.ok) {
-          applyMethod = "git-apply";
-          applyResult = await commitAndPushChanges(
-            context.repoRoot,
-            gitApplyOutcome.changedFiles,
-            currentBranch,
-            commitMessage,
-          );
+          applyMethod = gitApplyOutcome.method;
+          applyResult = shouldCommit
+            ? await commitAndPushChanges(
+                context.repoRoot,
+                gitApplyOutcome.changedFiles,
+                currentBranch,
+                commitMessage,
+              )
+            : {
+                changed: gitApplyOutcome.changedFiles,
+                branch: currentBranch,
+                sha: "",
+              };
         } else {
           context.logger.info(
             "git apply declined diff, falling back to edit-spec pipeline",
@@ -210,6 +231,7 @@ export class DiffApplyStep extends WorkflowStep {
             maxBytes: stepConfig.max_file_size || 512 * 1024,
             branchName: currentBranch,
             commitMessage,
+            commit: shouldCommit,
           } as Parameters<typeof applyEditOps>[1];
 
           if (blockedExtsOverride) {
@@ -217,6 +239,7 @@ export class DiffApplyStep extends WorkflowStep {
           }
 
           applyResult = await applyEditOps(editSpecJson, applyOptions);
+          applyMethod = applyResult.applyMethod || "edit-spec-strict";
         }
         const noopApply = applyResult.noop === true;
 
@@ -235,7 +258,11 @@ export class DiffApplyStep extends WorkflowStep {
           );
         }
 
-        if (!noopApply && (!applyResult.sha || applyResult.sha === "")) {
+        if (
+          shouldCommit &&
+          !noopApply &&
+          (!applyResult.sha || applyResult.sha === "")
+        ) {
           context.logger.error(
             "Critical failure: No commit SHA after applying changes",
             {
@@ -285,6 +312,7 @@ export class DiffApplyStep extends WorkflowStep {
           branch: applyResult.branch,
           noop_applied: noopResult,
           apply_method: applyMethod,
+          out_of_scope_files: scope.droppedPaths,
         },
         metrics: {
           duration_ms: Date.now() - startTime,
@@ -310,6 +338,78 @@ export class DiffApplyStep extends WorkflowStep {
         },
       };
     }
+  }
+
+  private applyScopeFilter(
+    editSpec: NonNullable<_DiffParseResult["editSpec"]>,
+    allowedPaths: string[] | undefined,
+    context: WorkflowContext,
+  ): {
+    editSpec: NonNullable<_DiffParseResult["editSpec"]>;
+    droppedPaths: string[];
+  } {
+    const normalized = (allowedPaths || [])
+      .map((p) => this.normalizeScopePath(p))
+      .filter((p) => p.length > 0);
+    if (normalized.length === 0) {
+      return { editSpec, droppedPaths: [] };
+    }
+
+    const allowedFiles = new Set(
+      normalized.filter((p) => !p.endsWith("/")),
+    );
+    const allowedDirs = normalized.filter((p) => p.endsWith("/"));
+
+    const inScope: typeof editSpec.ops = [];
+    const droppedPaths: string[] = [];
+
+    for (const op of editSpec.ops) {
+      const opPath = this.normalizeScopePath(op.path);
+      const allowed =
+        allowedFiles.has(opPath) ||
+        allowedDirs.some((dir) => opPath.startsWith(dir));
+      if (allowed) {
+        inScope.push(op);
+      } else {
+        droppedPaths.push(opPath);
+      }
+    }
+
+    if (droppedPaths.length === 0) {
+      return { editSpec, droppedPaths: [] };
+    }
+
+    if (inScope.length === 0) {
+      throw new DiffApplyFailure(
+        `All edits were outside the approved scope for this step: ${droppedPaths.join(", ")}`,
+        droppedPaths.map((p) => ({
+          path: p,
+          reason:
+            "This file is outside the approved scope for the current plan step. " +
+            `Edit only these files: ${[...allowedFiles, ...allowedDirs].join(", ")}`,
+        })),
+      );
+    }
+
+    context.logger.warn("Dropped out-of-scope edits from diff", {
+      stepName: this.config.name,
+      droppedPaths,
+      allowedPaths: normalized,
+      keptOps: inScope.length,
+    });
+
+    return {
+      editSpec: { ...editSpec, ops: inScope },
+      droppedPaths,
+    };
+  }
+
+  private normalizeScopePath(value: string): string {
+    return String(value || "")
+      .replace(/\\/g, "/")
+      .replace(/^\.\/+/, "")
+      .replace(/^\/+/, "")
+      .trim();
   }
 
   protected async validateConfig(

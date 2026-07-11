@@ -291,7 +291,7 @@ async function tryResolveConflicts(
 
   if (contextFiles.length > 0) {
     await runGit(["checkout", "--theirs", "--", ...contextFiles], { cwd: repoRoot });
-    await runGit(["add", "--", ...contextFiles], { cwd: repoRoot });
+    await runGit(["add", "-f", "--", ...contextFiles], { cwd: repoRoot });
     logger.info("Auto-resolved context file conflicts (using source branch)", {
       repoRoot,
       files: contextFiles,

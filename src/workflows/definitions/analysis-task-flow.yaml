@@ -65,13 +65,11 @@ steps:
     config:
       maxIterations: 5
       analystPersona: "analyst"
-      reviewerPersona: "analysis-reviewer"
       analysisStep: "analysis-root-cause"
       reviewStep: "analysis-review"
       analysisIntent: "root_cause_analysis"
       reviewIntent: "analysis_evaluation"
       analysisPromptTemplate: "prompts/analyst-root-cause.txt"
-      reviewPromptTemplate: "prompts/analysis-reviewer.txt"
       payload:
         task: ${task}
         context_summary: "${context_request_result || context_summary_md}"
@@ -165,7 +163,7 @@ steps:
     type: SimpleTaskStatusStep
     description: "Complete analysis when remediation already exists"
     depends_on: ["prioritize_existing_followups"]
-    condition: "create_tasks_bulk.tasks_created == 0 && create_tasks_bulk.skipped_duplicates > 0"
+    condition: "create_tasks_bulk.tasks_created == 0"
     config:
       status: "done"
 
