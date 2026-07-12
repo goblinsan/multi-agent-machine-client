@@ -338,6 +338,9 @@ describe("Review Flow Validation", () => {
         "normalize_review_failure",
         "auto_follow_up_synthesis",
       ]);
+      expect(pmEvaluation?.condition).toBe(
+        "normalize_review_failure.has_blocking_issues == true && auto_follow_up_synthesis.auto_follow_up_count == 0",
+      );
       expect(pmEvaluation?.config?.payload?.review_result).toBe("${review_result}");
       expect(pmEvaluation?.config?.payload?.review_status).toBe("${review_status}");
       expect(pmEvaluation?.config?.payload?.diff_summary).toBe("${diff_summary || ''}");

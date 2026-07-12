@@ -187,6 +187,32 @@ describe("ReviewFailureNormalizationStep", () => {
     expect(normalized?.blockingIssues).toHaveLength(1);
     expect(normalized?.blockingIssues[0]?.title).toBe("missing_deps");
   });
+
+  it("treats summary-only code review failures as advisory instead of blocking", async () => {
+    const step = new ReviewFailureNormalizationStep({
+      name: "normalize_review_failure",
+      type: "ReviewFailureNormalizationStep",
+      config: {
+        review_type: "code_review",
+        review_status: "fail",
+        review_result: {
+          status: "fail",
+          summary:
+            "The task goal may not be complete and there are unrelated baseline typecheck errors.",
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+    const normalized = result.outputs?.normalized_review;
+
+    expect(normalized?.issues).toHaveLength(1);
+    expect(normalized?.issues[0]?.id).toBe("fallback");
+    expect(normalized?.issues[0]?.blocking).toBe(false);
+    expect(normalized?.blockingIssues).toHaveLength(0);
+    expect(result.outputs?.blocking_issue_count).toBe(0);
+    expect(result.outputs?.has_blocking_issues).toBe(false);
+  });
 });
 
 describe("ReviewFailureNormalizationStep.parseTestErrors", () => {
