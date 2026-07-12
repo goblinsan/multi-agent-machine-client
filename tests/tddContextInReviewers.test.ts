@@ -41,7 +41,7 @@ describe("TDD Context in Review Payloads", () => {
     expect(securityTemplate.config.payload.tdd_stage).toBe("${tdd_stage}");
   });
 
-  it("in-review-task-flow.yaml: code_review_request uses code_review template", () => {
+  it("in-review-task-flow.yaml: code_review_request uses deterministic review", () => {
     const content = readFileSync(inReviewFlowPath, "utf-8");
     const workflow = yaml.parse(content);
 
@@ -50,7 +50,11 @@ describe("TDD Context in Review Payloads", () => {
     );
 
     expect(codeReviewStep).toBeDefined();
-    expect(codeReviewStep.template).toBe("code_review");
+    expect(codeReviewStep.type).toBe("DeterministicReviewStep");
+    expect(codeReviewStep.config.output_prefix).toBe("code_review_request");
+    expect(codeReviewStep.config.rules.map((rule: any) => rule.id)).toContain(
+      "duplicate_code",
+    );
   });
 
   it("in-review-task-flow.yaml: security_request uses security_review template", () => {

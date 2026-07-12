@@ -52,14 +52,33 @@ steps:
     depends_on: [context_scan]
     condition: ${context_scan.reused_existing} == false
 
-  - template: code_review
-    name: code_review_request
+  - name: code_review_request
+    type: DeterministicReviewStep
+    description: "Run configurable deterministic code review gates"
     depends_on: [collect_review_diff]
-    overrides:
-      config:
-        payload:
-          resume_review: true
-          existing_tasks: ${review_existing_tasks || []}
+    outputs: [code_review_request_result, code_review_request_status]
+    config:
+      review_type: "code_review"
+      output_prefix: "code_review_request"
+      changed_files: "${review_diff_files || []}"
+      block_on: ["severe", "high"]
+      rules:
+        - id: "conflict_markers"
+          severity: "severe"
+        - id: "file_size"
+          max_lines: 600
+          warn_lines: 400
+          severity: "high"
+          warn_severity: "medium"
+        - id: "method_size"
+          max_lines: 100
+          severity: "high"
+        - id: "duplicate_code"
+          min_lines: 8
+          severity: "medium"
+        - id: "forbidden_comments"
+          enabled: false
+          severity: "medium"
 
   - name: commit_code_review_result
     type: GitArtifactStep
