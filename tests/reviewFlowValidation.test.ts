@@ -120,7 +120,11 @@ describe("Review Flow Validation", () => {
     expect(codeReview).toBeDefined();
     expect(codeReview?.depends_on).toEqual(["mark_task_in_review"]);
     expect(codeReview?.condition).toBe("${qa_request_status} == 'pass'");
-    expect((codeReview as any)?.template).toBe("code_review");
+    expect((codeReview as any)?.type).toBe("DeterministicReviewStep");
+    expect(codeReview?.config?.output_prefix).toBe("code_review_request");
+    expect(codeReview?.config?.rules?.map((rule: any) => rule.id)).toContain(
+      "duplicate_code",
+    );
 
     const handleCodeReviewFailure = steps["handle_code_review_failure"];
     expect(handleCodeReviewFailure).toBeDefined();
