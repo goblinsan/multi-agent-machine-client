@@ -54,6 +54,8 @@ export class PlanningLoopStep extends WorkflowStep {
     const plannerPersona = config.plannerPersona || "implementation-planner";
     const evaluatorPersona = config.evaluatorPersona || "plan-evaluator";
     const evaluatorEnabled = this.isEvaluatorEnabled(config);
+    const deterministicPlanningEnabled =
+      this.isDeterministicPlanningEnabled(config);
 
     const resolveTimeout = (persona: string) => {
       if (typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0)
@@ -86,9 +88,17 @@ export class PlanningLoopStep extends WorkflowStep {
       plannerPersona,
       evaluatorPersona,
       evaluatorEnabled,
+      deterministicPlanningEnabled,
     });
 
     const transport = context.transport;
+
+    if (deterministicPlanningEnabled) {
+      return this.executeDeterministicPlan(context, {
+        payload,
+        planStep,
+      });
+    }
 
     while (currentIteration < maxIterations) {
       currentIteration++;
@@ -1148,6 +1158,156 @@ export class PlanningLoopStep extends WorkflowStep {
       return this.parseEvaluatorFlag(configured);
     }
     return this.parseEvaluatorFlag(process.env.PLANNING_EVALUATOR ?? "off");
+  }
+
+  private isDeterministicPlanningEnabled(config: any): boolean {
+    const configured =
+      config.planningMode ??
+      config.planning_mode ??
+      config.plannerMode ??
+      config.planner_mode;
+    const value = configured ?? process.env.PLANNING_MODE;
+    if (value === undefined || value === null) return false;
+    const normalized = String(value).trim().toLowerCase();
+    return ["deterministic", "static", "off", "disabled"].includes(normalized);
+  }
+
+  private async executeDeterministicPlan(
+    context: WorkflowContext,
+    options: {
+      payload: any;
+      planStep?: string;
+    },
+  ): Promise<StepResult> {
+    const task = context.getVariable("task") ?? {};
+    const planData = this.buildDeterministicPlanData(task, options.payload);
+    const latestPlanKeyFiles = collectPlanKeyFiles(planData);
+    const planResult = {
+      id: "deterministic-plan",
+      status: "success",
+      fields: {
+        status: "done",
+        corr_id: `deterministic-${context.workflowId}`,
+        result: JSON.stringify(planData),
+      },
+    };
+
+    context.setVariable("planning_loop_plan_files", latestPlanKeyFiles);
+    context.setVariable("plan_required_files", latestPlanKeyFiles);
+
+    const taskId = this.resolveTaskId(context);
+    await this.commitArtifact(
+      context,
+      formatPlanArtifact(planResult, 1),
+      `.ma/tasks/${taskId}/03-plan-final.md`,
+      `docs(ma): deterministic plan for task ${taskId}`,
+      { kind: "plan_final" },
+    );
+
+    logger.info("Planning loop bypassed with deterministic task plan", {
+      workflowId: context.workflowId,
+      step: options.planStep,
+      taskId,
+      planFiles: latestPlanKeyFiles,
+      planSteps: planData.plan.length,
+    });
+
+    return {
+      status: latestPlanKeyFiles.length > 0 ? "success" : "failure",
+      data: {
+        plan: planResult,
+        evaluation: null,
+        iterations: 0,
+        evaluationPassed: latestPlanKeyFiles.length > 0,
+        reachedMaxIterations: false,
+        stalled: false,
+      },
+      error:
+        latestPlanKeyFiles.length > 0
+          ? undefined
+          : new Error("Deterministic planning could not find concrete task files"),
+      outputs: {
+        plan_result: planResult,
+        evaluation_result: null,
+        iterations: 0,
+        evaluation_passed: latestPlanKeyFiles.length > 0,
+        plan_key_files: latestPlanKeyFiles,
+        stalled: false,
+      },
+    };
+  }
+
+  private buildDeterministicPlanData(task: any, payload: any): any {
+    const title = this.extractTaskText(task, "title", "name", "summary");
+    const description = this.extractTaskText(task, "description", "body");
+    const fallbackText = this.extractTaskText(
+      payload?.task,
+      "title",
+      "description",
+      "body",
+    );
+    const taskText = [title, description, fallbackText]
+      .filter(Boolean)
+      .join("\n");
+    const files = this.extractConcreteTaskFiles(taskText);
+
+    return {
+      plan: files.map((file, index) => ({
+        goal: this.buildDeterministicStepGoal(file, index, title),
+        key_files: [file],
+        acceptance_criteria: [
+          `Implement the requested change for ${file} and keep validation passing.`,
+        ],
+      })),
+      risks: [],
+      metadata: {
+        source: "deterministic_task_files",
+        planning_mode: "deterministic",
+      },
+    };
+  }
+
+  private extractTaskText(value: any, ...keys: string[]): string {
+    if (!value || typeof value !== "object") return "";
+    const parts: string[] = [];
+    for (const key of keys) {
+      const candidate = value[key] ?? value.data?.[key];
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        parts.push(candidate.trim());
+      }
+    }
+    return parts.join("\n");
+  }
+
+  private extractConcreteTaskFiles(text: string): string[] {
+    const files = new Set<string>();
+    const pathPattern =
+      /(?:^|[\s`"'(:])((?:\.\/)?(?:src|tests|test|app|components|lib|packages|scripts|public|config|__tests__)\/[A-Za-z0-9_./@+-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|html|md|yml|yaml))(?=$|[\s`"',).:;])/g;
+    let match: RegExpExecArray | null;
+    while ((match = pathPattern.exec(text)) !== null) {
+      const normalized = match[1]
+        .replace(/\\/g, "/")
+        .replace(/^\.\/+/, "")
+        .replace(/\/{2,}/g, "/");
+      if (
+        normalized &&
+        !normalized.includes("..") &&
+        !normalized.includes("*")
+      ) {
+        files.add(normalized);
+      }
+    }
+    return Array.from(files);
+  }
+
+  private buildDeterministicStepGoal(
+    file: string,
+    index: number,
+    taskTitle: string,
+  ): string {
+    const action = index === 0 ? "Implement" : "Update";
+    const title = taskTitle ? ` for task: ${taskTitle}` : "";
+    return `${action} ${file}${title}`;
   }
 
   private parseEvaluatorFlag(value: unknown): boolean {

@@ -33,14 +33,18 @@ vi.mock("../src/agents/persona.js", async () => {
 
 describe("PlanningLoopStep logging", () => {
   const originalArtifactMode = cfg.maArtifactsMode;
+  const originalPlanningMode = process.env.PLANNING_MODE;
 
   beforeEach(() => {
     (cfg as any).maArtifactsMode = originalArtifactMode;
+    delete process.env.PLANNING_MODE;
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     (cfg as any).maArtifactsMode = originalArtifactMode;
+    if (originalPlanningMode === undefined) delete process.env.PLANNING_MODE;
+    else process.env.PLANNING_MODE = originalPlanningMode;
     vi.restoreAllMocks();
   });
 
@@ -235,6 +239,67 @@ describe("PlanningLoopStep logging", () => {
         ([, opts]) => opts.toPersona === "plan-evaluator",
       ),
     ).toBe(false);
+  });
+
+  it("bypasses LLM planning in deterministic mode and scopes benchmark task files", async () => {
+    process.env.PLANNING_MODE = "deterministic";
+
+    const context = new WorkflowContext(
+      "wf-deterministic-planning",
+      "proj-deterministic-planning",
+      "/tmp/repo",
+      "main",
+      {
+        name: "test-workflow",
+        version: "1.0.0",
+        steps: [],
+      } as any,
+      {} as any,
+    );
+    context.setVariable("SKIP_GIT_OPERATIONS", true);
+    context.setVariable("task", {
+      id: "task-reducer",
+      title: "Implement the pure todo reducer in src/todoReducer.ts",
+      description:
+        "Create src/todoReducer.ts and src/todoReducer.test.ts. " +
+        "The reducer should import Todo and TodoAction from ./types. " +
+        "Only modify src/todoReducer.ts and src/todoReducer.test.ts.",
+    });
+
+    const step = new PlanningLoopStep({
+      name: "planning_loop",
+      type: "PlanningLoopStep",
+      config: {
+        maxIterations: 4,
+        plannerPersona: "implementation-planner",
+        evaluatorPersona: "plan-evaluator",
+        planStep: "2-plan",
+        evaluateStep: "2.5-evaluate-plan",
+        payload: {},
+      },
+    } as any);
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.iterations).toBe(0);
+    expect(result.outputs?.plan_key_files).toEqual([
+      "src/todoReducer.ts",
+      "src/todoReducer.test.ts",
+    ]);
+    expect(context.getVariable("planning_loop_plan_files")).toEqual([
+      "src/todoReducer.ts",
+      "src/todoReducer.test.ts",
+    ]);
+    expect(personaMocks.sendPersonaRequestMock).not.toHaveBeenCalled();
+
+    const planResult = result.outputs?.plan_result;
+    const parsed = JSON.parse(planResult.fields.result);
+    expect(parsed.plan).toHaveLength(2);
+    expect(parsed.plan.map((entry: any) => entry.key_files)).toEqual([
+      ["src/todoReducer.ts"],
+      ["src/todoReducer.test.ts"],
+    ]);
   });
 
   it("does not write .ma/tasks artifacts locally in API mode", async () => {
