@@ -96,8 +96,8 @@ export function remoteWithCredentials(remote: string): RemoteInfo {
   if (hasSshKey) {
     try {
       const parsed = parseRemote(remote);
-      const sshUser = (cfg.git.username || "git").trim() || "git";
-      const sshRemote = `ssh://${encodeURIComponent(sshUser)}@${parsed.host}/${parsed.path}`;
+      const host = parsed.host.replace(/^https?:/i, "");
+      const sshRemote = `git@${host}:${parsed.path}`;
       return { remote: sshRemote, sanitized: sshRemote };
     } catch (e) {
       logger.debug("Failed to convert HTTP(S) remote to SSH", {
