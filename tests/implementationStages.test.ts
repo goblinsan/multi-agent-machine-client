@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  canonicalizeTypecheckMessage,
   resolvePlanStages,
   typecheckErrorSignature,
 } from "../src/workflows/steps/helpers/implementationStages";
@@ -102,5 +103,50 @@ describe("typecheckErrorSignature", () => {
     expect(typecheckErrorSignature(base)).not.toBe(
       typecheckErrorSignature({ ...base, file: "src/b.ts" }),
     );
+  });
+
+  it("is stable when TypeScript reorders fields in a structural type dump", () => {
+    const baseline = typecheckErrorSignature({
+      file: "src/config/synthetic-logs-data.ts",
+      code: "TS2741",
+      message:
+        "Property 'durationMs' is missing in type '{ persona: string; workflowId: string; intent: string; status: \"ok\"; timestamp: string; }' but required in type '{ persona: string; workflowId: string; intent: string; status: \"timeout\" | \"ok\"; timestamp: string; durationMs: number; error?: string | undefined; }'.",
+    });
+    const reordered = typecheckErrorSignature({
+      file: "src/config/synthetic-logs-data.ts",
+      code: "TS2741",
+      message:
+        "Property 'durationMs' is missing in type '{ persona: string; intent: string; workflowId: string; status: \"ok\"; timestamp: string; }' but required in type '{ persona: string; intent: string; workflowId: string; status: \"timeout\" | \"ok\"; timestamp: string; durationMs: number; error?: string | undefined; }'.",
+    });
+    expect(reordered).toBe(baseline);
+  });
+
+  it("still distinguishes genuinely different structural types", () => {
+    const missingDuration = typecheckErrorSignature({
+      file: "src/a.ts",
+      code: "TS2741",
+      message:
+        "Property 'durationMs' is missing in type '{ a: string; b: number; }' but required in type '{ a: string; b: number; durationMs: number; }'.",
+    });
+    const missingOther = typecheckErrorSignature({
+      file: "src/a.ts",
+      code: "TS2741",
+      message:
+        "Property 'label' is missing in type '{ a: string; b: number; }' but required in type '{ a: string; b: number; label: string; }'.",
+    });
+    expect(missingOther).not.toBe(missingDuration);
+  });
+});
+
+describe("canonicalizeTypecheckMessage", () => {
+  it("sorts members within a flat object-type block", () => {
+    expect(canonicalizeTypecheckMessage("{ b: number; a: string }")).toBe(
+      "{ a: string; b: number }",
+    );
+  });
+
+  it("leaves messages without brace blocks unchanged", () => {
+    const message = "Cannot find name 'foo'.";
+    expect(canonicalizeTypecheckMessage(message)).toBe(message);
   });
 });

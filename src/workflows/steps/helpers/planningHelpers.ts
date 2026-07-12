@@ -292,6 +292,68 @@ export function repairScopeExpandedPlan(
   };
 }
 
+export function repairTargetedScopePlan(
+  planData: any,
+  targetedFiles: string[],
+  issues: Array<{ guard: string; details?: any }>,
+): {
+  changed: boolean;
+  removedFiles: string[];
+  clampedToTargets: boolean;
+} {
+  const removedFiles = removeOutOfScopePlanFiles(planData, issues);
+  if (!Array.isArray(planData?.plan) || planData.plan.length === 0) {
+    return { changed: removedFiles.length > 0, removedFiles, clampedToTargets: false };
+  }
+
+  const owners = inferOwners(planData.plan);
+  const survivingSteps = planData.plan.filter(
+    (step: any) =>
+      step &&
+      typeof step === "object" &&
+      Array.isArray(step.key_files) &&
+      step.key_files.some(
+        (file: any) => typeof file === "string" && file.trim().length > 0,
+      ),
+  );
+
+  const targets = Array.from(
+    new Set(
+      targetedFiles
+        .map((file) => normalizePlanFilePath(String(file)))
+        .filter((file) => file.length > 0),
+    ),
+  );
+
+  let clampedToTargets = false;
+  if (survivingSteps.length === 0) {
+    if (targets.length === 0) {
+      return { changed: removedFiles.length > 0, removedFiles, clampedToTargets: false };
+    }
+    planData.plan = [
+      {
+        goal: `Fix baseline compile errors in ${targets.join(", ")}`,
+        key_files: targets,
+        owners,
+        dependencies: [],
+        acceptance_criteria: [
+          `${targets.join(", ")} compiles without the baseline errors it was reported for.`,
+        ],
+      },
+    ];
+    clampedToTargets = true;
+  } else if (survivingSteps.length !== planData.plan.length) {
+    planData.plan = survivingSteps;
+    clampedToTargets = true;
+  }
+
+  return {
+    changed: removedFiles.length > 0 || clampedToTargets,
+    removedFiles,
+    clampedToTargets,
+  };
+}
+
 function enforceScopeRootCauseFirstStage(
   planData: any,
   requiredScopeFiles: string[],

@@ -29,6 +29,8 @@ import {
   formatPlanArtifact,
   formatEvaluationArtifact,
   repairScopeExpandedPlan,
+  repairTargetedScopePlan,
+  extractTargetedBaselineCompileFiles,
   validateDeterministicPlan,
 } from "./helpers/planningHelpers.js";
 import { requiresStatus } from "./helpers/personaStatusPolicy.js";
@@ -257,6 +259,45 @@ export class PlanningLoopStep extends WorkflowStep {
           taskDescription,
           requiredScopeFiles,
         });
+
+        if (
+          !deterministicValidation.valid &&
+          requiredScopeFiles.length === 0 &&
+          this.isTargetedScopeOnlyFailure(deterministicValidation.issues)
+        ) {
+          const targetedFiles = extractTargetedBaselineCompileFiles(
+            `${taskTitle}\n${taskDescription}`,
+          );
+          const clamp = repairTargetedScopePlan(
+            planData,
+            targetedFiles,
+            deterministicValidation.issues,
+          );
+          if (clamp.changed) {
+            planResult = this.withRepairedPlanResult(planResult, planData);
+            latestPlanKeyFiles = collectPlanKeyFiles(planData);
+            context.setVariable("planning_loop_plan_files", latestPlanKeyFiles);
+            deterministicValidation = validateDeterministicPlan(planData, {
+              existingPaths,
+              allowedLanguages: allowedLanguageInfo.normalized,
+              taskTitle,
+              taskDescription,
+              requiredScopeFiles,
+            });
+
+            logger.info(
+              "Clamped premature root-cause plan to targeted scope; scope viability will decide any expansion",
+              {
+                workflowId: context.workflowId,
+                iteration: currentIteration,
+                targetedFiles,
+                removedFiles: clamp.removedFiles,
+                clampedToTargets: clamp.clampedToTargets,
+                validationPassed: deterministicValidation.valid,
+              },
+            );
+          }
+        }
 
         if (
           !deterministicValidation.valid &&
@@ -919,6 +960,15 @@ export class PlanningLoopStep extends WorkflowStep {
     return (
       issues.length > 0 &&
       issues.every((issue) => repairableGuards.has(issue.guard))
+    );
+  }
+
+  private isTargetedScopeOnlyFailure(
+    issues: Array<{ guard: string }>,
+  ): boolean {
+    return (
+      issues.length > 0 &&
+      issues.every((issue) => issue.guard === "targeted_task_scope")
     );
   }
 

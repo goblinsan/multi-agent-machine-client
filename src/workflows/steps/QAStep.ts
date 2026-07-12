@@ -6,9 +6,17 @@ import {
 import { WorkflowContext } from "../engine/WorkflowContext.js";
 import { logger } from "../../logger.js";
 import { runTestCommandWithWorker } from "../helpers/testRunner.js";
+import { canonicalizeTypecheckMessage } from "./helpers/implementationStages.js";
 import { execSync } from "child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import * as path from "path";
+
+const QA_SIGNATURE_VERSION = "v2";
+
+function qaTypecheckSignature(err: { file: string; code: string; message: string }): string {
+  const normalizedFile = err.file.replace(/\\/g, "/");
+  return `${normalizedFile}:${err.code}:${canonicalizeTypecheckMessage(err.message)}`;
+}
 
 export interface QAConfig {
   testCommand?: string;
@@ -172,14 +180,27 @@ export class QAStep extends WorkflowStep {
         idleTimeoutMs
       );
 
-      const tcErrorSignature = (err: { file: string; code: string; message: string }) => {
-        const normalizedFile = err.file.replace(/\\/g, "/");
-        return `${normalizedFile}:${err.code}:${err.message}`;
-      };
+      const runStartCommit = this.resolveRunStartCommit(context, workingDir, baseCommit);
+      const gateQA = runStartCommit && runStartCommit !== baseCommit
+        ? await this.getBaseFailures(
+            workingDir,
+            runStartCommit,
+            testCommand,
+            testPath,
+            timeout,
+            idleTimeoutMs
+          )
+        : baseQA;
+
+      const tcErrorSignature = qaTypecheckSignature;
 
       const headTcSignatures = headTcErrors.map(tcErrorSignature);
-      const newTcSignatures = headTcSignatures.filter(sig => !baseQA.typecheckErrors.includes(sig));
+      const newTcSignatures = headTcSignatures.filter(sig => !gateQA.typecheckErrors.includes(sig));
       const newTcErrors = headTcErrors.filter(err => newTcSignatures.includes(tcErrorSignature(err)));
+      const inheritedTcErrors = headTcErrors.filter(err => {
+        const sig = tcErrorSignature(err);
+        return !baseQA.typecheckErrors.includes(sig) && gateQA.typecheckErrors.includes(sig);
+      });
 
       const testFailureSignature = (fail: { file?: string; test: string }) => {
         const normalizedFile = fail.file ? fail.file.replace(/\\/g, "/").split("/").pop() : "";
@@ -187,20 +208,45 @@ export class QAStep extends WorkflowStep {
       };
 
       const headTestSignatures = headQaResult.failures.map(testFailureSignature);
-      const newTestSignatures = headTestSignatures.filter(sig => !baseQA.testFailures.includes(sig));
+      const newTestSignatures = headTestSignatures.filter(sig => !gateQA.testFailures.includes(sig));
       const newTestFailures = headQaResult.failures.filter(fail => newTestSignatures.includes(testFailureSignature(fail)));
+      const inheritedTestFailures = headQaResult.failures.filter(fail => {
+        const sig = testFailureSignature(fail);
+        return !baseQA.testFailures.includes(sig) && gateQA.testFailures.includes(sig);
+      });
 
       const preExistingTcCount = headTcErrors.length - newTcErrors.length;
       const preExistingTestCount = headQaResult.failures.length - newTestFailures.length;
       const totalPreExistingCount = preExistingTcCount + preExistingTestCount;
 
+      if (inheritedTcErrors.length > 0 || inheritedTestFailures.length > 0) {
+        logger.warn(
+          "Regressions inherited from commits before this run - reporting without failing the current task",
+          {
+            baseCommit,
+            runStartCommit,
+            inheritedTcErrors: inheritedTcErrors.map(err => tcErrorSignature(err)).slice(0, 10),
+            inheritedTestFailures: inheritedTestFailures.map(fail => testFailureSignature(fail)).slice(0, 10),
+          }
+        );
+        context.setVariable("qa_inherited_regressions", {
+          base_commit: baseCommit,
+          run_start_commit: runStartCommit,
+          typecheck_errors: inheritedTcErrors,
+          test_failures: inheritedTestFailures,
+        });
+      }
+
       logger.info("Delta-based QA review results", {
         baseCommit,
+        runStartCommit: runStartCommit || undefined,
         totalHeadTcErrors: headTcErrors.length,
         newTcErrors: newTcErrors.length,
+        inheritedTcErrors: inheritedTcErrors.length,
         preExistingTcErrors: preExistingTcCount,
         totalHeadTestFailures: headQaResult.failures.length,
         newTestFailures: newTestFailures.length,
+        inheritedTestFailures: inheritedTestFailures.length,
         preExistingTestFailures: preExistingTestCount,
       });
 
@@ -417,6 +463,29 @@ export class QAStep extends WorkflowStep {
     }
   }
 
+  private resolveRunStartCommit(
+    context: WorkflowContext,
+    workingDir: string,
+    baseCommit: string,
+  ): string {
+    const candidate = context.getVariable("implementation_baseline_commit");
+    if (typeof candidate !== "string" || !/^[0-9a-f]{7,40}$/i.test(candidate)) {
+      return "";
+    }
+    if (candidate === baseCommit) return "";
+    try {
+      execSync(`git cat-file -e ${candidate}^{commit}`, { cwd: workingDir });
+      execSync(`git merge-base --is-ancestor ${baseCommit} ${candidate}`, { cwd: workingDir });
+      return candidate;
+    } catch {
+      logger.warn("Recorded run-start commit is not usable for QA gating, falling back to merge base", {
+        candidate,
+        baseCommit,
+      });
+      return "";
+    }
+  }
+
   private async getBaseFailures(
     workingDir: string,
     baseCommit: string,
@@ -429,7 +498,7 @@ export class QAStep extends WorkflowStep {
     if (!existsSync(cacheDir)) {
       mkdirSync(cacheDir, { recursive: true });
     }
-    const cachePath = path.join(cacheDir, `base_qa_cache_${baseCommit}.json`);
+    const cachePath = path.join(cacheDir, `base_qa_cache_${QA_SIGNATURE_VERSION}_${baseCommit}.json`);
 
     if (existsSync(cachePath)) {
       try {
@@ -473,17 +542,11 @@ export class QAStep extends WorkflowStep {
       let baseTcErrors: string[] = [];
       try {
         const tcRes = await this.runCommand(typecheckCmd, workingDir, 60000);
-        baseTcErrors = this.parseTypecheckOutput(tcRes.output).map(err => {
-          const normalizedFile = err.file.replace(/\\/g, "/");
-          return `${normalizedFile}:${err.code}:${err.message}`;
-        });
+        baseTcErrors = this.parseTypecheckOutput(tcRes.output).map(qaTypecheckSignature);
       } catch (tcErr: any) {
         if (tcErr.stdout || tcErr.stderr) {
           const out = [tcErr.stdout, tcErr.stderr].filter(Boolean).join("\n");
-          baseTcErrors = this.parseTypecheckOutput(out).map(err => {
-            const normalizedFile = err.file.replace(/\\/g, "/");
-            return `${normalizedFile}:${err.code}:${err.message}`;
-          });
+          baseTcErrors = this.parseTypecheckOutput(out).map(qaTypecheckSignature);
         }
       }
 

@@ -1663,6 +1663,185 @@ describe("ImplementationLoopStep", () => {
     expect(await fs.readFile(testPath, "utf-8")).toBe(fixedContents);
   });
 
+  it("keeps a baseline-compile-fix stage failing while the targeted file still has errors", async () => {
+    const defaultsPath = path.join(repoRoot, "src/config/defaults.ts");
+    const broken = "export const defaults = { level: 'info' };\n";
+    await fs.mkdir(path.join(repoRoot, "src/config"), { recursive: true });
+    await fs.writeFile(defaultsPath, broken, "utf-8");
+    const script =
+      "node -e \"const fs=require('fs'); const s=fs.readFileSync('src/config/defaults.ts','utf8'); if(s.includes('BROKEN')){console.error('src/config/defaults.ts(1,1): error TS2322: Type null is not assignable.'); process.exit(2);}\"";
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({ scripts: { typecheck: script } }),
+      "utf-8",
+    );
+    await fs.writeFile(defaultsPath, "export const defaults = { level: 'BROKEN' };\n", "utf-8");
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit --no-verify -m baseline", { cwd: repoRoot });
+
+    context.setVariable("task", {
+      id: 56,
+      name: "Fix baseline compile errors in src/config/defaults.ts",
+    });
+    context.setVariable("planning_loop_plan_files", ["src/config/defaults.ts"]);
+    context.setVariable("plan_required_files", ["src/config/defaults.ts"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/config/defaults.ts"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Fix baseline compile errors in defaults",
+                key_files: ["src/config/defaults.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const cosmeticEdit = buildFileBlock(
+      "src/config/defaults.ts",
+      "// cosmetic change only\nexport const defaults = { level: 'BROKEN' };\n",
+    );
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-cosmetic",
+      fields: {
+        result: JSON.stringify({ status: "pass", output: cosmeticEdit }),
+      },
+    } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["src/config/defaults.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    const summary = context.getVariable(
+      "implementation_config_validation_summary",
+    ) as string;
+    expect(summary).toContain("defaults.ts");
+    expect(summary).toContain("TS2322");
+  });
+
+  it("requires retries to touch stage files that still have diagnostics", async () => {
+    const typePath = path.join(repoRoot, "src/types/logEvent.ts");
+    const normalizerPath = path.join(repoRoot, "src/utils/logEventNormalizer.ts");
+    await fs.mkdir(path.dirname(typePath), { recursive: true });
+    await fs.mkdir(path.dirname(normalizerPath), { recursive: true });
+    await fs.writeFile(
+      typePath,
+      "export interface LogEvent { workflow_id?: string; }\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      normalizerPath,
+      "export const marker = 'BROKEN';\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({
+        scripts: {
+          typecheck:
+            "node -e \"const fs=require('fs'); const typeFile=fs.readFileSync('src/types/logEvent.ts','utf8'); const impl=fs.readFileSync('src/utils/logEventNormalizer.ts','utf8'); if(typeFile.includes('intent') && impl.includes('BROKEN')){console.error('src/utils/logEventNormalizer.ts(1,25): error TS2339: Property preview does not exist on type RawLogMessage.'); process.exit(2);}\"",
+        },
+      }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit --no-verify -m baseline", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", [
+      "src/types/logEvent.ts",
+      "src/utils/logEventNormalizer.ts",
+    ]);
+    context.setVariable("plan_required_files", [
+      "src/types/logEvent.ts",
+      "src/utils/logEventNormalizer.ts",
+    ]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: [
+        "src/types/logEvent.ts",
+        "src/utils/logEventNormalizer.ts",
+      ],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Add intent and update normalizer",
+                key_files: [
+                  "src/types/logEvent.ts",
+                  "src/utils/logEventNormalizer.ts",
+                ],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const typeOnlyRewrite = buildFileBlock(
+      "src/types/logEvent.ts",
+      "export interface LogEvent { workflow_id?: string; intent?: string; }\n",
+    );
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-type-only",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: typeOnlyRewrite,
+        }),
+      },
+    } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [
+            "src/types/logEvent.ts",
+            "src/utils/logEventNormalizer.ts",
+          ],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    const requiredFiles = context.getVariable(
+      "implementation_required_diagnostic_touch_files",
+    );
+    expect(requiredFiles).toEqual(["src/utils/logEventNormalizer.ts"]);
+    const summary = context.getVariable(
+      "implementation_config_validation_summary",
+    ) as string;
+    expect(summary).toContain("logEventNormalizer.ts");
+  });
+
   it("rejects edits that stray outside the plan scope", async () => {
     await fs.writeFile(
       path.join(repoRoot, "package.json"),

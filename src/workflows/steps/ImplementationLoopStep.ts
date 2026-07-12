@@ -36,6 +36,7 @@ import {
   summarizeScopeExpansion,
 } from "./helpers/typecheckDiagnostics.js";
 import { repairRelativeImportErrors } from "./helpers/importPathRepair.js";
+import { extractTargetedBaselineCompileFiles } from "./helpers/planningHelpers.js";
 import {
   extractOffendingProperties,
   extractInvalidUnionLiteralUses,
@@ -112,6 +113,15 @@ export class ImplementationLoopStep extends WorkflowStep {
     this.updateRequiredFilePromptState(context, recordedPlan.planFiles, missingFiles);
 
     const baselineTypecheck = await this.captureBaselineTypecheck(context);
+
+    try {
+      context.setVariable(
+        "implementation_baseline_commit",
+        await this.resolveHead(context),
+      );
+    } catch {
+      context.setVariable("implementation_baseline_commit", "");
+    }
 
     const stages =
       cfg.stepwise === false
@@ -360,6 +370,7 @@ export class ImplementationLoopStep extends WorkflowStep {
     let previousFailureSummary = "";
     const noEffectiveChangeCounts = new Map<string, number>();
     const extraSnippetFiles = new Set<string>();
+    const requiredDiagnosticTouchFiles = new Set<string>();
     let attempt = 0;
     let effectiveMaxAttempts = maxAttempts;
     let replacementAttemptsGranted = 0;
@@ -631,6 +642,32 @@ export class ImplementationLoopStep extends WorkflowStep {
       this.syncStepOutput(context, "apply_implementation_edits", diffResult);
       appliedFiles = this.extractAppliedFiles(diffResult);
 
+      const missingDiagnosticTouch = this.evaluateDiagnosticFileTouchGate(
+        appliedFiles,
+        requiredDiagnosticTouchFiles,
+      );
+      if (missingDiagnosticTouch.length > 0) {
+        lastValidationErrors = missingDiagnosticTouch;
+        this.recordNoEditFailure(context, missingDiagnosticTouch);
+        for (const file of requiredDiagnosticTouchFiles) {
+          extraSnippetFiles.add(file);
+        }
+        context.logger.warn(
+          "Implementation attempt ignored required diagnostic files",
+          {
+            workflowId: context.workflowId,
+            attempt,
+            appliedFiles,
+            requiredFiles: Array.from(requiredDiagnosticTouchFiles),
+          },
+        );
+        await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        if (attempt < effectiveMaxAttempts) {
+          continue;
+        }
+        break;
+      }
+
       const scopeTouchErrors = this.evaluateScopeRootCauseTouchGate(
         context,
         appliedFiles,
@@ -719,6 +756,26 @@ export class ImplementationLoopStep extends WorkflowStep {
             baselineTypecheck,
           );
         }
+      }
+
+      const targetedDiagnostics = this.collectTargetedTaskDiagnostics(
+        context,
+        stageFiles,
+        typecheckErrors,
+      );
+      if (targetedDiagnostics.length > 0) {
+        context.logger.info(
+          "Task-targeted files still carry diagnostics - stage cannot complete until they are fixed",
+          {
+            workflowId: context.workflowId,
+            attempt,
+            targetedErrorCount: targetedDiagnostics.length,
+            files: Array.from(
+              new Set(targetedDiagnostics.map((entry) => entry.file)),
+            ),
+          },
+        );
+        typecheckErrors = [...typecheckErrors, ...targetedDiagnostics];
       }
 
       const combinedValidationErrors = [...validationErrors, ...typecheckErrors];
@@ -1001,8 +1058,22 @@ export class ImplementationLoopStep extends WorkflowStep {
             extraSnippetFiles.add(failureFile);
           }
         }
+        this.updateRequiredDiagnosticTouchFiles(
+          context,
+          requiredDiagnosticTouchFiles,
+          combinedValidationErrors,
+          stageFiles,
+        );
 
         const directives: string[] = [];
+
+        if (requiredDiagnosticTouchFiles.size > 0) {
+          directives.push(
+            "Your next edit must directly modify at least one of these files because current validation diagnostics point there: " +
+              Array.from(requiredDiagnosticTouchFiles).join(", ") +
+              ". Do not spend the next attempt rewriting other stage files unless you also edit one of these diagnostic files.",
+          );
+        }
 
         if (isRepeatFailure) {
           directives.push(
@@ -1946,6 +2017,80 @@ export class ImplementationLoopStep extends WorkflowStep {
       );
       return new Set(parsed.map((entry) => typecheckErrorSignature(entry)));
     }
+  }
+
+  private collectTargetedTaskDiagnostics(
+    context: WorkflowContext,
+    stageFiles: string[],
+    alreadyReported: ConfigValidationError[],
+  ): ConfigValidationError[] {
+    const task = (context.getVariable("task") || {}) as Record<string, unknown>;
+    const taskText = [task.title, task.name, task.description, task.details]
+      .filter((value) => typeof value === "string" && value.trim().length > 0)
+      .join("\n");
+    if (!taskText) return [];
+
+    const stageSet = new Set(
+      stageFiles.map((file) => this.normalizeRelativePath(file)),
+    );
+    const targetedFiles = extractTargetedBaselineCompileFiles(taskText)
+      .map((file) => this.normalizeRelativePath(file))
+      .filter((file) => stageSet.has(file));
+    if (targetedFiles.length === 0) return [];
+
+    const remaining = this.collectStageFileDiagnostics(context, targetedFiles);
+    const seen = new Set(
+      alreadyReported.map(
+        (entry) => `${this.normalizeRelativePath(entry.file)}|${entry.reason}`,
+      ),
+    );
+    return remaining.filter(
+      (entry) =>
+        !seen.has(`${this.normalizeRelativePath(entry.file)}|${entry.reason}`),
+    );
+  }
+
+  private evaluateDiagnosticFileTouchGate(
+    appliedFiles: string[],
+    requiredFiles: Set<string>,
+  ): ConfigValidationError[] {
+    if (requiredFiles.size === 0) return [];
+    const appliedSet = new Set(
+      appliedFiles.map((file) => this.normalizeRelativePath(file)),
+    );
+    const touchedRequired = Array.from(requiredFiles).some((file) =>
+      appliedSet.has(file),
+    );
+    if (touchedRequired) return [];
+
+    return [
+      this.buildNoEditValidationError(
+        "The previous validation diagnostics point at files that must be edited next: " +
+          Array.from(requiredFiles).join(", ") +
+          ". This attempt edited only other files, so it cannot address the failing diagnostics.",
+      ),
+    ];
+  }
+
+  private updateRequiredDiagnosticTouchFiles(
+    context: WorkflowContext,
+    requiredFiles: Set<string>,
+    validationErrors: ConfigValidationError[],
+    stageFiles: string[],
+  ): void {
+    requiredFiles.clear();
+    const stageSet = new Set(
+      stageFiles.map((file) => this.normalizeRelativePath(file)),
+    );
+    for (const error of validationErrors) {
+      const file = this.normalizeRelativePath(error.file);
+      if (!file || file.startsWith("__") || !stageSet.has(file)) continue;
+      requiredFiles.add(file);
+    }
+    context.setVariable(
+      "implementation_required_diagnostic_touch_files",
+      Array.from(requiredFiles),
+    );
   }
 
   private collectStageFileDiagnostics(

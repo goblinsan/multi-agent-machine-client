@@ -3,6 +3,7 @@ import {
   enforceRequiredScopeFilesInPlan,
   extractTargetedBaselineCompileFiles,
   repairScopeExpandedPlan,
+  repairTargetedScopePlan,
   sanitizeVerificationOnlySteps,
   validateDeterministicPlan,
 } from "../../src/workflows/steps/helpers/planningHelpers.js";
@@ -460,6 +461,95 @@ describe("deterministic plan validation", () => {
       taskTitle:
         "Fix baseline compile errors in src/__tests__/config-loader.test.ts",
       requiredScopeFiles,
+    });
+    expect(afterRepair.valid).toBe(true);
+  });
+
+  it("clamps a premature root-cause plan down to the targeted file in phase 1", () => {
+    const taskTitle =
+      "Fix baseline compile errors in src/utils/logEventNormalizer.ts";
+    const planData = {
+      plan: [
+        {
+          goal: "Repair shared LogEvent type definitions",
+          key_files: ["src/types/logEvent.ts", "src/types/index.ts"],
+        },
+        {
+          goal: "Update the normalizer against the repaired types",
+          key_files: [
+            "src/utils/logEventNormalizer.ts",
+            "src/config/retention-engine.ts",
+          ],
+        },
+      ],
+    };
+
+    const beforeRepair = validateDeterministicPlan(planData, {
+      taskTitle,
+      requiredScopeFiles: [],
+    });
+    expect(beforeRepair.valid).toBe(false);
+    expect(
+      beforeRepair.issues.some(
+        (issue) => issue.guard === "targeted_task_scope",
+      ),
+    ).toBe(true);
+
+    const clamp = repairTargetedScopePlan(
+      planData,
+      extractTargetedBaselineCompileFiles(taskTitle),
+      beforeRepair.issues,
+    );
+
+    expect(clamp.changed).toBe(true);
+    expect(clamp.clampedToTargets).toBe(true);
+    const remainingFiles = planData.plan.flatMap((step: any) => step.key_files);
+    expect(remainingFiles).toEqual(["src/utils/logEventNormalizer.ts"]);
+
+    const afterRepair = validateDeterministicPlan(planData, {
+      taskTitle,
+      requiredScopeFiles: [],
+    });
+    expect(afterRepair.valid).toBe(true);
+  });
+
+  it("collapses to a single targeted step when every planned step is out of scope", () => {
+    const taskTitle =
+      "Fix baseline compile errors in src/utils/logEventNormalizer.ts";
+    const planData = {
+      plan: [
+        {
+          goal: "Repair shared LogEvent type definitions",
+          key_files: ["src/types/logEvent.ts"],
+          owners: ["type-owner"],
+        },
+        {
+          goal: "Repair index barrel",
+          key_files: ["src/types/index.ts"],
+        },
+      ],
+    };
+
+    const beforeRepair = validateDeterministicPlan(planData, {
+      taskTitle,
+      requiredScopeFiles: [],
+    });
+    const clamp = repairTargetedScopePlan(
+      planData,
+      extractTargetedBaselineCompileFiles(taskTitle),
+      beforeRepair.issues,
+    );
+
+    expect(clamp.clampedToTargets).toBe(true);
+    expect(planData.plan).toHaveLength(1);
+    expect(planData.plan[0].key_files).toEqual([
+      "src/utils/logEventNormalizer.ts",
+    ]);
+    expect(planData.plan[0].owners).toEqual(["type-owner"]);
+
+    const afterRepair = validateDeterministicPlan(planData, {
+      taskTitle,
+      requiredScopeFiles: [],
     });
     expect(afterRepair.valid).toBe(true);
   });

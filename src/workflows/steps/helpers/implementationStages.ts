@@ -76,6 +76,17 @@ export function resolvePlanStages(
   return stages;
 }
 
+export function canonicalizeTypecheckMessage(message: string): string {
+  return message.replace(/\{([^{}]*)\}/g, (_full, inner) => {
+    const members = String(inner)
+      .split(";")
+      .map((member) => member.trim())
+      .filter((member) => member.length > 0)
+      .sort();
+    return members.length > 0 ? `{ ${members.join("; ")} }` : "{}";
+  });
+}
+
 export function typecheckErrorSignature(input: {
   file: string;
   code?: string;
@@ -90,7 +101,7 @@ export function typecheckErrorSignature(input: {
     input.code ||
     /\b(TS\d+)\b/.exec(input.reason || "")?.[1] ||
     "unknown";
-  const message = (input.message || input.reason || "")
+  const message = canonicalizeTypecheckMessage(input.message || input.reason || "")
     .replace(/\b\d+:\d+\b/g, "")
     .replace(/\s+/g, " ")
     .trim()
