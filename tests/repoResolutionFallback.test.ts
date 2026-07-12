@@ -6,12 +6,14 @@ import { makeTempRepo } from "./makeTempRepo.js";
 
 describe("resolveRepoFromPayload respects PROJECT_BASE and remote URLs", () => {
   const originalProjectBase = cfg.projectBase;
+  const originalGit = { ...cfg.git };
   const tmpBase = path.resolve(process.cwd(), "tmp-project-base-tests");
   let calls: Array<{ args: string[]; cwd?: string }>;
 
   beforeEach(async () => {
     (cfg as any).projectBase = tmpBase;
     (cfg as any).repoRoot = tmpBase;
+    Object.assign(cfg.git, originalGit);
     await (await import("fs/promises")).mkdir(tmpBase, { recursive: true });
     calls = [];
     gitUtils.__setRunGitImplForTests(async (args, options) => {
@@ -23,6 +25,7 @@ describe("resolveRepoFromPayload respects PROJECT_BASE and remote URLs", () => {
   afterEach(async () => {
     (cfg as any).projectBase = originalProjectBase;
     (cfg as any).repoRoot = originalProjectBase;
+    Object.assign(cfg.git, originalGit);
     try {
       await (
         await import("fs/promises")
@@ -42,7 +45,7 @@ describe("resolveRepoFromPayload respects PROJECT_BASE and remote URLs", () => {
     const res = await gitUtils.resolveRepoFromPayload(payload);
     expect(res.repoRoot).toContain(tmpBase);
 
-  expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/machine-client-log-summarizer$/);
+    expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/machine-client-log-summarizer$/);
 
     const cloneCall = calls.find(
       (c) => Array.isArray(c.args) && c.args[0] === "clone",
@@ -61,7 +64,7 @@ describe("resolveRepoFromPayload respects PROJECT_BASE and remote URLs", () => {
 
     const res = await gitUtils.resolveRepoFromPayload(payload);
     expect(res.repoRoot).toContain(tmpBase);
-  expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/machine-client-log-summarizer$/);
+    expect(res.repoRoot.replace(/\\/g, "/")).toMatch(/machine-client-log-summarizer$/);
 
     const joined = calls.map((c) => c.args.join(" ")).join("\n");
     expect(joined).not.toContain(
@@ -80,5 +83,25 @@ describe("resolveRepoFromPayload respects PROJECT_BASE and remote URLs", () => {
     expect(
       calls.find((c) => c.args[0] === "clone" || c.args[0] === "fetch"),
     ).toBeUndefined();
+  });
+
+  it("preserves explicit SSH remotes instead of rewriting host ports into scp syntax", async () => {
+    cfg.git.sshKeyPath = "/Users/example/.ssh/id_ed25519";
+    const remote = "ssh://git@192.168.0.111:2222/homeops/todo-web-benchmark.git";
+
+    await gitUtils.resolveRepoFromPayload({ repo: remote });
+
+    const cloneCall = calls.find((c) => c.args[0] === "clone");
+    expect(cloneCall?.args[1]).toBe(remote);
+  });
+
+  it("disables interactive SSH prompts when an SSH key is configured", () => {
+    cfg.git.sshKeyPath = "/Users/example/.ssh/id_ed25519";
+
+    const env = gitUtils.gitEnv();
+
+    expect(env.GIT_TERMINAL_PROMPT).toBe("0");
+    expect(env.GIT_SSH_COMMAND).toContain("-o IdentitiesOnly=yes");
+    expect(env.GIT_SSH_COMMAND).toContain("-o BatchMode=yes");
   });
 });

@@ -92,10 +92,15 @@ export function repoDirectoryFor(remote: string, projectHint?: string | null) {
 export function remoteWithCredentials(remote: string): RemoteInfo {
   const secret = cfg.git.token || cfg.git.password;
   const hasSshKey = Boolean(cfg.git.sshKeyPath && cfg.git.sshKeyPath.length);
+  const trimmedRemote = remote.trim();
+
+  if (isSshRemote(trimmedRemote)) {
+    return { remote: trimmedRemote, sanitized: trimmedRemote };
+  }
 
   if (hasSshKey) {
     try {
-      const parsed = parseRemote(remote);
+      const parsed = parseRemote(trimmedRemote);
       const host = parsed.host.replace(/^https?:/i, "");
       const sshRemote = `git@${host}:${parsed.path}`;
       return { remote: sshRemote, sanitized: sshRemote };
@@ -123,6 +128,11 @@ export function remoteWithCredentials(remote: string): RemoteInfo {
   } catch {
     return { remote, sanitized };
   }
+}
+
+function isSshRemote(remote: string): boolean {
+  if (/^ssh:\/\//i.test(remote)) return true;
+  return /^[^@\s]+@[^:\s]+:.+/.test(remote);
 }
 
 export async function configureCredentialStore(

@@ -17,7 +17,7 @@ export function gitEnv(): Record<string, string | undefined> {
   const env = { ...process.env };
   env.GIT_TERMINAL_PROMPT = "0";
   if (cfg.git.sshKeyPath) {
-    env.GIT_SSH_COMMAND = `ssh -i "${cfg.git.sshKeyPath}" -o IdentitiesOnly=yes`;
+    env.GIT_SSH_COMMAND = `ssh -i "${cfg.git.sshKeyPath}" -o IdentitiesOnly=yes -o BatchMode=yes`;
   }
   return env;
 }
