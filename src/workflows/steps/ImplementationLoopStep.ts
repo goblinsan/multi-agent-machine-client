@@ -362,6 +362,7 @@ export class ImplementationLoopStep extends WorkflowStep {
     const extraSnippetFiles = new Set<string>();
     let attempt = 0;
     let effectiveMaxAttempts = maxAttempts;
+    let replacementAttemptsGranted = 0;
 
     while (attempt < effectiveMaxAttempts) {
       attempt++;
@@ -578,6 +579,22 @@ export class ImplementationLoopStep extends WorkflowStep {
           }
 
           if (triggerFullRewrite) {
+            if (
+              attempt >= effectiveMaxAttempts &&
+              replacementAttemptsGranted < MAX_CONVERGENCE_BONUS_ATTEMPTS
+            ) {
+              effectiveMaxAttempts++;
+              replacementAttemptsGranted++;
+              context.logger.info(
+                "Diff failure changed retry strategy - granting a replacement attempt",
+                {
+                  workflowId: context.workflowId,
+                  attempt,
+                  effectiveMaxAttempts,
+                  replacementAttemptsGranted,
+                },
+              );
+            }
             context.setVariable("implementation_prefer_full_file", true);
           } else {
             context.setVariable("implementation_prefer_full_file", false);
@@ -790,6 +807,42 @@ export class ImplementationLoopStep extends WorkflowStep {
             throw error;
           }
 
+          await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+
+          const outstandingStageDiagnostics = this.collectStageFileDiagnostics(
+            context,
+            stageFiles,
+          );
+          if (outstandingStageDiagnostics.length === 0) {
+            context.logger.info(
+              "Stage already satisfied - no-op rewrite and no outstanding diagnostics reference the stage files; completing without a commit",
+              {
+                workflowId: context.workflowId,
+                stage: `${stage.index}/${stagesTotal}`,
+                stageGoal: stage.goal || undefined,
+                attempt,
+                stageFiles,
+              },
+            );
+            context.setVariable("implementation_config_validation_errors", []);
+            context.setVariable(
+              "implementation_config_validation_errors_full",
+              [],
+            );
+            context.setVariable(
+              "implementation_config_validation_summary",
+              "",
+            );
+            return {
+              kind: "completed",
+              attempts: attempt,
+              appliedFiles: [],
+              commit: null,
+              missingFiles,
+              lastValidationErrors: [],
+            };
+          }
+
           const noEffectiveChangeSignature =
             this.buildNoEffectiveChangeSignature(appliedFiles);
           const repeatedNoEffectiveChanges =
@@ -800,11 +853,14 @@ export class ImplementationLoopStep extends WorkflowStep {
           );
           const repeatedNoop = repeatedNoEffectiveChanges >= 2;
 
+          const outstandingSummary = this.formatValidationSummary(
+            this.compactValidationErrors(outstandingStageDiagnostics),
+          );
           lastValidationErrors = [
             this.buildNoEditValidationError(
-              `${repeatedNoop ? "Repeated " : ""}${NO_EFFECTIVE_CHANGE_MESSAGE}. The previous response rewrote files that already matched the working tree. ` +
-                "Do not repeat an unchanged full-file rewrite. Make a concrete edit to one of the stage files that addresses the unresolved task, " +
-                "or explicitly report that the task is already resolved if no relevant compile error remains.",
+              `${repeatedNoop ? "Repeated " : ""}${NO_EFFECTIVE_CHANGE_MESSAGE}. Unresolved stage diagnostics:\n` +
+                outstandingSummary +
+                "\nDo not repeat an unchanged full-file rewrite - make a concrete edit that fixes these diagnostics.",
             ),
           ];
           this.recordNoEditFailure(context, lastValidationErrors);
@@ -823,7 +879,21 @@ export class ImplementationLoopStep extends WorkflowStep {
               repeatedNoEffectiveChanges,
             },
           );
-          await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+          if (
+            replacementAttemptsGranted < MAX_CONVERGENCE_BONUS_ATTEMPTS
+          ) {
+            effectiveMaxAttempts++;
+            replacementAttemptsGranted++;
+            context.logger.info(
+              "No-op implementation did not consume repair budget - granting a replacement attempt",
+              {
+                workflowId: context.workflowId,
+                attempt,
+                effectiveMaxAttempts,
+                replacementAttemptsGranted,
+              },
+            );
+          }
           if (repeatedNoop) {
             context.setVariable("implementation_attempts", attempt);
             context.setVariable(
@@ -1014,9 +1084,19 @@ export class ImplementationLoopStep extends WorkflowStep {
         );
 
         let triggerFullRewrite = false;
+        const validationFailureFilesThisAttempt = new Set<string>();
         for (const failure of combinedValidationErrors) {
-          const currentCount = (fileFailureCounts.get(failure.file) || 0) + 1;
-          fileFailureCounts.set(failure.file, currentCount);
+          const normalizedFailureFile = this.normalizeRelativePath(
+            failure.file,
+          );
+          if (validationFailureFilesThisAttempt.has(normalizedFailureFile)) {
+            continue;
+          }
+          validationFailureFilesThisAttempt.add(normalizedFailureFile);
+
+          const currentCount =
+            (fileFailureCounts.get(normalizedFailureFile) || 0) + 1;
+          fileFailureCounts.set(normalizedFailureFile, currentCount);
 
           const isStructural = /structurally invalid|unbalanced/i.test(failure.reason);
           if (isStructural) {
@@ -1033,6 +1113,22 @@ export class ImplementationLoopStep extends WorkflowStep {
         }
 
         if (triggerFullRewrite) {
+          if (
+            attempt >= effectiveMaxAttempts &&
+            replacementAttemptsGranted < MAX_CONVERGENCE_BONUS_ATTEMPTS
+          ) {
+            effectiveMaxAttempts++;
+            replacementAttemptsGranted++;
+            context.logger.info(
+              "Validation failure changed retry strategy - granting a replacement attempt",
+              {
+                workflowId: context.workflowId,
+                attempt,
+                effectiveMaxAttempts,
+                replacementAttemptsGranted,
+              },
+            );
+          }
           context.setVariable("implementation_prefer_full_file", true);
         } else {
           context.setVariable("implementation_prefer_full_file", false);
@@ -1850,6 +1946,22 @@ export class ImplementationLoopStep extends WorkflowStep {
       );
       return new Set(parsed.map((entry) => typecheckErrorSignature(entry)));
     }
+  }
+
+  private collectStageFileDiagnostics(
+    context: WorkflowContext,
+    stageFiles: string[],
+  ): ConfigValidationError[] {
+    const diagnostics = context.getVariable(
+      "implementation_typecheck_validation_errors_full",
+    );
+    if (!Array.isArray(diagnostics)) return [];
+    const stageSet = new Set(
+      stageFiles.map((file) => this.normalizeRelativePath(file)),
+    );
+    return diagnostics.filter((entry: any) =>
+      stageSet.has(this.normalizeRelativePath(String(entry?.file || ""))),
+    );
   }
 
   private async evaluateTypecheckValidation(

@@ -289,15 +289,27 @@ describe("ImplementationLoopStep", () => {
   });
 
   it("retries when a validated attempt rewrites an unchanged file", async () => {
-    const envPath = path.join(repoRoot, ".example.env");
-    await fs.writeFile(envPath, "LOG_LEVEL=info\n", "utf-8");
-    execSync("git add .example.env", { cwd: repoRoot });
-    execSync("git commit --no-verify -m baseline-env", { cwd: repoRoot });
+    const defaultsPath = path.join(repoRoot, "src/config/defaults.ts");
+    const contents = "export const defaults = { level: 'info' };\n";
+    await fs.mkdir(path.join(repoRoot, "src/config"), { recursive: true });
+    await fs.writeFile(defaultsPath, contents, "utf-8");
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({
+        scripts: {
+          typecheck:
+            "node -e \"console.error('src/config/defaults.ts(1,1): error TS9999: Defaults are stale.'); process.exit(2);\"",
+        },
+      }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit --no-verify -m baseline-defaults", { cwd: repoRoot });
 
-    context.setVariable("planning_loop_plan_files", [".example.env"]);
-    context.setVariable("plan_required_files", [".example.env"]);
+    context.setVariable("planning_loop_plan_files", ["src/config/defaults.ts"]);
+    context.setVariable("plan_required_files", ["src/config/defaults.ts"]);
     context.setStepOutput("record_plan_key_files", {
-      key_files: [".example.env"],
+      key_files: ["src/config/defaults.ts"],
       missing_files: [],
     });
     context.setStepOutput("planning_loop", {
@@ -306,8 +318,8 @@ describe("ImplementationLoopStep", () => {
           result: JSON.stringify({
             plan: [
               {
-                goal: "Update env defaults",
-                key_files: [".example.env"],
+                goal: "Update stale defaults",
+                key_files: ["src/config/defaults.ts"],
               },
             ],
           }),
@@ -316,10 +328,10 @@ describe("ImplementationLoopStep", () => {
     });
 
     const personaDiffs = [
-      buildFileBlock(".example.env", "LOG_LEVEL=info\n"),
+      buildFileBlock("src/config/defaults.ts", contents),
       buildFileBlock(
-        ".example.env",
-        ["LOG_LEVEL=debug", "LOG_FILE_PATH=./logs/app.log"].join("\n"),
+        "src/config/defaults.ts",
+        "export const defaults = { level: 'debug' };\n",
       ),
     ];
 
@@ -341,7 +353,7 @@ describe("ImplementationLoopStep", () => {
         planGuard: {
           plan_step: "planning_loop",
           plan_files_variable: "planning_loop_plan_files",
-          additional_files: [".example.env"],
+          additional_files: ["src/config/defaults.ts"],
         },
       },
     });
@@ -350,21 +362,32 @@ describe("ImplementationLoopStep", () => {
     expect(result.status, result.error?.message).toBe("success");
     expect(context.getVariable("implementation_attempts")).toBe(2);
 
-    const envContent = await fs.readFile(envPath, "utf-8");
-    expect(envContent).toContain("LOG_LEVEL=debug");
-    expect(envContent).toContain("LOG_FILE_PATH=./logs/app.log");
+    const defaultsContent = await fs.readFile(defaultsPath, "utf-8");
+    expect(defaultsContent).toContain("level: 'debug'");
   });
 
   it("fails fast when the same no-op rewrite repeats", async () => {
-    const envPath = path.join(repoRoot, ".example.env");
-    await fs.writeFile(envPath, "LOG_LEVEL=info\n", "utf-8");
-    execSync("git add .example.env", { cwd: repoRoot });
-    execSync("git commit --no-verify -m baseline-env", { cwd: repoRoot });
+    const defaultsPath = path.join(repoRoot, "src/config/defaults.ts");
+    const contents = "export const defaults = { level: 'info' };\n";
+    await fs.mkdir(path.join(repoRoot, "src/config"), { recursive: true });
+    await fs.writeFile(defaultsPath, contents, "utf-8");
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({
+        scripts: {
+          typecheck:
+            "node -e \"console.error('src/config/defaults.ts(1,1): error TS9999: Defaults are stale.'); process.exit(2);\"",
+        },
+      }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit --no-verify -m baseline-defaults", { cwd: repoRoot });
 
-    context.setVariable("planning_loop_plan_files", [".example.env"]);
-    context.setVariable("plan_required_files", [".example.env"]);
+    context.setVariable("planning_loop_plan_files", ["src/config/defaults.ts"]);
+    context.setVariable("plan_required_files", ["src/config/defaults.ts"]);
     context.setStepOutput("record_plan_key_files", {
-      key_files: [".example.env"],
+      key_files: ["src/config/defaults.ts"],
       missing_files: [],
     });
     context.setStepOutput("planning_loop", {
@@ -373,8 +396,8 @@ describe("ImplementationLoopStep", () => {
           result: JSON.stringify({
             plan: [
               {
-                goal: "Update env defaults",
-                key_files: [".example.env"],
+                goal: "Update stale defaults",
+                key_files: ["src/config/defaults.ts"],
               },
             ],
           }),
@@ -382,7 +405,7 @@ describe("ImplementationLoopStep", () => {
       },
     });
 
-    const unchangedRewrite = buildFileBlock(".example.env", "LOG_LEVEL=info\n");
+    const unchangedRewrite = buildFileBlock("src/config/defaults.ts", contents);
     vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
       id: "event-noop",
       fields: {
@@ -1317,6 +1340,327 @@ describe("ImplementationLoopStep", () => {
       "utf-8",
     );
     expect(validatorContent).toContain("() => true");
+  });
+
+  it("completes a stage without a commit when a no-op rewrite has no outstanding diagnostics", async () => {
+    const contents = "export const defaults = { level: 'info' };\n";
+    await fs.mkdir(path.join(repoRoot, "src/config"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, "src/config/defaults.ts"),
+      contents,
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m defaults", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", ["src/config/defaults.ts"]);
+    context.setVariable("plan_required_files", ["src/config/defaults.ts"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/config/defaults.ts"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Fix compile errors in defaults",
+                key_files: ["src/config/defaults.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-noop",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: buildFileBlock("src/config/defaults.ts", contents),
+        }),
+      },
+    } as any);
+
+    const commitsBefore = execSync("git rev-list --count HEAD", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+    }).trim();
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["src/config/defaults.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status, result.error?.message).toBe("success");
+    expect(context.getVariable("implementation_attempts")).toBe(1);
+    const commitsAfter = execSync("git rev-list --count HEAD", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+    }).trim();
+    expect(commitsAfter).toBe(commitsBefore);
+    const fileContent = await fs.readFile(
+      path.join(repoRoot, "src/config/defaults.ts"),
+      "utf-8",
+    );
+    expect(fileContent).toBe(contents);
+  });
+
+  it("keeps failing no-op rewrites when diagnostics still reference the stage files", async () => {
+    const contents = "export const defaults = { level: 'info' };\n";
+    await fs.mkdir(path.join(repoRoot, "src/config"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, "src/config/defaults.ts"),
+      contents,
+      "utf-8",
+    );
+    const script =
+      "node -e \"console.error('src/config/defaults.ts(1,1): error TS2304: Cannot find name BrokenName.'); process.exit(2);\"";
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({ scripts: { typecheck: script } }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m defaults", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", ["src/config/defaults.ts"]);
+    context.setVariable("plan_required_files", ["src/config/defaults.ts"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/config/defaults.ts"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Fix compile errors in defaults",
+                key_files: ["src/config/defaults.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-noop-broken",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: buildFileBlock("src/config/defaults.ts", contents),
+        }),
+      },
+    } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 3,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["src/config/defaults.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    expect(result.error?.message).toContain("repeating the same no-op edit");
+    const summary = context.getVariable(
+      "implementation_config_validation_summary",
+    ) as string;
+    expect(summary).toContain("BrokenName");
+  });
+
+  it("does not spend the repair budget on a no-op rewrite", async () => {
+    const defaultsPath = path.join(repoRoot, "src/config/defaults.ts");
+    const staleContents = "export const defaults = { level: 'info' };\n";
+    const fixedContents = "export const defaults = { level: 'debug' };\n";
+    await fs.mkdir(path.join(repoRoot, "src/config"), { recursive: true });
+    await fs.writeFile(defaultsPath, staleContents, "utf-8");
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({
+        scripts: {
+          typecheck:
+            "node -e \"const fs=require('fs'); const s=fs.readFileSync('src/config/defaults.ts','utf8'); if(s.includes(\\\"level: 'info'\\\")){console.error('src/config/defaults.ts(1,1): error TS2304: Cannot find name StaleDefault.'); process.exit(2);}\"",
+        },
+      }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m stale-defaults", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", ["src/config/defaults.ts"]);
+    context.setVariable("plan_required_files", ["src/config/defaults.ts"]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/config/defaults.ts"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Fix stale defaults",
+                key_files: ["src/config/defaults.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const personaDiffs = [
+      buildFileBlock("src/config/defaults.ts", staleContents),
+      buildFileBlock("src/config/defaults.ts", fixedContents),
+    ];
+    vi.mocked(persona.waitForPersonaCompletion).mockImplementation(
+      async () => ({
+        id: `event-${personaDiffs.length}`,
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: personaDiffs.shift() ?? "",
+          }),
+        },
+      }),
+    );
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 1,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["src/config/defaults.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status, result.error?.message).toBe("success");
+    expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
+    expect(await fs.readFile(defaultsPath, "utf-8")).toBe(fixedContents);
+  });
+
+  it("uses the full-file rewrite retry after repeated validation failures on the last configured attempt", async () => {
+    const testPath = path.join(repoRoot, "src/__tests__/config-loader.test.ts");
+    const badContents = [
+      "import { describe, it, expect, beforeEach } from 'vitest';",
+      "",
+      "describe('config loader', () => {",
+      "  beforeEach(() => {",
+      "    vi.clearAllMocks();",
+      "  });",
+      "",
+      "  it('loads config', () => {",
+      "    expect(true).toBe(true);",
+      "  });",
+      "});",
+      "",
+    ].join("\n");
+    const fixedContents = badContents.replace(
+      "import { describe, it, expect, beforeEach } from 'vitest';",
+      "import { describe, it, expect, beforeEach, vi } from 'vitest';",
+    );
+    await fs.mkdir(path.dirname(testPath), { recursive: true });
+    await fs.writeFile(testPath, fixedContents, "utf-8");
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({
+        scripts: {
+          typecheck:
+            "node -e \"const fs=require('fs'); const s=fs.readFileSync('src/__tests__/config-loader.test.ts','utf8'); if(s.includes('vi.clearAllMocks()') && !s.includes('beforeEach, vi')){console.error('src/__tests__/config-loader.test.ts(5,5): error TS2304: Cannot find name \\'vi\\'.'); process.exit(2);}\"",
+        },
+      }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m config-loader-test", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", [
+      "src/__tests__/config-loader.test.ts",
+    ]);
+    context.setVariable("plan_required_files", [
+      "src/__tests__/config-loader.test.ts",
+    ]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/__tests__/config-loader.test.ts"],
+      missing_files: [],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Fix missing vitest import",
+                key_files: ["src/__tests__/config-loader.test.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    const personaDiffs = [
+      buildFileBlock("src/__tests__/config-loader.test.ts", badContents),
+      buildFileBlock("src/__tests__/config-loader.test.ts", badContents),
+      buildFileBlock("src/__tests__/config-loader.test.ts", fixedContents),
+    ];
+    vi.mocked(persona.waitForPersonaCompletion).mockImplementation(
+      async () => ({
+        id: `event-${personaDiffs.length}`,
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: personaDiffs.shift() ?? "",
+          }),
+        },
+      }),
+    );
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["src/__tests__/config-loader.test.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status, result.error?.message).toBe("success");
+    expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(3);
+    expect(await fs.readFile(testPath, "utf-8")).toBe(fixedContents);
   });
 
   it("rejects edits that stray outside the plan scope", async () => {
