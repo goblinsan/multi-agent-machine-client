@@ -203,7 +203,15 @@ export class ImplementationLoopStep extends WorkflowStep {
             missingVariable,
           );
         }
-        if (cfg.continueOnStageFailure && stages.length > 1) {
+        const failedStageMissing = this.intersectFiles(
+          stageOutcome.missingFiles,
+          stageFiles,
+        );
+        if (
+          cfg.continueOnStageFailure &&
+          stages.length > 1 &&
+          failedStageMissing.length === 0
+        ) {
           failedStages.push({
             stage,
             errors: stageOutcome.lastValidationErrors,
@@ -217,6 +225,17 @@ export class ImplementationLoopStep extends WorkflowStep {
             },
           );
           continue;
+        }
+        if (failedStageMissing.length > 0 && cfg.continueOnStageFailure) {
+          context.logger.warn(
+            "Plan step failed with missing stage files - stopping before downstream stages",
+            {
+              workflowId: context.workflowId,
+              failedStage: `${stage.index}/${stages.length}`,
+              stageGoal: stage.goal || undefined,
+              missingFiles: failedStageMissing,
+            },
+          );
         }
         return this.buildExhaustionFailure(
           context,
@@ -689,6 +708,11 @@ export class ImplementationLoopStep extends WorkflowStep {
           },
         );
         await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        missingFiles = await this.refreshMissingPlanFiles(
+          context,
+          planFiles,
+          missingVariable,
+        );
         if (attempt < effectiveMaxAttempts) {
           continue;
         }
@@ -721,6 +745,11 @@ export class ImplementationLoopStep extends WorkflowStep {
           },
         );
         await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        missingFiles = await this.refreshMissingPlanFiles(
+          context,
+          planFiles,
+          missingVariable,
+        );
         if (attempt < effectiveMaxAttempts) {
           continue;
         }
@@ -730,6 +759,11 @@ export class ImplementationLoopStep extends WorkflowStep {
       const guardResult = await guardStep.execute(context);
       if (guardResult.status !== "success") {
         await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        missingFiles = await this.refreshMissingPlanFiles(
+          context,
+          planFiles,
+          missingVariable,
+        );
         return {
           kind: "failed",
           attempts: attempt,
@@ -824,6 +858,11 @@ export class ImplementationLoopStep extends WorkflowStep {
       const scopeExpansion = summarizeScopeExpansion(scopedFailures);
       if (scopeExpansion.requiredFiles.length > 0) {
         await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        missingFiles = await this.refreshMissingPlanFiles(
+          context,
+          planFiles,
+          missingVariable,
+        );
         const decision = {
           status: "requires_scope_expansion",
           reason: "validation_failed_in_out_of_scope_files",
@@ -892,6 +931,11 @@ export class ImplementationLoopStep extends WorkflowStep {
           }
 
           await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+          missingFiles = await this.refreshMissingPlanFiles(
+            context,
+            planFiles,
+            missingVariable,
+          );
 
           const outstandingStageDiagnostics = this.collectStageFileDiagnostics(
             context,
@@ -1233,6 +1277,11 @@ export class ImplementationLoopStep extends WorkflowStep {
         }
 
         await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        missingFiles = await this.refreshMissingPlanFiles(
+          context,
+          planFiles,
+          missingVariable,
+        );
         if (attempt >= effectiveMaxAttempts) {
           break;
         }
@@ -1241,6 +1290,11 @@ export class ImplementationLoopStep extends WorkflowStep {
 
       if (attempt >= effectiveMaxAttempts) {
         await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+        missingFiles = await this.refreshMissingPlanFiles(
+          context,
+          planFiles,
+          missingVariable,
+        );
         break;
       }
 
@@ -1251,6 +1305,11 @@ export class ImplementationLoopStep extends WorkflowStep {
       });
       this.updateRequiredFilePromptState(context, stageFiles, gatedMissing);
       await this.rollbackAttempt(context, attemptCheckpoint, appliedFiles);
+      missingFiles = await this.refreshMissingPlanFiles(
+        context,
+        planFiles,
+        missingVariable,
+      );
     }
 
     return {
@@ -1351,6 +1410,32 @@ export class ImplementationLoopStep extends WorkflowStep {
     return this.normalizeStringArray(files).filter((file) =>
       scopeSet.has(this.normalizeRelativePath(file)),
     );
+  }
+
+  private async refreshMissingPlanFiles(
+    context: WorkflowContext,
+    planFiles: string[],
+    missingVariable: string,
+  ): Promise<string[]> {
+    const missing: string[] = [];
+    for (const file of this.normalizeStringArray(planFiles)) {
+      const normalized = this.normalizeRelativePath(file);
+      try {
+        await fs.access(path.join(context.repoRoot, normalized));
+      } catch {
+        missing.push(normalized);
+      }
+    }
+    context.setVariable(missingVariable, missing);
+    context.setVariable(
+      "implementation_guard_missing_summary",
+      missing.join(", "),
+    );
+    context.logger.info("Refreshed missing plan files after rollback", {
+      workflowId: context.workflowId,
+      missingFiles: missing,
+    });
+    return missing;
   }
 
   private buildImplementationStepConfig(

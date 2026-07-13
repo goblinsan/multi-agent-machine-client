@@ -1267,6 +1267,87 @@ describe("ImplementationLoopStep", () => {
     expect(gitStatus).toBe("");
   });
 
+  it("refreshes missing files after rollback and stops before dependent stages", async () => {
+    const script =
+      "node -e \"const fs=require('fs'); if(!fs.existsSync('src/useTodos.ts'))process.exit(0); const s=fs.readFileSync('src/useTodos.ts','utf8'); if(s.includes('MARKER_BAD')){console.error('src/useTodos.ts(1,1): error TS2304: Cannot find name MarkerBad.'); process.exit(2);}\"";
+    await fs.writeFile(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({ scripts: { typecheck: script } }),
+      "utf-8",
+    );
+    execSync("git add .", { cwd: repoRoot });
+    execSync("git commit -m package", { cwd: repoRoot });
+
+    context.setVariable("planning_loop_plan_files", [
+      "src/useTodos.ts",
+      "src/useTodos.test.ts",
+    ]);
+    context.setVariable("plan_required_files", [
+      "src/useTodos.ts",
+      "src/useTodos.test.ts",
+    ]);
+    context.setStepOutput("record_plan_key_files", {
+      key_files: ["src/useTodos.ts", "src/useTodos.test.ts"],
+      missing_files: ["src/useTodos.ts", "src/useTodos.test.ts"],
+    });
+    context.setStepOutput("planning_loop", {
+      plan_result: {
+        fields: {
+          result: JSON.stringify({
+            plan: [
+              {
+                goal: "Create hook",
+                key_files: ["src/useTodos.ts"],
+              },
+              {
+                goal: "Create hook tests",
+                key_files: ["src/useTodos.test.ts"],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    vi.mocked(persona.waitForPersonaCompletion).mockResolvedValue({
+      id: "event-bad-hook",
+      fields: {
+        result: JSON.stringify({
+          status: "pass",
+          output: buildFileBlock(
+            "src/useTodos.ts",
+            "export const marker = 'MARKER_BAD';",
+          ),
+        }),
+      },
+    } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 1,
+        continueOnStageFailure: true,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: ["src/useTodos.ts", "src/useTodos.test.ts"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("failure");
+    expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(1);
+    expect(
+      context.getVariable("implementation_guard_missing_files"),
+    ).toEqual(["src/useTodos.ts", "src/useTodos.test.ts"]);
+    await expect(
+      fs.access(path.join(repoRoot, "src/useTodos.ts")),
+    ).rejects.toThrow();
+  });
+
   it("stops scope-expanded plans after a failed root-cause stage", async () => {
     context.setVariable("scope_viability_status", "requires_scope_expansion");
     context.setVariable("scope_viability_root_cause_files", [".example.env"]);
