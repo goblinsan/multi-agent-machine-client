@@ -71,6 +71,7 @@ const MAX_RETRY_DIAGNOSTICS_PER_FILE = 2;
 const MAX_RETRY_REASON_CHARS = 220;
 const MAX_RETRY_SUMMARY_CHARS = 6000;
 const MAX_AUTO_SNIPPET_FILES = 12;
+const MAX_DEPENDENCY_SNIPPET_FILES = 8;
 const MAX_CONVERGENCE_BONUS_ATTEMPTS = 2;
 const RUNAWAY_RESPONSE_CHAR_THRESHOLD = 24000;
 const REPETITIVE_PREFIX_THRESHOLD = 24;
@@ -423,9 +424,10 @@ export class ImplementationLoopStep extends WorkflowStep {
 
       await this.loadPlanFileSnippets(
         context,
-        Array.from(new Set([...stageFiles, ...extraSnippetFiles])).slice(
-          0,
-          MAX_AUTO_SNIPPET_FILES,
+        await this.resolveImplementationSnippetFiles(
+          context,
+          stageFiles,
+          extraSnippetFiles,
         ),
       );
       await this.loadPlanArtifactText(context);
@@ -2759,6 +2761,134 @@ export class ImplementationLoopStep extends WorkflowStep {
       totalFiles: planFiles.length,
       files: snippets.map((s) => s.path),
     });
+  }
+
+  private async resolveImplementationSnippetFiles(
+    context: WorkflowContext,
+    stageFiles: string[],
+    extraSnippetFiles: Set<string>,
+  ): Promise<string[]> {
+    const ordered = new Set<string>();
+    for (const file of stageFiles) {
+      ordered.add(this.normalizeRelativePath(file));
+    }
+    for (const file of extraSnippetFiles) {
+      ordered.add(this.normalizeRelativePath(file));
+    }
+
+    const mentionedFiles = this.extractMentionedRepoFiles(context);
+    for (const file of mentionedFiles) {
+      if (await this.fileExists(context.repoRoot, file)) {
+        ordered.add(file);
+      }
+    }
+
+    const siblingDependencies = await this.findSiblingDependencyFiles(
+      context,
+      stageFiles,
+      mentionedFiles,
+    );
+    for (const file of siblingDependencies) {
+      ordered.add(file);
+    }
+
+    return Array.from(ordered).slice(0, MAX_AUTO_SNIPPET_FILES);
+  }
+
+  private extractMentionedRepoFiles(context: WorkflowContext): string[] {
+    const chunks: string[] = [];
+    const task = context.getVariable("task");
+    if (task && typeof task === "object") {
+      const record = task as Record<string, unknown>;
+      for (const key of ["title", "description", "body", "summary"]) {
+        if (typeof record[key] === "string") chunks.push(record[key]);
+      }
+      if (Array.isArray(record.labels)) {
+        chunks.push(record.labels.map((entry) => String(entry)).join(" "));
+      }
+    }
+
+    for (const key of [
+      "research_summary",
+      "research_next_actions",
+      "research_findings",
+      "research_information_blocks",
+      "implementation_information_request_summary",
+      "implementation_config_validation_summary",
+      "implementation_retry_directives",
+    ]) {
+      this.collectStrings(context.getVariable(key), chunks);
+    }
+
+    const paths = new Set<string>();
+    const pathPattern =
+      /(?:^|[\s`'"])(\.?src\/[A-Za-z0-9_./-]+\.(?:ts|tsx|js|jsx|json|css|md|txt))/g;
+    for (const chunk of chunks) {
+      let match: RegExpExecArray | null;
+      while ((match = pathPattern.exec(chunk)) !== null) {
+        paths.add(this.normalizeRelativePath(match[1]));
+      }
+    }
+    return Array.from(paths);
+  }
+
+  private collectStrings(value: unknown, output: string[]): void {
+    if (!value) return;
+    if (typeof value === "string") {
+      output.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) this.collectStrings(entry, output);
+      return;
+    }
+    if (typeof value !== "object") return;
+    for (const entry of Object.values(value as Record<string, unknown>)) {
+      this.collectStrings(entry, output);
+    }
+  }
+
+  private async findSiblingDependencyFiles(
+    context: WorkflowContext,
+    stageFiles: string[],
+    mentionedFiles: string[],
+  ): Promise<string[]> {
+    const directories = new Set<string>();
+    for (const file of [...stageFiles, ...mentionedFiles]) {
+      const normalized = this.normalizeRelativePath(file);
+      const dir = path.posix.dirname(normalized);
+      if (dir && dir !== ".") directories.add(dir);
+    }
+
+    const candidates: string[] = [];
+    for (const dir of directories) {
+      const absDir = path.join(context.repoRoot, dir);
+      let entries: string[];
+      try {
+        entries = await fs.readdir(absDir);
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!/\.(?:ts|tsx)$/.test(entry)) continue;
+        if (/\.test\.(?:ts|tsx)$/.test(entry)) continue;
+        const relPath = this.normalizeRelativePath(path.posix.join(dir, entry));
+        if (stageFiles.map((file) => this.normalizeRelativePath(file)).includes(relPath)) {
+          continue;
+        }
+        candidates.push(relPath);
+      }
+    }
+    return candidates.slice(0, MAX_DEPENDENCY_SNIPPET_FILES);
+  }
+
+  private async fileExists(repoRoot: string, relativePath: string): Promise<boolean> {
+    try {
+      await fs.access(path.join(repoRoot, relativePath));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async loadPlanArtifactText(

@@ -1013,6 +1013,47 @@ describe("ImplementationLoopStep", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("loads same-directory dependency snippets for new implementation files", async () => {
+    await fs.mkdir(path.join(repoRoot, "src"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, "src/todoReducer.ts"),
+      "export function todoReducer(state: unknown[], action: unknown) { return state; }\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(repoRoot, "src/types.ts"),
+      "export interface Todo { id: string; }\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(repoRoot, "src/todoReducer.test.ts"),
+      "test('reducer', () => {});\n",
+      "utf-8",
+    );
+    context.setVariable("task", {
+      title: "Add useTodos",
+      description:
+        "Create src/useTodos.ts and import todoReducer from src/todoReducer.ts.",
+    });
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {},
+    });
+
+    const files = await (step as any).resolveImplementationSnippetFiles(
+      context,
+      ["src/useTodos.ts"],
+      new Set<string>(),
+    );
+
+    expect(files).toContain("src/useTodos.ts");
+    expect(files).toContain("src/todoReducer.ts");
+    expect(files).toContain("src/types.ts");
+    expect(files).not.toContain("src/todoReducer.test.ts");
+  });
+
   it("keeps the lead engineer prompt aligned to full-file rewrite blocks", async () => {
     const template = await fs.readFile(
       path.join(
