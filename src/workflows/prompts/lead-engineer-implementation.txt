@@ -77,7 +77,7 @@ ANTI-REPETITION RULE: Do not generate repetitive boilerplate variations, exhaust
 {{#if implementation_config_validation_summary}}
 Execution rules:
 1. Fix the validation errors and include every required/missing plan file in this same response.
-2. Output ONLY unified diffs plus the `Changed Files:` list and `Commit Message:` line, as described in the system prompt.
+2. Output ONLY full-file rewrite blocks plus the `Changed Files:` list and `Commit Message:` line, as described in the system prompt.
 3. If you cannot fix the validation errors, explicitly explain why in place of a diff.
 4. Keep edits minimal and scoped to resolving validation errors and completing missing plan deliverables; do not modify unrelated files or artifacts.
 {{#if implementation_prefer_full_file}}
@@ -93,10 +93,17 @@ For each required file that does not exist yet, also output a full-file rewrite 
 {{#unless implementation_config_validation_summary}}
 Execution rules:
 1. Follow the approved plan exactly; do not invent new steps.
-2. Output ONLY unified diffs plus the `Changed Files:` list and `Commit Message:` line, as described in the system prompt.
+2. Output ONLY full-file rewrite blocks plus the `Changed Files:` list and `Commit Message:` line, as described in the system prompt.
 3. If you cannot fix the validation errors, explicitly explain why in place of a diff.
 4. Keep edits minimal and focused on unblocking validation/plan guards; avoid formatting churn.
 5. All required files must be created or updated in this response. Do not split the implementation across future attempts.
 {{/unless}}
+
+Required output format for every file you create or modify:
+```file path=path/to/file
+<entire file content>
+```
+
+Do not use language-only code fences such as ```typescript or ```tsx. A code block without `file path=` is not applied by the workflow.
 
 ```

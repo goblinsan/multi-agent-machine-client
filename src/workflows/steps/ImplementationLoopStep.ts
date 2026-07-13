@@ -469,9 +469,11 @@ export class ImplementationLoopStep extends WorkflowStep {
         personaResult,
       );
       if (!this.hasImplementationEditContent(personaResult)) {
-        const reason = this.isInformationRequestLoopResult(personaResult)
-          ? "Lead engineer repeated information requests instead of returning implementation edits."
-          : "Lead engineer returned no diff or file rewrite content.";
+        const reason = this.describeNoEditResponse(
+          personaResult,
+          stageFiles,
+          stageMissing,
+        );
         lastValidationErrors = [this.buildNoEditValidationError(reason)];
         this.recordNoEditFailure(context, lastValidationErrors);
         if (this.isInformationRequestLoopResult(personaResult)) {
@@ -1717,6 +1719,41 @@ export class ImplementationLoopStep extends WorkflowStep {
     return false;
   }
 
+  private describeNoEditResponse(
+    result: StepResult,
+    stageFiles: string[],
+    stageMissing: string[],
+  ): string {
+    if (this.isInformationRequestLoopResult(result)) {
+      return "Lead engineer repeated information requests instead of returning implementation edits.";
+    }
+
+    const targetFiles = (stageMissing.length > 0 ? stageMissing : stageFiles)
+      .map((file) => this.normalizeRelativePath(file))
+      .filter(Boolean);
+    const requiredBlocks = targetFiles
+      .map((file) => `\`\`\`file path=${file}`)
+      .join(", ");
+    const text = this.collectOutputText([result.outputs, result.data]);
+    const hasLanguageOnlyFence = /```(?:[a-z][a-z0-9_+.-]*)\b/i.test(text);
+    const namedTargetInFence = targetFiles.some((file) =>
+      new RegExp(`//\\s*${this.escapeRegExp(file)}\\b`).test(text),
+    );
+
+    if (hasLanguageOnlyFence || namedTargetInFence) {
+      return (
+        "Lead engineer returned code in a Markdown/language fence instead of an applyable file rewrite block. " +
+        `Retry with full-file rewrite block(s) using exactly: ${requiredBlocks}. ` +
+        "Do not use ```typescript, ```tsx, or comments like // path/to/file as the file marker."
+      );
+    }
+
+    return (
+      "Lead engineer returned no diff or file rewrite content. " +
+      `Retry with full-file rewrite block(s) for the current stage using exactly: ${requiredBlocks}.`
+    );
+  }
+
   private evaluateImplementationOutputHealth(
     result: StepResult,
   ): ConfigValidationError[] {
@@ -1842,6 +1879,10 @@ export class ImplementationLoopStep extends WorkflowStep {
       return identifier.slice(0, camelBoundary);
     }
     return identifier.slice(0, 32);
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   private outputContainsEditContent(value: unknown): boolean {

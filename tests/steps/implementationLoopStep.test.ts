@@ -954,6 +954,79 @@ describe("ImplementationLoopStep", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("retries language-only code fences and accepts full-file rewrite blocks", async () => {
+    const validator = [
+      "export const validator = () => {",
+      "  return true;",
+      "};",
+    ].join("\n");
+    const envFile = "LOG_LEVEL=info";
+
+    vi.mocked(persona.waitForPersonaCompletion)
+      .mockResolvedValueOnce({
+        id: "event-language-fence",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output: [
+              "I will create the validator.",
+              "```typescript",
+              "// src/config/validator.js",
+              validator,
+              "```",
+            ].join("\n"),
+          }),
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        id: "event-file-block",
+        fields: {
+          result: JSON.stringify({
+            status: "pass",
+            output:
+              buildFileBlock(".example.env", envFile) +
+              "\n" +
+              buildFileBlock("src/config/validator.js", validator),
+          }),
+        },
+      } as any);
+
+    const step = new ImplementationLoopStep({
+      name: "implementation_loop",
+      type: "ImplementationLoopStep",
+      config: {
+        maxAttempts: 2,
+        planGuard: {
+          plan_step: "planning_loop",
+          plan_files_variable: "planning_loop_plan_files",
+          additional_files: [".example.env", "src/config/validator.js"],
+        },
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status, result.error?.message).toBe("success");
+    expect(persona.waitForPersonaCompletion).toHaveBeenCalledTimes(2);
+    await expect(
+      fs.access(path.join(repoRoot, "src/config/validator.js")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("keeps the lead engineer prompt aligned to full-file rewrite blocks", async () => {
+    const template = await fs.readFile(
+      path.join(
+        process.cwd(),
+        "src/workflows/prompts/lead-engineer-implementation.txt",
+      ),
+      "utf-8",
+    );
+
+    expect(template).toContain("Output ONLY full-file rewrite blocks");
+    expect(template).toContain("```file path=path/to/file");
+    expect(template).not.toContain("Output ONLY unified diffs");
+  });
+
   it("ignores parsed typecheck errors outside touched and plan files", async () => {
     await fs.writeFile(
       path.join(repoRoot, "package.json"),
