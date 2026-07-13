@@ -640,6 +640,31 @@ export class ImplementationLoopStep extends WorkflowStep {
         };
       }
       this.syncStepOutput(context, "apply_implementation_edits", diffResult);
+      const noInScopeEditErrors = this.extractNoInScopeEditErrors(
+        diffResult,
+        stageFiles,
+      );
+      if (noInScopeEditErrors.length > 0) {
+        lastValidationErrors = noInScopeEditErrors;
+        this.recordNoEditFailure(context, noInScopeEditErrors);
+        context.setVariable("implementation_prefer_full_file", false);
+        context.logger.warn(
+          "Implementation response only edited files outside the current stage scope",
+          {
+            workflowId: context.workflowId,
+            attempt,
+            maxAttempts,
+            stageFiles,
+            errors: noInScopeEditErrors,
+          },
+        );
+        await this.resetStagedChanges(context);
+        if (attempt < effectiveMaxAttempts) {
+          await this.loadPlanFileSnippets(context, stageFiles);
+          continue;
+        }
+        break;
+      }
       appliedFiles = this.extractAppliedFiles(diffResult);
 
       const missingDiagnosticTouch = this.evaluateDiagnosticFileTouchGate(
@@ -1372,6 +1397,7 @@ export class ImplementationLoopStep extends WorkflowStep {
       commit: false,
       dry_run: diffConfig?.dry_run,
       allowed_paths: allowedPaths,
+      all_out_of_scope_is_noop: true,
     } satisfies DiffApplyStepConfig;
   }
 
@@ -1949,6 +1975,52 @@ export class ImplementationLoopStep extends WorkflowStep {
       }
     }
     return [];
+  }
+
+  private extractNoInScopeEditErrors(
+    result: StepResult,
+    stageFiles: string[],
+  ): ConfigValidationError[] {
+    const outputs = result.outputs ?? result.data;
+    if (!outputs || typeof outputs !== "object") {
+      return [];
+    }
+    if ((outputs as any).no_in_scope_edits !== true) {
+      return [];
+    }
+    const failures = Array.isArray((outputs as any).apply_failures)
+      ? (outputs as any).apply_failures
+      : Array.isArray((result.data as any)?.apply_failures)
+        ? (result.data as any).apply_failures
+        : [];
+    const dropped = Array.isArray((outputs as any).out_of_scope_files)
+      ? (outputs as any).out_of_scope_files
+      : [];
+    const allowed = stageFiles.length > 0
+      ? stageFiles.join(", ")
+      : "the current plan step files";
+    if (failures.length === 0 && dropped.length === 0) {
+      return [
+        this.buildNoEditValidationError(
+          `The previous response produced no edits for the current stage. Edit only: ${allowed}.`,
+        ),
+      ];
+    }
+    return (failures.length > 0 ? failures : dropped.map((path: string) => ({
+      path,
+      reason: "The response edited only files outside the current stage scope.",
+    })))
+      .filter(
+        (entry: any) =>
+          entry &&
+          typeof entry.path === "string" &&
+          typeof entry.reason === "string",
+      )
+      .map((entry: any) => ({
+        file: entry.path,
+        reason:
+          `${entry.reason} Treat those blocks as context only and return edits for: ${allowed}.`,
+      }));
   }
 
   private evaluateConfigValidation(

@@ -27,6 +27,7 @@ export interface DiffApplyStepConfig {
   commit?: boolean;
   dry_run?: boolean;
   allowed_paths?: string[];
+  all_out_of_scope_is_noop?: boolean;
 }
 
 export class DiffApplyStep extends WorkflowStep {
@@ -144,9 +145,44 @@ export class DiffApplyStep extends WorkflowStep {
       const scope = this.applyScopeFilter(
         parseResult.editSpec,
         stepConfig.allowed_paths,
+        stepConfig.all_out_of_scope_is_noop === true,
         context,
       );
       parseResult.editSpec = scope.editSpec;
+
+      if (scope.allOutOfScope) {
+        const branch = context.getCurrentBranch();
+        context.setVariable("last_apply_noop", true);
+        context.setVariable("last_applied_files", []);
+        context.logger.warn("Diff application produced no in-scope edits", {
+          stepName: this.config.name,
+          droppedPaths: scope.droppedPaths,
+          allowedPaths: stepConfig.allowed_paths || [],
+        });
+        return {
+          status: "success",
+          data: {
+            parseResult,
+            applyResult: { changed: [], sha: "", branch, noop: true },
+            apply_failures: scope.failures,
+          },
+          outputs: {
+            applied_files: [],
+            commit_sha: "",
+            operations_count: 0,
+            branch,
+            noop_applied: true,
+            no_in_scope_edits: true,
+            apply_method: "scope-filter-noop",
+            out_of_scope_files: scope.droppedPaths,
+            apply_failures: scope.failures,
+          },
+          metrics: {
+            duration_ms: Date.now() - startTime,
+            operations_count: 0,
+          },
+        };
+      }
 
       if (stepConfig.validation && stepConfig.validation !== "none") {
         await this.validateChanges(parseResult.editSpec, context, stepConfig);
@@ -343,16 +379,19 @@ export class DiffApplyStep extends WorkflowStep {
   private applyScopeFilter(
     editSpec: NonNullable<_DiffParseResult["editSpec"]>,
     allowedPaths: string[] | undefined,
+    allOutOfScopeIsNoop: boolean,
     context: WorkflowContext,
   ): {
     editSpec: NonNullable<_DiffParseResult["editSpec"]>;
     droppedPaths: string[];
+    allOutOfScope: boolean;
+    failures: Array<{ path: string; reason: string }>;
   } {
     const normalized = (allowedPaths || [])
       .map((p) => this.normalizeScopePath(p))
       .filter((p) => p.length > 0);
     if (normalized.length === 0) {
-      return { editSpec, droppedPaths: [] };
+      return { editSpec, droppedPaths: [], allOutOfScope: false, failures: [] };
     }
 
     const allowedFiles = new Set(
@@ -376,18 +415,27 @@ export class DiffApplyStep extends WorkflowStep {
     }
 
     if (droppedPaths.length === 0) {
-      return { editSpec, droppedPaths: [] };
+      return { editSpec, droppedPaths: [], allOutOfScope: false, failures: [] };
     }
 
     if (inScope.length === 0) {
+      const failures = droppedPaths.map((p) => ({
+        path: p,
+        reason:
+          "This file is outside the approved scope for the current plan step. " +
+          `Edit only these files: ${[...allowedFiles, ...allowedDirs].join(", ")}`,
+      }));
+      if (allOutOfScopeIsNoop) {
+        return {
+          editSpec: { ...editSpec, ops: [] },
+          droppedPaths,
+          allOutOfScope: true,
+          failures,
+        };
+      }
       throw new DiffApplyFailure(
         `All edits were outside the approved scope for this step: ${droppedPaths.join(", ")}`,
-        droppedPaths.map((p) => ({
-          path: p,
-          reason:
-            "This file is outside the approved scope for the current plan step. " +
-            `Edit only these files: ${[...allowedFiles, ...allowedDirs].join(", ")}`,
-        })),
+        failures,
       );
     }
 
@@ -401,6 +449,8 @@ export class DiffApplyStep extends WorkflowStep {
     return {
       editSpec: { ...editSpec, ops: inScope },
       droppedPaths,
+      allOutOfScope: false,
+      failures: [],
     };
   }
 

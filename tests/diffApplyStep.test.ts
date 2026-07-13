@@ -375,4 +375,40 @@ describe("DiffApplyStep Critical Error Handling", () => {
     const { applyEditOps } = await import("../src/fileops.js");
     expect(applyEditOps).not.toHaveBeenCalled();
   });
+
+  it("can return a structured no-op when every op is out of scope", async () => {
+    diffApplyStep = new DiffApplyStep({
+      name: "test-diff-apply",
+      type: "DiffApplyStep",
+      config: {
+        source_output: "test_output",
+        allowed_paths: ["src/routes/events.ts"],
+        all_out_of_scope_is_noop: true,
+      },
+    });
+
+    (mockContext.getStepOutput as any).mockReturnValue("some diff content");
+
+    const { DiffParser } = await import("../src/agents/parsers/DiffParser.js");
+    (DiffParser.parsePersonaResponse as any).mockReturnValue({
+      success: true,
+      editSpec: {
+        ops: [{ action: "upsert", path: "src/App.tsx", content: "x" }],
+      },
+      diffBlocks: [],
+      errors: [],
+      warnings: [],
+    });
+
+    const result = await diffApplyStep.execute(mockContext);
+
+    expect(result.status).toBe("success");
+    expect(result.outputs?.noop_applied).toBe(true);
+    expect(result.outputs?.no_in_scope_edits).toBe(true);
+    expect(result.outputs?.out_of_scope_files).toEqual(["src/App.tsx"]);
+    expect(result.outputs?.apply_failures).toHaveLength(1);
+
+    const { applyEditOps } = await import("../src/fileops.js");
+    expect(applyEditOps).not.toHaveBeenCalled();
+  });
 });

@@ -1905,6 +1905,7 @@ describe("ImplementationLoopStep", () => {
     const result = await step.execute(context);
     expect(result.status).toBe("failure");
     expect(result.error?.message).toContain("outside the approved scope");
+    expect(result.error?.message).toContain("Treat those blocks as context only");
     const summary = context.getVariable(
       "implementation_config_validation_summary",
     ) as string;
