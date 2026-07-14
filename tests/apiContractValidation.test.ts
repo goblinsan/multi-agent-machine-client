@@ -3,68 +3,6 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 describe("API Contract Validation", () => {
-  it("should extract actual backend routes from dashboard-backend", () => {
-    const backendPath = join(process.cwd(), "src/dashboard-backend/src/routes");
-
-    const projectsFile = readFileSync(
-      join(backendPath, "projects.ts"),
-      "utf-8",
-    );
-    const tasksFile = readFileSync(join(backendPath, "tasks.ts"), "utf-8");
-    const milestonesFile = readFileSync(
-      join(backendPath, "milestones.ts"),
-      "utf-8",
-    );
-
-    const extractRoutes = (content: string): string[] => {
-      const routes: string[] = [];
-      const lines = content.split("\n");
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (
-          line.includes("fastify.get(") ||
-          line.includes("fastify.post(") ||
-          line.includes("fastify.patch(") ||
-          line.includes("fastify.put(") ||
-          line.includes("fastify.delete(")
-        ) {
-          const sameLine = line.match(/["']([^"']+)["']/);
-          if (sameLine) {
-            routes.push(sameLine[1]);
-          } else {
-            const nextLine = lines[i + 1] || "";
-            const routeMatch = nextLine.match(/["']([^"']+)["']/);
-            if (routeMatch) {
-              routes.push(routeMatch[1]);
-            }
-          }
-        }
-      }
-      return routes;
-    };
-
-    const projectRoutes = extractRoutes(projectsFile);
-    const taskRoutes = extractRoutes(tasksFile);
-    const milestoneRoutes = extractRoutes(milestonesFile);
-
-    expect(projectRoutes).toContain("/projects");
-    expect(projectRoutes).toContain("/projects/:id");
-    expect(projectRoutes).toContain("/projects/:id/status");
-
-    expect(taskRoutes).toContain("/projects/:projectId/tasks");
-    expect(taskRoutes).toContain("/projects/:projectId/tasks/:taskId");
-    expect(taskRoutes).toContain("/projects/:projectId/tasks:bulk");
-
-    expect(milestoneRoutes).toContain("/projects/:projectId/milestones");
-    expect(milestoneRoutes).toContain("/projects/:projectId/milestones/:id");
-
-    const allRoutes = [...projectRoutes, ...taskRoutes, ...milestoneRoutes];
-    const v1Routes = allRoutes.filter((r) => r.startsWith("/v1/"));
-
-    expect(v1Routes).toHaveLength(0);
-  });
-
   it("should not have /v1 prefix in ProjectAPI routes", () => {
     const projectAPIFile = readFileSync(
       join(process.cwd(), "src/dashboard/ProjectAPI.ts"),

@@ -1,15 +1,8 @@
-import { spawn, ChildProcess } from "child_process";
 import { getTransport } from "../transport/index.js";
 import { cfg } from "../config.js";
 import { PERSONAS } from "../personaNames.js";
 import { PersonaConsumer } from "../personas/PersonaConsumer.js";
 import { acquireSingleInstanceLock } from "../util/singleInstanceLock.js";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const dashboardPort = process.env.DASHBOARD_PORT || "3000";
 
@@ -21,7 +14,6 @@ if (!process.env.DASHBOARD_BASE_URL) {
   process.env.DASHBOARD_BASE_URL = `http://localhost:${dashboardPort}`;
 }
 
-let dashboardProcess: ChildProcess | null = null;
 let personaConsumer: PersonaConsumer | null = null;
 let isShuttingDown = false;
 
@@ -96,136 +88,35 @@ async function startPersonaConsumers(transport: any): Promise<void> {
   console.log("Persona consumers started");
 }
 
-async function startDashboard(): Promise<void> {
-  const dashboardPath = path.join(__dirname, "..", "dashboard-backend");
-  const dashboardUrl = process.env.DASHBOARD_API_URL || `http://localhost:${dashboardPort}`;
+async function verifyDashboard(): Promise<void> {
+  const dashboardUrl = (
+    process.env.DASHBOARD_API_URL || `http://localhost:${dashboardPort}`
+  ).replace(/\/$/, "");
 
+  let response: Response;
   try {
-    const response = await fetch(`${dashboardUrl}/health`, {
+    response = await fetch(`${dashboardUrl}/health`, {
       method: "GET",
-      signal: AbortSignal.timeout(1000),
+      signal: AbortSignal.timeout(2000),
     });
-
-    if (response.ok) {
-      await verifyDashboardArtifactApi(dashboardUrl);
-      console.log(
-        `Dashboard backend already running at ${dashboardUrl} with artifact API available`,
-      );
-      return;
-    }
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : String(error ?? "unknown");
-    if (reason.includes("artifact API check failed")) {
-      throw new Error(
-        `Dashboard at ${dashboardUrl} is healthy but missing required routes. Stop the stale backend process and rerun. ${reason}`,
-      );
-    }
-    console.log(`Dashboard unavailable, starting local backend (${reason})`);
+    throw new Error(
+      `Dashboard not reachable at ${dashboardUrl} (${reason}). Set DASHBOARD_API_URL and DASHBOARD_BASE_URL to the deployed project-dashboard service.`,
+    );
   }
 
-  if (!fs.existsSync(path.join(dashboardPath, "node_modules"))) {
-    console.log("Installing dashboard backend dependencies...");
-    await new Promise<void>((resolve, reject) => {
-      const installProcess = spawn("npm", ["install"], {
-        cwd: dashboardPath,
-        stdio: ["ignore", "pipe", "pipe"],
-        shell: true,
-      });
-
-      installProcess.stdout?.on("data", (data) => {
-        console.log(`[dashboard-install] ${data.toString().trim()}`);
-      });
-
-      installProcess.stderr?.on("data", (data) => {
-        console.error(`[dashboard-install] ${data.toString().trim()}`);
-      });
-
-      installProcess.on("error", (error) => reject(error));
-
-      installProcess.on("exit", (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`npm install exited with code ${code}`));
-        }
-      });
-    });
+  if (!response.ok) {
+    throw new Error(
+      `Dashboard health check at ${dashboardUrl} returned ${response.status}. Ensure the project-dashboard service is running.`,
+    );
   }
-
-  await new Promise<void>((resolve, reject) => {
-    console.log("Starting dashboard backend...");
-
-    dashboardProcess = spawn("npm", ["run", "dev"], {
-      cwd: dashboardPath,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: true,
-      env: {
-        ...process.env,
-        PORT: dashboardPort,
-      },
-    });
-
-    let startupComplete = false;
-    let settled = false;
-
-    const timeoutMs = 10000;
-    const timeoutId = setTimeout(() => {
-      if (!startupComplete) {
-        const err = new Error(
-          `Dashboard failed to start within ${timeoutMs / 1000}s window`,
-        );
-        console.error(err.message);
-        if (!settled) {
-          settled = true;
-          reject(err);
-        }
-      }
-    }, timeoutMs);
-
-    dashboardProcess.stdout?.on("data", (data) => {
-      const output = data.toString();
-      console.log(`[dashboard] ${output.trim()}`);
-
-      if (
-        !startupComplete &&
-        (output.includes("listening") || output.includes("started"))
-      ) {
-        startupComplete = true;
-        console.log("Dashboard backend ready");
-        settled = true;
-        clearTimeout(timeoutId);
-        resolve();
-      }
-    });
-
-    dashboardProcess.stderr?.on("data", (data) => {
-      console.error(`[dashboard] ${data.toString().trim()}`);
-    });
-
-    dashboardProcess.on("error", (error) => {
-      console.error("Failed to start dashboard:", error);
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
-    });
-
-    dashboardProcess.on("exit", (code) => {
-      if (!settled && !isShuttingDown) {
-        clearTimeout(timeoutId);
-        settled = true;
-        reject(new Error(`Dashboard process exited with code ${code}`));
-        return;
-      }
-
-      if (!isShuttingDown) {
-        console.log(`Dashboard process exited with code ${code}`);
-      }
-    });
-  });
 
   await verifyDashboardArtifactApi(dashboardUrl);
+  console.log(
+    `Dashboard reachable at ${dashboardUrl} with artifact API available`,
+  );
 }
 
 async function shutdown(transport: any) {
@@ -248,12 +139,6 @@ async function shutdown(transport: any) {
     console.log("Transport disconnected");
   } catch (error) {
     console.error("Error disconnecting transport:", error);
-  }
-
-  if (dashboardProcess) {
-    console.log("Stopping dashboard backend...");
-    dashboardProcess.kill("SIGTERM");
-    dashboardProcess = null;
   }
 
   console.log("Shutdown complete");
@@ -323,9 +208,9 @@ async function main() {
   console.log("");
 
   try {
-    await startDashboard();
+    await verifyDashboard();
   } catch (error) {
-    console.error("Failed to start dashboard backend:", error);
+    console.error("Dashboard verification failed:", error);
     process.exit(1);
   }
 

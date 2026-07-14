@@ -33,7 +33,7 @@ This is a multi-agent machine client written in TypeScript that:
 - Multiple transports supported (Redis Streams for distributed, EventEmitter for local)
 - YAML templates define workflow steps and configurations
 - Template expansion happens in ConfigResolver and VariableResolver
-- Local dashboard-backend is alternative to remote project dashboard for distributed workflow design
+- The project dashboard is a separate service (project-dashboard repo, Postgres-backed); this repo talks to it over HTTP
 - Project currently runs in local mode for debugging, designed for distributed execution across network
 
 ## Git Commit Guidelines

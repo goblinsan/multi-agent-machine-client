@@ -382,7 +382,7 @@ Next Steps:
 
 ### Error: "Connection refused"
 
-- Ensure dashboard backend is running: `cd src/dashboard-backend && npm run dev`
+- Ensure the project-dashboard service is running and reachable at `DASHBOARD_API_URL`/`DASHBOARD_BASE_URL`
 
 ### Error: "UNIQUE constraint failed"
 
