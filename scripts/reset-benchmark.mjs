@@ -23,6 +23,7 @@
  *   DRY_RUN=0
  */
 
+import "dotenv/config";
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
