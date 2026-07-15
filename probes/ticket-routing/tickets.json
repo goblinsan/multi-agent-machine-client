@@ -1,0 +1,21 @@
+{
+  "suite": "ticket-routing",
+  "queues": ["billing", "technical", "account", "refund", "general"],
+  "tickets": [
+    { "id": "t1", "text": "My invoice shows a charge I don't recognize for $49.", "queue": "billing" },
+    { "id": "t2", "text": "The app crashes every time I upload a photo.", "queue": "technical" },
+    { "id": "t3", "text": "I want to close my account permanently.", "queue": "account" },
+    { "id": "t4", "text": "I was charged twice and need my money back for the duplicate.", "queue": "refund" },
+    { "id": "t5", "text": "How do I change the email address on my profile?", "queue": "account" },
+    { "id": "t6", "text": "The export button does nothing when I click it.", "queue": "technical" },
+    { "id": "t7", "text": "Can you explain the charges on my latest statement?", "queue": "billing" },
+    { "id": "t8", "text": "I'd like a refund for the annual plan I bought yesterday.", "queue": "refund" },
+    { "id": "t9", "text": "What are your business hours?", "queue": "general" },
+    { "id": "t10", "text": "Login fails with 'invalid token' even with the right password.", "queue": "technical" },
+    { "id": "t11", "text": "Please update my billing address for future receipts.", "queue": "billing" },
+    { "id": "t12", "text": "I never received a refund you promised two weeks ago.", "queue": "refund" },
+    { "id": "t13", "text": "How do I reset my password?", "queue": "account" },
+    { "id": "t14", "text": "Do you offer a student discount?", "queue": "general" },
+    { "id": "t15", "text": "The dashboard loads blank on Safari but works on Chrome.", "queue": "technical" }
+  ]
+}
