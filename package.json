@@ -1,0 +1,1 @@
+{"scripts":{"typecheck":"node -e \"console.error('src/config/defaults.ts(5,3): error TS2353: Object literal may only specify known properties, and logPath does not exist in type AppConfig.'); process.exit(1)\""}}
