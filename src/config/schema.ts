@@ -1,3 +1,1 @@
-export type AppConfig = {
-  enableStreaming: boolean;
-};
+export type AppConfig = { enableStreaming: boolean };
