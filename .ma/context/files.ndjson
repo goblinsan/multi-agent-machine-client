@@ -1,6 +1,0 @@
-{"path":".ma/context/files.ndjson","bytes":211,"lines":4,"mtime":1784155129023.7173}
-{"path":".ma/context/snapshot.json","bytes":592,"lines":30,"mtime":1784155129023.3433}
-{"path":".ma/context/summary.md","bytes":569,"lines":35,"mtime":1784155129023.5483}
-{"path":"README.md","bytes":15,"lines":2,"mtime":1784155128972.1458}
-{"path":"src/index.ts","bytes":22,"lines":2,"mtime":1784155128972.4785}
-{"path":"src/utils.ts","bytes":52,"lines":2,"mtime":1784155128972.73}
