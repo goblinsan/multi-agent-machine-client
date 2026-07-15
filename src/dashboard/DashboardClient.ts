@@ -17,6 +17,7 @@ export class DashboardClient {
       method?: string;
       body?: any;
       headers?: Record<string, string>;
+      timeoutMs?: number;
     } = {},
   ): Promise<{ ok: boolean; status: number; data: T | null; error?: any }> {
     if (!this.baseUrl) {
@@ -24,7 +25,7 @@ export class DashboardClient {
       return { ok: false, status: 0, data: null };
     }
 
-    const { method = "GET", body, headers = {} } = options;
+    const { method = "GET", body, headers = {}, timeoutMs } = options;
     const url = `${this.baseUrl}${path}`;
 
     try {
@@ -36,6 +37,7 @@ export class DashboardClient {
           ...headers,
         },
         body: body ? JSON.stringify(body) : undefined,
+        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
       });
 
       const status = res.status;
@@ -77,14 +79,16 @@ export class DashboardClient {
   protected async post<T = any>(
     path: string,
     body?: any,
+    timeoutMs?: number,
   ): Promise<{ ok: boolean; status: number; data: T | null; error?: any }> {
-    return this.request<T>(path, { method: "POST", body });
+    return this.request<T>(path, { method: "POST", body, timeoutMs });
   }
 
   protected async patch<T = any>(
     path: string,
     body?: any,
+    timeoutMs?: number,
   ): Promise<{ ok: boolean; status: number; data: T | null; error?: any }> {
-    return this.request<T>(path, { method: "PATCH", body });
+    return this.request<T>(path, { method: "PATCH", body, timeoutMs });
   }
 }

@@ -12,6 +12,7 @@ import type { MessageTransport } from "../transport/index.js";
 import { join as _join, basename } from "path";
 import { extractRepoRemote } from "./helpers/repoRemoteResolver.js";
 import { TaskAPI } from "../dashboard/TaskAPI.js";
+import { CoordinatorRunTracker } from "../runs/CoordinatorRunTracker.js";
 const projectAPI = new ProjectAPI();
 const taskAPI = new TaskAPI();
 import { TaskFetcher } from "./coordinator/TaskFetcher.js";
@@ -122,6 +123,13 @@ export class WorkflowCoordinator {
       availableWorkflows: this.engine
         .getWorkflowDefinitions()
         .map((d) => d.name),
+    });
+
+    const runTracker = await CoordinatorRunTracker.start({
+      projectId,
+      workflowId,
+      workflowType: firstString(msg?.intent) || "orchestrate_milestone",
+      metadata: { consumerId: cfg.consumerId || null },
     });
 
     try {
@@ -347,6 +355,8 @@ export class WorkflowCoordinator {
 
           const preStatus = this.taskFetcher.normalizeTaskStatus(task?.status);
 
+          await runTracker.taskStarted(taskId, priorAttempts);
+
           try {
             const result = await this.processTask(transport, task, {
               workflowId,
@@ -359,6 +369,11 @@ export class WorkflowCoordinator {
               force_rescan: payload?.force_rescan || false,
             });
             results.push(result);
+
+            await runTracker.taskFinished(taskId, priorAttempts, {
+              success: result.success,
+              failedStep: result.failedStep,
+            });
 
             if (result.success) {
               exhaustedTaskIds.add(taskId);
@@ -426,6 +441,9 @@ export class WorkflowCoordinator {
               taskId: task?.id,
               error: error.message,
             });
+            await runTracker.taskFinished(taskId, priorAttempts, {
+              error: error.message,
+            });
             batchFailed = true;
             if (cfg.coordinatorFailFast) {
               abortedDueToFailure = true;
@@ -478,6 +496,8 @@ export class WorkflowCoordinator {
         failed: results.filter((r) => !r.success).length,
       });
 
+      await runTracker.finish(results, abortedDueToFailure, iterationCount);
+
       return {
         success: true,
         workflowId,
@@ -490,6 +510,7 @@ export class WorkflowCoordinator {
         projectId,
         error: error.message,
       });
+      await runTracker.finishFailed(error.message);
       throw error;
     }
   }
