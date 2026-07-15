@@ -1,0 +1,10 @@
+{
+  "status": "pass",
+  "summary": "No vulnerabilities found",
+  "findings": {
+    "severe": [],
+    "high": [],
+    "medium": [],
+    "low": []
+  }
+}
