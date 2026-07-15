@@ -49,3 +49,5 @@ outputs/**/*.json
 # Ignore compiled JS in src if present
 src/**/*.js
 src/**/*.js.map
+
+probes/**/last-review.md

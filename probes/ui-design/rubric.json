@@ -1,0 +1,26 @@
+{
+  "name": "ui-design-quality",
+  "version": "1.0.0",
+  "sources": ["Material 3 (m3.material.io)", "impeccable.style", "WCAG 2.1 AA"],
+  "scale": { "0": "fail", "1": "partial", "2": "pass" },
+  "criteria": [
+    { "id": "type-hierarchy", "theme": "typography", "criterion": "Purposeful, consistent type scale and heading/body hierarchy — not default browser sizing." },
+    { "id": "type-weight", "theme": "typography", "criterion": "Deliberate font-weight relationships; weight used to signal hierarchy, not at random." },
+    { "id": "type-readability", "theme": "typography", "criterion": "Body copy is readable: sensible measure (~45-80ch), line-height, and size." },
+    { "id": "color-purpose", "theme": "color", "criterion": "Color is tied to roles/purpose (semantic), not generic defaults; a coherent palette." },
+    { "id": "color-not-ai", "theme": "color", "criterion": "Avoids AI-default palettes (purple→blue gradient, lone acid accent, cream+terracotta)." },
+    { "id": "color-contrast", "theme": "color", "criterion": "Text and interactive elements meet WCAG AA contrast." },
+    { "id": "spacing-scale", "theme": "spacing", "criterion": "Consistent spacing scale / tokens; alignment and rhythm are intentional." },
+    { "id": "spacing-restraint", "theme": "spacing", "criterion": "No gratuitous ornamentation (decorative side-stripes, superfluous borders)." },
+    { "id": "layout-priority", "theme": "spacing", "criterion": "Visual hierarchy matches task priority; the primary action is obvious." },
+    { "id": "restraint-effects", "theme": "restraint", "criterion": "No gradient-text, glassmorphism, or decorative motion used reflexively." },
+    { "id": "restraint-generated", "theme": "restraint", "criterion": "Does not read as templated / generated output; feels intentional and specific." },
+    { "id": "restraint-copy", "theme": "restraint", "criterion": "Copy is plain and specific; no hyperbolic marketing language." },
+    { "id": "component-consistency", "theme": "components", "criterion": "Reuses component variants and applies the same rules across elements consistently." },
+    { "id": "m3-tokens", "theme": "material3", "criterion": "Uses a coherent token system (color roles, shape, elevation) in the spirit of Material 3." },
+    { "id": "m3-states", "theme": "material3", "criterion": "Interactive elements have clear state feedback (hover, press, focus, disabled)." },
+    { "id": "a11y-semantics", "theme": "accessibility", "criterion": "Real semantic elements (button/a/nav/heading) rather than click-handlers on divs." },
+    { "id": "a11y-labels", "theme": "accessibility", "criterion": "Inputs have associated labels; images have alt text; icon-only controls are labeled." },
+    { "id": "a11y-focus", "theme": "accessibility", "criterion": "Visible keyboard focus states; tab order is sensible." }
+  ]
+}
