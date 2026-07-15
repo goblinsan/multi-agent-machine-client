@@ -2,10 +2,7 @@ import { logger } from "../../logger.js";
 import { cfg } from "../../config.js";
 import { SYSTEM_PROMPTS } from "../../personas.js";
 import { getPersonaResponseFormat } from "../responseSchemas.js";
-import {
-  buildPersonaMessages,
-  callPersonaModel,
-} from "../PersonaRequestHandler.js";
+import * as PersonaRequestHandler from "../PersonaRequestHandler.js";
 import { ContextExtractor } from "../context/ContextExtractor.js";
 import { MessageTransport } from "../../transport/index.js";
 import { personaTimeoutMs } from "../../util.js";
@@ -78,11 +75,6 @@ export class PersonaRequestExecutor {
   private async handleLLMRequest(params: PersonaRequestParams): Promise<any> {
     const { persona, workflowId, intent, payload, repo, branch } = params;
 
-    const model = cfg.personaModels[persona];
-    if (!model) {
-      throw new Error(`No model configured for persona '${persona}'`);
-    }
-
     const systemPrompt =
       SYSTEM_PROMPTS[persona] || `You are the ${persona} persona.`;
 
@@ -101,7 +93,7 @@ export class PersonaRequestExecutor {
       dashboardContext,
     } = context;
 
-    const messages = buildPersonaMessages({
+    const messages = PersonaRequestHandler.buildPersonaMessages({
       persona,
       systemPrompt,
       userText,
@@ -112,6 +104,11 @@ export class PersonaRequestExecutor {
       promptFileSnippets: payload.snippets,
       extraSystemMessages: payload.extra_system_messages,
     });
+
+    const model = cfg.personaModels[persona];
+    if (!model) {
+      throw new Error(`No model configured for persona '${persona}'`);
+    }
 
     const requestedTimeoutMs =
       payload.timeout_ms ||
@@ -130,7 +127,7 @@ export class PersonaRequestExecutor {
       structured: !!responseFormat,
     });
 
-    const response = await callPersonaModel({
+    const response = await PersonaRequestHandler.callPersonaModel({
       persona,
       model,
       messages,
