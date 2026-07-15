@@ -1,0 +1,30 @@
+{
+  "timestamp": 1784155127762,
+  "repoPath": "/var/folders/zc/k0021hb50vsb9yj1syqfxx5w0000gn/T/mc-repo-GfV44G",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 15,
+      "mtime": 1784155127708.2585,
+      "lines": 2
+    },
+    {
+      "path": "src/index.ts",
+      "bytes": 22,
+      "mtime": 1784155127708.576,
+      "lines": 2
+    },
+    {
+      "path": "src/utils.ts",
+      "bytes": 52,
+      "mtime": 1784155127708.802,
+      "lines": 2
+    }
+  ],
+  "totals": {
+    "files": 3,
+    "bytes": 89,
+    "depth": 10
+  },
+  "headSha": "f0aceb984e9ffd312bd930d986d2290c5a1130ef"
+}
