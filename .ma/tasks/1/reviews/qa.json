@@ -1,7 +1,0 @@
-{
-  "status": "fail",
-  "summary": "Tests failing",
-  "findings": [
-    "Test case 1 failed"
-  ]
-}
