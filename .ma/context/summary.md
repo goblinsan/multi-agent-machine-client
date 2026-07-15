@@ -1,6 +1,6 @@
 # Repository Context Summary
 
-Generated: 2026-07-15T22:38:49.017Z
+Generated: 2026-07-15T22:38:50.120Z
 
 ## Overview
 
@@ -16,13 +16,16 @@ Generated: 2026-07-15T22:38:49.017Z
 
 ## Statistics
 
-- **Total Files**: 3
-- **Total Size**: 0.09 KB
+- **Total Files**: 6
+- **Total Size**: 1.43 KB
 - **Max Depth**: 10
 
 ## Directory Structure
 
 ```
+.ma/context/files.ndjson (0.2KB)
+.ma/context/snapshot.json (0.6KB)
+.ma/context/summary.md (0.6KB)
 README.md (0.0KB)
 src/index.ts (0.0KB)
 src/utils.ts (0.1KB)
@@ -30,5 +33,7 @@ src/utils.ts (0.1KB)
 
 ## File Types
 
+- .md: 2 files
 - .ts: 2 files
-- .md: 1 file
+- .ndjson: 1 file
+- .json: 1 file
