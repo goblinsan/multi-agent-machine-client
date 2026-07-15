@@ -49,6 +49,7 @@ const OUT = process.env.OUT || arg("out") || join(HERE, "..", "probes", "ui-desi
 const RUN_TAG = process.env.RUN_TAG || arg("tag");
 const NODE_ID = process.env.NODE_ID || null;
 const REVIEW_FILE = arg("review");
+const RENDER_REPORT = arg("render-report");
 const MAX_SRC = 24000;
 const EXT = [".tsx", ".ts", ".jsx", ".js", ".css"];
 
@@ -83,16 +84,27 @@ function loadSource() {
   return parts.join("\n\n");
 }
 
-function buildPrompt(source) {
+function buildPrompt(source, render) {
   const list = rubric.criteria
     .map((c) => `${c.id} [${c.theme}]: ${c.criterion}`)
     .join("\n");
+  let renderBlock = "";
+  if (render) {
+    const v = render.axe.violations
+      .map((x) => `${x.id} (${x.impact}, ${x.nodes} node[s]): ${x.help}`)
+      .join("\n");
+    renderBlock =
+      `\n\nRENDERED ACCESSIBILITY AUDIT (axe-core, ${render.axe.violationCount} violation[s]):\n` +
+      `${v || "none"}\n` +
+      `The a11y and contrast criteria are scored from this audit, not your guess; ` +
+      `use it to inform the rest of your review.`;
+  }
   return (
     `Review this web UI codebase for design quality against the rubric below.\n` +
     `Score EACH criterion 0 (fail), 1 (partial), or 2 (pass) with a one-line note.\n` +
     `Then list concrete findings and a one-paragraph summary.\n` +
     `Respond with ONLY JSON: {"scores":[{"id","score","note"}],"findings":[".."],"summary":".."}.\n\n` +
-    `RUBRIC:\n${list}\n\nSOURCE:\n${source}`
+    `RUBRIC:\n${list}${renderBlock}\n\nSOURCE:\n${source}`
   );
 }
 
@@ -127,8 +139,15 @@ async function callModel(prompt) {
   return (await res.json()).choices?.[0]?.message?.content || "";
 }
 
-function scoreReview(review) {
+function scoreReview(review, renderCriteria) {
   const byId = new Map((review.scores || []).map((s) => [s.id, Math.max(0, Math.min(2, Number(s.score) || 0))]));
+  const overridden = new Set();
+  if (renderCriteria) {
+    for (const [id, score] of Object.entries(renderCriteria)) {
+      byId.set(id, Math.max(0, Math.min(2, Number(score))));
+      overridden.add(id);
+    }
+  }
   const themes = {};
   let sum = 0;
   let covered = 0;
@@ -167,16 +186,20 @@ function writeDesignMd(review, s) {
 async function main() {
   if (!MODEL_ID) throw new Error("MODEL_ID required (set MODEL_ID or --model=)");
 
+  const render = RENDER_REPORT ? JSON.parse(readFileSync(RENDER_REPORT, "utf8")) : null;
+  if (render)
+    console.log(`Render report: ${render.axe.violationCount} axe violation(s), a11y criteria from render`);
+
   let review;
   if (REVIEW_FILE) {
     review = JSON.parse(readFileSync(REVIEW_FILE, "utf8"));
     console.log(`Using review from ${REVIEW_FILE}`);
   } else {
-    review = extractReview(await callModel(buildPrompt(loadSource())));
+    review = extractReview(await callModel(buildPrompt(loadSource(), render)));
     console.log(`Model scored ${(review.scores || []).length} criteria`);
   }
 
-  const s = scoreReview(review);
+  const s = scoreReview(review, render ? render.criteria : null);
   const pass = s.overall >= ACCEPT;
   console.log(`  overall=${(s.overall * 100).toFixed(0)}% covered=${s.covered}/${s.total} -> ${pass ? "PASS" : "FAIL"}`);
   console.log(`  ${Object.entries(s.perTheme).map(([t, v]) => `${t}:${(v * 100).toFixed(0)}%`).join("  ")}`);
@@ -191,8 +214,18 @@ async function main() {
     model_id: MODEL_ID,
     node_id: NODE_ID,
     pass,
-    metrics: { overall: s.overall, covered: s.covered, total: s.total, per_theme: s.perTheme },
-    score: { summary: review.summary, findings: (review.findings || []).slice(0, 20) },
+    metrics: {
+      overall: s.overall,
+      covered: s.covered,
+      total: s.total,
+      per_theme: s.perTheme,
+      ...(render ? { axe_violations: render.axe.violationCount, rendered: true } : { rendered: false }),
+    },
+    score: {
+      summary: review.summary,
+      findings: (review.findings || []).slice(0, 20),
+      ...(render ? { screenshot: render.screenshot, axe: render.axe.violations } : {}),
+    },
     ...(RUN_TAG ? { external_id: `ui-design-quality:${CASE}:${MODEL_ID}:${RUN_TAG}` } : {}),
   };
 

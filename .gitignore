@@ -51,3 +51,5 @@ src/**/*.js
 src/**/*.js.map
 
 probes/**/last-review.md
+probes/ui-design/render-report.json
+probes/ui-design/screenshots/
