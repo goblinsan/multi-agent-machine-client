@@ -1,0 +1,19 @@
+{
+  "suite": "codebase-audit",
+  "taxonomy": [
+    "security",
+    "null-safety",
+    "correctness",
+    "error-handling",
+    "resource-leak",
+    "performance"
+  ],
+  "concerns": [
+    { "file": "src/userStore.js", "line": 1, "category": "security", "note": "Hardcoded API token" },
+    { "file": "src/userStore.js", "line": 16, "category": "null-safety", "note": "user.profile may be undefined" },
+    { "file": "src/pricing.js", "line": 3, "category": "correctness", "note": "Off-by-one: loop uses i <= items.length" },
+    { "file": "src/pricing.js", "line": 10, "category": "error-handling", "note": "JSON.parse without try/catch" },
+    { "file": "src/db.js", "line": 3, "category": "security", "note": "SQL injection via string concatenation" },
+    { "file": "src/db.js", "line": 10, "category": "resource-leak", "note": "countPending never releases the connection" }
+  ]
+}
