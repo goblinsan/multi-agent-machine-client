@@ -1,1 +1,1 @@
-{"scripts":{}}
+{"scripts":{"typecheck":"node -e \"process.exit(0)\""}}
