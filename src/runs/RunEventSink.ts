@@ -79,7 +79,11 @@ export class FileRunEventSink implements RunEventSink {
 }
 
 export class DashboardRunEventSink implements RunEventSink {
-  private readonly api = new RunAPI();
+  private readonly api: RunAPI;
+
+  constructor(baseUrl?: string) {
+    this.api = new RunAPI(baseUrl);
+  }
 
   async startRun(input: StartRunInput): Promise<RunHandle> {
     const res = await this.api.createRun(input.projectId, {

@@ -6,8 +6,8 @@ export class DashboardClient {
   protected readonly baseUrl: string;
   protected readonly apiKey: string;
 
-  constructor() {
-    this.baseUrl = cfg.dashboardBaseUrl?.replace(/\/$/, "") || "";
+  constructor(baseUrl?: string) {
+    this.baseUrl = (baseUrl ?? cfg.dashboardBaseUrl)?.replace(/\/$/, "") || "";
     this.apiKey = cfg.dashboardApiKey || "";
   }
 

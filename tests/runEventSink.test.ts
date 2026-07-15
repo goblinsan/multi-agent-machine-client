@@ -64,7 +64,7 @@ describe("FileRunEventSink", () => {
 
 describe("DashboardRunEventSink resilience", () => {
   it("returns a null handle when the dashboard is unreachable and never throws", async () => {
-    const sink = new DashboardRunEventSink();
+    const sink = new DashboardRunEventSink("http://127.0.0.1:1");
     const handle = await sink.startRun({
       projectId: "1",
       externalId: "wf-unreachable",
