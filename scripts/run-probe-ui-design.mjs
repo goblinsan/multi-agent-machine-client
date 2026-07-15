@@ -27,7 +27,7 @@
  */
 
 import "dotenv/config";
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
@@ -42,10 +42,12 @@ const DASH_BASE = (process.env.DASH_BASE || process.env.DASHBOARD_API_URL || "ht
 const MODEL_ID = process.env.MODEL_ID || arg("model");
 const PROBE_ENDPOINT = (process.env.PROBE_ENDPOINT || arg("endpoint") || "").replace(/\/$/, "");
 const PROBE_MODEL = process.env.PROBE_MODEL || arg("probe-model") || MODEL_ID;
+const PROBE_MAX_TOKENS = Number(process.env.PROBE_MAX_TOKENS || arg("probe-max-tokens") || 6000);
 const ACCEPT = Number(process.env.ACCEPT || arg("accept") || 0.7);
 const TARGET = process.env.TARGET || arg("target") || join(homedir(), "code", "todo-web-benchmark", "src");
 const CASE = process.env.CASE || arg("case") || "todo-web-ui";
 const OUT = process.env.OUT || arg("out") || join(HERE, "..", "probes", "ui-design", "last-review.md");
+const REPORT = process.env.REPORT || arg("report") || join(HERE, "..", "probes", "ui-design", "last-review.json");
 const RUN_TAG = process.env.RUN_TAG || arg("tag");
 const NODE_ID = process.env.NODE_ID || null;
 const REVIEW_FILE = arg("review");
@@ -103,7 +105,8 @@ function buildPrompt(source, render) {
     `Review this web UI codebase for design quality against the rubric below.\n` +
     `Score EACH criterion 0 (fail), 1 (partial), or 2 (pass) with a one-line note.\n` +
     `Then list concrete findings and a one-paragraph summary.\n` +
-    `Respond with ONLY JSON: {"scores":[{"id","score","note"}],"findings":[".."],"summary":".."}.\n\n` +
+    `Respond with ONLY valid minified JSON. Do not include markdown, prose, analysis, or <think> text.\n` +
+    `Required schema: {"scores":[{"id":"criterion-id","score":0,"note":"one-line evidence"}],"findings":["concrete improvement"],"summary":"one paragraph"}.\n\n` +
     `RUBRIC:\n${list}${renderBlock}\n\nSOURCE:\n${source}`
   );
 }
@@ -128,7 +131,7 @@ async function callModel(prompt) {
     body: JSON.stringify({
       model: PROBE_MODEL,
       temperature: 0.2,
-      max_tokens: 3000,
+      max_tokens: PROBE_MAX_TOKENS,
       messages: [
         { role: "system", content: "You are an exacting UI design reviewer." },
         { role: "user", content: prompt },
@@ -166,6 +169,7 @@ function scoreReview(review, renderCriteria) {
 }
 
 function writeDesignMd(review, s) {
+  mkdirSync(dirname(OUT), { recursive: true });
   const lines = [
     `# Design review — ${MODEL_ID}`,
     ``,
@@ -183,6 +187,29 @@ function writeDesignMd(review, s) {
   writeFileSync(OUT, lines.join("\n"));
 }
 
+function writeReport(review, s, pass, render, response) {
+  mkdirSync(dirname(REPORT), { recursive: true });
+  writeFileSync(
+    REPORT,
+    JSON.stringify(
+      {
+        model_id: MODEL_ID,
+        benchmark_case: CASE,
+        pass,
+        accept_threshold: ACCEPT,
+        score: s,
+        review,
+        render,
+        dashboard_response: response,
+        design_md: OUT,
+        timestamp: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function main() {
   if (!MODEL_ID) throw new Error("MODEL_ID required (set MODEL_ID or --model=)");
 
@@ -191,11 +218,13 @@ async function main() {
     console.log(`Render report: ${render.axe.violationCount} axe violation(s), a11y criteria from render`);
 
   let review;
+  let rawResponse = null;
   if (REVIEW_FILE) {
     review = JSON.parse(readFileSync(REVIEW_FILE, "utf8"));
     console.log(`Using review from ${REVIEW_FILE}`);
   } else {
-    review = extractReview(await callModel(buildPrompt(loadSource(), render)));
+    rawResponse = await callModel(buildPrompt(loadSource(), render));
+    review = extractReview(rawResponse);
     console.log(`Model scored ${(review.scores || []).length} criteria`);
   }
 
@@ -234,7 +263,16 @@ async function main() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`post result -> ${res.status}: ${await res.text()}`);
+  const responseText = await res.text();
+  let responseBody = null;
+  try {
+    responseBody = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    responseBody = responseText;
+  }
+  if (!res.ok) throw new Error(`post result -> ${res.status}: ${responseText}`);
+  writeReport({ ...review, raw_response: rawResponse }, s, pass, render, responseBody);
+  console.log(`  wrote ${relative(process.cwd(), REPORT)}`);
   console.log(`\nRecorded ui-design-quality for ${MODEL_ID}: overall=${(s.overall * 100).toFixed(0)}% pass=${pass} -> ${res.status}`);
 }
 
