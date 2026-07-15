@@ -1,0 +1,24 @@
+{
+  "timestamp": 1784155113528,
+  "repoPath": "/var/folders/zc/k0021hb50vsb9yj1syqfxx5w0000gn/T/mc-repo-1MpPoK",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 14,
+      "mtime": 1784155113484.5737,
+      "lines": 1
+    },
+    {
+      "path": "src/example.ts",
+      "bytes": 29,
+      "mtime": 1784155113484.3308,
+      "lines": 1
+    }
+  ],
+  "totals": {
+    "files": 2,
+    "bytes": 43,
+    "depth": 10
+  },
+  "headSha": "a5ed14d7f6b54bed5696d2ceb4f7e3fc92be13a3"
+}
