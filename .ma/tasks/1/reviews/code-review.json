@@ -1,0 +1,10 @@
+{
+  "status": "pass",
+  "summary": "Code looks good",
+  "findings": {
+    "severe": [],
+    "high": [],
+    "medium": [],
+    "low": []
+  }
+}
