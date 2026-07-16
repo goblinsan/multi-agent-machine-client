@@ -58,6 +58,29 @@ describe("buildMissingExportDirective", () => {
     }
   });
 
+  it("handles TS2459 'declares locally but not exported' phrasing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "mexp2-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src", "api.ts"),
+        "export const apiGet = 1;\nexport const apiPost = 2;\n",
+      );
+      const directive = await buildMissingExportDirective(root, [
+        {
+          file: "src/views/ProjectsView.tsx",
+          message:
+            'Module \'"../api"\' declares \'createDashboardApi\' locally, but it is not exported.',
+        },
+      ]);
+      expect(directive).toContain("apiGet");
+      expect(directive).toContain("createDashboardApi");
+      expect(directive).toContain("does NOT export");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("returns null when there is no missing-member error", async () => {
     const directive = await buildMissingExportDirective("/tmp", [
       { file: "a.ts", message: "Typecheck TS6133 'React' is declared" },

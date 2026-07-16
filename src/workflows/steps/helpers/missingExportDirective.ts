@@ -8,7 +8,7 @@ export type MissingExportError = {
 };
 
 const MISSING_MEMBER_PATTERN =
-  /Module\s+'"?([^"'`]+)"?'\s+has no exported member(?:\s+named)?\s+'([^']+)'/;
+  /Module\s+'"?([^"'`]+)"?'\s+(?:has no exported member(?:\s+named)?\s+'([^']+)'|declares\s+'([^']+)'\s+locally, but it is not exported)/;
 
 export function extractExportNames(source: string): string[] {
   const names = new Set<string>();
@@ -80,10 +80,12 @@ export async function buildMissingExportDirective(
     if (!specifier.startsWith(".")) continue;
     const importer = error.file;
     if (!importer) continue;
+    const symbol = match[2] || match[3];
+    if (!symbol) continue;
     const key = `${importer}::${specifier}`;
     const entry =
       byModule.get(key) || { importer, specifier, missing: new Set<string>() };
-    entry.missing.add(match[2]);
+    entry.missing.add(symbol);
     byModule.set(key, entry);
   }
   if (byModule.size === 0) return null;
