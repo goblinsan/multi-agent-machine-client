@@ -57,6 +57,58 @@ describe("DeterministicReviewStep", () => {
     expect(context.getVariable("code_review_request_result").findings.high).toHaveLength(1);
   });
 
+  it("secret_scan fails on a real hardcoded secret", async () => {
+    const repoRoot = await makeRepo({
+      "src/config.ts": [
+        'export const apiKey = "9f8a7b6c5d4e3f2a1b0c9d8e";',
+        "export const url = process.env.API_URL;",
+      ].join("\n"),
+    });
+    const context = makeContext(repoRoot, ["src/config.ts"]);
+    const step = new DeterministicReviewStep({
+      name: "security_request",
+      type: "DeterministicReviewStep",
+      config: {
+        review_type: "security",
+        output_prefix: "security_request",
+        changed_files: ["src/config.ts"],
+        block_on: ["severe"],
+        rules: [{ id: "secret_scan", severity: "severe" }],
+      },
+    });
+
+    const result = await step.execute(context);
+    expect(result.status).toBe("success");
+    expect(context.getVariable("security_request_status")).toBe("fail");
+    expect(context.getVariable("security_request_result").findings.severe).toHaveLength(1);
+  });
+
+  it("secret_scan passes on placeholders and env refs", async () => {
+    const repoRoot = await makeRepo({
+      "src/config.ts": [
+        'const apiKey = "your-api-key-here";',
+        'const token = "fixture_api_token_not_a_secret";',
+        "const secret = process.env.SECRET;",
+      ].join("\n"),
+    });
+    const context = makeContext(repoRoot, ["src/config.ts"]);
+    const step = new DeterministicReviewStep({
+      name: "security_request",
+      type: "DeterministicReviewStep",
+      config: {
+        review_type: "security",
+        output_prefix: "security_request",
+        changed_files: ["src/config.ts"],
+        block_on: ["severe", "high"],
+        rules: [{ id: "secret_scan", severity: "severe" }],
+      },
+    });
+
+    const result = await step.execute(context);
+    expect(result.status).toBe("success");
+    expect(context.getVariable("security_request_status")).toBe("pass");
+  });
+
   it("detects methods larger than configured limits", async () => {
     const repoRoot = await makeRepo({
       "src/service.ts": [

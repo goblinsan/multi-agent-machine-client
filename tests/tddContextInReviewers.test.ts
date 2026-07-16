@@ -57,7 +57,7 @@ describe("TDD Context in Review Payloads", () => {
     );
   });
 
-  it("in-review-task-flow.yaml: security_request uses security_review template", () => {
+  it("in-review-task-flow.yaml: security_request is a deterministic secret scan", () => {
     const content = readFileSync(inReviewFlowPath, "utf-8");
     const workflow = yaml.parse(content);
 
@@ -66,7 +66,11 @@ describe("TDD Context in Review Payloads", () => {
     );
 
     expect(securityStep).toBeDefined();
-    expect(securityStep.template).toBe("security_review");
+    expect(securityStep.template).toBeUndefined();
+    expect(securityStep.type).toBe("DeterministicReviewStep");
+    expect(securityStep.config.rules.map((r: any) => r.id)).toContain(
+      "secret_scan",
+    );
   });
 
   it("review-failure-handling.yaml: PM evaluation receives TDD context (regression test)", () => {

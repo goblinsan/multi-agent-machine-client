@@ -66,6 +66,9 @@ export class DeterministicReviewStep extends WorkflowStep {
         case "conflict_markers":
           await this.runConflictMarkersRule(context.repoRoot, files, rule, findings);
           break;
+        case "secret_scan":
+          await this.runSecretScanRule(context.repoRoot, files, rule, findings);
+          break;
         default:
           findings.low.push({
             rule_id: "unknown_rule",
@@ -270,6 +273,75 @@ export class DeterministicReviewStep extends WorkflowStep {
         });
       }
     }
+  }
+
+  private async runSecretScanRule(
+    repoRoot: string,
+    files: string[],
+    rule: ReviewRule,
+    findings: Record<Severity, ReviewFinding[]>,
+  ): Promise<void> {
+    const severity = rule.severity || "severe";
+    for (const file of this.filterSourceFiles(files, rule)) {
+      const lines = await this.readLines(repoRoot, file);
+      if (!lines) continue;
+      for (let i = 0; i < lines.length; i++) {
+        const kind = this.detectSecret(lines[i]);
+        if (kind) {
+          this.addFinding(findings, severity, {
+            rule_id: "secret_scan",
+            file,
+            line: i + 1,
+            issue: `Possible hardcoded secret (${kind}).`,
+            recommendation:
+              "Move secrets to environment variables or a secret store; never commit them.",
+          });
+        }
+      }
+    }
+  }
+
+  private detectSecret(line: string): string | null {
+    const patterns: Array<[string, RegExp]> = [
+      ["private-key", /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/],
+      ["aws-access-key", /\bAKIA[0-9A-Z]{16}\b/],
+      ["github-token", /\bghp_[0-9A-Za-z]{36}\b|\bgithub_pat_[0-9A-Za-z_]{22,}\b/],
+      ["slack-token", /\bxox[baprs]-[0-9A-Za-z-]{10,}\b/],
+      ["google-api-key", /\bAIza[0-9A-Za-z_-]{35}\b/],
+    ];
+    for (const [name, re] of patterns) {
+      if (re.test(line)) return name;
+    }
+    const assign = line.match(
+      /\b(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\b\s*[:=]\s*["'`]([^"'`]{8,})["'`]/i,
+    );
+    if (assign && !this.isPlaceholderSecret(assign[1])) {
+      return "hardcoded-secret-assignment";
+    }
+    return null;
+  }
+
+  private isPlaceholderSecret(value: string): boolean {
+    if (/\$\{|process\.env|import\.meta\.env|<[^>]+>/.test(value)) return true;
+    const v = value.toLowerCase();
+    const markers = [
+      "changeme",
+      "change-me",
+      "your-",
+      "your_",
+      "example",
+      "placeholder",
+      "dummy",
+      "fixture",
+      "not_a_secret",
+      "not-a-secret",
+      "sample",
+      "redacted",
+      "todo",
+      "fake",
+      "xxxx",
+    ];
+    return markers.some((m) => v.includes(m));
   }
 
   private findFunctions(lines: string[]): Array<{ name: string; startLine: number; lineCount: number }> {

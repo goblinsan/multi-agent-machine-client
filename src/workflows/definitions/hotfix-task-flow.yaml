@@ -163,16 +163,20 @@ steps:
         diff_summary: "${review_diff_summary || ''}"
         diff_changed_files: "${review_diff_files || []}"
 
-  - template: security_review
-    name: security_request
+  - name: security_request
+    type: DeterministicReviewStep
+    description: "Run deterministic security scan (secret detection) on changed files"
     depends_on: ["code_review_request"]
     condition: ${code_review_request_status} == 'pass'
-    overrides:
-      config:
-        payload:
-          hotfix_mode: true
-          focus: "critical"
-        timeout: 300000
+    outputs: [security_request_result, security_request_status]
+    config:
+      review_type: "security"
+      output_prefix: "security_request"
+      changed_files: "${review_diff_files || []}"
+      block_on: ["severe", "high"]
+      rules:
+        - id: "secret_scan"
+          severity: "severe"
 
   - name: handle_security_failure
     type: SubWorkflowStep

@@ -224,15 +224,20 @@ steps:
     config:
       status: blocked
 
-  - template: security_review
-    name: security_request
+  - name: security_request
+    type: DeterministicReviewStep
+    description: "Run deterministic security scan (secret detection) on changed files"
     depends_on: [qa_request]
     condition: ${code_review_request_status} != 'fail' && ${qa_request_status} != 'fail'
-    overrides:
-      config:
-        payload:
-          resume_review: true
-          existing_tasks: ${review_existing_tasks || []}
+    outputs: [security_request_result, security_request_status]
+    config:
+      review_type: "security"
+      output_prefix: "security_request"
+      changed_files: "${review_diff_files || []}"
+      block_on: ["severe", "high"]
+      rules:
+        - id: "secret_scan"
+          severity: "severe"
 
   - name: commit_security_result
     type: GitArtifactStep
