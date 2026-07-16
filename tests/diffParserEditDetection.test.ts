@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { responseHasApplicableEdits } from "../src/workflows/steps/helpers/personaRequest/personaRequestExecutor";
+import { DiffParser } from "../src/agents/parsers/DiffParser";
+
+function opCount(raw: string): number {
+  const parsed = DiffParser.parsePersonaResponse(raw);
+  return parsed.success ? parsed.editSpec?.ops?.length ?? 0 : 0;
+}
 
 const fileBlock = [
   "```file path=src/views/ProjectsView.tsx",
@@ -10,9 +15,9 @@ const fileBlock = [
   "```",
 ].join("\n");
 
-describe("responseHasApplicableEdits", () => {
+describe("DiffParser edit detection", () => {
   it("recognizes a full-file rewrite block as applicable edits", () => {
-    expect(responseHasApplicableEdits(fileBlock)).toBe(true);
+    expect(opCount(fileBlock)).toBeGreaterThan(0);
   });
 
   it("recognizes edits even when an info_request is also present", () => {
@@ -23,18 +28,18 @@ describe("responseHasApplicableEdits", () => {
         status: "info_request",
         requests: [{ type: "repo_file", path: "src/types.ts" }],
       });
-    expect(responseHasApplicableEdits(mixed)).toBe(true);
+    expect(opCount(mixed)).toBeGreaterThan(0);
   });
 
-  it("returns false for a pure information request", () => {
+  it("returns no ops for a pure information request", () => {
     const infoOnly = JSON.stringify({
       status: "info_request",
       requests: [{ type: "repo_file", path: "src/types.ts" }],
     });
-    expect(responseHasApplicableEdits(infoOnly)).toBe(false);
+    expect(opCount(infoOnly)).toBe(0);
   });
 
-  it("returns false for empty input", () => {
-    expect(responseHasApplicableEdits("")).toBe(false);
+  it("returns no ops for empty input", () => {
+    expect(opCount("")).toBe(0);
   });
 });

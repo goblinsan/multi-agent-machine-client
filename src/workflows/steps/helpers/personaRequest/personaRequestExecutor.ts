@@ -33,16 +33,6 @@ import {
 } from "./personaRequestOutcomes.js";
 import { DiffParser } from "../../../../agents/parsers/DiffParser.js";
 
-export function responseHasApplicableEdits(rawResponse: string): boolean {
-  if (!rawResponse) return false;
-  try {
-    const parsed = DiffParser.parsePersonaResponse(rawResponse);
-    return Boolean(parsed.success && (parsed.editSpec?.ops?.length ?? 0) > 0);
-  } catch {
-    return false;
-  }
-}
-
 export type PersonaRequestExecutorArgs = {
   context: WorkflowContext;
   persona: string;
@@ -349,16 +339,26 @@ export async function executePersonaRequestFlow(
         retryResult.completion,
       );
 
-      if (
-        infoRequestPayload &&
-        intent === "implementation" &&
-        responseHasApplicableEdits(rawResponse)
-      ) {
-        logger.info(
-          "Implementation response includes applicable edits alongside an information request; preferring the edits over another info round",
-          { workflowId: context.workflowId, step, persona, iteration },
-        );
-        infoRequestPayload = null;
+      if (infoRequestPayload && intent === "implementation") {
+        const parsed = DiffParser.parsePersonaResponse(rawResponse);
+        const opCount = parsed.success ? parsed.editSpec?.ops?.length ?? 0 : 0;
+        logger.info("Implementation info-request diagnostic", {
+          workflowId: context.workflowId,
+          step,
+          persona,
+          iteration,
+          diffParserSuccess: Boolean(parsed.success),
+          diffParserOps: opCount,
+          rawResponseLength: rawResponse.length,
+          rawResponseHead: rawResponse.slice(0, 1800),
+        });
+        if (opCount > 0) {
+          logger.info(
+            "Implementation response includes applicable edits alongside an information request; preferring the edits over another info round",
+            { workflowId: context.workflowId, step, persona, iteration },
+          );
+          infoRequestPayload = null;
+        }
       }
 
       if (infoRequestPayload) {
