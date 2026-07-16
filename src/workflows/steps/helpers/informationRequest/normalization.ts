@@ -56,14 +56,27 @@ export function normalizeInformationRequests(raw: any): InformationRequest[] {
     if (typeValue === "repo_file") {
       const pathValue = resolveRepoPathField(entry);
       if (!pathValue) continue;
+      const nested = isPathObject(entry.repo_file)
+        ? entry.repo_file
+        : isPathObject(entry.file)
+          ? entry.file
+          : {};
       const request: RepoFileInformationRequest = {
         id: sanitizeId(entry.id || entry.request_id),
         type: "repo_file",
         path: pathValue,
-        startLine: coercePositiveInt(entry.startLine ?? entry.start_line),
-        endLine: coercePositiveInt(entry.endLine ?? entry.end_line),
-        maxBytes: coercePositiveInt(entry.maxBytes ?? entry.max_bytes),
-        reason: sanitizeReason(entry.reason || entry.explanation),
+        startLine: coercePositiveInt(
+          entry.startLine ?? entry.start_line ?? nested.startLine ?? nested.start_line,
+        ),
+        endLine: coercePositiveInt(
+          entry.endLine ?? entry.end_line ?? nested.endLine ?? nested.end_line,
+        ),
+        maxBytes: coercePositiveInt(
+          entry.maxBytes ?? entry.max_bytes ?? nested.maxBytes ?? nested.max_bytes,
+        ),
+        reason: sanitizeReason(
+          entry.reason || entry.explanation || nested.reason,
+        ),
       };
       normalized.push(request);
       continue;
@@ -89,8 +102,18 @@ export function normalizeInformationRequests(raw: any): InformationRequest[] {
   return normalized;
 }
 
+function isPathObject(value: any): boolean {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof value.path === "string" &&
+    value.path.trim().length > 0
+  );
+}
+
 function inferRequestType(entry: Record<string, any>): string | "" {
-  if (typeof entry.repo_file === "string") {
+  if (typeof entry.repo_file === "string" || isPathObject(entry.repo_file)) {
     return "repo_file";
   }
   if (typeof entry.http_get === "string") {
@@ -102,15 +125,19 @@ function inferRequestType(entry: Record<string, any>): string | "" {
   if (typeof entry.file === "string" || typeof entry.file_path === "string") {
     return "repo_file";
   }
+  if (isPathObject(entry.file)) {
+    return "repo_file";
+  }
   return "";
 }
 
 function resolveRepoPathField(entry: Record<string, any>): string {
+  const unwrap = (value: any) => (isPathObject(value) ? value.path : value);
   const candidates = [
     entry.path,
-    entry.file,
+    unwrap(entry.file),
     entry.file_path,
-    entry.repo_file,
+    unwrap(entry.repo_file),
     entry.repoPath,
     entry.source && !HTTP_SOURCE_REGEX.test(String(entry.source))
       ? entry.source
