@@ -14,6 +14,7 @@ import {
   commitAndPushChanges,
   DiffApplyFailure,
 } from "../../fileops/applyEditOps.js";
+import { restoreOutOfScopeDeletions } from "./helpers/outOfScopeDeletionGuard.js";
 import { tryGitApply } from "../../fileops/gitApply.js";
 
 export interface DiffApplyStepConfig {
@@ -276,6 +277,25 @@ export class DiffApplyStep extends WorkflowStep {
 
           applyResult = await applyEditOps(editSpecJson, applyOptions);
           applyMethod = applyResult.applyMethod || "edit-spec-strict";
+        }
+        const deletionGuard = await restoreOutOfScopeDeletions(
+          context.repoRoot,
+          stepConfig.allowed_paths,
+        );
+        if (deletionGuard.restored.length > 0) {
+          context.logger.warn(
+            "Restored out-of-scope file deletions that the diff attempted",
+            {
+              stepName: this.config.name,
+              restored: deletionGuard.restored,
+            },
+          );
+          if (Array.isArray(applyResult.changed)) {
+            const restoredSet = new Set(deletionGuard.restored);
+            applyResult.changed = applyResult.changed.filter(
+              (f: string) => !restoredSet.has(this.normalizeScopePath(f)),
+            );
+          }
         }
         const noopApply = applyResult.noop === true;
 
