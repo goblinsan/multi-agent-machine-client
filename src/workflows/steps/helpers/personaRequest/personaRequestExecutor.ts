@@ -29,9 +29,11 @@ import {
   applyOutputVariables,
   recordInformationSources,
   buildForcedSynthesisCompletion,
-  buildForcedSynthesisFailure,
 } from "./personaRequestOutcomes.js";
-import { DiffParser } from "../../../../agents/parsers/DiffParser.js";
+import {
+  runForcedImplementationAttempt,
+  forcedResponseCarriesEdits,
+} from "./forcedImplementation.js";
 
 export type PersonaRequestExecutorArgs = {
   context: WorkflowContext;
@@ -225,21 +227,33 @@ export async function executePersonaRequestFlow(
         cfg.informationRequests?.forceSynthesisAfterIterations ??
         3,
     );
-    const forcedSynthesisShouldFail = intent === "implementation";
-    const buildForcedSynthesisResult = (meta?: {
+    const resolveForcedSynthesis = async (meta?: {
       duplicateIterations?: number;
       uniqueSources?: number;
       maxUniqueSources?: number;
-    }) =>
-      forcedSynthesisShouldFail
-        ? buildForcedSynthesisFailure(
+    }): Promise<StepResult> =>
+      intent === "implementation"
+        ? runForcedImplementationAttempt({
             context,
             persona,
             step,
-            infoBlocks,
+            intent,
             stepName,
+            outputs,
+            config,
+            transport,
+            retryCoordinator,
+            responseInterpreter,
+            infoBlocks,
+            resolvedPayload,
+            baseUserText,
+            maxInfoIterations,
+            repoForPersona,
+            currentBranch,
+            deadlineSeconds,
+            taskId,
             meta,
-          )
+          })
         : buildForcedSynthesisCompletion(
             context,
             persona,
@@ -252,7 +266,7 @@ export async function executePersonaRequestFlow(
 
     for (let iteration = 1; iteration <= maxInfoIterations; iteration++) {
       if (forceSynthesisActive) {
-        return buildForcedSynthesisResult({
+        return await resolveForcedSynthesis({
           duplicateIterations: duplicateIterationCount,
           uniqueSources: uniqueInformationSources.size,
           maxUniqueSources,
@@ -339,26 +353,16 @@ export async function executePersonaRequestFlow(
         retryResult.completion,
       );
 
-      if (infoRequestPayload && intent === "implementation") {
-        const parsed = DiffParser.parsePersonaResponse(rawResponse);
-        const opCount = parsed.success ? parsed.editSpec?.ops?.length ?? 0 : 0;
-        logger.info("Implementation info-request diagnostic", {
-          workflowId: context.workflowId,
-          step,
-          persona,
-          iteration,
-          diffParserSuccess: Boolean(parsed.success),
-          diffParserOps: opCount,
-          rawResponseLength: rawResponse.length,
-          rawResponseHead: rawResponse.slice(0, 1800),
-        });
-        if (opCount > 0) {
-          logger.info(
-            "Implementation response includes applicable edits alongside an information request; preferring the edits over another info round",
-            { workflowId: context.workflowId, step, persona, iteration },
-          );
-          infoRequestPayload = null;
-        }
+      if (
+        infoRequestPayload &&
+        intent === "implementation" &&
+        forcedResponseCarriesEdits(retryResult.completion, result)
+      ) {
+        logger.info(
+          "Implementation response carries applicable edits alongside an info request; preferring the edits over another info round",
+          { workflowId: context.workflowId, step, persona, iteration },
+        );
+        infoRequestPayload = null;
       }
 
       if (infoRequestPayload) {
@@ -471,7 +475,7 @@ export async function executePersonaRequestFlow(
               infoBlocks.slice(),
             );
             context.setVariable(duplicateIterationVar, duplicateIterationCount);
-            return buildForcedSynthesisResult({
+            return await resolveForcedSynthesis({
               duplicateIterations: duplicateIterationCount,
               uniqueSources: uniqueInformationSources.size,
               maxUniqueSources,
@@ -537,7 +541,7 @@ export async function executePersonaRequestFlow(
               uniqueSources: uniqueInformationSources.size,
             },
           );
-          return buildForcedSynthesisResult({
+          return await resolveForcedSynthesis({
             duplicateIterations: duplicateIterationCount,
             uniqueSources: uniqueInformationSources.size,
             maxUniqueSources,

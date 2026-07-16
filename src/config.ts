@@ -257,7 +257,7 @@ const infoRequestMaxIterations = Number(
   process.env.INFO_REQUEST_MAX_ITERATIONS || 5,
 );
 const infoRequestMaxRequestsPerIteration = Number(
-  process.env.INFO_REQUEST_MAX_REQUESTS_PER_ITERATION || 3,
+  process.env.INFO_REQUEST_MAX_REQUESTS_PER_ITERATION || 8,
 );
 const infoRequestMaxUniqueSources = Number(
   process.env.INFO_REQUEST_MAX_UNIQUE_SOURCES || 12,
