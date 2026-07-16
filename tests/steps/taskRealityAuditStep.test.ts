@@ -78,6 +78,33 @@ describe("TaskRealityAuditStep", () => {
     expect(result.outputs?.reason).toBe("fix_target_no_longer_exists");
   });
 
+  it("does not auto-resolve a build task whose target does not exist yet even if its spec mentions 'error'", async () => {
+    const repoRoot = await makeTempRepo({
+      "package.json": JSON.stringify({
+        scripts: { typecheck: "node -e \"process.exit(0)\"" },
+      }),
+      "src/api.ts": "export const apiGet = 1;\n",
+    });
+    await fs.mkdir(path.join(repoRoot, "src", "views"), { recursive: true });
+    const context = makeContext(repoRoot, {
+      id: "task-build",
+      title: "Build the Projects list view in src/views/ProjectsView.tsx",
+      description:
+        'Create ONE self-contained file src/views/ProjectsView.tsx. apiGet<T>(path) resolves to { data: T; error?: string }. Render a list of projects.',
+    });
+
+    const step = new TaskRealityAuditStep({
+      name: "task_reality_audit",
+      type: "TaskRealityAuditStep",
+      config: { update_task_status: false, timeout_ms: 10000 },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.outputs?.already_resolved).toBe(false);
+    expect(context.getVariable("workflow_stop_requested")).toBeUndefined();
+  });
+
   it("does not resolve feature work when requested artifacts are missing", async () => {
     const repoRoot = await makeTempRepo({
       "package.json": JSON.stringify({

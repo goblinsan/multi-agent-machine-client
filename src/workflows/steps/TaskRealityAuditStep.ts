@@ -331,7 +331,7 @@ export class TaskRealityAuditStep extends WorkflowStep {
     const isCompileFix =
       /\b(compile|typecheck|tsc|typescript|ts\d{4}|type error|build error)\b/.test(lower);
     const isFeature =
-      /\b(add|create|implement|support|feature|introduce)\b/.test(lower);
+      /\b(add|create|implement|support|feature|introduce|build|write|scaffold)\b/.test(lower);
     const checksPass =
       evidence.typecheck.passed === true &&
       (!evidence.tests || evidence.tests.skipped === true || evidence.tests.passed === true);
@@ -346,6 +346,7 @@ export class TaskRealityAuditStep extends WorkflowStep {
 
     if (
       isDiagnosticFix &&
+      !isFeature &&
       evidence.mentionedPaths.length > 0 &&
       evidence.existingPaths.length === 0
     ) {
@@ -358,6 +359,7 @@ export class TaskRealityAuditStep extends WorkflowStep {
 
     if (
       isDiagnosticFix &&
+      !isFeature &&
       evidence.symbols.length > 0 &&
       evidence.foundSymbols.length === 0
     ) {
