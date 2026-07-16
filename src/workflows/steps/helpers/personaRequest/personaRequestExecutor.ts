@@ -31,6 +31,17 @@ import {
   buildForcedSynthesisCompletion,
   buildForcedSynthesisFailure,
 } from "./personaRequestOutcomes.js";
+import { DiffParser } from "../../../../agents/parsers/DiffParser.js";
+
+export function responseHasApplicableEdits(rawResponse: string): boolean {
+  if (!rawResponse) return false;
+  try {
+    const parsed = DiffParser.parsePersonaResponse(rawResponse);
+    return Boolean(parsed.success && (parsed.editSpec?.ops?.length ?? 0) > 0);
+  } catch {
+    return false;
+  }
+}
 
 export type PersonaRequestExecutorArgs = {
   context: WorkflowContext;
@@ -333,10 +344,22 @@ export async function executePersonaRequestFlow(
         changedFiles,
       );
 
-      const infoRequestPayload = extractInformationRequestPayload(
+      let infoRequestPayload = extractInformationRequestPayload(
         result,
         retryResult.completion,
       );
+
+      if (
+        infoRequestPayload &&
+        intent === "implementation" &&
+        responseHasApplicableEdits(rawResponse)
+      ) {
+        logger.info(
+          "Implementation response includes applicable edits alongside an information request; preferring the edits over another info round",
+          { workflowId: context.workflowId, step, persona, iteration },
+        );
+        infoRequestPayload = null;
+      }
 
       if (infoRequestPayload) {
         if (iteration >= maxInfoIterations) {
