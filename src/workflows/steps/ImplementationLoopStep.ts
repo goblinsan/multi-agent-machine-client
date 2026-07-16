@@ -36,6 +36,7 @@ import {
   summarizeScopeExpansion,
 } from "./helpers/typecheckDiagnostics.js";
 import { repairRelativeImportErrors } from "./helpers/importPathRepair.js";
+import { buildMissingExportDirective } from "./helpers/missingExportDirective.js";
 import { extractTargetedBaselineCompileFiles } from "./helpers/planningHelpers.js";
 import {
   extractOffendingProperties,
@@ -1208,6 +1209,14 @@ export class ImplementationLoopStep extends WorkflowStep {
           );
         if (primitiveDirective) {
           directives.push(primitiveDirective);
+        }
+
+        const missingExportDirective = await buildMissingExportDirective(
+          context.repoRoot,
+          typecheckErrors,
+        );
+        if (missingExportDirective) {
+          directives.push(missingExportDirective);
         }
 
         context.setVariable(
