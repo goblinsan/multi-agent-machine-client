@@ -37,6 +37,7 @@ import {
 } from "./helpers/typecheckDiagnostics.js";
 import { repairRelativeImportErrors } from "./helpers/importPathRepair.js";
 import { buildMissingExportDirective } from "./helpers/missingExportDirective.js";
+import { repairUnusedImports } from "./helpers/unusedImportRepair.js";
 import { extractTargetedBaselineCompileFiles } from "./helpers/planningHelpers.js";
 import {
   extractOffendingProperties,
@@ -810,6 +811,35 @@ export class ImplementationLoopStep extends WorkflowStep {
             },
           );
           for (const repair of repairs) {
+            if (!appliedFiles.includes(repair.file)) {
+              appliedFiles.push(repair.file);
+            }
+          }
+          typecheckErrors = await this.evaluateTypecheckValidation(
+            context,
+            appliedFiles,
+            baselineTypecheck,
+          );
+        }
+      }
+
+      if (typecheckErrors.length > 0) {
+        const unusedRepairs = await repairUnusedImports(
+          context.repoRoot,
+          typecheckErrors,
+        );
+        if (unusedRepairs.length > 0) {
+          context.logger.info(
+            "Stripped deterministically-unused imports, revalidating",
+            {
+              workflowId: context.workflowId,
+              attempt,
+              repairs: unusedRepairs.map(
+                (r) => `${r.file}: removed ${r.removed.join(", ")}`,
+              ),
+            },
+          );
+          for (const repair of unusedRepairs) {
             if (!appliedFiles.includes(repair.file)) {
               appliedFiles.push(repair.file);
             }
