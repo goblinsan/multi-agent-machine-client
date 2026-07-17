@@ -102,6 +102,8 @@ templates:
         - id: "forbidden_comments"
           enabled: false
           severity: "medium"
+        - id: "test_coverage"
+          severity: "medium"
 
   code_review:
     type: PersonaRequestStep

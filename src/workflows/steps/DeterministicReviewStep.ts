@@ -39,6 +39,19 @@ interface ReviewConfig {
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+const TEST_FILE_PATTERN = /\.(?:test|spec)\.[a-z]+$/;
+const SKIP_SCAN_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".ma",
+  "dist",
+  "build",
+  "coverage",
+]);
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 export class DeterministicReviewStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
@@ -68,6 +81,9 @@ export class DeterministicReviewStep extends WorkflowStep {
           break;
         case "secret_scan":
           await this.runSecretScanRule(context.repoRoot, files, rule, findings);
+          break;
+        case "test_coverage":
+          await this.runTestCoverageRule(context.repoRoot, files, rule, findings);
           break;
         default:
           findings.low.push({
@@ -251,6 +267,114 @@ export class DeterministicReviewStep extends WorkflowStep {
         });
       }
     }
+  }
+
+  private async runTestCoverageRule(
+    repoRoot: string,
+    files: string[],
+    rule: ReviewRule,
+    findings: Record<Severity, ReviewFinding[]>,
+  ): Promise<void> {
+    const candidates = files.filter(
+      (file) =>
+        SOURCE_EXTENSIONS.has(path.extname(file)) &&
+        !TEST_FILE_PATTERN.test(file) &&
+        !file.endsWith(".d.ts") &&
+        !this.isExcluded(file, rule.exclude),
+    );
+    if (candidates.length === 0) return;
+
+    const testSources = await this.collectTestSources(repoRoot);
+    if (testSources.length === 0) {
+      this.addFinding(findings, rule.severity || "medium", {
+        rule_id: "test_coverage",
+        file: candidates[0],
+        line: null,
+        issue: "The repository contains no test files, so no change can be covered.",
+        recommendation:
+          "Add a test file that imports and exercises the changed modules.",
+      });
+      return;
+    }
+
+    for (const file of candidates) {
+      const contents = await this.readLines(repoRoot, file);
+      if (!contents) continue;
+      if (!this.hasRuntimeExport(contents.join("\n"))) continue;
+
+      const stem = path.basename(file).replace(/\.[^.]+$/, "");
+      const importPattern = new RegExp(
+        `from\\s+["'][^"']*(?:/|^)${escapeRegExp(stem)}(?:\\.[a-z]+)?["']|import\\(\\s*["'][^"']*(?:/|^)${escapeRegExp(stem)}(?:\\.[a-z]+)?["']`,
+      );
+
+      const covered = testSources.some((test) => importPattern.test(test.text));
+      if (covered) continue;
+
+      this.addFinding(findings, rule.severity || "medium", {
+        rule_id: "test_coverage",
+        file,
+        line: null,
+        issue: `No test file imports ${stem}, so this change is not covered by a test that targets it.`,
+        recommendation: `Add a test that imports ${stem} and asserts its behavior.`,
+      });
+    }
+  }
+
+  private async collectTestSources(
+    repoRoot: string,
+  ): Promise<Array<{ file: string; text: string }>> {
+    const results: Array<{ file: string; text: string }> = [];
+
+    const walk = async (dir: string, depth: number): Promise<void> => {
+      if (depth > 8) return;
+      let entries;
+      try {
+        entries = await fs.readdir(path.join(repoRoot, dir), {
+          withFileTypes: true,
+        });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const rel = dir ? `${dir}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          if (SKIP_SCAN_DIRS.has(entry.name)) continue;
+          await walk(rel, depth + 1);
+          continue;
+        }
+        if (!TEST_FILE_PATTERN.test(entry.name)) continue;
+        try {
+          results.push({
+            file: rel,
+            text: await fs.readFile(path.join(repoRoot, rel), "utf-8"),
+          });
+        } catch {
+          continue;
+        }
+      }
+    };
+
+    await walk("", 0);
+    return results;
+  }
+
+  private hasRuntimeExport(text: string): boolean {
+    const withoutTypeOnly = text
+      .replace(/^\s*export\s+(?:type|interface)\b[\s\S]*?(?:\n\}|;)\s*$/gm, "")
+      .replace(/^\s*export\s+type\s+\{[^}]*\}[^\n]*$/gm, "");
+    return /export\s+(?:async\s+)?(?:function|class|const|let|var|default)\b|export\s+\{/.test(
+      withoutTypeOnly,
+    );
+  }
+
+  private isExcluded(file: string, exclude?: string[]): boolean {
+    if (!exclude || exclude.length === 0) return false;
+    return exclude.some((pattern) => {
+      const regex = new RegExp(
+        `^${pattern.split("*").map(escapeRegExp).join(".*")}$`,
+      );
+      return regex.test(file);
+    });
   }
 
   private async runConflictMarkersRule(

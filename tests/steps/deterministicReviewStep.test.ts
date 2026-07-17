@@ -175,3 +175,127 @@ describe("DeterministicReviewStep", () => {
     });
   });
 });
+
+describe("DeterministicReviewStep test_coverage rule", () => {
+  const coverageStep = (extra: Record<string, any> = {}) =>
+    new DeterministicReviewStep({
+      name: "qa_request",
+      type: "DeterministicReviewStep",
+      config: {
+        output_prefix: "qa_request",
+        block_on: ["severe", "high"],
+        rules: [{ id: "test_coverage", severity: "medium", ...extra }],
+      },
+    });
+
+  it("flags a changed module that no test imports", async () => {
+    const repoRoot = await makeRepo({
+      "src/views/HomeView.tsx": "export function HomeView() { return null; }\n",
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/views/HomeView.tsx"]);
+
+    const result = await coverageStep().execute(context);
+
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.medium.map((f: any) => f.file)).toContain(
+      "src/views/HomeView.tsx",
+    );
+    expect(result.status).toBe("success");
+  });
+
+  it("accepts a module imported by a test whose filename does not match", async () => {
+    const repoRoot = await makeRepo({
+      "src/git/operations/BranchOperations.ts":
+        "export function syncBranchWithBase() { return true; }\n",
+      "tests/syncBranchWithBase.test.ts":
+        'import { syncBranchWithBase } from "../src/git/operations/BranchOperations.js";\n',
+    });
+    const context = makeContext(repoRoot, [
+      "src/git/operations/BranchOperations.ts",
+    ]);
+
+    await coverageStep().execute(context);
+
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.medium).toHaveLength(0);
+  });
+
+  it("accepts a module reached through a dynamic import in a test", async () => {
+    const repoRoot = await makeRepo({
+      "src/thing.ts": "export const thing = 1;\n",
+      "tests/thing.test.ts":
+        'const { thing } = await import("../src/thing.js");\n',
+    });
+    const context = makeContext(repoRoot, ["src/thing.ts"]);
+
+    await coverageStep().execute(context);
+
+    expect(context.getVariable("qa_request_result").findings.medium).toHaveLength(0);
+  });
+
+  it("ignores type-only modules that have nothing to execute", async () => {
+    const repoRoot = await makeRepo({
+      "src/types.ts": "export type Project = { id: number; name: string };\n",
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/types.ts"]);
+
+    await coverageStep().execute(context);
+
+    expect(context.getVariable("qa_request_result").findings.medium).toHaveLength(0);
+  });
+
+  it("ignores the test files in the change itself, even when they export helpers", async () => {
+    const repoRoot = await makeRepo({
+      "src/thing.ts": "export const thing = 1;\n",
+      "tests/thing.test.ts":
+        'import { thing } from "../src/thing.js";\nexport const makeFixture = () => thing;\n',
+    });
+    const context = makeContext(repoRoot, ["tests/thing.test.ts"]);
+
+    await coverageStep().execute(context);
+
+    expect(context.getVariable("qa_request_result").findings.medium).toHaveLength(0);
+  });
+
+  it("honours exclude patterns for generated or entrypoint files", async () => {
+    const repoRoot = await makeRepo({
+      "src/main.tsx": "export function main() { return 1; }\n",
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/main.tsx"]);
+
+    await coverageStep({ exclude: ["src/main.tsx"] }).execute(context);
+
+    expect(context.getVariable("qa_request_result").findings.medium).toHaveLength(0);
+  });
+
+  it("reports once when the repository has no tests at all", async () => {
+    const repoRoot = await makeRepo({
+      "src/a.ts": "export const a = 1;\n",
+      "src/b.ts": "export const b = 2;\n",
+    });
+    const context = makeContext(repoRoot, ["src/a.ts", "src/b.ts"]);
+
+    await coverageStep().execute(context);
+
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.medium).toHaveLength(1);
+    expect(findings.medium[0].issue).toContain("no test files");
+  });
+
+  it("does not scan node_modules for test files", async () => {
+    const repoRoot = await makeRepo({
+      "src/thing.ts": "export const thing = 1;\n",
+      "node_modules/pkg/thing.test.js":
+        'import { thing } from "../src/thing.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/thing.ts"]);
+
+    await coverageStep().execute(context);
+
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.medium).toHaveLength(1);
+  });
+});

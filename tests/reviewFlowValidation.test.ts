@@ -446,5 +446,17 @@ describe("Review Flow Validation", () => {
       ).toContain("conflict_markers");
       expect(templates?.qa_review?.config?.payload).toBeUndefined();
     });
+
+    it("qa_review reports missing test coverage without blocking the merge", async () => {
+      const templates = await loadStepTemplates();
+      const rules = templates?.qa_review?.config?.rules ?? [];
+      const coverage = rules.find((r: any) => r.id === "test_coverage");
+
+      expect(coverage).toBeDefined();
+      expect(coverage.enabled).not.toBe(false);
+
+      const blockOn: string[] = templates?.qa_review?.config?.block_on ?? [];
+      expect(blockOn).not.toContain(coverage.severity);
+    });
   });
 });
