@@ -105,6 +105,33 @@ describe("TaskRealityAuditStep", () => {
     expect(context.getVariable("workflow_stop_requested")).toBeUndefined();
   });
 
+  it("does not auto-resolve an enhancement task just because its target file already exists", async () => {
+    const repoRoot = await makeTempRepo({
+      "package.json": JSON.stringify({
+        scripts: { typecheck: "node -e \"process.exit(0)\"" },
+      }),
+      "src/views/ProjectsView.tsx":
+        'import { useState } from "react";\nimport { apiGet } from "../api";\ntype Project = { id: number };\nexport function ProjectsView() { return null; }\n',
+    });
+    const context = makeContext(repoRoot, {
+      id: "task-enhance",
+      title: "Add states and search to the Projects list view in src/views/ProjectsView.tsx",
+      description:
+        "Add loading, error and empty states plus a search filter to src/views/ProjectsView.tsx using useState and apiGet with a Project type.",
+    });
+
+    const step = new TaskRealityAuditStep({
+      name: "task_reality_audit",
+      type: "TaskRealityAuditStep",
+      config: { update_task_status: false, timeout_ms: 10000 },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.outputs?.already_resolved).toBe(false);
+    expect(context.getVariable("workflow_stop_requested")).toBeUndefined();
+  });
+
   it("does not resolve feature work when requested artifacts are missing", async () => {
     const repoRoot = await makeTempRepo({
       "package.json": JSON.stringify({

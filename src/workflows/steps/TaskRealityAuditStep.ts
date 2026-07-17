@@ -332,9 +332,6 @@ export class TaskRealityAuditStep extends WorkflowStep {
       /\b(compile|typecheck|tsc|typescript|ts\d{4}|type error|build error)\b/.test(lower);
     const isFeature =
       /\b(add|create|implement|support|feature|introduce|build|write|scaffold)\b/.test(lower);
-    const checksPass =
-      evidence.typecheck.passed === true &&
-      (!evidence.tests || evidence.tests.skipped === true || evidence.tests.passed === true);
 
     if (isCompileFix && evidence.typecheck.passed === true) {
       return {
@@ -367,21 +364,6 @@ export class TaskRealityAuditStep extends WorkflowStep {
         alreadyResolved: true,
         reason: "fix_target_symbol_no_longer_exists",
         confidence: "medium",
-      };
-    }
-
-    if (
-      checksPass &&
-      isFeature &&
-      evidence.mentionedPaths.length > 0 &&
-      evidence.missingPaths.length === 0 &&
-      evidence.symbols.length > 0 &&
-      evidence.missingSymbols.length === 0
-    ) {
-      return {
-        alreadyResolved: true,
-        reason: "requested_feature_artifacts_already_present_and_checks_pass",
-        confidence: "high",
       };
     }
 
