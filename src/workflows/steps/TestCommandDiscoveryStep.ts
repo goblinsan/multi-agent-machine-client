@@ -45,12 +45,12 @@ export class TestCommandDiscoveryStep extends WorkflowStep {
     }
 
     const detection =
-      this.detectFromManifest(manifest) ??
       (await this.detectFromPackageJson(repoRoot, scriptPriority)) ??
       (await this.detectFromPython(repoRoot)) ??
       (await this.detectFromCargo(repoRoot)) ??
       (await this.detectFromGo(repoRoot)) ??
-      (await this.detectFromMakefile(repoRoot, config.allow_makefile ?? true));
+      (await this.detectFromMakefile(repoRoot, config.allow_makefile ?? true)) ??
+      this.detectFromManifest(manifest);
 
     if (detection) {
       context.setVariable(variableName, detection.command);
