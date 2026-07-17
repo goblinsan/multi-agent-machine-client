@@ -446,10 +446,32 @@ steps:
       task_id: "${taskId}"
       project_id: "${projectId}"
 
+  - name: sync_branch_with_base
+    type: GitOperationStep
+    description: "Merge the base branch into the feature branch when base has advanced since this branch forked"
+    depends_on: ["rerun_project_validation"]
+    condition: "test_harness_required != true"
+    config:
+      operation: "syncBranchWithBase"
+      branch: "${branch}"
+      baseBranch: "${baseBranch || 'main'}"
+
+  - name: merge_preflight_validation
+    type: QAStep
+    description: "PR-style gate on the merged tree, only when the base branch brought in new commits"
+    depends_on: ["sync_branch_with_base"]
+    condition: "merge_preflight_required == true && detected_test_command.length > 0"
+    config:
+      testCommand: "${detected_test_command}"
+      retryCount: 0
+      skipOnNoTests: true
+      failureThreshold: 0
+      softFail: false
+
   - name: verify_diff
     type: GitOperationStep
     description: "Verify remote branch has diff from base"
-    depends_on: ["rerun_project_validation"]
+    depends_on: ["merge_preflight_validation"]
     condition: "test_harness_required != true"
     config:
       operation: "verifyRemoteBranchHasDiff"

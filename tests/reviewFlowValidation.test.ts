@@ -104,9 +104,24 @@ describe("Review Flow Validation", () => {
     ]);
     expect(rerunProjectValidation?.config?.softFail).toBe(false);
 
+    const syncBranch = steps["sync_branch_with_base"];
+    expect(syncBranch).toBeDefined();
+    expect((syncBranch as any)?.type).toBe("GitOperationStep");
+    expect(syncBranch?.depends_on).toEqual(["rerun_project_validation"]);
+    expect(syncBranch?.config?.operation).toBe("syncBranchWithBase");
+
+    const mergePreflight = steps["merge_preflight_validation"];
+    expect(mergePreflight).toBeDefined();
+    expect((mergePreflight as any)?.type).toBe("QAStep");
+    expect(mergePreflight?.depends_on).toEqual(["sync_branch_with_base"]);
+    expect(mergePreflight?.condition).toBe(
+      "merge_preflight_required == true && detected_test_command.length > 0",
+    );
+    expect(mergePreflight?.config?.softFail).toBe(false);
+
     const verifyDiff = steps["verify_diff"];
     expect(verifyDiff).toBeDefined();
-    expect(verifyDiff?.depends_on).toEqual(["rerun_project_validation"]);
+    expect(verifyDiff?.depends_on).toEqual(["merge_preflight_validation"]);
 
     const collectDiff = steps["collect_review_diff"];
     expect(collectDiff).toBeDefined();

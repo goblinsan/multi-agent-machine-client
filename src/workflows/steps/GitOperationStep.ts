@@ -17,6 +17,7 @@ interface GitOperationConfig {
     | "verifyRemoteBranchHasDiff"
     | "ensureBranchPublished"
     | "checkContextFreshness"
+    | "syncBranchWithBase"
     | "mergeBranchToMain";
   repoRoot?: string;
   baseBranch?: string;
@@ -344,6 +345,67 @@ export class GitOperationStep extends WorkflowStep {
             needsRescan,
             artifactPath,
           });
+          break;
+        }
+
+        case "syncBranchWithBase": {
+          const targetBranch =
+            this.resolveVariable(config.baseBranch, context) || baseBranch;
+
+          let syncBranch =
+            this.resolveVariable(config.branch, context) ||
+            context.getVariable("branch") ||
+            "";
+          if (!syncBranch || syncBranch.includes("${")) {
+            syncBranch = context.getCurrentBranch() || "";
+          }
+          if (!syncBranch || syncBranch.includes("${")) {
+            const headResult = await gitUtils.runGit(
+              ["rev-parse", "--abbrev-ref", "HEAD"],
+              { cwd: repoRoot },
+            );
+            syncBranch = headResult.stdout.trim();
+          }
+
+          if (!syncBranch || syncBranch === "HEAD") {
+            throw new Error(
+              "syncBranchWithBase: unable to determine branch from config, context, or git HEAD",
+            );
+          }
+
+          const syncResult = await gitUtils.syncBranchWithBase(
+            repoRoot,
+            syncBranch,
+            targetBranch,
+          );
+
+          context.setVariable("branch_behind_base", syncResult.behind);
+          context.setVariable("branch_commits_behind", syncResult.commitsBehind);
+          context.setVariable("merge_preflight_required", syncResult.merged);
+          context.setVariable("merge_preflight_conflicted", syncResult.conflicted);
+          context.setVariable("merge_preflight_conflict_files", syncResult.conflictFiles);
+          context.setVariable("branch_sync_result", syncResult);
+
+          if (syncResult.conflicted) {
+            await abortWorkflowWithReason(
+              context,
+              "merge_preflight_conflict",
+              {
+                branch: syncBranch,
+                baseBranch: targetBranch,
+                commitsBehind: syncResult.commitsBehind,
+                conflictFiles: syncResult.conflictFiles,
+              },
+            );
+            return {
+              status: "failure",
+              error: new Error(
+                `Cannot merge ${targetBranch} into ${syncBranch}: conflicts in ${syncResult.conflictFiles.join(", ") || "unknown files"}`,
+              ),
+            };
+          }
+
+          result = syncResult;
           break;
         }
 

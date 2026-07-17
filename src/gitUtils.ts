@@ -10,8 +10,9 @@ export {
   resolveRepoFromPayload,
   checkoutBranchFromBase,
   mergeBranchToMain,
+  syncBranchWithBase,
 } from "./git/repository.js";
-export type { RepoResolution } from "./git/repository.js";
+export type { RepoResolution, BranchSyncResult } from "./git/repository.js";
 
 export { ensureBranchPublished, commitAndPushPaths } from "./git/commits.js";
 

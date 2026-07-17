@@ -440,3 +440,129 @@ export async function mergeBranchToMain(
     );
   }
 }
+
+export interface BranchSyncResult {
+  behind: boolean;
+  commitsBehind: number;
+  merged: boolean;
+  conflicted: boolean;
+  conflictFiles: string[];
+  baseRef: string;
+}
+
+export async function syncBranchWithBase(
+  repoRoot: string,
+  branch: string,
+  baseBranch: string = "main",
+): Promise<BranchSyncResult> {
+  guardWorkspaceMutation(repoRoot, `syncBranchWithBase ${baseBranch} into ${branch}`);
+
+  if (branch === baseBranch) {
+    return {
+      behind: false,
+      commitsBehind: 0,
+      merged: false,
+      conflicted: false,
+      conflictFiles: [],
+      baseRef: baseBranch,
+    };
+  }
+
+  try {
+    await runGit(["fetch", "origin", baseBranch], { cwd: repoRoot });
+  } catch {
+    logger.debug("Could not fetch base branch from origin", { repoRoot, baseBranch });
+  }
+
+  const baseRef = (await branchExists(repoRoot, baseBranch))
+    ? baseBranch
+    : (await remoteBranchExists(repoRoot, baseBranch))
+      ? `origin/${baseBranch}`
+      : "";
+
+  if (!baseRef) {
+    throw new Error(
+      `syncBranchWithBase: base branch ${baseBranch} not found in repository ${repoRoot}`,
+    );
+  }
+
+  await runGit(["checkout", branch], { cwd: repoRoot });
+
+  const countResult = await runGit(
+    ["rev-list", "--count", `${branch}..${baseRef}`],
+    { cwd: repoRoot },
+  );
+  const commitsBehind = Number.parseInt(countResult.stdout.trim(), 10) || 0;
+
+  if (commitsBehind === 0) {
+    logger.info("Branch already contains all base commits, merge preflight not required", {
+      repoRoot,
+      branch,
+      baseRef,
+    });
+    return {
+      behind: false,
+      commitsBehind: 0,
+      merged: false,
+      conflicted: false,
+      conflictFiles: [],
+      baseRef,
+    };
+  }
+
+  logger.info("Base branch has advanced, merging it into the feature branch for preflight", {
+    repoRoot,
+    branch,
+    baseRef,
+    commitsBehind,
+  });
+
+  try {
+    await runGit(["merge", "--no-edit", baseRef], { cwd: repoRoot });
+    return {
+      behind: true,
+      commitsBehind,
+      merged: true,
+      conflicted: false,
+      conflictFiles: [],
+      baseRef,
+    };
+  } catch (mergeErr: any) {
+    let conflictFiles: string[] = [];
+    try {
+      const conflictResult = await runGit(
+        ["diff", "--name-only", "--diff-filter=U"],
+        { cwd: repoRoot },
+      );
+      conflictFiles = conflictResult.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    } catch {
+      void 0;
+    }
+
+    try {
+      await runGit(["merge", "--abort"], { cwd: repoRoot });
+    } catch {
+      void 0;
+    }
+
+    logger.warn("Merge preflight hit conflicts against the base branch", {
+      repoRoot,
+      branch,
+      baseRef,
+      conflictFiles,
+      error: mergeErr.message,
+    });
+
+    return {
+      behind: true,
+      commitsBehind,
+      merged: false,
+      conflicted: true,
+      conflictFiles,
+      baseRef,
+    };
+  }
+}
