@@ -54,7 +54,8 @@ function viewDesc(file, endpoint, shapeName, shapeBody, render) {
     `  type ${shapeName} = ${shapeBody};`,
     `apiGet is generic: apiGet<T>(path) resolves to { data: T; error?: string }.`,
     `The dashboard wraps lists as { data: [...] }, so read res.data.data.`,
-    `On mount, fetch: apiGet<{ data: ${shapeName}[] }>("${endpoint}").then((r) => setRows(r.data.data ?? []));`,
+    `On mount, fetch inside useEffect and ALWAYS handle failure so no promise rejection is left unhandled:`,
+    `  apiGet<{ data: ${shapeName}[] }>("${endpoint}").then((r) => setRows(r.data.data ?? [])).catch(() => setRows([]));`,
     `Hold rows with useState<${shapeName}[]>([]). ${render}`,
     `Export it as a named export (export function ...). No default export. Keep everything in this one file.`,
   ].join("\n");
