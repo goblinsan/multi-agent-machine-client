@@ -55,7 +55,6 @@ describe("TemplateLoader", () => {
     const templates = [
       "context_analysis",
       "implementation",
-      "qa_review",
       "code_review",
       "security_review",
       "devops_review",

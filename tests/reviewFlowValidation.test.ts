@@ -409,19 +409,27 @@ describe("Review Flow Validation", () => {
       ).toBeUndefined();
     });
 
-    it("QA/Code/Security/DevOps receive diff payloads for implementation review", async () => {
+    it("Code/Security/DevOps receive diff payloads for implementation review", async () => {
       const templates = await loadStepTemplates();
 
-      const qaPayload = templates?.qa_review?.config?.payload ?? {};
       const codePayload = templates?.code_review?.config?.payload ?? {};
       const securityPayload = templates?.security_review?.config?.payload ?? {};
       const devopsPayload = templates?.devops_review?.config?.payload ?? {};
 
-      for (const payload of [qaPayload, codePayload, securityPayload, devopsPayload]) {
+      for (const payload of [codePayload, securityPayload, devopsPayload]) {
         expect(payload.repo_diff_patch).toBe("${review_diff_patch}");
         expect(payload.repo_diff_summary).toBe("${review_diff_summary}");
         expect(payload.repo_changed_files).toBe("${review_diff_files}");
       }
+    });
+
+    it("qa_review is a deterministic review, not a model persona", async () => {
+      const templates = await loadStepTemplates();
+      expect(templates?.qa_review?.type).toBe("DeterministicReviewStep");
+      expect(
+        templates?.qa_review?.config?.rules?.map((r: any) => r.id),
+      ).toContain("conflict_markers");
+      expect(templates?.qa_review?.config?.payload).toBeUndefined();
     });
   });
 });

@@ -79,39 +79,29 @@ templates:
         snippets: "${implementation_file_snippets || []}"
 
   qa_review:
-    type: PersonaRequestStep
+    type: DeterministicReviewStep
     outputs: [qa_request_result, qa_request_status]
     config:
-      step: "3-qa"
-      persona: tester-qa
-      intent: qa
-      abortOnFailure: false
-      prompt_template: "prompts/tester-qa-review.txt"
-      payload:
-        task: ${task}
-        implementation: ${implementation_request_result}
-        qa_result: ${qa_request_result}
-        plan_required_files: "${plan_required_files || []}"
-        detected_test_command: ${detected_test_command}
-        repo: ${repo_remote}
-        repo_root: ${repo_root}
-        project_id: ${projectId}
-        repo_slug: ${repoSlug}
-        project_name: ${projectName}
-        tdd_aware: ${tdd_aware}
-        tdd_stage: ${tdd_stage}
-        applied_files: ${last_applied_files}
-        repo_diff_patch: ${review_diff_patch}
-        repo_diff_summary: ${review_diff_summary}
-        repo_changed_files: ${review_diff_files}
-        context_snapshot_json: "${context_snapshot_json || ''}"
-        context_files_ndjson: "${context_files_ndjson || ''}"
-        context_summary_md: "${context_summary_md || ''}"
-        context_snapshot_path: "${context_snapshot_path || ''}"
-        context_files_ndjson_path: "${context_files_ndjson_path || ''}"
-        pre_qa_test_result: "${pre_qa_test_result || null}"
-        pre_qa_test_error: "${pre_qa_test_error || ''}"
-        test_tooling_commands: "${test_tooling_commands || []}"
+      review_type: "qa"
+      output_prefix: "qa_request"
+      changed_files: "${review_diff_files || []}"
+      block_on: ["severe", "high"]
+      rules:
+        - id: "conflict_markers"
+          severity: "severe"
+        - id: "secret_scan"
+          severity: "severe"
+        - id: "file_size"
+          max_lines: 600
+          warn_lines: 400
+          severity: "high"
+          warn_severity: "medium"
+        - id: "method_size"
+          max_lines: 120
+          severity: "high"
+        - id: "forbidden_comments"
+          enabled: false
+          severity: "medium"
 
   code_review:
     type: PersonaRequestStep
