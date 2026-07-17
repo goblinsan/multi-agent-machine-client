@@ -495,9 +495,28 @@ steps:
       max_bytes: 200000
       fail_on_empty_diff: false
 
+  - name: mutation_test
+    type: MutationTestStep
+    description: "Advisory: do the tests actually constrain the changed code, or only run it?"
+    depends_on: ["collect_review_diff"]
+    condition: "detected_test_command.length > 0"
+    config:
+      output_prefix: "mutation"
+      testCommand: "${detected_test_command}"
+      changed_files: "${review_diff_files || []}"
+      max_files: 3
+      max_mutants_per_file: 8
+      mutant_timeout_ms: 120000
+      severity: "medium"
+      block_on_survivors: false
+      exclude:
+        - "scripts/*"
+        - "tests/*"
+        - "*.config.*"
+
   - template: qa_review
     name: qa_request
-    depends_on: ["collect_review_diff"]
+    depends_on: ["collect_review_diff", "mutation_test"]
 
   - name: cache_latest_qa_review
     type: VariableResolutionStep

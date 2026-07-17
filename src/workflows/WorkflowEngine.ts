@@ -51,6 +51,7 @@ import { PreQaAutoRepairStep } from "./steps/PreQaAutoRepairStep";
 import { TaskRealityAuditStep } from "./steps/TaskRealityAuditStep";
 import { ScopeViabilityStep } from "./steps/ScopeViabilityStep";
 import { DeterministicReviewStep } from "./steps/DeterministicReviewStep";
+import { MutationTestStep } from "./steps/MutationTestStep";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -215,6 +216,7 @@ export class WorkflowEngine {
     this.stepRegistry.set("TaskRealityAuditStep", TaskRealityAuditStep);
     this.stepRegistry.set("ScopeViabilityStep", ScopeViabilityStep);
     this.stepRegistry.set("DeterministicReviewStep", DeterministicReviewStep);
+    this.stepRegistry.set("MutationTestStep", MutationTestStep);
   }
 
   public registerStep(

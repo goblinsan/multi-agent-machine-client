@@ -7,6 +7,14 @@ import {
   WorkflowStep,
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
+import {
+  SOURCE_EXTENSIONS,
+  TEST_FILE_PATTERN,
+  collectTestSources,
+  escapeRegExp,
+  hasRuntimeExport,
+  importPatternFor,
+} from "../helpers/testCoverage.js";
 
 type Severity = "severe" | "high" | "medium" | "low";
 
@@ -40,20 +48,6 @@ interface ReviewConfig {
   block_on?: Severity[];
 }
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
-const TEST_FILE_PATTERN = /\.(?:test|spec)\.[a-z]+$/;
-const SKIP_SCAN_DIRS = new Set([
-  "node_modules",
-  ".git",
-  ".ma",
-  "dist",
-  "build",
-  "coverage",
-]);
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 export class DeterministicReviewStep extends WorkflowStep {
   async execute(context: WorkflowContext): Promise<StepResult> {
@@ -306,7 +300,7 @@ export class DeterministicReviewStep extends WorkflowStep {
     );
     if (candidates.length === 0) return;
 
-    const testSources = await this.collectTestSources(repoRoot);
+    const testSources = await collectTestSources(repoRoot);
     if (testSources.length === 0) {
       this.addFinding(findings, rule.severity || "medium", {
         rule_id: "test_coverage",
@@ -322,12 +316,10 @@ export class DeterministicReviewStep extends WorkflowStep {
     for (const file of candidates) {
       const contents = await this.readLines(repoRoot, file);
       if (!contents) continue;
-      if (!this.hasRuntimeExport(contents.join("\n"))) continue;
+      if (!hasRuntimeExport(contents.join("\n"))) continue;
 
       const stem = path.basename(file).replace(/\.[^.]+$/, "");
-      const importPattern = new RegExp(
-        `from\\s+["'][^"']*(?:/|^)${escapeRegExp(stem)}(?:\\.[a-z]+)?["']|import\\(\\s*["'][^"']*(?:/|^)${escapeRegExp(stem)}(?:\\.[a-z]+)?["']`,
-      );
+      const importPattern = importPatternFor(file);
 
       const covered = testSources.some((test) => importPattern.test(test.text));
       if (covered) continue;
@@ -349,59 +341,6 @@ export class DeterministicReviewStep extends WorkflowStep {
           : `Add a test that imports ${stem} and asserts its behavior.`,
       });
     }
-  }
-
-  private async collectTestSources(
-    repoRoot: string,
-  ): Promise<Array<{ file: string; text: string }>> {
-    const results: Array<{ file: string; text: string }> = [];
-
-    const walk = async (dir: string, depth: number): Promise<void> => {
-      if (depth > 8) return;
-      let entries;
-      try {
-        entries = await fs.readdir(path.join(repoRoot, dir), {
-          withFileTypes: true,
-        });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        const rel = dir ? `${dir}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) {
-          if (SKIP_SCAN_DIRS.has(entry.name)) continue;
-          await walk(rel, depth + 1);
-          continue;
-        }
-        if (!TEST_FILE_PATTERN.test(entry.name)) continue;
-        try {
-          results.push({
-            file: rel,
-            text: await fs.readFile(path.join(repoRoot, rel), "utf-8"),
-          });
-        } catch {
-          continue;
-        }
-      }
-    };
-
-    await walk("", 0);
-    return results;
-  }
-
-  private hasRuntimeExport(text: string): boolean {
-    const withoutTypeOnly = text
-      .replace(/^\s*export\s+(?:type|interface)\b[\s\S]*?(?:\n\}|;)\s*$/gm, "")
-      .replace(/^\s*export\s+type\s+\{[^}]*\}[^\n]*$/gm, "");
-
-    const declaresRuntime =
-      /export\s+(?:async\s+)?(?:function|class|const|let|var|default)\b/.test(
-        withoutTypeOnly,
-      );
-    if (declaresRuntime) return true;
-
-    const namedExports = withoutTypeOnly.match(/export\s+\{[^}]*\}[^\n;]*/g) || [];
-    return namedExports.some((statement) => !/\bfrom\s*["']/.test(statement));
   }
 
   private isExcluded(file: string, exclude?: string[]): boolean {

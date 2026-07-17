@@ -127,9 +127,15 @@ describe("Review Flow Validation", () => {
     expect(collectDiff).toBeDefined();
     expect(collectDiff?.depends_on).toEqual(["ensure_branch_published"]);
 
+    const mutationTest = steps["mutation_test"];
+    expect(mutationTest).toBeDefined();
+    expect((mutationTest as any)?.type).toBe("MutationTestStep");
+    expect(mutationTest?.depends_on).toEqual(["collect_review_diff"]);
+    expect(mutationTest?.config?.block_on_survivors).toBe(false);
+
     const qaRequest = steps["qa_request"];
     expect(qaRequest).toBeDefined();
-    expect(qaRequest?.depends_on).toEqual(["collect_review_diff"]);
+    expect(qaRequest?.depends_on).toEqual(["collect_review_diff", "mutation_test"]);
 
     const codeReview = steps["code_review_request"];
     expect(codeReview).toBeDefined();
