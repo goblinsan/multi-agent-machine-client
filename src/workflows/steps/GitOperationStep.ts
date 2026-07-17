@@ -81,7 +81,7 @@ export class GitOperationStep extends WorkflowStep {
       let result: any;
 
       switch (operation) {
-        case "checkoutBranchFromBase":
+        case "checkoutBranchFromBase": {
           try {
             if (typeof gitUtils.describeWorkingTree === "function") {
               const workingTree = await gitUtils.describeWorkingTree(repoRoot);
@@ -139,17 +139,34 @@ export class GitOperationStep extends WorkflowStep {
             workflowId: context.workflowId,
           });
 
-          await gitUtils.checkoutBranchFromBase(
+          const checkoutResult = await gitUtils.checkoutBranchFromBase(
             repoRoot,
             baseBranch,
             newBranch,
           );
-          result = { repoRoot, baseBranch, newBranch };
+          result = { repoRoot, baseBranch, newBranch, baseSync: checkoutResult?.baseSync };
 
           context.setVariable("branch", newBranch);
           context.setVariable("currentBranch", newBranch);
           context.setVariable("baseBranch", baseBranch);
+          context.setVariable("checkout_base_sync", checkoutResult?.baseSync ?? null);
+
+          if (checkoutResult?.baseSync?.conflicted) {
+            await abortWorkflowWithReason(context, "checkout_base_sync_conflict", {
+              branch: newBranch,
+              baseBranch,
+              commitsBehind: checkoutResult.baseSync.commitsBehind,
+              conflictFiles: checkoutResult.baseSync.conflictFiles,
+            });
+            return {
+              status: "failure",
+              error: new Error(
+                `Cannot start task: ${newBranch} conflicts with ${baseBranch} in ${checkoutResult.baseSync.conflictFiles.join(", ") || "unknown files"}`,
+              ),
+            };
+          }
           break;
+        }
 
         case "commitAndPushPaths":
           logger.info("Committing and pushing paths", {

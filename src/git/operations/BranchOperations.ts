@@ -20,11 +20,15 @@ async function handleCheckoutError(
   throw error;
 }
 
+export interface CheckoutResult {
+  baseSync?: BranchSyncResult;
+}
+
 export async function checkoutBranchFromBase(
   repoRoot: string,
   baseBranch: string,
   newBranch: string,
-) {
+): Promise<CheckoutResult> {
   guardWorkspaceMutation(
     repoRoot,
     `checkoutBranchFromBase ${newBranch} from ${baseBranch}`,
@@ -98,7 +102,7 @@ export async function checkoutBranchFromBase(
         branch: newBranch,
       });
     }
-    return;
+    return { baseSync: await syncBranchWithBase(repoRoot, newBranch, baseBranch) };
   }
 
   if (await remoteBranchExists(repoRoot, newBranch)) {
@@ -109,7 +113,7 @@ export async function checkoutBranchFromBase(
     } catch (error) {
       await handleCheckoutError(repoRoot, newBranch, error);
     }
-    return;
+    return { baseSync: await syncBranchWithBase(repoRoot, newBranch, baseBranch) };
   }
 
   if (await branchExists(repoRoot, baseBranch)) {
@@ -149,6 +153,8 @@ export async function checkoutBranchFromBase(
   } catch (error) {
     await handleCheckoutError(repoRoot, newBranch, error);
   }
+
+  return {};
 }
 
 const CONTEXT_PATH_PREFIXES = [".ma/context/", ".ma/"];
@@ -474,7 +480,21 @@ export async function syncBranchWithBase(
     logger.debug("Could not fetch base branch from origin", { repoRoot, baseBranch });
   }
 
-  const baseRef = (await branchExists(repoRoot, baseBranch))
+  const baseIsLocal = await branchExists(repoRoot, baseBranch);
+
+  if (baseIsLocal && (await remoteBranchExists(repoRoot, baseBranch))) {
+    try {
+      await runGit(["fetch", "origin", `${baseBranch}:${baseBranch}`], { cwd: repoRoot });
+      logger.debug("Fast-forwarded local base branch from origin", { repoRoot, baseBranch });
+    } catch {
+      logger.debug(
+        "Local base branch is not fast-forwardable from origin, keeping the local ref",
+        { repoRoot, baseBranch },
+      );
+    }
+  }
+
+  const baseRef = baseIsLocal
     ? baseBranch
     : (await remoteBranchExists(repoRoot, baseBranch))
       ? `origin/${baseBranch}`
