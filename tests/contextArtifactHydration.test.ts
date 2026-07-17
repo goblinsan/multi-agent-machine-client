@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { cfg } from "../src/config";
 import {
   hydrateContextArtifacts,
   loadExistingSnapshot,
@@ -21,7 +20,6 @@ vi.mock("../src/dashboard/ArtifactAPI.js", () => ({
 }));
 
 describe("hydrateContextArtifacts", () => {
-  const originalMode = cfg.maArtifactsMode;
   const snapshotTimestamp = Date.parse("2026-07-01T12:00:00Z");
   let repoDir: string;
 
@@ -37,7 +35,6 @@ describe("hydrateContextArtifacts", () => {
 
   beforeEach(async () => {
     repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "ctx-hydrate-"));
-    (cfg as any).maArtifactsMode = "api";
     fetchProjectArtifactsMock.mockReset();
     fetchProjectArtifactsMock.mockImplementation(async ({ kind }: any) => {
       const content = artifactByKind[kind];
@@ -46,7 +43,6 @@ describe("hydrateContextArtifacts", () => {
   });
 
   afterEach(async () => {
-    (cfg as any).maArtifactsMode = originalMode;
     await fs.rm(repoDir, { recursive: true, force: true });
   });
 
@@ -82,11 +78,7 @@ describe("hydrateContextArtifacts", () => {
     expect((await loadExistingSnapshot(repoDir)).exists).toBe(false);
   });
 
-  it("does nothing in git mode or without a project id", async () => {
-    (cfg as any).maArtifactsMode = "git";
-    expect(await hydrateContextArtifacts(repoDir, 1)).toBe(false);
-
-    (cfg as any).maArtifactsMode = "api";
+  it("does nothing without a project id", async () => {
     expect(await hydrateContextArtifacts(repoDir, null)).toBe(false);
     expect(fetchProjectArtifactsMock).not.toHaveBeenCalled();
   });

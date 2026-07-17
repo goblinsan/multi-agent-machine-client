@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { cfg } from "../src/config";
 import {
   resolveArtifactRefFromPath,
   fetchArtifactContentFromApi,
@@ -47,15 +46,12 @@ describe("resolveArtifactRefFromPath", () => {
 });
 
 describe("fetchArtifactContentFromApi", () => {
-  const originalMode = cfg.maArtifactsMode;
 
   beforeEach(() => {
     fetchArtifactsMock.mockReset();
-    (cfg as any).maArtifactsMode = "both";
   });
 
   afterEach(() => {
-    (cfg as any).maArtifactsMode = originalMode;
   });
 
   it("returns the latest artifact content", async () => {
@@ -94,19 +90,6 @@ describe("fetchArtifactContentFromApi", () => {
     );
   });
 
-  it("returns null in git mode without calling the API", async () => {
-    (cfg as any).maArtifactsMode = "git";
-
-    const content = await fetchArtifactContentFromApi({
-      projectId: 1,
-      taskId: 57,
-      kind: "qa",
-    });
-
-    expect(content).toBeNull();
-    expect(fetchArtifactsMock).not.toHaveBeenCalled();
-  });
-
   it("returns null when the API has no artifacts or throws", async () => {
     fetchArtifactsMock.mockResolvedValueOnce([]);
     expect(
@@ -134,11 +117,9 @@ describe("fetchArtifactContentFromApi", () => {
 describe("fetchArtifactContentForPath", () => {
   beforeEach(() => {
     fetchArtifactsMock.mockReset();
-    (cfg as any).maArtifactsMode = "both";
   });
 
   afterEach(() => {
-    (cfg as any).maArtifactsMode = "git";
   });
 
   it("resolves the path to a kind before fetching", async () => {

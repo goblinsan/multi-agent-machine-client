@@ -1,10 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { cfg } from "../src/config";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   inferArtifactKindFromPath,
   publishArtifactToDashboard,
-  shouldCommitArtifactsToGit,
-  shouldPublishArtifactsToApi,
 } from "../src/workflows/helpers/artifactPublisher";
 
 const publishMock = vi.hoisted(() => vi.fn());
@@ -16,33 +13,12 @@ vi.mock("../src/dashboard/ArtifactAPI.js", () => ({
 }));
 
 describe("artifactPublisher", () => {
-  const originalMode = cfg.maArtifactsMode;
-
   beforeEach(() => {
     publishMock.mockReset();
     publishMock.mockResolvedValue({ ok: true, status: 201, artifactId: 1 });
   });
 
-  afterEach(() => {
-    (cfg as any).maArtifactsMode = originalMode;
-  });
-
-  it("maps modes to git/api behavior", () => {
-    (cfg as any).maArtifactsMode = "git";
-    expect(shouldCommitArtifactsToGit()).toBe(true);
-    expect(shouldPublishArtifactsToApi()).toBe(false);
-
-    (cfg as any).maArtifactsMode = "api";
-    expect(shouldCommitArtifactsToGit()).toBe(false);
-    expect(shouldPublishArtifactsToApi()).toBe(true);
-
-    (cfg as any).maArtifactsMode = "both";
-    expect(shouldCommitArtifactsToGit()).toBe(true);
-    expect(shouldPublishArtifactsToApi()).toBe(true);
-  });
-
-  it("publishes when mode allows it", async () => {
-    (cfg as any).maArtifactsMode = "both";
+  it("publishes task artifacts to the dashboard", async () => {
     const ok = await publishArtifactToDashboard({
       projectId: "1",
       taskId: "57",
@@ -64,21 +40,7 @@ describe("artifactPublisher", () => {
     );
   });
 
-  it("skips publishing in git mode", async () => {
-    (cfg as any).maArtifactsMode = "git";
-    const ok = await publishArtifactToDashboard({
-      projectId: "1",
-      taskId: "57",
-      kind: "plan",
-      content: "plan body",
-    });
-
-    expect(ok).toBe(false);
-    expect(publishMock).not.toHaveBeenCalled();
-  });
-
   it("skips publishing when the task id is missing or unresolved", async () => {
-    (cfg as any).maArtifactsMode = "both";
 
     expect(
       await publishArtifactToDashboard({
@@ -102,7 +64,6 @@ describe("artifactPublisher", () => {
   });
 
   it("treats API failures as non-fatal", async () => {
-    (cfg as any).maArtifactsMode = "both";
     publishMock.mockResolvedValue({ ok: false, status: 500, error: "boom" });
 
     const ok = await publishArtifactToDashboard({

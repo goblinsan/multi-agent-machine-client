@@ -24,7 +24,6 @@ export async function ensureProjectBase() {
 const MA_EXCLUDE_PATTERNS = [".ma/"];
 
 export async function ensureMaExcludes(repoRoot: string): Promise<void> {
-  if (cfg.maArtifactsMode !== "api") return;
   try {
     const excludePath = path.join(repoRoot, ".git", "info", "exclude");
     await fs.mkdir(path.dirname(excludePath), { recursive: true });

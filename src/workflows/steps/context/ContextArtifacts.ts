@@ -1,10 +1,7 @@
-import { runGit } from "../../../gitUtils.js";
 import { logger } from "../../../logger.js";
 import type { FileInfo } from "../../../scanRepo.js";
 import {
   publishProjectArtifactToDashboard,
-  shouldCommitArtifactsToGit,
-  shouldPublishArtifactsToApi,
 } from "../../helpers/artifactPublisher.js";
 import { fetchProjectArtifactContentFromApi } from "../../helpers/artifactReader.js";
 import fs from "fs/promises";
@@ -112,59 +109,6 @@ export async function writeContextArtifacts(
     });
   }
 
-  if (!shouldCommitArtifactsToGit()) {
-    logger.debug("Skipping context artifact git commit (MA_ARTIFACTS_MODE=api)", {
-      repoPath,
-    });
-    return paths;
-  }
-
-  try {
-    await runGit(
-      [
-        "add",
-        "-f",
-        ".ma/context/snapshot.json",
-        ".ma/context/summary.md",
-        ".ma/context/files.ndjson",
-      ],
-      { cwd: repoPath },
-    );
-
-    const commitMsg = `chore(ma): update context scan (${snapshot.totals.files} files)`;
-    await runGit(["commit", "--no-verify", "-m", commitMsg], { cwd: repoPath });
-
-    const branchResult = await runGit([
-      "rev-parse",
-      "--abbrev-ref",
-      "HEAD",
-    ], {
-      cwd: repoPath,
-    });
-    const branch = branchResult.stdout.trim();
-
-    try {
-      const remotes = await runGit(["remote"], { cwd: repoPath });
-      if (remotes.stdout.trim().length > 0) {
-        await runGit(["push", "origin", branch], { cwd: repoPath });
-        logger.info("Context artifacts pushed to remote", { branch });
-      }
-    } catch (pushErr: any) {
-      logger.warn("Failed to push context artifacts (will retry later)", {
-        error: pushErr.message,
-      });
-    }
-
-    logger.debug("Context artifacts staged", {
-      repoPath,
-    });
-  } catch (gitError: any) {
-    logger.warn("Failed to commit context artifacts", {
-      repoPath,
-      error: gitError.message,
-    });
-  }
-
   return paths;
 }
 
@@ -172,7 +116,7 @@ export async function hydrateContextArtifacts(
   repoPath: string,
   projectId: string | number | null | undefined,
 ): Promise<boolean> {
-  if (!projectId || !shouldPublishArtifactsToApi()) return false;
+  if (!projectId) return false;
 
   const existing = await loadExistingSnapshot(repoPath);
   if (existing.exists) return false;

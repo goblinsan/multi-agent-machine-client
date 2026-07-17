@@ -1,6 +1,5 @@
 import { logger } from "../../logger.js";
 import { ArtifactAPI } from "../../dashboard/ArtifactAPI.js";
-import { shouldPublishArtifactsToApi } from "./artifactPublisher.js";
 
 const artifactAPI = new ArtifactAPI();
 
@@ -46,7 +45,6 @@ export async function fetchArtifactContentFromApi(input: {
   kind: string;
   iteration?: number;
 }): Promise<string | null> {
-  if (!shouldPublishArtifactsToApi()) return null;
 
   const { projectId, taskId, kind, iteration } = input;
   if (!projectId || !taskId || taskId === "unknown") return null;
@@ -89,7 +87,6 @@ export async function fetchProjectArtifactContentFromApi(input: {
   projectId: string | number | null | undefined;
   kind: string;
 }): Promise<string | null> {
-  if (!shouldPublishArtifactsToApi()) return null;
   if (!input.projectId) return null;
 
   try {

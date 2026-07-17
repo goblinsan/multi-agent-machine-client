@@ -11,9 +11,6 @@ import {
 } from "../../agents/persona.js";
 import { getContextualPrompt } from "../../personas.context.js";
 import { logger } from "../../logger.js";
-import { runGit } from "../../gitUtils.js";
-import fs from "fs/promises";
-import path from "path";
 import { cfg } from "../../config.js";
 import { personaTimeoutMs } from "../../util.js";
 import {
@@ -37,7 +34,6 @@ import { requiresStatus } from "./helpers/personaStatusPolicy.js";
 import { loadTaskFileSnippets } from "./helpers/analysisReview/taskContext.js";
 import {
   publishArtifactToDashboard,
-  shouldCommitArtifactsToGit,
 } from "../helpers/artifactPublisher.js";
 
 export class PlanningLoopStep extends WorkflowStep {
@@ -1077,63 +1073,6 @@ export class PlanningLoopStep extends WorkflowStep {
       });
     }
 
-    try {
-      if (!shouldCommitArtifactsToGit()) {
-        logger.debug("Skipping artifact git commit (MA_ARTIFACTS_MODE=api)", {
-          artifactPath,
-        });
-        return;
-      }
-
-      const repoRoot = context.repoRoot;
-      const fullPath = path.join(repoRoot, artifactPath);
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
-      await fs.writeFile(fullPath, content, "utf-8");
-
-      const relativePath = path.relative(repoRoot, fullPath);
-      await runGit(["add", relativePath], { cwd: repoRoot });
-      await runGit(["commit", "--no-verify", "-m", commitMessage], {
-        cwd: repoRoot,
-      });
-
-      const sha = (
-        await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })
-      ).stdout.trim();
-
-      logger.info("Artifact committed to git", {
-        workflowId: context.workflowId,
-        artifactPath,
-        sha: sha.substring(0, 7),
-        contentLength: content.length,
-      });
-
-      try {
-        const remotes = await runGit(["remote"], { cwd: repoRoot });
-        const hasRemote = remotes.stdout.trim().length > 0;
-
-        if (hasRemote) {
-          const branch = context.getCurrentBranch();
-          await runGit(["push", "origin", branch], { cwd: repoRoot });
-          logger.info("Artifact pushed to remote", {
-            workflowId: context.workflowId,
-            artifactPath,
-            branch,
-          });
-        }
-      } catch (pushErr) {
-        logger.warn("Failed to push artifact (will retry later)", {
-          workflowId: context.workflowId,
-          artifactPath,
-          error: pushErr instanceof Error ? pushErr.message : String(pushErr),
-        });
-      }
-    } catch (error) {
-      logger.error("Failed to commit artifact", {
-        workflowId: context.workflowId,
-        artifactPath,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
   }
 
   private resolveTaskId(context: WorkflowContext): string {

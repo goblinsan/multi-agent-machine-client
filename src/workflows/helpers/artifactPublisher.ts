@@ -1,17 +1,8 @@
 import path from "path";
-import { cfg } from "../../config.js";
 import { logger } from "../../logger.js";
 import { ArtifactAPI } from "../../dashboard/ArtifactAPI.js";
 
 const artifactAPI = new ArtifactAPI();
-
-export function shouldCommitArtifactsToGit(): boolean {
-  return cfg.maArtifactsMode !== "api";
-}
-
-export function shouldPublishArtifactsToApi(): boolean {
-  return cfg.maArtifactsMode !== "git";
-}
 
 export function inferArtifactKindFromPath(artifactPath: string): string {
   const base = path.basename(artifactPath);
@@ -25,7 +16,6 @@ export async function publishProjectArtifactToDashboard(input: {
   kind: string;
   content: string;
 }): Promise<boolean> {
-  if (!shouldPublishArtifactsToApi()) return false;
   if (!input.projectId) return false;
 
   try {
@@ -70,7 +60,6 @@ export async function publishArtifactToDashboard(input: {
   iteration?: number | null;
   content: string;
 }): Promise<boolean> {
-  if (!shouldPublishArtifactsToApi()) return false;
 
   if (!input.projectId || !input.taskId || input.taskId === "unknown") {
     logger.debug("Artifact publish skipped: missing project or task id", {
@@ -97,7 +86,6 @@ export async function publishArtifactToDashboard(input: {
         taskId: input.taskId,
         status: result.status,
         error: result.error,
-        mode: cfg.maArtifactsMode,
       });
       return false;
     }

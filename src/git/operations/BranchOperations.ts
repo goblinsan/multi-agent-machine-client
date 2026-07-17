@@ -157,8 +157,6 @@ export async function checkoutBranchFromBase(
   return {};
 }
 
-const CONTEXT_PATH_PREFIXES = [".ma/context/", ".ma/"];
-
 function hasDuplicateJsonKeys(raw: string): boolean {
   const keyPattern = /"([^"]+)"\s*:/g;
   const keys: string[] = [];
@@ -280,10 +278,6 @@ async function getConflictedFiles(repoRoot: string): Promise<string[]> {
     .filter(Boolean);
 }
 
-function isContextFile(filePath: string): boolean {
-  return CONTEXT_PATH_PREFIXES.some((prefix) => filePath.startsWith(prefix));
-}
-
 async function tryResolveConflicts(
   repoRoot: string,
   sourceBranch: string,
@@ -292,19 +286,7 @@ async function tryResolveConflicts(
   const conflicted = await getConflictedFiles(repoRoot);
   if (conflicted.length === 0) return false;
 
-  const contextFiles = conflicted.filter(isContextFile);
-  const otherFiles = conflicted.filter((f) => !isContextFile(f));
-
-  if (contextFiles.length > 0) {
-    await runGit(["checkout", "--theirs", "--", ...contextFiles], { cwd: repoRoot });
-    await runGit(["add", "-f", "--", ...contextFiles], { cwd: repoRoot });
-    logger.info("Auto-resolved context file conflicts (using source branch)", {
-      repoRoot,
-      files: contextFiles,
-    });
-  }
-
-  for (const file of otherFiles) {
+  for (const file of conflicted) {
     try {
       if (file.endsWith(".json")) {
         const jsonResolved = await resolveJsonConflict(repoRoot, file);
@@ -548,19 +530,7 @@ export async function syncBranchWithBase(
       baseRef,
     };
   } catch (mergeErr: any) {
-    let conflictFiles: string[] = [];
-    try {
-      const conflictResult = await runGit(
-        ["diff", "--name-only", "--diff-filter=U"],
-        { cwd: repoRoot },
-      );
-      conflictFiles = conflictResult.stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    } catch {
-      void 0;
-    }
+    const conflictFiles = await getConflictedFiles(repoRoot);
 
     try {
       await runGit(["merge", "--abort"], { cwd: repoRoot });
@@ -568,7 +538,7 @@ export async function syncBranchWithBase(
       void 0;
     }
 
-    logger.warn("Merge preflight hit conflicts against the base branch", {
+    logger.warn("Base branch merge hit source conflicts that need a human decision", {
       repoRoot,
       branch,
       baseRef,

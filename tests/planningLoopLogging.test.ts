@@ -32,17 +32,14 @@ vi.mock("../src/agents/persona.js", async () => {
 });
 
 describe("PlanningLoopStep logging", () => {
-  const originalArtifactMode = cfg.maArtifactsMode;
   const originalPlanningMode = process.env.PLANNING_MODE;
 
   beforeEach(() => {
-    (cfg as any).maArtifactsMode = originalArtifactMode;
     delete process.env.PLANNING_MODE;
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    (cfg as any).maArtifactsMode = originalArtifactMode;
     if (originalPlanningMode === undefined) delete process.env.PLANNING_MODE;
     else process.env.PLANNING_MODE = originalPlanningMode;
     vi.restoreAllMocks();
@@ -303,7 +300,6 @@ describe("PlanningLoopStep logging", () => {
   });
 
   it("does not write .ma/tasks artifacts locally in API mode", async () => {
-    (cfg as any).maArtifactsMode = "api";
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "planning-api-"));
     const context = new WorkflowContext(
       "wf-api-artifacts",

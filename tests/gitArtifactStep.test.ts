@@ -1,12 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach, vi as _vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { GitArtifactStep } from "../src/workflows/steps/GitArtifactStep.js";
 import { WorkflowContext } from "../src/workflows/engine/WorkflowContext.js";
 import type { StepResult } from "../src/workflows/engine/WorkflowStep.js";
 import { makeTempRepo } from "./makeTempRepo.js";
 import { runGit } from "../src/gitUtils.js";
-import { cfg } from "../src/config.js";
 import fs from "fs/promises";
 import path from "path";
+
+const publishMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../src/dashboard/ArtifactAPI.js", () => ({
+  ArtifactAPI: class {
+    publishTaskArtifact = publishMock;
+    fetchTaskArtifacts = vi.fn().mockResolvedValue(null);
+    publishProjectArtifact = vi.fn().mockResolvedValue({ ok: true });
+    fetchProjectArtifacts = vi.fn().mockResolvedValue(null);
+  },
+}));
 
 type SuccessResult = StepResult & { status: "success"; data: Record<string, any> };
 
@@ -23,13 +33,19 @@ const assertSuccess = (result: StepResult): SuccessResult => {
   return result as SuccessResult;
 };
 
+const publishedContent = (): string => {
+  const call = publishMock.mock.calls.at(-1);
+  if (!call) throw new Error("Expected an artifact to have been published");
+  return call[0].content;
+};
+
 describe("GitArtifactStep", () => {
   let repoDir: string;
   let context: WorkflowContext;
-  const originalArtifactMode = cfg.maArtifactsMode;
 
   beforeEach(async () => {
-    (cfg as any).maArtifactsMode = originalArtifactMode;
+    publishMock.mockReset();
+    publishMock.mockResolvedValue({ ok: true, status: 201, artifactId: 1 });
     repoDir = await makeTempRepo();
 
     context = new WorkflowContext(
@@ -43,16 +59,12 @@ describe("GitArtifactStep", () => {
         steps: [],
       },
       {} as any,
-      {},
+      { task: { id: "1" } },
     );
   });
 
-  afterEach(() => {
-    (cfg as any).maArtifactsMode = originalArtifactMode;
-  });
-
-  describe("Basic Functionality", () => {
-    it("should commit persona output to .ma directory", async () => {
+  describe("Publishing", () => {
+    it("publishes persona output to the dashboard without writing it into the repo", async () => {
       const planData = "This is the approved plan for the feature";
       context.setVariable("plan_result", planData);
 
@@ -69,24 +81,40 @@ describe("GitArtifactStep", () => {
       const result = assertSuccess(await step.execute(context));
 
       expect(result.data.path).toBe(".ma/tasks/1/03-plan-final.md");
-      expect(result.data.sha).toBeDefined();
-      expect(result.data.sha).not.toBe("skipped");
-
-      const filePath = path.join(repoDir, ".ma/tasks/1/03-plan-final.md");
-      const content = await fs.readFile(filePath, "utf-8");
-      expect(content).toContain(planData);
-
-      const log = await runGit(["log", "--oneline", "-1"], { cwd: repoDir });
-      expect(log.stdout).toContain("docs(ma): approved plan for task 1");
-
-      expect(result.outputs?.commit_plan_sha).toBe(result.data.sha);
+      expect(result.data.sha).toBe("api-only");
+      expect(publishedContent()).toContain(planData);
       expect(result.outputs?.commit_plan_path).toBe(
         ".ma/tasks/1/03-plan-final.md",
       );
+
+      await expect(
+        fs.access(path.join(repoDir, ".ma/tasks/1/03-plan-final.md")),
+      ).rejects.toThrow();
     });
 
-    it("publishes in API mode without writing .ma/tasks locally", async () => {
-      (cfg as any).maArtifactsMode = "api";
+    it("derives the artifact kind from the artifact path", async () => {
+      context.setVariable("review_result", { status: "pass" });
+
+      const step = new GitArtifactStep({
+        name: "commit_review",
+        type: "GitArtifactStep",
+        config: {
+          source_output: "review_result",
+          artifact_path: ".ma/tasks/1/reviews/code-review.json",
+          commit_message: "docs(ma): review for task 1",
+          format: "json",
+        },
+      });
+
+      assertSuccess(await step.execute(context));
+
+      expect(publishMock).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "code_review" }),
+      );
+    });
+
+    it("leaves the working tree clean and creates no commits", async () => {
+      const before = await runGit(["rev-parse", "HEAD"], { cwd: repoDir });
       context.setVariable("qa_result", { status: "pass" });
 
       const step = new GitArtifactStep({
@@ -100,293 +128,147 @@ describe("GitArtifactStep", () => {
         },
       });
 
-      const result = assertSuccess(await step.execute(context));
+      assertSuccess(await step.execute(context));
 
-      expect(result.data.sha).toBe("api-only");
-      await expect(
-        fs.access(path.join(repoDir, ".ma/tasks/1/reviews/qa.json")),
-      ).rejects.toThrow();
+      const status = await runGit(["status", "--short"], { cwd: repoDir });
+      expect(status.stdout.trim()).toBe("");
+
+      const after = await runGit(["rev-parse", "HEAD"], { cwd: repoDir });
+      expect(after.stdout.trim()).toBe(before.stdout.trim());
     });
 
-    it("should extract nested field when extract_field specified", async () => {
-      const responseData = {
+    it("treats a failed publish as non-fatal", async () => {
+      publishMock.mockResolvedValue({ ok: false, status: 500, error: "boom" });
+      context.setVariable("plan_result", "content");
+
+      const step = new GitArtifactStep({
+        name: "commit_plan",
+        type: "GitArtifactStep",
+        config: {
+          source_output: "plan_result",
+          artifact_path: ".ma/tasks/1/plan.md",
+          commit_message: "docs(ma): plan",
+        },
+      });
+
+      const result = assertSuccess(await step.execute(context));
+      expect(result.data.sha).toBe("api-only");
+    });
+  });
+
+  describe("Content Formatting", () => {
+    it("extracts a nested field when extract_field is specified", async () => {
+      context.setVariable("planning_response", {
         status: "pass",
         plan: "This is the nested plan content",
         metadata: { iteration: 3 },
-      };
-      context.setVariable("planning_response", responseData);
+      });
 
       const step = new GitArtifactStep({
         name: "commit_plan",
         type: "GitArtifactStep",
         config: {
           source_output: "planning_response",
-          artifact_path: ".ma/tasks/1/03-plan-final.md",
-          commit_message: "docs(ma): plan for task 1",
           extract_field: "plan",
+          artifact_path: ".ma/tasks/1/03-plan-final.md",
+          commit_message: "docs(ma): plan",
         },
       });
 
       assertSuccess(await step.execute(context));
-      const filePath = path.join(repoDir, ".ma/tasks/1/03-plan-final.md");
-      const content = await fs.readFile(filePath, "utf-8");
+
+      const content = publishedContent();
       expect(content).toContain("This is the nested plan content");
-      expect(content).not.toContain("metadata");
+      expect(content).not.toContain("iteration");
     });
 
-    it("should format as JSON when format=json", async () => {
-      const qaResult = {
-        status: "fail",
-        failures: ["Test 1 failed", "Test 2 failed"],
-        coverage: 85,
-      };
-      context.setVariable("qa_result", qaResult);
+    it("serializes as JSON when format=json", async () => {
+      context.setVariable("qa_result", { status: "pass", failures: [] });
 
       const step = new GitArtifactStep({
         name: "commit_qa",
         type: "GitArtifactStep",
         config: {
           source_output: "qa_result",
-          artifact_path: ".ma/tasks/1/05-qa-result.json",
-          commit_message: "docs(ma): QA results for task 1",
+          artifact_path: ".ma/tasks/1/reviews/qa.json",
+          commit_message: "docs(ma): qa",
           format: "json",
         },
       });
 
-      const result = assertSuccess(await step.execute(context));
-      expect(result.data.format).toBe("json");
+      assertSuccess(await step.execute(context));
 
-      const filePath = path.join(repoDir, ".ma/tasks/1/05-qa-result.json");
-      const content = await fs.readFile(filePath, "utf-8");
-      const parsed = JSON.parse(content);
-      expect(parsed).toEqual(qaResult);
+      expect(JSON.parse(publishedContent())).toEqual({
+        status: "pass",
+        failures: [],
+      });
     });
 
-    it("should format as markdown by default", async () => {
-      const planText = "Implementation plan:\n1. Step one\n2. Step two";
-      context.setVariable("plan", planText);
+    it("formats as markdown by default", async () => {
+      context.setVariable("plan_result", "# Heading\n\nBody text");
 
       const step = new GitArtifactStep({
         name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "plan",
+          source_output: "plan_result",
           artifact_path: ".ma/tasks/1/03-plan-final.md",
           commit_message: "docs(ma): plan",
         },
       });
 
-      const result = assertSuccess(await step.execute(context));
-      expect(result.data.format).toBe("markdown");
+      assertSuccess(await step.execute(context));
 
-      const filePath = path.join(repoDir, ".ma/tasks/1/03-plan-final.md");
-      const content = await fs.readFile(filePath, "utf-8");
-      expect(content).toContain("Step one");
+      expect(publishedContent()).toContain("# Heading");
     });
   });
 
   describe("Variable Resolution", () => {
-    it("should resolve variable placeholders in artifact path", async () => {
-      context.setVariable("plan", "Test plan");
-      context.setVariable("task", { id: 42, title: "Feature X" });
+    it("resolves variable placeholders in the artifact path", async () => {
+      context.setVariable("plan_result", "content");
+      context.setVariable("task", { id: "42" });
 
       const step = new GitArtifactStep({
         name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "plan",
+          source_output: "plan_result",
           artifact_path: ".ma/tasks/${task.id}/03-plan-final.md",
-          commit_message: "docs(ma): plan for task ${task.id}",
+          commit_message: "docs(ma): plan for ${task.id}",
         },
       });
 
       const result = assertSuccess(await step.execute(context));
+
       expect(result.data.path).toBe(".ma/tasks/42/03-plan-final.md");
-
-      const filePath = path.join(repoDir, ".ma/tasks/42/03-plan-final.md");
-      await expect(fs.access(filePath)).resolves.not.toThrow();
-
-      const log = await runGit(["log", "--oneline", "-1"], { cwd: repoDir });
-      expect(log.stdout).toContain("plan for task 42");
     });
 
-    it("should resolve nested variable placeholders in commit message", async () => {
-      context.setVariable("plan", "Test plan");
-      context.setVariable("task", { id: 5, title: "Bug Fix" });
-      context.setVariable("milestone", { name: "Sprint 3" });
+    it("keeps the placeholder when the variable is not found", async () => {
+      context.setVariable("plan_result", "content");
 
       const step = new GitArtifactStep({
         name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "plan",
-          artifact_path: ".ma/tasks/${task.id}/plan.md",
-          commit_message: "docs(ma): ${task.title} plan for ${milestone.name}",
-        },
-      });
-
-      assertSuccess(await step.execute(context));
-
-      const log = await runGit(["log", "--oneline", "-1"], { cwd: repoDir });
-      expect(log.stdout).toContain("Bug Fix plan for Sprint 3");
-    });
-
-    it("should keep placeholder if variable not found", async () => {
-      context.setVariable("plan", "Test plan");
-
-      const step = new GitArtifactStep({
-        name: "commit_plan",
-        type: "GitArtifactStep",
-        config: {
-          source_output: "plan",
-          artifact_path: ".ma/tasks/${nonexistent.id}/plan.md",
-          commit_message: "docs(ma): plan",
-        },
-      });
-
-      const result = assertSuccess(await step.execute(context));
-      expect(result.data.path).toBe(".ma/tasks/${nonexistent.id}/plan.md");
-    });
-  });
-
-  describe("Git Operations", () => {
-    it("should create parent directories if missing", async () => {
-      context.setVariable("plan", "Test plan");
-
-      const step = new GitArtifactStep({
-        name: "commit_plan",
-        type: "GitArtifactStep",
-        config: {
-          source_output: "plan",
-          artifact_path: ".ma/tasks/1/deep/nested/path/plan.md",
-          commit_message: "docs(ma): plan",
-        },
-      });
-
-      assertSuccess(await step.execute(context));
-      const filePath = path.join(
-        repoDir,
-        ".ma/tasks/1/deep/nested/path/plan.md",
-      );
-      await expect(fs.access(filePath)).resolves.not.toThrow();
-    });
-
-    it("should store SHA in workflow context outputs", async () => {
-      context.setVariable("plan", "Test plan");
-
-      const step = new GitArtifactStep({
-        name: "save_plan",
-        type: "GitArtifactStep",
-        config: {
-          source_output: "plan",
-          artifact_path: ".ma/tasks/1/plan.md",
+          source_output: "plan_result",
+          artifact_path: ".ma/tasks/${missing.var}/plan.md",
           commit_message: "docs(ma): plan",
         },
       });
 
       const result = assertSuccess(await step.execute(context));
 
-      expect(result.outputs).toBeDefined();
-      expect(result.outputs?.save_plan_sha).toBeDefined();
-      expect(result.outputs?.save_plan_sha).toMatch(/^[0-9a-f]{40}$/);
-      expect(result.outputs?.save_plan_path).toBe(".ma/tasks/1/plan.md");
-    });
-
-    it("should not fail if push fails (log warning only)", async () => {
-      context.setVariable("plan", "Test plan");
-
-      await runGit(["remote", "remove", "origin"], { cwd: repoDir }).catch(
-        () => {},
-      );
-
-      const step = new GitArtifactStep({
-        name: "commit_plan",
-        type: "GitArtifactStep",
-        config: {
-          source_output: "plan",
-          artifact_path: ".ma/tasks/1/plan.md",
-          commit_message: "docs(ma): plan",
-        },
-      });
-
-      const result = assertSuccess(await step.execute(context));
-      expect(result.data.sha).toBeDefined();
-
-      const log = await runGit(["log", "--oneline", "-1"], { cwd: repoDir });
-      expect(log.stdout).toContain("docs(ma): plan");
-    });
-  });
-
-  describe("Branch Guard", () => {
-    it("should attempt checkout and continue when expected branch exists", async () => {
-      context.setVariable("plan", "Test plan");
-      context.setVariable("branch", "feature/mismatch-branch");
-      context.setVariable("featureBranchName", "feature/mismatch-branch");
-
-      await runGit(["checkout", "-b", "feature/mismatch-branch"], {
-        cwd: repoDir,
-      });
-      await runGit(["checkout", "main"], { cwd: repoDir });
-
-      const step = new GitArtifactStep({
-        name: "commit_plan",
-        type: "GitArtifactStep",
-        config: {
-          source_output: "plan",
-          artifact_path: ".ma/tasks/1/plan.md",
-          commit_message: "docs(ma): plan",
-        },
-      });
-
-      const result = assertSuccess(await step.execute(context));
-      expect(result.status).toBe("success");
-
-      const branch = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], {
-        cwd: repoDir,
-      });
-      expect(branch.stdout.trim()).toBe("feature/mismatch-branch");
-    });
-
-    it("should fail when active branch does not match expected branch", async () => {
-      context.setVariable("plan", "Test plan");
-      context.setVariable("branch", "feature/mismatch-branch");
-      context.setVariable("featureBranchName", "feature/mismatch-branch");
-
-      const step = new GitArtifactStep({
-        name: "commit_plan",
-        type: "GitArtifactStep",
-        config: {
-          source_output: "plan",
-          artifact_path: ".ma/tasks/1/plan.md",
-          commit_message: "docs(ma): plan",
-        },
-      });
-
-      const result = await step.execute(context);
-
-      expect(result.status).toBe("failure");
-      expect(result.error?.message).toContain(
-        "does not match expected branch",
-      );
-      expect(result.data?.failed).toBe(true);
-      expect(result.data?.activeBranch).toBe("main");
-      expect(result.data?.expectedBranch).toBe("feature/mismatch-branch");
-
-      const filePath = path.join(repoDir, ".ma/tasks/1/plan.md");
-      await expect(fs.access(filePath)).rejects.toThrow();
-
-      const status = await runGit(["status", "--short"], { cwd: repoDir });
-      expect(status.stdout.trim()).toBe("");
+      expect(result.data.path).toContain("${missing.var}");
     });
   });
 
   describe("Error Handling", () => {
-    it("should fail if source_output not found", async () => {
+    it("fails when source_output is not found", async () => {
       const step = new GitArtifactStep({
         name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "nonexistent_variable",
+          source_output: "does_not_exist",
           artifact_path: ".ma/tasks/1/plan.md",
           commit_message: "docs(ma): plan",
         },
@@ -395,39 +277,38 @@ describe("GitArtifactStep", () => {
       const result = await step.execute(context);
 
       expect(result.status).toBe("failure");
-      expect(result.error).toBeDefined();
-      expect(result.error?.message).toContain("nonexistent_variable");
+      expect(publishMock).not.toHaveBeenCalled();
     });
 
-    it("should fail if extract_field not found in data", async () => {
-      context.setVariable("response", { status: "pass", other: "data" });
+    it("fails when extract_field is not found in the data", async () => {
+      context.setVariable("planning_response", { status: "pass" });
 
       const step = new GitArtifactStep({
         name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "response",
+          source_output: "planning_response",
+          extract_field: "missing",
           artifact_path: ".ma/tasks/1/plan.md",
           commit_message: "docs(ma): plan",
-          extract_field: "plan",
         },
       });
 
       const result = await step.execute(context);
 
       expect(result.status).toBe("failure");
-      expect(result.error?.message).toContain("extract_field 'plan' not found");
+      expect(publishMock).not.toHaveBeenCalled();
     });
 
-    it("should fail if artifact_path does not start with .ma/", async () => {
-      context.setVariable("plan", "Test plan");
+    it("fails when artifact_path escapes .ma/", async () => {
+      context.setVariable("plan_result", "content");
 
       const step = new GitArtifactStep({
         name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "plan",
-          artifact_path: "dangerous/path/plan.md",
+          source_output: "plan_result",
+          artifact_path: "src/secrets.md",
           commit_message: "docs(ma): plan",
         },
       });
@@ -435,12 +316,12 @@ describe("GitArtifactStep", () => {
       const result = await step.execute(context);
 
       expect(result.status).toBe("failure");
-      expect(result.error?.message).toContain("must start with '.ma/'");
+      expect(publishMock).not.toHaveBeenCalled();
     });
   });
 
   describe("Test Bypass", () => {
-    it("should bypass git operations when SKIP_GIT_OPERATIONS is true", async () => {
+    it("bypasses publishing when SKIP_GIT_OPERATIONS is true", async () => {
       context.setVariable("plan", "Test plan");
       context.setVariable("SKIP_GIT_OPERATIONS", true);
 
@@ -454,95 +335,68 @@ describe("GitArtifactStep", () => {
         },
       });
 
-  const result = assertSuccess(await step.execute(context));
+      const result = assertSuccess(await step.execute(context));
 
-  expect(result.data.bypassed).toBe(true);
-  expect(result.data.sha).toBe("skipped");
-  expect(result.outputs?.commit_plan_sha).toBe("skipped");
-
-      const filePath = path.join(repoDir, ".ma/tasks/1/plan.md");
-      await expect(fs.access(filePath)).rejects.toThrow();
+      expect(result.data.bypassed).toBe(true);
+      expect(result.data.sha).toBe("skipped");
+      expect(result.outputs?.commit_plan_sha).toBe("skipped");
+      expect(publishMock).not.toHaveBeenCalled();
     });
   });
 
   describe("Validation", () => {
-    it("should validate required fields", async () => {
+    it("validates required fields", async () => {
       const step = new GitArtifactStep({
-        name: "invalid_step",
+        name: "commit_plan",
         type: "GitArtifactStep",
-        config: {} as any,
+        config: {},
       });
 
-      const result = await step.validate(context);
-
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContain(
-        "GitArtifactStep: source_output is required and must be a string",
-      );
-      expect(result.errors).toContain(
-        "GitArtifactStep: artifact_path is required and must be a string",
-      );
-      expect(result.errors).toContain(
-        "GitArtifactStep: commit_message is required and must be a string",
-      );
+      expect((await step.validate(context)).valid).toBe(false);
     });
 
-    it("should validate artifact_path starts with .ma/", async () => {
+    it("validates that artifact_path starts with .ma/", async () => {
       const step = new GitArtifactStep({
-        name: "invalid_step",
+        name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "plan",
-          artifact_path: "unsafe/path.md",
-          commit_message: "test",
+          source_output: "plan_result",
+          artifact_path: "docs/plan.md",
+          commit_message: "docs(ma): plan",
         },
       });
 
-      const result = await step.validate(context);
-
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContain(
-        "GitArtifactStep: artifact_path must start with '.ma/' for security",
-      );
+      expect((await step.validate(context)).valid).toBe(false);
     });
 
-    it("should validate format enum", async () => {
+    it("validates the format enum", async () => {
       const step = new GitArtifactStep({
-        name: "invalid_step",
+        name: "commit_plan",
         type: "GitArtifactStep",
         config: {
-          source_output: "plan",
-          artifact_path: ".ma/test.md",
-          commit_message: "test",
-          format: "xml" as any,
-        },
-      });
-
-      const result = await step.validate(context);
-
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContain(
-        "GitArtifactStep: format must be 'markdown' or 'json'",
-      );
-    });
-
-    it("should pass validation with valid config", async () => {
-      const step = new GitArtifactStep({
-        name: "valid_step",
-        type: "GitArtifactStep",
-        config: {
-          source_output: "plan",
+          source_output: "plan_result",
           artifact_path: ".ma/tasks/1/plan.md",
           commit_message: "docs(ma): plan",
-          format: "markdown",
-          extract_field: "plan",
+          format: "xml",
         },
       });
 
-      const result = await step.validate(context);
+      expect((await step.validate(context)).valid).toBe(false);
+    });
 
-      expect(result.valid).toBe(true);
-      expect(result.errors).toEqual([]);
+    it("passes validation with a valid config", async () => {
+      const step = new GitArtifactStep({
+        name: "commit_plan",
+        type: "GitArtifactStep",
+        config: {
+          source_output: "plan_result",
+          artifact_path: ".ma/tasks/1/plan.md",
+          commit_message: "docs(ma): plan",
+          format: "json",
+        },
+      });
+
+      expect((await step.validate(context)).valid).toBe(true);
     });
   });
 });

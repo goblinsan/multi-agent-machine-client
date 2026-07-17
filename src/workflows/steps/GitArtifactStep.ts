@@ -5,15 +5,11 @@ import {
   ValidationResult,
 } from "../engine/WorkflowStep.js";
 import { WorkflowContext } from "../engine/WorkflowContext.js";
-import { runGit } from "../../gitUtils.js";
 import { logger } from "../../logger.js";
 import {
   inferArtifactKindFromPath,
   publishArtifactToDashboard,
-  shouldCommitArtifactsToGit,
 } from "../helpers/artifactPublisher.js";
-import fs from "fs/promises";
-import path from "path";
 
 interface GitArtifactStepConfig {
   source_output: string;
@@ -129,200 +125,25 @@ export class GitArtifactStep extends WorkflowStep {
           content,
         });
 
-      const repoRoot = context.repoRoot;
-
-      if (!shouldCommitArtifactsToGit()) {
-        await publishArtifact();
-
-        context.logger.info("Artifact published without git commit", {
-          stepName: this.config.name,
-          artifactPath: resolvedPath,
-          kind: artifactKind,
-          mode: "api",
-        });
-
-        return {
-          status: "success",
-          data: {
-            path: resolvedPath,
-            sha: "api-only",
-            contentLength: content.length,
-            format,
-            elapsed: Date.now() - startTime,
-          },
-          outputs: {
-            [`${this.config.name}_sha`]: "api-only",
-            [`${this.config.name}_path`]: resolvedPath,
-          },
-        };
-      }
-
-      const expectedBranch = this.resolveExpectedBranch(context);
-
-      if (!expectedBranch) {
-        throw new Error(
-          "GitArtifactStep: Unable to determine expected branch for guard check",
-        );
-      }
-
-      const branchResult = await runGit(
-        ["rev-parse", "--abbrev-ref", "HEAD"],
-        { cwd: repoRoot },
-      );
-      let activeBranch = branchResult.stdout.trim();
-
-      if (!activeBranch) {
-        throw new Error(
-          "GitArtifactStep: Unable to determine current git branch for guard check",
-        );
-      }
-
-      if (activeBranch !== expectedBranch) {
-        const correctedBranch = await this.tryAlignBranch(
-          repoRoot,
-          expectedBranch,
-          activeBranch,
-          context,
-        );
-
-        if (correctedBranch) {
-          activeBranch = correctedBranch;
-        }
-      }
-
-      if (activeBranch !== expectedBranch) {
-        const message =
-          `GitArtifactStep: Active branch '${activeBranch}' does not match expected branch '${expectedBranch}'`;
-        context.logger.error("Branch guard failed before committing artifact", {
-          stepName: this.config.name,
-          activeBranch,
-          expectedBranch,
-        });
-
-        return {
-          status: "failure",
-          error: new Error(message),
-          data: {
-            path: resolvedPath,
-            failed: true,
-            activeBranch,
-            expectedBranch,
-          },
-        } satisfies StepResult;
-      }
-
-      const fullPath = path.join(repoRoot, resolvedPath);
-
-      context.logger.info("Writing artifact to git", {
-        stepName: this.config.name,
-        artifactPath: resolvedPath,
-        contentLength: content.length,
-        format,
-      });
-
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
-      await fs.writeFile(fullPath, content, "utf-8");
-
-      const commitMsg = this.resolveVariables(config.commit_message, context);
-      const relativePath = path.relative(repoRoot, fullPath);
-
-      try {
-        await runGit(["add", relativePath], { cwd: repoRoot });
-        await runGit(["commit", "--no-verify", "-m", commitMsg], {
-          cwd: repoRoot,
-        });
-      } catch (err) {
-        context.logger.warn("Initial commit failed, retrying with force add", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        await runGit(["add", "--force", relativePath], { cwd: repoRoot });
-        await runGit(["commit", "--no-verify", "-m", commitMsg], {
-          cwd: repoRoot,
-        });
-      }
-
-      const sha = (
-        await runGit(["rev-parse", "HEAD"], { cwd: repoRoot })
-      ).stdout.trim();
-
-      context.logger.info("Artifact committed to git", {
-        stepName: this.config.name,
-        artifactPath: resolvedPath,
-        sha: sha.substring(0, 7),
-        commitMessage: commitMsg,
-      });
-
       await publishArtifact();
 
-      const branch = expectedBranch ?? activeBranch;
-      const requirePush = config.require_push === true;
-      let pushSucceeded = false;
-      let pushFailureReason: string | null = null;
-      let pushError: Error | null = null;
-      try {
-        const remotes = await runGit(["remote"], { cwd: repoRoot });
-        const hasRemote = remotes.stdout.trim().length > 0;
-
-        if (hasRemote) {
-          await runGit(["push", "origin", branch], { cwd: repoRoot });
-          context.logger.info("Artifact pushed to remote", {
-            stepName: this.config.name,
-            branch,
-            sha: sha.substring(0, 7),
-          });
-          pushSucceeded = true;
-        } else {
-          context.logger.warn("No remote configured, skipping push", {
-            stepName: this.config.name,
-            note: "Typical in test environments",
-          });
-          pushFailureReason = "no_remote";
-          if (requirePush) {
-            pushError = new Error(
-              "GitArtifactStep: require_push enabled but no git remote configured",
-            );
-          }
-        }
-      } catch (pushErr) {
-        pushError =
-          pushErr instanceof Error
-            ? pushErr
-            : new Error(String(pushErr));
-        pushFailureReason = pushError.message;
-        context.logger.warn("Failed to push artifact", {
-          stepName: this.config.name,
-          branch,
-          sha: sha.substring(0, 7),
-          error: pushError.message,
-          requirePush,
-        });
-      }
-
-      if (requirePush && !pushSucceeded) {
-        const failureDetails =
-          pushError?.message ||
-          (pushFailureReason === "no_remote"
-            ? "no git remote configured"
-            : pushFailureReason) ||
-          "unknown push failure";
-        throw new Error(
-          `GitArtifactStep: require_push enabled but push failed (${failureDetails})`,
-        );
-      }
-
-      const elapsed = Date.now() - startTime;
+      context.logger.info("Artifact published to dashboard", {
+        stepName: this.config.name,
+        artifactPath: resolvedPath,
+        kind: artifactKind,
+      });
 
       return {
         status: "success",
         data: {
           path: resolvedPath,
-          sha,
+          sha: "api-only",
           contentLength: content.length,
           format,
-          elapsed,
+          elapsed: Date.now() - startTime,
         },
         outputs: {
-          [`${this.config.name}_sha`]: sha,
+          [`${this.config.name}_sha`]: "api-only",
           [`${this.config.name}_path`]: resolvedPath,
         },
       };
@@ -441,72 +262,5 @@ export class GitArtifactStep extends WorkflowStep {
         return match;
       }
     });
-  }
-
-  private resolveExpectedBranch(context: WorkflowContext): string | null {
-    const candidates = [
-      context.getVariable("branch"),
-      context.getVariable("currentBranch"),
-      context.getVariable("featureBranchName"),
-      context.branch,
-    ];
-
-    for (const candidate of candidates) {
-      if (typeof candidate === "string" && candidate.trim().length > 0) {
-        return candidate.trim();
-      }
-    }
-
-    return null;
-  }
-
-  private async tryAlignBranch(
-    repoRoot: string,
-    expectedBranch: string,
-    activeBranch: string,
-    context: WorkflowContext,
-  ): Promise<string | null> {
-    context.logger.warn("Branch guard mismatch detected, attempting checkout", {
-      stepName: this.config.name,
-      expectedBranch,
-      activeBranch,
-    });
-
-    try {
-      await runGit(["checkout", expectedBranch], { cwd: repoRoot });
-      const verifyResult = await runGit(
-        ["rev-parse", "--abbrev-ref", "HEAD"],
-        { cwd: repoRoot },
-      );
-      const verifiedBranch = verifyResult.stdout.trim();
-
-      if (verifiedBranch === expectedBranch) {
-        context.logger.info("Auto-checkout succeeded for branch guard mismatch", {
-          stepName: this.config.name,
-          branch: expectedBranch,
-        });
-        context.setVariable("branch", expectedBranch);
-        context.setVariable("currentBranch", expectedBranch);
-        return expectedBranch;
-      }
-
-      context.logger.error(
-        "Auto-checkout left repository on unexpected branch",
-        {
-          stepName: this.config.name,
-          verifiedBranch,
-          expectedBranch,
-        },
-      );
-      return verifiedBranch || null;
-    } catch (error) {
-      context.logger.error("Failed to auto-checkout expected branch", {
-        stepName: this.config.name,
-        expectedBranch,
-        repoRoot,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
   }
 }

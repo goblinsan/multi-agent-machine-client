@@ -341,15 +341,6 @@ const dashboardContextEndpoint = (() => {
   return "";
 })();
 
-const maArtifactsMode = (() => {
-  const raw = (process.env.MA_ARTIFACTS_MODE || "both").trim().toLowerCase();
-  if (raw === "git" || raw === "api" || raw === "both") return raw;
-  console.warn(
-    `[config] Invalid MA_ARTIFACTS_MODE '${raw}' - expected git|api|both, defaulting to 'both'`,
-  );
-  return "both";
-})() as "git" | "api" | "both";
-
 const gitUserName = (process.env.GIT_USER_NAME || "machine-client").trim();
 const gitUserEmail = (
   process.env.GIT_USER_EMAIL || "machine-client@example.com"
@@ -400,7 +391,6 @@ export const cfg = {
   dashboardBaseUrl: process.env.DASHBOARD_BASE_URL || "http://localhost:8787",
   dashboardApiKey: process.env.DASHBOARD_API_KEY || "dev",
   dashboardContextEndpoint,
-  maArtifactsMode,
   structuredOutputs: bool(process.env.STRUCTURED_OUTPUTS, true),
 
   dashboardCreateMilestoneIfMissing: bool(

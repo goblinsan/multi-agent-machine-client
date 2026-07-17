@@ -12,7 +12,24 @@ process.env.PERSONA_DEFAULT_TIMEOUT_MS = "100";
 process.env.PERSONA_DEFAULT_MAX_RETRIES = "0";
 process.env.PERSONA_RETRY_BACKOFF_INCREMENT_MS = "10";
 process.env.COORDINATOR_MAX_ITERATIONS = "2";
-process.env.MA_ARTIFACTS_MODE = "git";
+_vi.mock("../src/dashboard/ArtifactAPI.js", () => {
+  class ArtifactAPI {
+    async publishTaskArtifact() {
+      return { ok: true, skipped: false };
+    }
+    async fetchTaskArtifacts() {
+      return null;
+    }
+    async publishProjectArtifact() {
+      return { ok: true, skipped: false };
+    }
+    async fetchProjectArtifacts() {
+      return null;
+    }
+  }
+  return { ArtifactAPI };
+});
+
 _vi.mock("../src/redisClient.js", async () => {
   try {
     const actual = await _vi.importActual<any>("../src/redisClient.js");

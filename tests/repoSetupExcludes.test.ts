@@ -1,20 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import fs from "fs/promises";
 import path from "path";
-import { cfg } from "../src/config";
 import { ensureMaExcludes } from "../src/git/setup/RepoSetup";
 import { makeTempRepo } from "./makeTempRepo";
 
 describe("ensureMaExcludes", () => {
-  const originalMode = cfg.maArtifactsMode;
   let repo: string;
 
   beforeEach(async () => {
     repo = await makeTempRepo({ "README.md": "hello" });
-  });
-
-  afterEach(() => {
-    (cfg as any).maArtifactsMode = originalMode;
   });
 
   async function readExclude(): Promise<string> {
@@ -29,7 +23,6 @@ describe("ensureMaExcludes", () => {
   }
 
   it("adds .ma exclude patterns in api mode", async () => {
-    (cfg as any).maArtifactsMode = "api";
     await ensureMaExcludes(repo);
 
     const contents = await readExclude();
@@ -37,7 +30,6 @@ describe("ensureMaExcludes", () => {
   });
 
   it("is idempotent across repeated calls", async () => {
-    (cfg as any).maArtifactsMode = "api";
     await ensureMaExcludes(repo);
     await ensureMaExcludes(repo);
 
@@ -49,7 +41,6 @@ describe("ensureMaExcludes", () => {
   });
 
   it("preserves existing exclude entries", async () => {
-    (cfg as any).maArtifactsMode = "api";
     const excludePath = path.join(repo, ".git", "info", "exclude");
     await fs.mkdir(path.dirname(excludePath), { recursive: true });
     await fs.writeFile(excludePath, "custom-entry\n", "utf8");
@@ -61,13 +52,4 @@ describe("ensureMaExcludes", () => {
     expect(contents).toContain(".ma/");
   });
 
-  it("does nothing outside api mode", async () => {
-    (cfg as any).maArtifactsMode = "both";
-    await ensureMaExcludes(repo);
-    expect(await readExclude()).not.toContain(".ma/");
-
-    (cfg as any).maArtifactsMode = "git";
-    await ensureMaExcludes(repo);
-    expect(await readExclude()).not.toContain(".ma/");
-  });
 });
