@@ -16,7 +16,11 @@ async function makeRepo(files: Record<string, string>): Promise<string> {
   return repoRoot;
 }
 
-function makeContext(repoRoot: string, changedFiles: string[]): WorkflowContext {
+function makeContext(
+  repoRoot: string,
+  changedFiles: string[],
+  addedFiles: string[] = [],
+): WorkflowContext {
   const context = new WorkflowContext(
     "wf-review",
     "project-review",
@@ -30,6 +34,7 @@ function makeContext(repoRoot: string, changedFiles: string[]): WorkflowContext 
     {} as any,
   );
   context.setVariable("review_diff_files", changedFiles);
+  context.setVariable("review_diff_added_files", addedFiles);
   return context;
 }
 
@@ -297,5 +302,131 @@ describe("DeterministicReviewStep test_coverage rule", () => {
 
     const findings = context.getVariable("qa_request_result").findings;
     expect(findings.medium).toHaveLength(1);
+  });
+});
+
+describe("test_coverage ratchet on new work", () => {
+  const ratchetStep = () =>
+    new DeterministicReviewStep({
+      name: "qa_request",
+      type: "DeterministicReviewStep",
+      config: {
+        output_prefix: "qa_request",
+        block_on: ["severe", "high"],
+        rules: [
+          { id: "test_coverage", severity: "medium", new_file_severity: "high" },
+        ],
+      },
+    });
+
+  it("blocks a new uncovered file so debt cannot grow", async () => {
+    const repoRoot = await makeRepo({
+      "src/views/NewView.tsx": "export function NewView() { return null; }\n",
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(
+      repoRoot,
+      ["src/views/NewView.tsx"],
+      ["src/views/NewView.tsx"],
+    );
+
+    await ratchetStep().execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("fail");
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.high.map((f: any) => f.file)).toContain("src/views/NewView.tsx");
+    expect(findings.high[0].issue).toContain("new file");
+  });
+
+  it("only advises on a pre-existing uncovered file that the task touched", async () => {
+    const repoRoot = await makeRepo({
+      "src/legacy.ts": "export function legacy() { return 1; }\n",
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/legacy.ts"], []);
+
+    await ratchetStep().execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("pass");
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.medium.map((f: any) => f.file)).toContain("src/legacy.ts");
+    expect(findings.high).toHaveLength(0);
+  });
+
+  it("passes a new file that ships with its test", async () => {
+    const repoRoot = await makeRepo({
+      "src/views/NewView.tsx": "export function NewView() { return null; }\n",
+      "src/views/NewView.test.tsx":
+        'import { NewView } from "./NewView";\nexpect(NewView).toBeDefined();\n',
+    });
+    const context = makeContext(
+      repoRoot,
+      ["src/views/NewView.tsx", "src/views/NewView.test.tsx"],
+      ["src/views/NewView.tsx", "src/views/NewView.test.tsx"],
+    );
+
+    await ratchetStep().execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("pass");
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.high).toHaveLength(0);
+    expect(findings.medium).toHaveLength(0);
+  });
+
+  it("does not flag a barrel that only re-exports other modules", async () => {
+    const repoRoot = await makeRepo({
+      "src/index.ts":
+        'export { a } from "./a.js";\nexport { b } from "./b.js";\nexport type { C } from "./c.js";\n',
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/index.ts"], ["src/index.ts"]);
+
+    await ratchetStep().execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("pass");
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.high).toHaveLength(0);
+    expect(findings.medium).toHaveLength(0);
+  });
+
+  it("still flags a module that re-exports and also defines its own logic", async () => {
+    const repoRoot = await makeRepo({
+      "src/mixed.ts":
+        'export { a } from "./a.js";\nexport function compute() { return 1; }\n',
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/mixed.ts"], ["src/mixed.ts"]);
+
+    await ratchetStep().execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("fail");
+  });
+
+  it("does not block a new type-only module", async () => {
+    const repoRoot = await makeRepo({
+      "src/model.ts": "export type Model = { id: number };\n",
+      "tests/other.test.ts": 'import { other } from "../src/other.js";\n',
+    });
+    const context = makeContext(repoRoot, ["src/model.ts"], ["src/model.ts"]);
+
+    await ratchetStep().execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("pass");
+  });
+
+  it("does not block when a new test file is the only addition", async () => {
+    const repoRoot = await makeRepo({
+      "src/thing.ts": "export const thing = 1;\n",
+      "tests/thing.test.ts": 'import { thing } from "../src/thing.js";\n',
+    });
+    const context = makeContext(
+      repoRoot,
+      ["tests/thing.test.ts"],
+      ["tests/thing.test.ts"],
+    );
+
+    await ratchetStep().execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("pass");
   });
 });

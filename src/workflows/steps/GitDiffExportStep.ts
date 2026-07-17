@@ -108,6 +108,10 @@ export class GitDiffExportStep extends WorkflowStep {
         repoRoot,
         ["diff", "--name-only", diffRange, "--", ".", ...pathspecs],
       );
+      const nameStatusRaw = await this.runGitCommand(
+        repoRoot,
+        ["diff", "--name-status", diffRange, "--", ".", ...pathspecs],
+      );
 
       const trimmedDiff = this.truncateDiff(diffText, maxBytes);
       const excluded = new Set(GENERATED_FILE_EXCLUSIONS);
@@ -135,9 +139,18 @@ export class GitDiffExportStep extends WorkflowStep {
         return { status: "failure", error };
       }
 
+      const changedFileSet = new Set(changedFiles);
+      const addedFiles = nameStatusRaw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => /^A\s/.test(line))
+        .map((line) => line.replace(/^A\s+/, "").trim())
+        .filter((file) => file && changedFileSet.has(file));
+
       context.setVariable(`${outputPrefix}_patch`, trimmedDiff);
       context.setVariable(`${outputPrefix}_summary`, diffSummary.trim());
       context.setVariable(`${outputPrefix}_files`, changedFiles);
+      context.setVariable(`${outputPrefix}_added_files`, addedFiles);
 
       logger.info("Git diff exported", {
         stepName: this.config.name,

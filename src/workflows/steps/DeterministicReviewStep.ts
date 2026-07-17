@@ -15,6 +15,7 @@ interface ReviewRule {
   enabled?: boolean;
   severity?: Severity;
   warn_severity?: Severity;
+  new_file_severity?: Severity;
   max_lines?: number;
   warn_lines?: number;
   min_lines?: number;
@@ -34,6 +35,7 @@ interface ReviewConfig {
   review_type?: string;
   output_prefix?: string;
   changed_files?: string[];
+  added_files?: string[];
   rules?: ReviewRule[];
   block_on?: Severity[];
 }
@@ -83,7 +85,13 @@ export class DeterministicReviewStep extends WorkflowStep {
           await this.runSecretScanRule(context.repoRoot, files, rule, findings);
           break;
         case "test_coverage":
-          await this.runTestCoverageRule(context.repoRoot, files, rule, findings);
+          await this.runTestCoverageRule(
+            context.repoRoot,
+            files,
+            this.resolveAddedFiles(config, context),
+            rule,
+            findings,
+          );
           break;
         default:
           findings.low.push({
@@ -269,9 +277,23 @@ export class DeterministicReviewStep extends WorkflowStep {
     }
   }
 
+  private resolveAddedFiles(
+    config: ReviewConfig,
+    context: WorkflowContext,
+  ): Set<string> {
+    const raw =
+      config.added_files || context.getVariable("review_diff_added_files") || [];
+    return new Set(
+      raw
+        .map((file: any) => String(file || "").trim().replace(/\\/g, "/"))
+        .filter(Boolean),
+    );
+  }
+
   private async runTestCoverageRule(
     repoRoot: string,
     files: string[],
+    addedFiles: Set<string>,
     rule: ReviewRule,
     findings: Record<Severity, ReviewFinding[]>,
   ): Promise<void> {
@@ -310,12 +332,21 @@ export class DeterministicReviewStep extends WorkflowStep {
       const covered = testSources.some((test) => importPattern.test(test.text));
       if (covered) continue;
 
-      this.addFinding(findings, rule.severity || "medium", {
+      const isNewFile = addedFiles.has(file);
+      const severity = isNewFile
+        ? rule.new_file_severity || "high"
+        : rule.severity || "medium";
+
+      this.addFinding(findings, severity, {
         rule_id: "test_coverage",
         file,
         line: null,
-        issue: `No test file imports ${stem}, so this change is not covered by a test that targets it.`,
-        recommendation: `Add a test that imports ${stem} and asserts its behavior.`,
+        issue: isNewFile
+          ? `${file} is a new file and no test imports ${stem}.`
+          : `No test file imports ${stem}, so this change is not covered by a test that targets it.`,
+        recommendation: isNewFile
+          ? `Add a test that imports ${stem} and asserts its behavior. New files must ship with a test.`
+          : `Add a test that imports ${stem} and asserts its behavior.`,
       });
     }
   }
@@ -362,9 +393,15 @@ export class DeterministicReviewStep extends WorkflowStep {
     const withoutTypeOnly = text
       .replace(/^\s*export\s+(?:type|interface)\b[\s\S]*?(?:\n\}|;)\s*$/gm, "")
       .replace(/^\s*export\s+type\s+\{[^}]*\}[^\n]*$/gm, "");
-    return /export\s+(?:async\s+)?(?:function|class|const|let|var|default)\b|export\s+\{/.test(
-      withoutTypeOnly,
-    );
+
+    const declaresRuntime =
+      /export\s+(?:async\s+)?(?:function|class|const|let|var|default)\b/.test(
+        withoutTypeOnly,
+      );
+    if (declaresRuntime) return true;
+
+    const namedExports = withoutTypeOnly.match(/export\s+\{[^}]*\}[^\n;]*/g) || [];
+    return namedExports.some((statement) => !/\bfrom\s*["']/.test(statement));
   }
 
   private isExcluded(file: string, exclude?: string[]): boolean {

@@ -85,6 +85,7 @@ templates:
       review_type: "qa"
       output_prefix: "qa_request"
       changed_files: "${review_diff_files || []}"
+      added_files: "${review_diff_added_files || []}"
       block_on: ["severe", "high"]
       rules:
         - id: "conflict_markers"
@@ -104,6 +105,11 @@ templates:
           severity: "medium"
         - id: "test_coverage"
           severity: "medium"
+          new_file_severity: "high"
+          exclude:
+            - "scripts/*"
+            - "tests/*"
+            - "*.config.*"
 
   code_review:
     type: PersonaRequestStep
