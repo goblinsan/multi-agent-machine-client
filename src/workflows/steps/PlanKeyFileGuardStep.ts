@@ -34,8 +34,6 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
     const planStep = config.plan_step || "planning_loop";
     const planResultField = config.plan_result_field || "plan_result";
     const planFilesVariable = config.plan_files_variable;
-    const autoCreate = config.auto_create_missing ?? false;
-    const failOnMissing = config.fail_on_missing ?? true;
     const additionalFiles = Array.isArray(config.additional_files)
       ? config.additional_files
       : [];
@@ -43,11 +41,29 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
       config.additional_files_variable,
       context,
     );
+    const taskLabelFiles = this.resolveTaskLabelFiles(context);
 
     const planOutput =
       context.getStepOutput(planStep) ?? context.getVariable(planStep);
 
+    const fallbackVariables: unknown[] = [];
+    if (planFilesVariable) {
+      fallbackVariables.push(context.getVariable(planFilesVariable));
+    }
+    fallbackVariables.push(context.getVariable("plan_required_files"));
+
     if (!planOutput) {
+      const fallbackPlanFiles = this.normalizePlanFiles([
+        additionalFiles,
+        variableAdditionalFiles,
+        taskLabelFiles,
+        fallbackVariables,
+      ]);
+
+      if (fallbackPlanFiles.length > 0) {
+        return await this.verifyFiles(fallbackPlanFiles, context, config, planStep);
+      }
+
       return {
         status: "failure",
         error: new Error(
@@ -64,18 +80,27 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
 
     const { planData } = normalizePlanPayload(resolvedPlanResult);
     const planFiles = collectPlanKeyFiles(planData);
-    const fallbackVariables: unknown[] = [];
-    if (planFilesVariable) {
-      fallbackVariables.push(context.getVariable(planFilesVariable));
-    }
-    fallbackVariables.push(context.getVariable("plan_required_files"));
 
     const normalizedPlanFiles = this.normalizePlanFiles([
       planFiles,
       additionalFiles,
       variableAdditionalFiles,
+      taskLabelFiles,
       fallbackVariables,
     ]);
+
+    return await this.verifyFiles(normalizedPlanFiles, context, config, planStep);
+  }
+
+  private async verifyFiles(
+    normalizedPlanFiles: string[],
+    context: WorkflowContext,
+    config: PlanKeyFileGuardConfig,
+    planStep: string,
+  ): Promise<StepResult> {
+    const autoCreate = config.auto_create_missing ?? false;
+    const failOnMissing = config.fail_on_missing ?? true;
+    const planFilesVariable = config.plan_files_variable;
 
     const recordVariable = config.record_variable || "plan_required_files";
     context.setVariable(recordVariable, normalizedPlanFiles);
@@ -399,5 +424,36 @@ export class PlanKeyFileGuardStep extends WorkflowStep {
     }
 
     return this.normalizePlanFiles(value);
+  }
+
+  private resolveTaskLabelFiles(context: WorkflowContext): string[] {
+    const task = context.getVariable("task");
+    const labels = Array.isArray(task?.labels)
+      ? task.labels
+      : typeof task?.labels === "string"
+        ? this.parseLabels(task.labels)
+        : [];
+
+    return this.normalizePlanFiles(
+      labels
+        .filter((label: unknown) => typeof label === "string")
+        .map((label: string) => label.trim())
+        .filter((label: string) => label.startsWith("file:"))
+        .map((label: string) => label.slice("file:".length)),
+    );
+  }
+
+  private parseLabels(raw: string): string[] {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter((value) => typeof value === "string")
+        : [];
+    } catch {
+      return raw
+        .split(",")
+        .map((label) => label.trim())
+        .filter(Boolean);
+    }
   }
 }

@@ -158,6 +158,66 @@ describe("Coordinator dependency queue", () => {
     const firstCallTask = processSpy.mock.calls[0][1];
     expect(firstCallTask?.id).toBe("80");
   });
+
+  it("does not claim a blocked dependency before its prerequisite is done", async () => {
+    const tempRepo = await makeTempRepo();
+    const coordinator = new WorkflowCoordinator();
+
+    vi.spyOn(coordinator, "loadWorkflows").mockResolvedValue(undefined);
+
+    const fetchCalls: Array<any[]> = [
+      [
+        {
+          id: "65",
+          title: "Setup",
+          status: "done",
+          priority_score: 300,
+        },
+        {
+          id: "66",
+          title: "Document",
+          status: "open",
+          priority_score: 200,
+        },
+        {
+          id: "67",
+          title: "Routes",
+          status: "blocked",
+          blocked_dependencies: ["66"],
+          priority_score: 200,
+        },
+        {
+          id: "68",
+          title: "Tests",
+          status: "blocked",
+          blocked_dependencies: ["67"],
+          priority_score: 200,
+        },
+      ],
+      [],
+    ];
+
+    vi.spyOn(coordinator as any, "fetchProjectTasks").mockImplementation(
+      async () => {
+        return fetchCalls.shift() ?? [];
+      },
+    );
+
+    const processSpy = vi
+      .spyOn(coordinator as any, "processTask")
+      .mockResolvedValue({ success: true });
+
+    await coordinator.handleCoordinator(
+      {} as any,
+      {},
+      { workflow_id: "wf-blocked-deps", project_id: "proj-deps" },
+      { repo: tempRepo },
+    );
+
+    expect(processSpy).toHaveBeenCalled();
+    const firstCallTask = processSpy.mock.calls[0][1];
+    expect(firstCallTask?.id).toBe("66");
+  });
 });
 
 describe("Coordinator per-task circuit breaker", () => {

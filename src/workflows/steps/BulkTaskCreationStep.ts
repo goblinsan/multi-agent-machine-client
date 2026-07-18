@@ -406,7 +406,7 @@ export class BulkTaskCreationStep extends WorkflowStep {
       title: task.title,
       description: task.description,
       status: "open",
-      priority_score: task.priority_score,
+      priority_score: this.normalizePriorityScore(task.priority_score),
       milestone_id: this.normalizeMilestoneId(task.milestone_id),
       parent_task_id: task.parent_task_id
         ? parseInt(task.parent_task_id)
@@ -498,6 +498,19 @@ export class BulkTaskCreationStep extends WorkflowStep {
     }
 
     return result;
+  }
+
+  private normalizePriorityScore(value: unknown): number {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.trunc(value);
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return Math.trunc(parsed);
+      }
+    }
+    return 0;
   }
 
   private normalizeMilestoneId(

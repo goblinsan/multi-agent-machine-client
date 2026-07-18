@@ -162,11 +162,11 @@ describe("Phase 2: Remove Coordination Persona LLM Call", () => {
       expect(persona.sendPersonaRequest).not.toHaveBeenCalled();
     });
 
-    it("should prioritize blocked/in_review over open tasks", async () => {
+    it("should ignore blocked tasks while allowing in_review tasks", async () => {
       const mockTasks = [
         { id: 1, status: "open", priority_score: 100 },
-        { id: 2, status: "blocked", priority_score: 100 },
-        { id: 3, status: "in_review", priority_score: 50 },
+        { id: 2, status: "blocked", priority_score: 1000 },
+        { id: 3, status: "in_review", priority_score: 150 },
       ];
 
       const mockWorkflow = {
@@ -203,7 +203,7 @@ describe("Phase 2: Remove Coordination Persona LLM Call", () => {
       const executeCall = vi.mocked(mockEngine.executeWorkflowDefinition).mock
         .calls[0];
       const initialVars = executeCall[5];
-      expect(initialVars.task.id).toBe(2);
+      expect(initialVars.task.id).toBe(3);
 
       expect(persona.sendPersonaRequest).not.toHaveBeenCalled();
     });

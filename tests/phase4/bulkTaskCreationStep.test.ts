@@ -18,6 +18,20 @@ describe("Phase 4 - BulkTaskCreationStep", () => {
   });
 
   describe("Day 3: Retry Logic", () => {
+    it("coerces string priority scores before dashboard submission", () => {
+      const step = new BulkTaskCreationStep({
+        name: "create_tasks",
+        type: "BulkTaskCreationStep",
+        config: {
+          project_id: "1",
+          tasks: [{ title: "Task 1", priority: "high" as const }],
+        },
+      });
+
+      expect((step as any).normalizePriorityScore("1200")).toBe(1200);
+      expect((step as any).normalizePriorityScore("bad")).toBe(0);
+    });
+
     it("should retry with exponential backoff (1s, 2s, 4s)", async () => {
       const startTime = Date.now();
       let attempts = 0;

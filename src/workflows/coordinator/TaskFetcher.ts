@@ -68,6 +68,16 @@ export class TaskFetcher {
     return "unknown";
   }
 
+  isActionableStatus(status: string): boolean {
+    const normalized = this.normalizeTaskStatus(status);
+    return normalized === "open" || normalized === "in_review";
+  }
+
+  isPendingStatus(status: string): boolean {
+    const normalized = this.normalizeTaskStatus(status);
+    return normalized !== "done";
+  }
+
   compareTaskPriority(a: any, b: any): number {
     const scoreA = a?.priority_score ?? a?.priorityScore ?? 0;
     const scoreB = b?.priority_score ?? b?.priorityScore ?? 0;

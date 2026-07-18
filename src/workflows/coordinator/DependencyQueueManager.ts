@@ -107,6 +107,11 @@ export class DependencyQueueManager {
           continue;
         }
 
+        if (!this.taskFetcher.isActionableStatus(dependencyTask?.status)) {
+          pendingDependenciesFound++;
+          continue;
+        }
+
         pendingDependenciesFound++;
         seenDependencies.add(dependencyId);
         queue.push({

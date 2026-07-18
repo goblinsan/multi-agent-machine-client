@@ -1,7 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkflowContext } from "../../src/workflows/engine/WorkflowContext.js";
 import { ConvergenceGateStep } from "../../src/workflows/steps/ConvergenceGateStep.js";
 import { isEscalationRequired } from "../../src/workflows/escalation/escalationRequired.js";
+
+const mocks = vi.hoisted(() => ({
+  fetchArtifactContentFromApi: vi.fn(),
+  publishArtifactToDashboard: vi.fn(),
+  updateTaskStatus: vi.fn(),
+}));
+
+vi.mock("../../src/workflows/helpers/artifactReader.js", () => ({
+  fetchArtifactContentFromApi: mocks.fetchArtifactContentFromApi,
+}));
+
+vi.mock("../../src/workflows/helpers/artifactPublisher.js", () => ({
+  publishArtifactToDashboard: mocks.publishArtifactToDashboard,
+}));
+
+vi.mock("../../src/dashboard/TaskAPI.js", () => ({
+  TaskAPI: class {
+    updateTaskStatus = mocks.updateTaskStatus;
+  },
+}));
 
 function ctx(vars: Record<string, any>): WorkflowContext {
   const context = new WorkflowContext(
@@ -13,6 +33,8 @@ function ctx(vars: Record<string, any>): WorkflowContext {
     {} as any,
     {},
   );
+  context.setVariable("taskId", 42);
+  context.setVariable("task", { id: 42 });
   for (const [k, v] of Object.entries(vars)) context.setVariable(k, v);
   return context;
 }
@@ -31,14 +53,24 @@ const step = (config: Record<string, any> = {}) =>
   });
 
 describe("ConvergenceGateStep", () => {
+  beforeEach(() => {
+    mocks.fetchArtifactContentFromApi.mockReset().mockResolvedValue(null);
+    mocks.publishArtifactToDashboard.mockReset().mockResolvedValue(true);
+    mocks.updateTaskStatus
+      .mockReset()
+      .mockResolvedValue({ ok: true, status: 200, body: {} });
+  });
+
   it("passes when the gates are green", async () => {
     const c = ctx({ changeSlug: "openapi", qa_request_status: "pass", testsPassed: true });
     const result = await step().execute(c);
     expect(result.status).toBe("success");
     expect(c.getVariable("convergence_status")).toBe("pass");
+    expect(mocks.publishArtifactToDashboard).not.toHaveBeenCalled();
+    expect(mocks.updateTaskStatus).not.toHaveBeenCalled();
   });
 
-  it("returns a retriable failure on the first failed attempt", async () => {
+  it("persists attempts and requeues the converge task on the first failed attempt", async () => {
     const c = ctx({
       changeSlug: "openapi",
       qa_request_status: "fail",
@@ -46,16 +78,46 @@ describe("ConvergenceGateStep", () => {
       convergence_attempts: 0,
     });
     const result = await step().execute(c);
-    expect(result.status).toBe("failure");
+    expect(result.status).toBe("success");
+    expect(result.data?.outcome).toBe("retry");
     expect(c.getVariable("convergence_status")).toBe("retry");
     expect(c.getVariable("convergence_attempts")).toBe(1);
+    expect(c.getVariable("workflow_stop_requested")).toBe(true);
+    expect(c.getVariable("workflow_stop_reason")).toBe("convergence_retry");
+    expect(mocks.publishArtifactToDashboard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        taskId: 42,
+        kind: "convergence_attempts",
+      }),
+    );
+    expect(mocks.updateTaskStatus).toHaveBeenCalledWith("42", "open", "project-1");
   });
 
   it("counts testsPassed=false as a failure", async () => {
     const c = ctx({ changeSlug: "openapi", qa_request_status: "pass", testsPassed: false, convergence_attempts: 0 });
     const result = await step().execute(c);
-    expect(result.status).toBe("failure");
+    expect(result.status).toBe("success");
     expect(c.getVariable("convergence_status")).toBe("retry");
+  });
+
+  it("loads persisted attempts when a retry re-run starts with a fresh context", async () => {
+    mocks.fetchArtifactContentFromApi.mockResolvedValue(
+      JSON.stringify({ changeSlug: "openapi", attempts: 1, maxAttempts: 2 }),
+    );
+    const c = ctx({
+      changeSlug: "openapi",
+      qa_request_status: "fail",
+      testsPassed: true,
+    });
+    let thrown: unknown;
+    try {
+      await step().execute(c);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(isEscalationRequired(thrown)).toBe(true);
+    expect(c.getVariable("convergence_attempts")).toBe(2);
   });
 
   it("raises EscalationRequiredError once retries are exhausted", async () => {

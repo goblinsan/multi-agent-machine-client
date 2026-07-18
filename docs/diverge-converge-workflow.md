@@ -231,10 +231,11 @@ Creating and running a change: `buildChangeTasks` → `tasks:bulk` →
 `resolveChangeDependencies` → patch `blocked_dependencies` → the existing
 coordinator drives setup, then the file-tasks in dependency order, then converge.
 
-**Remaining wiring:** `convergence_attempts` persistence across a retry re-run.
-The gate reads it from context today; it needs a home on the change (a small
-artifact keyed by slug, or a task field) and a re-queue of the converge task on a
-retriable failure. Everything else is in place and unit-tested.
+`ConvergenceGateStep` persists retry state as a `convergence_attempts` task
+artifact on the converge task. On a retriable failure it records the incremented
+attempt count, marks the converge task back to `open`, and requests a controlled
+workflow stop. A later coordinator run reloads the artifact before deciding
+whether the next failed convergence should retry again or escalate.
 
 ## What it buys
 

@@ -86,6 +86,9 @@ steps:
       added_files: "${review_diff_added_files || []}"
       block_on: ["severe", "high"]
       rules:
+        - id: "allowed_files"
+          severity: "high"
+          from_task_file_labels: true
         - id: "conflict_markers"
           severity: "severe"
         - id: "secret_scan"

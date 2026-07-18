@@ -155,4 +155,36 @@ describe("PlanKeyFileGuardStep", () => {
       "tests/regression/from-context.test.ts",
     ]);
   });
+
+  it("uses file labels when a per-file workflow has no planning output", async () => {
+    context = new WorkflowContext(
+      "wf-plan-guard-file-label",
+      "proj-guard",
+      repoRoot,
+      "main",
+      { name: "test", version: "1.0.0", steps: [] },
+      transport,
+      {},
+    );
+    context.setVariable("task", {
+      id: "task-file",
+      labels: ["change_file", "change:openapi-layer", "file:src/openapi/document.ts"],
+    });
+
+    const step = new PlanKeyFileGuardStep({
+      name: "verify_plan_key_files",
+      type: "PlanKeyFileGuardStep",
+      config: {
+        plan_step: "planning_loop",
+        auto_create_missing: false,
+        fail_on_missing: false,
+      },
+    });
+
+    const result = await step.execute(context);
+
+    expect(result.status).toBe("success");
+    expect(result.data?.keyFiles).toEqual(["src/openapi/document.ts"]);
+    expect(result.data?.missingFiles).toEqual(["src/openapi/document.ts"]);
+  });
 });

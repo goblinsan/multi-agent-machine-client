@@ -238,14 +238,13 @@ export class WorkflowCoordinator {
         }
 
         const currentPendingTasks = currentTasks
-          .filter(
-            (task) =>
-              this.taskFetcher.normalizeTaskStatus(task?.status) !== "done",
-          )
+          .filter((task) => this.taskFetcher.isPendingStatus(task?.status))
           .sort((a, b) => this.taskFetcher.compareTaskPriority(a, b));
 
         const actionableTasks = currentPendingTasks.filter(
-          (task) => !exhaustedTaskIds.has(String(task?.id ?? "unknown")),
+          (task) =>
+            this.taskFetcher.isActionableStatus(task?.status) &&
+            !exhaustedTaskIds.has(String(task?.id ?? "unknown")),
         );
 
         const dependencySelection =

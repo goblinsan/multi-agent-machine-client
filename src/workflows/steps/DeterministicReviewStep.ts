@@ -15,6 +15,7 @@ import {
   hasRuntimeExport,
   importPatternFor,
 } from "../helpers/testCoverage.js";
+import { buildAllowedFilesFindings } from "../helpers/allowedFilesReview.js";
 
 type Severity = "severe" | "high" | "medium" | "low";
 
@@ -29,6 +30,8 @@ interface ReviewRule {
   min_lines?: number;
   include?: string[];
   exclude?: string[];
+  files?: string[];
+  from_task_file_labels?: boolean;
 }
 
 interface ReviewFinding {
@@ -60,6 +63,11 @@ export class DeterministicReviewStep extends WorkflowStep {
     for (const rule of config.rules || []) {
       if (rule.enabled === false) continue;
       switch (rule.id) {
+        case "allowed_files":
+          for (const finding of buildAllowedFilesFindings(files, rule, context)) {
+            this.addFinding(findings, rule.severity || "high", finding);
+          }
+          break;
         case "file_size":
           await this.runFileSizeRule(context.repoRoot, files, rule, findings);
           break;

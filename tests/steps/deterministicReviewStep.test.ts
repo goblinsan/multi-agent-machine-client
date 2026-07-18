@@ -179,6 +179,50 @@ describe("DeterministicReviewStep", () => {
       file: "src/a.ts",
     });
   });
+
+  it("fails when a file-task changes files outside its file label", async () => {
+    const repoRoot = await makeRepo({
+      "src/openapi/document.ts": "export const openApiDocument = {};\n",
+      "src/routes/health.ts": "export function registerHealthRoutes() {}\n",
+    });
+    const context = makeContext(repoRoot, [
+      "src/openapi/document.ts",
+      "src/routes/health.ts",
+    ]);
+    context.setVariable("task", {
+      id: "66",
+      labels: [
+        "change_file",
+        "change:openapi-layer",
+        "file:src/openapi/document.ts",
+      ],
+    });
+
+    const step = new DeterministicReviewStep({
+      name: "qa_request",
+      type: "DeterministicReviewStep",
+      config: {
+        output_prefix: "qa_request",
+        block_on: ["high"],
+        rules: [
+          {
+            id: "allowed_files",
+            severity: "high",
+            from_task_file_labels: true,
+          },
+        ],
+      },
+    });
+
+    await step.execute(context);
+
+    expect(context.getVariable("qa_request_status")).toBe("fail");
+    const findings = context.getVariable("qa_request_result").findings;
+    expect(findings.high[0]).toMatchObject({
+      rule_id: "allowed_files",
+      file: "src/routes/health.ts",
+    });
+  });
 });
 
 describe("DeterministicReviewStep test_coverage rule", () => {
