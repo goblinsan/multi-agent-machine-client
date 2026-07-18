@@ -41,6 +41,7 @@ coverage/
 # Local coordination scratchpads
 scratch/
 .agents/
+.ma/
 
 # Diagnostics and run artifacts
 outputs/diagnostics/
