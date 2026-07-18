@@ -35,6 +35,8 @@ steps:
         - ".git/**"
         - "dist/**"
         - "build/**"
+        - ".pglite-data/**"
+        - "pglite-data/**"
         - ".ma/context/**"
         - ".ma/planning/**"
       maxFiles: 1000

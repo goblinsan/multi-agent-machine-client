@@ -35,6 +35,40 @@ describe("full-file rewrite parsing", () => {
     expect(op.content).toContain("import { defaults } from './defaults';");
   });
 
+  it("accepts the runtime lead-engineer file fence shape", () => {
+    const response = [
+      "```file path=src/openapi/document.ts",
+      "export const openApiDocument = {",
+      '  openapi: "3.0.3",',
+      "  info: {",
+      '    title: "Project Dashboard API",',
+      '    version: "1.0.0",',
+      "  },",
+      "  paths: {",
+      '    "/health": {',
+      "      get: {",
+      '        summary: "Health check",',
+      '        responses: { "200": { description: "OK" } },',
+      "      },",
+      "    },",
+      "  },",
+      "} as const;",
+      "```",
+    ].join("\n");
+
+    const result = DiffParser.parsePersonaResponse(response);
+
+    expect(result.success).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.editSpec?.ops).toEqual([
+      {
+        action: "upsert",
+        path: "src/openapi/document.ts",
+        content: expect.stringContaining("openApiDocument"),
+      },
+    ]);
+  });
+
   it("supports the rewrite keyword and quoted paths", () => {
     const response = [
       '```rewrite path="src/app.ts"',

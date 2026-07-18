@@ -40,6 +40,8 @@ steps:
         - ".git/**"
         - "dist/**"
         - "build/**"
+        - ".pglite-data/**"
+        - "pglite-data/**"
         - ".ma/context/**"
         - ".ma/planning/**"
       maxFiles: 1000
@@ -144,3 +146,6 @@ failure_handling:
         status: "blocked"
         task_id: "${taskId}"
         project_id: "${projectId}"
+
+timeouts:
+  implementation_loop_timeout: 3000000
