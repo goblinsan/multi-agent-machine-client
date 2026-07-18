@@ -1,9 +1,15 @@
 import { WorkflowEngine } from "../WorkflowEngine.js";
+import { changeTaskTypeFromLabels } from "../change/changeGrouping.js";
 
 export class WorkflowSelector {
   determineTaskType(task: any): string {
     if (this.isReviewFollowUpTask(task)) {
       return "analysis";
+    }
+
+    const changeType = changeTaskTypeFromLabels(task);
+    if (changeType) {
+      return changeType;
     }
 
     const taskType = task?.type || task?.task_type;

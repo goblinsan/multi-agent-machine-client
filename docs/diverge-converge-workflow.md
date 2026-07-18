@@ -206,6 +206,36 @@ New pieces:
   logic is the retry-bound + the `EscalationRequiredError` throw described under
   *Failure localization*.
 
+## The change (grouping) — implemented via labels, no schema change
+
+A "change" is a set of tasks sharing a `change:<slug>` label. The task_type is
+carried in labels too (`change_setup` / `change_file` / `change_converge`), read
+by `WorkflowSelector.determineTaskType`, so no `type` column is added to the
+dashboard. `src/workflows/change/changeGrouping.ts`:
+
+- `buildChangeTasks(spec)` turns `{ slug, title, files: [{ path, contract,
+  dependsOn }] }` into the task payloads — one `change_setup`, one `change_file`
+  per file (its contract is the description; labelled `file:<path>`), one
+  `change_converge` — plus a symbolic dependency map (external_id → dependency
+  external_ids): each file depends on setup and the siblings it imports; converge
+  depends on **all** file-tasks.
+- `resolveChangeDependencies(idByExternalId, deps)` maps those external_ids to
+  the ids `tasks:bulk` returns, so `blocked_dependencies` (which references ids)
+  is patched in a second pass.
+- `resolveChangeVariables(task)` reads the labels to produce `changeSlug`,
+  `changeBranch`, and (for file-tasks) `fileBranch`; `TaskWorkflowRunner` spreads
+  them into the workflow's initial variables so the flows resolve
+  `${changeBranch}` / `${fileBranch}`.
+
+Creating and running a change: `buildChangeTasks` → `tasks:bulk` →
+`resolveChangeDependencies` → patch `blocked_dependencies` → the existing
+coordinator drives setup, then the file-tasks in dependency order, then converge.
+
+**Remaining wiring:** `convergence_attempts` persistence across a retry re-run.
+The gate reads it from context today; it needs a home on the change (a small
+artifact keyed by slug, or a task field) and a re-queue of the converge task on a
+retriable failure. Everything else is in place and unit-tested.
+
 ## What it buys
 
 - Real composition — no architecture bent to fit the model.

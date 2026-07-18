@@ -1,6 +1,7 @@
 import type { MessageTransport } from "../../transport/index.js";
 import { logger } from "../../logger.js";
 import { WorkflowEngine } from "../WorkflowEngine.js";
+import { resolveChangeVariables } from "../change/changeGrouping.js";
 import { WorkflowSelector } from "./WorkflowSelector.js";
 import { createTaskInjectedWorkflow } from "../helpers/taskWorkflowAdapter.js";
 import { abortWorkflowWithReason } from "../helpers/workflowAbort.js";
@@ -104,6 +105,7 @@ export class TaskWorkflowRunner {
         task,
         context.repoSlug,
       ),
+      ...(resolveChangeVariables(task) ?? {}),
       SKIP_PULL_TASK: true,
       repo_root: context.repoRoot,
       repo_remote: context.remote,
