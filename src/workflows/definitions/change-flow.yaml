@@ -1,0 +1,155 @@
+name: change-flow
+version: "1.0.0"
+description: >
+  Convergence and merge for a diverge-converge change. Runs once, after every
+  file-task has merged into the change branch (blocked_dependencies). Checks out
+  the change branch (which pulls current main in), runs the FULL hardened gate
+  suite on the assembled change so cross-file integration is validated
+  deterministically, then either merges to main once (pass), stops for a bounded
+  retry, or raises EscalationRequiredError (retries exhausted).
+trigger:
+  condition: "task_type == 'change_converge'"
+
+context:
+  repo_required: true
+  branch_strategy: "change-branch"
+
+steps:
+  - name: checkout_change_branch
+    type: GitOperationStep
+    description: "Check out the change branch and pull current main into it"
+    config:
+      operation: "checkoutBranchFromBase"
+      baseBranch: "main"
+      newBranch: "${changeBranch}"
+
+  - name: context_scan
+    type: ContextStep
+    depends_on: ["checkout_change_branch"]
+    config:
+      repoPath: "${repo_root}"
+      includePatterns: ["**/*"]
+      excludePatterns:
+        - "node_modules/**"
+        - ".git/**"
+        - "dist/**"
+        - "build/**"
+        - ".ma/context/**"
+        - ".ma/planning/**"
+      maxFiles: 1000
+      maxBytes: 10485760
+      maxDepth: 10
+      trackLines: true
+      trackHash: false
+
+  - name: determine_test_entrypoint
+    type: TestCommandDiscoveryStep
+    depends_on: ["context_scan"]
+    config:
+      variable: "detected_test_command"
+      require_command: false
+      package_script_priority: ["test:regression", "test:ci", "test"]
+      allow_makefile: true
+
+  - name: convergence_tests
+    type: QAStep
+    description: "Typecheck + tests on the assembled change branch (all files present)"
+    depends_on: ["determine_test_entrypoint"]
+    condition: "detected_test_command.length > 0"
+    config:
+      testCommand: "${detected_test_command}"
+      retryCount: 0
+      skipOnNoTests: true
+      failureThreshold: 0
+      softFail: true
+
+  - name: collect_review_diff
+    type: GitDiffExportStep
+    depends_on: ["convergence_tests"]
+    config:
+      repoPath: "${repo_root}"
+      branch: "${changeBranch}"
+      baseBranch: "main"
+      output_prefix: "review_diff"
+      max_bytes: 400000
+      fail_on_empty_diff: false
+
+  - name: convergence_review
+    type: DeterministicReviewStep
+    description: "Full deterministic review across the whole change (incl test_coverage, method_size)"
+    depends_on: ["collect_review_diff"]
+    outputs: [qa_request_result, qa_request_status]
+    config:
+      review_type: "qa"
+      output_prefix: "qa_request"
+      changed_files: "${review_diff_files || []}"
+      added_files: "${review_diff_added_files || []}"
+      block_on: ["severe", "high"]
+      rules:
+        - id: "conflict_markers"
+          severity: "severe"
+        - id: "secret_scan"
+          severity: "severe"
+        - id: "file_size"
+          max_lines: 600
+          warn_lines: 400
+          severity: "high"
+          warn_severity: "medium"
+        - id: "method_size"
+          max_lines: 120
+          severity: "high"
+        - id: "test_coverage"
+          severity: "medium"
+          new_file_severity: "high"
+          exclude:
+            - "scripts/*"
+            - "tests/*"
+            - "*.config.*"
+
+  - name: convergence_gate
+    type: ConvergenceGateStep
+    description: "Decide: pass -> merge, fail+retriable -> stop, fail+exhausted -> raise EscalationRequiredError"
+    depends_on: ["convergence_review"]
+    config:
+      change_slug_variable: "changeSlug"
+      attempts_variable: "convergence_attempts"
+      max_attempts: 2
+      output_prefix: "convergence"
+      gate_status_variables: ["qa_request_status", "testsPassed"]
+
+  - name: sync_change_with_main
+    type: GitOperationStep
+    depends_on: ["convergence_gate"]
+    condition: "convergence_status == 'pass'"
+    config:
+      operation: "syncBranchWithBase"
+      branch: "${changeBranch}"
+      baseBranch: "main"
+
+  - name: merge_change_to_main
+    type: GitOperationStep
+    description: "Merge the validated change branch into main, once"
+    depends_on: ["sync_change_with_main"]
+    condition: "convergence_status == 'pass' && merge_preflight_conflicted != true"
+    config:
+      operation: "mergeBranchToMain"
+      sourceBranch: "${changeBranch}"
+      targetBranch: "main"
+
+  - name: mark_change_done
+    type: SimpleTaskStatusStep
+    depends_on: ["merge_change_to_main"]
+    condition: "convergence_status == 'pass'"
+    config:
+      task_id: "${taskId}"
+      project_id: "${projectId}"
+      status: "done"
+
+failure_handling:
+  on_workflow_failure:
+    - name: mark_change_blocked
+      type: SimpleTaskStatusStep
+      config:
+        status: "blocked"
+        task_id: "${taskId}"
+        project_id: "${projectId}"

@@ -1,0 +1,46 @@
+name: change-setup
+version: "1.0.0"
+description: >
+  Creates and publishes the change branch off main for a diverge-converge change.
+  All of the change's file-tasks branch off this branch; the convergence task
+  merges it to main. Runs once, before the file-tasks.
+trigger:
+  condition: "task_type == 'change_setup'"
+
+context:
+  repo_required: true
+  branch_strategy: "change-branch"
+
+steps:
+  - name: create_change_branch
+    type: GitOperationStep
+    description: "Branch the change branch off main"
+    config:
+      operation: "checkoutBranchFromBase"
+      baseBranch: "main"
+      newBranch: "${changeBranch}"
+
+  - name: publish_change_branch
+    type: GitOperationStep
+    description: "Publish the change branch so file-task runs can branch off it"
+    depends_on: ["create_change_branch"]
+    config:
+      operation: "ensureBranchPublished"
+      branch: "${changeBranch}"
+
+  - name: mark_setup_done
+    type: SimpleTaskStatusStep
+    depends_on: ["publish_change_branch"]
+    config:
+      task_id: "${taskId}"
+      project_id: "${projectId}"
+      status: "done"
+
+failure_handling:
+  on_workflow_failure:
+    - name: mark_setup_blocked
+      type: SimpleTaskStatusStep
+      config:
+        status: "blocked"
+        task_id: "${taskId}"
+        project_id: "${projectId}"

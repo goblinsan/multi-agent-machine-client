@@ -52,6 +52,12 @@ import { TaskRealityAuditStep } from "./steps/TaskRealityAuditStep";
 import { ScopeViabilityStep } from "./steps/ScopeViabilityStep";
 import { DeterministicReviewStep } from "./steps/DeterministicReviewStep";
 import { MutationTestStep } from "./steps/MutationTestStep";
+import { ConvergenceGateStep } from "./steps/ConvergenceGateStep";
+import {
+  isEscalationRequired,
+  handleEscalationRequired,
+} from "./escalation/escalationRequired.js";
+import { publishProjectArtifactToDashboard } from "./helpers/artifactPublisher.js";
 import { WorkflowLoader } from "./engine/WorkflowLoader";
 import { ConditionEvaluator } from "./engine/ConditionEvaluator";
 import { StepExecutor } from "./engine/StepExecutor";
@@ -217,6 +223,7 @@ export class WorkflowEngine {
     this.stepRegistry.set("ScopeViabilityStep", ScopeViabilityStep);
     this.stepRegistry.set("DeterministicReviewStep", DeterministicReviewStep);
     this.stepRegistry.set("MutationTestStep", MutationTestStep);
+    this.stepRegistry.set("ConvergenceGateStep", ConvergenceGateStep);
   }
 
   public registerStep(
@@ -512,6 +519,28 @@ export class WorkflowEngine {
       message: error.message,
       type: "workflow_failure",
     });
+
+    if (isEscalationRequired(error)) {
+      await handleEscalationRequired(error, {
+        publishArtifact: async (artifact) => {
+          context.setVariable("escalation_artifact", artifact);
+          await publishProjectArtifactToDashboard({
+            projectId: context.projectId,
+            workflowId: context.workflowId,
+            kind: artifact.kind,
+            content: artifact.content,
+          });
+        },
+        blockChange: async (changeSlug, reason) => {
+          context.setVariable("change_blocked", { changeSlug, reason });
+          logger.error("Change blocked pending escalation", {
+            workflowId: context.workflowId,
+            changeSlug,
+            reason,
+          });
+        },
+      });
+    }
 
     if (workflowDef.failure_handling?.on_workflow_failure) {
       for (const handlerDef of workflowDef.failure_handling
