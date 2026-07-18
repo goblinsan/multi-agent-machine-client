@@ -68,9 +68,16 @@ of the change branch under `change/`, which git accepts. See
 
 - Each file-task branches **off the change branch** (not main), edits **one
   file**, and merges **back into the change branch** (not main).
-- Sub-branches are **independent and order-free**: each builds against the
-  *contract* (spec), never against a sibling's actual code. Disjoint files ⇒ no
-  merge conflicts.
+- File-tasks run in **dependency order** (a file that imports a sibling depends
+  on it), which the existing dependency queue already provides via
+  `blocked_dependencies`. Because a file's dependencies are built and merged
+  into the change branch *before* it, its sub-branch (off the current change
+  branch) already contains them — so its imports resolve and **per-file `tsc`
+  works**. The 14B still does not *derive* the order; the planner encodes it in
+  the contracts (who imports whom), and the queue enforces it.
+- The build is still **contract-guided**: each file is written against the
+  verbatim import lines the planner supplied, not by reverse-engineering sibling
+  code. Disjoint files ⇒ no merge conflicts.
 - The change branch merges to **main exactly once**, after convergence passes.
 
 This differs from today's model, where all tasks in a milestone share one branch
@@ -85,12 +92,17 @@ and each merges to main individually.
    contracts). Create `change/<slug>` off main; create the file-tasks linked to
    the change.
 
-2. **Build (independent).** For each file-task: branch off the change branch,
-   build the one file against its contract, run the **file-local** gates only
+2. **Build (dependency-ordered).** For each file-task, in dependency order:
+   branch off the change branch (which already holds this file's dependencies),
+   build the one file against its contract, run typecheck (its imports resolve
+   because the deps are present) plus the file-local deterministic rules
    (`file_size`, `method_size`, `secret_scan`, `conflict_markers`,
-   `forbidden_comments`), merge back into the change branch. Cross-file typecheck
-   is **deferred** — siblings may not exist yet on this sub-branch, so a per-file
-   typecheck would give false errors.
+   `forbidden_comments`), then merge back into the change branch. Skipped
+   per-file: **tests and the `test_coverage` ratchet** (a source file's test is
+   its own file-task, and whole-change behaviour is a convergence concern), and
+   the model **code/security/devops reviews** (run once at convergence, not per
+   file). A genuinely circular import pair is the one shape per-file typecheck
+   cannot resolve; convergence is the backstop for it.
 
 3. **Converge (validate the whole).** Once every file-task has merged into the
    change branch, all files exist together. Run the **full** gate suite on the
