@@ -9,7 +9,7 @@ import { logger } from "../logger.js";
 import { firstString, slugify } from "../util.js";
 import { WorkflowEngine, workflowEngine } from "./WorkflowEngine.js";
 import type { MessageTransport } from "../transport/index.js";
-import { join as _join, basename } from "path";
+import { basename } from "path";
 import { extractRepoRemote } from "./helpers/repoRemoteResolver.js";
 import { TaskAPI } from "../dashboard/TaskAPI.js";
 import { CoordinatorRunTracker } from "../runs/CoordinatorRunTracker.js";
@@ -22,6 +22,7 @@ import {
   TaskWorkflowRunner,
   type TaskWorkflowContext,
 } from "./coordinator/TaskWorkflowRunner.js";
+import { updateTaskExhaustionAfterSuccess } from "./coordinator/requeueDecision.js";
 
 export class WorkflowCoordinator {
   private engine: WorkflowEngine;
@@ -375,35 +376,20 @@ export class WorkflowCoordinator {
             });
 
             if (result.success) {
-              exhaustedTaskIds.add(taskId);
-              try {
-                const refreshedTasks =
-                  await this.fetchProjectTasks(projectId);
-                const refreshedTask = refreshedTasks.find(
-                  (t: any) => String(t?.id) === taskId,
-                );
-                const postStatus = refreshedTask
-                  ? this.taskFetcher.normalizeTaskStatus(refreshedTask.status)
-                  : preStatus;
-
-                if (postStatus === preStatus) {
-                  logger.warn(
-                    "Task status unchanged after successful workflow",
-                    {
-                      workflowId,
-                      projectId,
-                      taskId,
-                      status: preStatus,
-                      attempt: priorAttempts + 1,
-                    },
-                  );
-                }
-              } catch {
-                logger.warn(
-                  "Failed to re-fetch task after workflow, skipping status-change check",
-                  { taskId },
-                );
-              }
+              await updateTaskExhaustionAfterSuccess({
+                result,
+                fetchProjectTasks: () => this.fetchProjectTasks(projectId),
+                normalizeTaskStatus: (status) =>
+                  this.taskFetcher.normalizeTaskStatus(status),
+                isActionableStatus: (status) =>
+                  this.taskFetcher.isActionableStatus(status),
+                exhaustedTaskIds,
+                taskId,
+                preStatus,
+                workflowId,
+                projectId,
+                attempt: priorAttempts + 1,
+              });
             }
 
             if (!result.success) {

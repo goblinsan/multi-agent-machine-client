@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WorkflowCoordinator } from "../src/workflows/WorkflowCoordinator";
 import { WorkflowEngine } from "../src/workflows/WorkflowEngine";
 import { WorkflowContext } from "../src/workflows/engine/WorkflowContext";
+import { TaskAPI } from "../src/dashboard/TaskAPI";
 import * as gitUtils from "../src/gitUtils.js";
 import { createFastCoordinator } from "./helpers/coordinatorTestHelper.js";
 
@@ -230,6 +231,65 @@ describe("WorkflowCoordinator Task Processing", () => {
     expect(result.results).toHaveLength(1);
 
     fetchTasksSpy.mockRestore();
+    resolveRepoSpy.mockRestore();
+    processTaskSpy.mockRestore();
+  });
+
+  it("keeps a deliberately requeued converge task actionable in the same coordinator run", async () => {
+    const coordinator = createFastCoordinator();
+    const convergeTask = {
+      id: "89",
+      name: "Converge",
+      title: "Converge",
+      status: "open",
+      labels: ["change_converge", "change:openapi-layer-v4"],
+      priority_score: 100,
+    };
+    let fetchCall = 0;
+
+    const fetchTasksSpy = vi
+      .spyOn(coordinator as any, "fetchProjectTasks")
+      .mockImplementation(async () => {
+        fetchCall += 1;
+        if (fetchCall === 1) return [{ ...convergeTask, status: "open" }];
+        if (fetchCall === 2) return [{ ...convergeTask, status: "open" }];
+        if (fetchCall === 3) return [{ ...convergeTask, status: "open" }];
+        return [{ ...convergeTask, status: "done" }];
+      });
+
+    const updateStatusSpy = vi
+      .spyOn(TaskAPI.prototype, "updateTaskStatus")
+      .mockResolvedValue({ ok: true, status: 200, body: {} } as any);
+
+    const resolveRepoSpy = vi
+      .spyOn(gitUtils, "resolveRepoFromPayload")
+      .mockResolvedValue({
+        repoRoot: "/tmp/repo",
+        branch: "main",
+        remote: "https://example/repo.git",
+      } as any);
+
+    const processTaskSpy = vi
+      .spyOn(coordinator as any, "processTask")
+      .mockResolvedValueOnce({
+        success: true,
+        data: { workflow_stop_reason: "convergence_retry" },
+        outputs: { workflow_stop_reason: "convergence_retry" },
+      })
+      .mockResolvedValueOnce({ success: true, data: {}, outputs: {} });
+
+    const result = await coordinator.handleCoordinator(
+      {} as any,
+      {} as any,
+      { workflow_id: "wf-requeue", project_id: "proj-requeue" },
+      { repo: "https://example/repo.git" },
+    );
+
+    expect(processTaskSpy).toHaveBeenCalledTimes(2);
+    expect(result.results).toHaveLength(2);
+
+    fetchTasksSpy.mockRestore();
+    updateStatusSpy.mockRestore();
     resolveRepoSpy.mockRestore();
     processTaskSpy.mockRestore();
   });
