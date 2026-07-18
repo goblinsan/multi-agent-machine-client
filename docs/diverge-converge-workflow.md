@@ -55,10 +55,16 @@ Split the work by *who is good at what*:
 ```
 main
  └── change/<slug>                 change branch, off main — the converge target
-      ├── change/<slug>/file-a     sub-branch, off change branch — exactly one file
-      ├── change/<slug>/file-b
-      └── change/<slug>/file-c
+      ├── change/<slug>__file-a    sub-branch, off change branch — exactly one file
+      ├── change/<slug>__file-b
+      └── change/<slug>__file-c
 ```
+
+Note the `__` separator, not a `/`. A git ref cannot be both a file and a
+directory, so `change/<slug>` (a branch) and `change/<slug>/file-a` (a branch)
+collide in `refs/heads`. `change/<slug>__file-a` keeps the file branch a sibling
+of the change branch under `change/`, which git accepts. See
+`src/git/branchNaming.ts`.
 
 - Each file-task branches **off the change branch** (not main), edits **one
   file**, and merges **back into the change branch** (not main).
@@ -155,8 +161,9 @@ composition, not an afterthought.
 The primitives already exist:
 
 - `computeFeatureBranchName` already derives a shared branch from the
-  milestone/change slug — extend it to emit `change/<slug>` and per-file
-  `change/<slug>/<file-id>`.
+  milestone/change slug. `src/git/branchNaming.ts` now emits `change/<slug>`
+  (`changeBranchName`) and the sibling per-file `change/<slug>__<file>`
+  (`fileBranchName`), sanitizing paths into git-safe segments. **Implemented.**
 - `checkoutBranchFromBase` with `baseBranch = change/<slug>` gives file-tasks
   their sub-branch off the change branch.
 - `mergeBranchToMain` is already parameterized on `targetBranch` — merging a
